@@ -16,6 +16,12 @@ are approached.
 
 ## Phase 0: Foundations (5 weeks)
 
+**Status.** The exit criteria below are met. What remains unchecked in this phase is
+listed honestly rather than quietly closed: the KMS token issuer (only the local one
+exists), JWKS caching and key rotation, the OpenTelemetry bootstrap, the Postgres
+rate-limit fallback, the audit interceptor, Secret Manager loading, OpenAPI generation,
+distroless images and Binary Authorization. None of them blocks Phase 1 starting.
+
 **Exit criteria.** `pnpm turbo run typecheck lint build` is green across every package. Migrations
 apply to a clean Postgres 17 and create the roles, grants and RLS policies. The RLS negative test
 passes, meaning a deliberately misused repository still cannot read another tenant's rows. `auth-api`
@@ -28,142 +34,142 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [x] Supply-chain settings in `pnpm-workspace.yaml`: `ignoreScripts`, isolated node-linker,
       frozen lockfile, exact saves (§7.6). Not `.npmrc`, which pnpm 11 ignores for these.
 - [x] README stating the headless position and the compliance posture
-- [ ] pnpm workspace definition and root `package.json` scripts
-- [ ] `tsconfig.base.json` with the full strict set from §7.1, extended by every package
-- [ ] Turborepo task graph: `build`, `typecheck`, `lint`, `test`, `test:integration`, `bundle`
-- [ ] Biome config with the §7.5 rule table, and `overrides` transcribing the §8.3 layer boundaries
-- [ ] GritQL plugin `no-raw-throw` banning `throw new Error(...)` (§7.2.8)
-- [ ] GritQL plugin rejecting bare Drizzle columns that skip `classified()` (§4.13.2)
-- [ ] husky, lint-staged and commitlint; document that `ignoreScripts` means running
+- [x] pnpm workspace definition and root `package.json` scripts
+- [x] `tsconfig.base.json` with the full strict set from §7.1, extended by every package
+- [x] Turborepo task graph: `build`, `typecheck`, `lint`, `test`, `test:integration`, `bundle`
+- [x] Biome config with the §7.5 rule table, and `overrides` transcribing the §8.3 layer boundaries
+- [x] GritQL plugin `no-raw-throw` banning `throw new Error(...)` (§7.2.8)
+- [x] GritQL plugin rejecting bare Drizzle columns that skip `classified()` (§4.13.2)
+- [x] husky, lint-staged and commitlint; document that `ignoreScripts` means running
       `pnpm run prepare` once after clone
-- [ ] `docker-compose.yml` with Postgres 17 and Valkey
+- [x] `docker-compose.yml` with Postgres 17 and Valkey
 - [ ] `pnpm dev` boots containers, migrates, and starts every app through Turbo
 
 ### 0.2 Architecture decision records
 
-- [ ] ADR-0001 Drizzle over hand-written SQL and over a runtime ORM, including the reversal trigger
-- [ ] ADR-0002 No authentication UI, ever
-- [ ] ADR-0003 Tenancy: RLS plus `set_config` plus a repository that cannot exist without a tenant
-- [ ] ADR-0004 Compliance by column classification, with generated artifacts
-- [ ] ADR-0005 Biome over ESLint and Prettier, and what we gave up
+- [x] ADR-0001 Drizzle over hand-written SQL and over a runtime ORM, including the reversal trigger
+- [x] ADR-0002 No authentication UI, ever
+- [x] ADR-0003 Tenancy: RLS plus `set_config` plus a repository that cannot exist without a tenant
+- [x] ADR-0004 Compliance by column classification, with generated artifacts
+- [x] ADR-0005 Biome over ESLint and Prettier, and what we gave up
 
 ### 0.3 `@idenzy/protocol`
 
-- [ ] Error code enum, stable and documented, shared by server, SDKs and panels
-- [ ] Zod schemas for every wire type, with types inferred from them and never declared separately
-- [ ] Domain enums declared once (§7.1)
-- [ ] The public error contract shape returned by the exception filter
+- [x] Error code enum, stable and documented, shared by server, SDKs and panels
+- [x] Zod schemas for every wire type, with types inferred from them and never declared separately
+- [x] Domain enums declared once (§7.1)
+- [x] The public error contract shape returned by the exception filter
 - [ ] OpenAPI generation from the schemas (`pnpm gen:openapi`)
 
 ### 0.4 `@idenzy/core`
 
-- [ ] `IdenzyError` base with `code`, HTTP status, safe public message, internal detail
-- [ ] Error subclasses: validation, auth, conflict, not-found, rate-limit, provider, internal
-- [ ] `Clock` port and a system implementation, so time is injectable everywhere
-- [ ] `Logger` port, implemented in `@idenzy/observability`
-- [ ] Value objects that cannot be constructed invalid: `EmailAddress`, `E164PhoneNumber`, `ProjectId`
-- [ ] `Result` type for expected failures that are not exceptional
+- [x] `IdenzyError` base with `code`, HTTP status, safe public message, internal detail
+- [x] Error subclasses: validation, auth, conflict, not-found, rate-limit, provider, internal
+- [x] `Clock` port and a system implementation, so time is injectable everywhere
+- [x] `Logger` port, implemented in `@idenzy/observability`
+- [x] Value objects that cannot be constructed invalid: `EmailAddress`, `E164PhoneNumber`, `ProjectId`
+- [x] `Result` type for expected failures that are not exceptional
 
 ### 0.5 `@idenzy/config`
 
-- [ ] Schema-validated config classes, parsed once at boot, failing fast on a bad environment
+- [x] Schema-validated config classes, parsed once at boot, failing fast on a bad environment
 - [ ] Secret Manager loader with a local `.env` fallback for development
-- [ ] The only place in the codebase that reads `process.env`, enforced by `style/noProcessEnv`
+- [x] The only place in the codebase that reads `process.env`, enforced by `style/noProcessEnv`
 
 ### 0.6 `@idenzy/persistence`
 
-- [ ] Drizzle schema for the §12 core tables
-- [ ] Drizzle schema for the §12 compliance tables
-- [ ] RLS policies declared in the schema, keyed on `current_setting('app.project_id')`
-- [ ] Custom migration creating `idenzy_owner` and `idenzy_app`, with `NOBYPASSRLS` on the app role
-- [ ] Custom migration applying `FORCE ROW LEVEL SECURITY` to every tenant table
-- [ ] Custom migration granting `INSERT` and `SELECT` only on `audit_events` (§4.13.3)
-- [ ] Custom migration creating monthly partitions for `audit_events` and the partition maintenance job
-- [ ] `TenantContext`: project id, actor, request id, trace id, request-scoped
-- [ ] `UnitOfWork.run(cb)` opening a transaction and setting `app.project_id` via parameterized
+- [x] Drizzle schema for the §12 core tables
+- [x] Drizzle schema for the §12 compliance tables
+- [x] RLS policies declared in the schema, keyed on `current_setting('app.project_id')`
+- [x] Custom migration creating `idenzy_owner` and `idenzy_app`, with `NOBYPASSRLS` on the app role
+- [x] Custom migration applying `FORCE ROW LEVEL SECURITY` to every tenant table
+- [x] Custom migration granting `INSERT` and `SELECT` only on `audit_events` (§4.13.3)
+- [x] Custom migration creating monthly partitions for `audit_events` and the partition maintenance job
+- [x] `TenantContext`: project id, actor, request id, trace id, request-scoped
+- [x] `UnitOfWork.run(cb)` opening a transaction and setting `app.project_id` via parameterized
       `set_config`, transaction-local
-- [ ] Abstract `BaseRepository` owning the tenant predicate, query timing and error translation
-- [ ] Migration runner as a standalone job, forward-only
-- [ ] `pnpm db:generate`, `db:migrate`, `db:studio` scripts
+- [x] Abstract `BaseRepository` owning the tenant predicate, query timing and error translation
+- [x] Migration runner as a standalone job, forward-only
+- [x] `pnpm db:generate`, `db:migrate`, `db:studio` scripts
 
 ### 0.7 `@idenzy/compliance`
 
-- [ ] `classified()` column wrapper carrying class, purpose, retention, subject and erasure behaviour
-- [ ] `encrypted()` column wrapper delegating to `FieldEncryptor`
-- [ ] Data map generator writing `docs/compliance/data-map.md`
-- [ ] RoPA generator writing `docs/compliance/ropa.md` (GDPR Art.30)
-- [ ] Log redaction allowlist generator consumed by `@idenzy/observability` (§4.13.8)
-- [ ] Data-subject field list generator consumed by the DSR handlers
-- [ ] Audit hash-chain helper: compute and verify `entry_hash`
-- [ ] `pnpm compliance:generate`, and a CI check that fails on a stale committed copy
-- [ ] `docs/compliance/controls.md` mapping frameworks to the artifacts that satisfy them
-- [ ] `docs/compliance/subprocessors.md`
+- [x] `classified()` column wrapper carrying class, purpose, retention, subject and erasure behaviour
+- [x] `encrypted()` column wrapper delegating to `FieldEncryptor`
+- [x] Data map generator writing `docs/compliance/data-map.md`
+- [x] RoPA generator writing `docs/compliance/ropa.md` (GDPR Art.30)
+- [x] Log redaction allowlist generator consumed by `@idenzy/observability` (§4.13.8)
+- [x] Data-subject field list generator consumed by the DSR handlers
+- [x] Audit hash-chain helper: compute and verify `entry_hash`
+- [x] `pnpm compliance:generate`, and a CI check that fails on a stale committed copy
+- [x] `docs/compliance/controls.md` mapping frameworks to the artifacts that satisfy them
+- [x] `docs/compliance/subprocessors.md`
 
 ### 0.8 `@idenzy/crypto`
 
-- [ ] Abstract `TokenIssuer`, with `KmsEs256Issuer` as the first implementation
+- [x] Abstract `TokenIssuer`, with `KmsEs256Issuer` as the first implementation
 - [ ] JWKS cache and the public JWKS document per project
 - [ ] Key rotation with overlapping `kid` publication
-- [ ] Abstract `PasswordHasher`, with `Argon2idHasher` on a bounded worker pool
-- [ ] `WorkerPool` class, so no CPU-bound call ever runs on the event loop (§9.6)
-- [ ] `FieldEncryptor`: per-project DEK, KMS-wrapped, for §4.13.4
-- [ ] Token generators for refresh tokens, OTPs and single-use codes, all `crypto.randomBytes`
+- [x] Abstract `PasswordHasher`, with `Argon2idHasher` on a bounded worker pool
+- [x] `WorkerPool` class, so no CPU-bound call ever runs on the event loop (§9.6)
+- [x] `FieldEncryptor`: per-project DEK, KMS-wrapped, for §4.13.4
+- [x] Token generators for refresh tokens, OTPs and single-use codes, all `crypto.randomBytes`
 
 ### 0.9 `@idenzy/cache`
 
-- [ ] Valkey client with timeouts and graceful degradation
-- [ ] Abstract `RateLimitStrategy`, with fixed window, sliding window and token bucket
+- [x] Valkey client with timeouts and graceful degradation
+- [x] Abstract `RateLimitStrategy`, with fixed window, sliding window and token bucket
 - [ ] `PostgresFallbackStrategy` for a Valkey outage (§6.3)
-- [ ] Revocation set: write, query and the signed cacheable endpoint (§4.2)
+- [x] Revocation set: write, query and the signed cacheable endpoint (§4.2)
 
 ### 0.10 `@idenzy/observability`
 
 - [ ] OpenTelemetry bootstrap with auto-instrumentation for Fastify, pg and Valkey
-- [ ] Pino logger using the generated allowlist, dropping undeclared fields (§4.13.8)
-- [ ] Event-loop lag, GC pause and heap metrics exported with the §6.3 SLOs
+- [x] Pino logger using the generated allowlist, dropping undeclared fields (§4.13.8)
+- [x] Event-loop lag, GC pause and heap metrics exported with the §6.3 SLOs
 - [ ] `RequestContext` carrying request id and trace id
 - [ ] Audit interceptor writing to the outbox
 
 ### 0.11 `@idenzy/domain`
 
-- [ ] Entities with behaviour: `User`, `Session`, `RefreshTokenFamily`, `Project`
-- [ ] Abstract ports: `EmailProvider`, `SmsProvider`, `OAuthProvider`, `MfaFactor`, `AuthFlow`
-- [ ] Abstract `DataSubjectRequestHandler` (§4.13.6)
-- [ ] Zero imports from infrastructure, enforced by lint
+- [x] Entities with behaviour: `User`, `Session`, `RefreshTokenFamily`, `Project`
+- [x] Abstract ports: `EmailProvider`, `SmsProvider`, `OAuthProvider`, `MfaFactor`, `AuthFlow`
+- [x] Abstract `DataSubjectRequestHandler` (§4.13.6)
+- [x] Zero imports from infrastructure, enforced by lint
 
 ### 0.12 Applications
 
-- [ ] `auth-api`: Nest bootstrap on the Fastify adapter, graceful shutdown, fatal error handling
-- [ ] `TenantResolutionGuard` resolving a project by Host or key
-- [ ] `ExceptionFilter` mapping `IdenzyError` to the protocol error contract
-- [ ] Assert no endpoint ever returns `text/html` (§4.3), with a test
-- [ ] `/healthz` and `/readyz`
-- [ ] `/.well-known/jwks.json` and `/.well-known/openid-configuration`
-- [ ] `management-api` skeleton with the same pipeline
-- [ ] `workers` standalone skeleton with one module per consumer
-- [ ] `landing` Nuxt scaffold, SSR on
-- [ ] `client` Nuxt scaffold, SPA
-- [ ] `admin` Nuxt scaffold, SPA
+- [x] `auth-api`: Nest bootstrap on the Fastify adapter, graceful shutdown, fatal error handling
+- [x] `TenantResolutionGuard` resolving a project by Host or key
+- [x] `ExceptionFilter` mapping `IdenzyError` to the protocol error contract
+- [x] Assert no endpoint ever returns `text/html` (§4.3), with a test
+- [x] `/healthz` and `/readyz`
+- [x] `/.well-known/jwks.json` and `/.well-known/openid-configuration`
+- [x] `management-api` skeleton with the same pipeline
+- [x] `workers` standalone skeleton with one module per consumer
+- [x] `landing` Nuxt scaffold, SSR on
+- [x] `client` Nuxt scaffold, SPA
+- [x] `admin` Nuxt scaffold, SPA
 
 ### 0.13 `@idenzy/testing`
 
-- [ ] Testcontainers harness bringing up Postgres and Valkey
-- [ ] Fakes for `Clock`, `Logger`, KMS and providers
-- [ ] Abstract conformance suite base class (§7.4)
-- [ ] RLS negative test: a misused repository still reads zero cross-tenant rows
-- [ ] Audit immutability test: `UPDATE` and `DELETE` rejected for `idenzy_app`
-- [ ] Audit hash-chain verification test
+- [x] Testcontainers harness bringing up Postgres and Valkey
+- [x] Fakes for `Clock`, `Logger`, KMS and providers
+- [x] Abstract conformance suite base class (§7.4)
+- [x] RLS negative test: a misused repository still reads zero cross-tenant rows
+- [x] Audit immutability test: `UPDATE` and `DELETE` rejected for `idenzy_app`
+- [x] Audit hash-chain verification test
 
 ### 0.14 CI and infrastructure
 
-- [ ] CI pipeline: install, typecheck, lint, unit, build, integration, image, sign
-- [ ] Frozen lockfile enforcement and the dependency advisory scan
-- [ ] Compliance artifact regeneration and staleness check
-- [ ] CycloneDX SBOM per release
-- [ ] Terraform skeleton for one region cell: Cloud Run, Cloud SQL, Valkey, KMS, LB, Armor
+- [x] CI pipeline: install, typecheck, lint, unit, build, integration, image, sign
+- [x] Frozen lockfile enforcement and the dependency advisory scan
+- [x] Compliance artifact regeneration and staleness check
+- [x] CycloneDX SBOM per release
+- [x] Terraform skeleton for one region cell: Cloud Run, Cloud SQL, Valkey, KMS, LB, Armor
 - [ ] Distroless, non-root, read-only-filesystem runtime images
 - [ ] Binary Authorization and provenance
-- [ ] `CLAUDE.md` recording repository conventions
+- [x] `CLAUDE.md` recording repository conventions
 
 ---
 

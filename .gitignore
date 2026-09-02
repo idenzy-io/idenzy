@@ -49,3 +49,6 @@ pnpm-debug.log*
 # Local scratch
 tmp/
 .scratch/
+
+# Nuxt build caches
+**/node_modules/.cache/

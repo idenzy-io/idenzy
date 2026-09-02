@@ -58,6 +58,10 @@ catalog:
   '@simplewebauthn/server': 14.0.0
   '@google-cloud/kms': 6.0.0
 
+  # Front end
+  nuxt: 4.5.2
+  vue: 3.5.42
+
   # Validation and observability
   zod: 4.5.4
   pino: 10.3.1

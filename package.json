@@ -23,8 +23,8 @@
     "db:generate": "pnpm --filter @idenzy/persistence run db:generate",
     "db:migrate": "pnpm --filter @idenzy/persistence run db:migrate",
     "db:studio": "pnpm --filter @idenzy/persistence run db:studio",
-    "compliance:generate": "pnpm --filter @idenzy/compliance run generate",
-    "compliance:check": "pnpm --filter @idenzy/compliance run check",
+    "compliance:generate": "pnpm --filter @idenzy/compliance-cli run generate",
+    "compliance:check": "pnpm --filter @idenzy/compliance-cli run check",
     "gen:openapi": "pnpm --filter @idenzy/protocol run gen:openapi",
     "clean": "turbo run clean && rm -rf node_modules"
   },

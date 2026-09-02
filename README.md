@@ -1,8 +1,8 @@
 # Idenzy
 
-A managed authentication and user-management platform — the Firebase Auth / Supabase Auth / Clerk
-category — delivered as a hosted service with first-class SDKs for every major web, mobile and game
-platform.
+A managed authentication and user-management platform in the Firebase Auth, Supabase Auth and
+Clerk category, delivered as a hosted service with first-class SDKs for every major web, mobile
+and game platform.
 
 **Three pillars:** extreme security by default, five-minute integration, and the lowest per-MAU price
 in the market.
@@ -12,24 +12,24 @@ in the market.
 Idenzy ships **a backend and SDKs**. Nothing else.
 
 We do not ship authentication UI. There are no hosted sign-in pages, no embeddable `<SignIn/>`
-component, no widget, no iframe — nothing rendered by us that a customer's end user ever sees. The
+component, no widget, no iframe. Nothing rendered by us that a customer's end user ever sees. The
 auth API speaks JSON and HTTP redirects; sign-in screens belong to the customer's application, built
 with their own design system, and our SDKs give them typed headless primitives to drive.
 
 That is a deliberate trade. It costs us the "drop in a component and you're done" demo, and it buys
-the customer total control of their sign-in experience — plus it removes an entire class of XSS and
+the customer total control of their sign-in experience, plus it removes an entire class of XSS and
 clickjacking surface from our side of the trust boundary. See `docs/adr/0002-headless-no-ui.md`.
 
 ## Repository layout
 
 ```
-apps/          deployables — thin, never imported by anything
+apps/          deployables. Thin, never imported by anything
   auth-api           NestJS + Fastify, public auth API (the only service that mints tokens)
   management-api     NestJS + Fastify, dashboard/management + billing control plane
-  workers            NestJS standalone — email, sms, webhook, audit, analytics consumers
-  landing            Nuxt, SSR   — marketing + docs
-  client             Nuxt, SPA   — customer dashboard
-  admin              Nuxt, SPA   — internal operator console
+  workers            NestJS standalone: email, sms, webhook, audit, analytics
+  landing            Nuxt, SSR   marketing + docs
+  client             Nuxt, SPA   customer dashboard
+  admin              Nuxt, SPA   internal operator console
 packages/      all reusable logic; apps consume packages, packages never consume apps
 infra/         Terraform (region cells) and container images
 tools/         shared lint config, CLI, codegen
@@ -62,7 +62,7 @@ Useful checks:
 ```bash
 pnpm turbo run typecheck lint build
 pnpm test                    # unit
-pnpm test:integration        # Testcontainers — needs Docker
+pnpm test:integration        # Testcontainers, needs Docker
 pnpm compliance:generate     # regenerate the data map and RoPA from the schema
 ```
 
@@ -73,7 +73,7 @@ pnpm compliance:generate     # regenerate the data map and RoPA from the schema
 - TypeScript only, `strict` plus `noUncheckedIndexedAccess` and friends. `any` is a lint error.
 - Class-based throughout: services, repositories, providers, guards and workers are classes obtained
   by constructor injection. Abstract base classes own the invariants; subclasses fill in what varies.
-- `throw new Error(...)` is a lint error — every error is an `IdenzyError` subclass with a stable,
+- `throw new Error(...)` is a lint error. Every error is an `IdenzyError` subclass with a stable,
   machine-readable code, so "identical error codes across every SDK" is enforceable.
 - Dependency direction is one-way: `apps → feature modules → domain → protocol/core`. CI fails on a
   violation or a cycle.
@@ -81,7 +81,7 @@ pnpm compliance:generate     # regenerate the data map and RoPA from the schema
 
 ## Compliance
 
-The data architecture is built to satisfy SOC 2 Type II, ISO 27001, GDPR and HIPAA — column-level
+The data architecture is built to satisfy SOC 2 Type II, ISO 27001, GDPR and HIPAA: column-level
 data classification, an append-only hash-chained audit trail, per-project envelope encryption,
 region-pinned data residency, and first-class data-subject-request handling. See `PROJECT.md` §4.13.
 

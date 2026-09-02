@@ -1,0 +1,40 @@
+{
+  "name": "@idenzy/auth-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "node --watch src/main.ts",
+    "start": "node dist/main.js",
+    "test": "tsc -p tsconfig.json && vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@idenzy/cache": "workspace:*",
+    "@idenzy/compliance": "workspace:*",
+    "@idenzy/config": "workspace:*",
+    "@idenzy/core": "workspace:*",
+    "@idenzy/crypto": "workspace:*",
+    "@idenzy/domain": "workspace:*",
+    "@idenzy/observability": "workspace:*",
+    "@idenzy/persistence": "workspace:*",
+    "@idenzy/protocol": "workspace:*",
+    "@nestjs/common": "catalog:",
+    "@nestjs/core": "catalog:",
+    "@nestjs/platform-fastify": "catalog:",
+    "drizzle-orm": "catalog:",
+    "fastify": "catalog:",
+    "pg": "catalog:",
+    "reflect-metadata": "catalog:",
+    "rxjs": "catalog:"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "catalog:",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

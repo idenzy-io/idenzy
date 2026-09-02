@@ -24,6 +24,17 @@ export function generateLogAllowlist(): ReadonlySet<string> {
     "provider",
     "channel",
     "outcome",
+    // Operational fields that are not columns: process identity and startup config.
+    // These are declared here rather than left to be dropped, because a boot line that
+    // logs nothing but "droppedFields: 5" is how an allowlist earns a bad reputation.
+    "env",
+    "cell",
+    "port",
+    "logLevel",
+    "accessTokenTtlSeconds",
+    "status",
+    "component",
+    "droppedFields",
   ]);
 
   for (const columns of classificationRegistry().values()) {

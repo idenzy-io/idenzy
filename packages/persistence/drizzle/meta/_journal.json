@@ -15,6 +15,13 @@
       "when": 1788390279683,
       "tag": "0001_roles_grants_and_partitions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788391005567,
+      "tag": "0002_project_resolution_functions",
+      "breakpoints": true
     }
   ]
 }

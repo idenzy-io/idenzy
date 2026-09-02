@@ -37,11 +37,13 @@ export class AppConfig {
   /**
    * Config safe to log or expose on a diagnostics endpoint. Built as an allowlist,
    * because a redaction blocklist over config is how connection strings end up in logs.
+   *
+   * Excludes env and cell on purpose: those are process identity, bound once to every
+   * log line by the logger factory. Repeating them here produced duplicate JSON keys on
+   * the boot line.
    */
   toSafeSummary(): Readonly<Record<string, unknown>> {
     return {
-      env: this.values.IDENZY_ENV,
-      cell: this.values.CELL_CODE,
       port: this.values.PORT,
       logLevel: this.values.LOG_LEVEL,
       accessTokenTtlSeconds: this.values.ACCESS_TOKEN_TTL_SECONDS,

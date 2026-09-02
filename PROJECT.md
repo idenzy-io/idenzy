@@ -778,7 +778,8 @@ Every SDK package is a client library. **No package in this tree, published or i
 
 | Layer | May import | May never import |
 |---|---|---|
-| `protocol`, `core` | nothing first-party (leaves) | anything |
+| `protocol` | nothing first-party (the only true leaf) | anything, including `core` |
+| `core` | `protocol` (for the error-code enum that `IdenzyError` carries) | everything else |
 | `domain` | `protocol`, `core` | `persistence`, `cache`, `providers-*`, any app |
 | `crypto`, `persistence`, `cache`, `providers-*`, `messaging`, `templating`, `compliance` | `protocol`, `core`, `domain` (to implement its abstract ports) | each other's internals, any app |
 | `sdk/*` | `protocol`, `core` | `domain`, `persistence`, anything server-side |

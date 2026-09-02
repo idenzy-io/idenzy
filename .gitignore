@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+.output/
+.nuxt/
+.nitro/
+coverage/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/testdata/**/*.pem
+service-account*.json
+gha-creds-*.json
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Compliance evidence is generated in CI, never committed from a laptop
+compliance/evidence/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local scratch
+tmp/
+.scratch/

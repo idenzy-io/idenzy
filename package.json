@@ -1,0 +1,46 @@
+{
+  "name": "idenzy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.0.9",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "bootstrap": "pnpm install && pnpm run prepare && docker compose up -d && pnpm db:migrate",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check": "turbo run typecheck lint build test",
+    "db:generate": "pnpm --filter @idenzy/persistence run db:generate",
+    "db:migrate": "pnpm --filter @idenzy/persistence run db:migrate",
+    "db:studio": "pnpm --filter @idenzy/persistence run db:studio",
+    "compliance:generate": "pnpm --filter @idenzy/compliance run generate",
+    "compliance:check": "pnpm --filter @idenzy/compliance run check",
+    "gen:openapi": "pnpm --filter @idenzy/protocol run gen:openapi",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.11",
+    "@commitlint/cli": "21.2.2",
+    "@commitlint/config-conventional": "21.2.2",
+    "@types/node": "catalog:",
+    "husky": "9.1.7",
+    "lint-staged": "17.4.1",
+    "turbo": "catalog:",
+    "typescript": "catalog:"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,json,jsonc,vue,css,md}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  }
+}

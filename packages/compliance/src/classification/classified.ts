@@ -1,6 +1,11 @@
 import { ServerError } from "@idenzy/core/errors/status-errors";
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
-import { type PgColumnBuilderBase, pgTable } from "drizzle-orm/pg-core";
+import type { BuildExtraConfigColumns } from "drizzle-orm";
+import {
+  type PgColumnBuilderBase,
+  type PgTableExtraConfigValue,
+  pgTable,
+} from "drizzle-orm/pg-core";
 import { registerTable } from "./registry.js";
 import type { ColumnClassification } from "./vocabulary.js";
 
@@ -48,7 +53,11 @@ export function encrypted<B extends PgColumnBuilderBase>(
 export function classifiedTable<
   TName extends string,
   TColumns extends Record<string, ClassifiedBuilder>,
->(name: TName, columns: TColumns, extraConfig?: Parameters<typeof pgTable>[2]) {
+>(
+  name: TName,
+  columns: TColumns,
+  extraConfig?: (self: BuildExtraConfigColumns<TName, TColumns, "pg">) => PgTableExtraConfigValue[],
+) {
   const entries = Object.entries(columns).map(([property, builder]) => {
     const classification = classifications.get(builder);
     if (classification === undefined) {
@@ -59,9 +68,7 @@ export function classifiedTable<
   });
   registerTable(name, Object.fromEntries(entries));
 
-  // Safe: drizzle's pgTable overloads do not compose with our generic column map, and
-  // the runtime shape is exactly what pgTable expects.
-  return pgTable(name, columns, extraConfig as never);
+  return pgTable(name, columns, extraConfig);
 }
 
 /**

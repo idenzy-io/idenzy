@@ -68,7 +68,8 @@
           "options": {
             "maxAllowedComplexity": 15
           }
-        }
+        },
+        "useLiteralKeys": "off"
       },
       "nursery": {
         "noFloatingPromises": "error",
@@ -225,7 +226,18 @@
       "linter": {
         "rules": {
           "performance": {
-            "noBarrelFile": "off"
+            "noBarrelFile": "off",
+            "noReExportAll": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/persistence/src/migrate.ts", "packages/persistence/drizzle.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noProcessEnv": "off"
           }
         }
       }

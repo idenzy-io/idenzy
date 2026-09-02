@@ -1,0 +1,35 @@
+# Local development dependencies. Not a production topology.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: idenzy-postgres
+    environment:
+      POSTGRES_USER: idenzy
+      POSTGRES_PASSWORD: idenzy
+      POSTGRES_DB: idenzy
+    ports:
+      - "5432:5432"
+    volumes:
+      - idenzy-pgdata:/var/lib/postgresql/data
+      # Roles are created at cluster init, not by a migration. See the script's header.
+      - ./infra/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U idenzy -d idenzy"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: idenzy-valkey
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  idenzy-pgdata:

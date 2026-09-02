@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788390278683,
+      "tag": "0000_outstanding_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788390279683,
+      "tag": "0001_roles_grants_and_partitions",
+      "breakpoints": true
+    }
+  ]
+}

@@ -36,7 +36,8 @@
     "husky": "9.1.7",
     "lint-staged": "17.4.1",
     "turbo": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,json,jsonc,vue,css,md}": [

@@ -233,7 +233,11 @@
       }
     },
     {
-      "includes": ["packages/persistence/src/migrate.ts", "packages/persistence/drizzle.config.ts"],
+      "includes": [
+        "packages/config/src/app-config.ts",
+        "packages/persistence/src/migrate.ts",
+        "packages/persistence/drizzle.config.ts"
+      ],
       "linter": {
         "rules": {
           "style": {

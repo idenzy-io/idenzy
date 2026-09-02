@@ -1,0 +1,234 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/.output",
+      "!**/.nuxt",
+      "!**/.turbo",
+      "!**/coverage",
+      "!**/drizzle",
+      "!docs/compliance/data-map.md",
+      "!docs/compliance/ropa.md"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "all",
+      "semicolons": "always"
+    }
+  },
+  "plugins": [
+    "./tools/biome-plugins/no-raw-throw.grit",
+    "./tools/biome-plugins/no-unclassified-column.grit"
+  ],
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noExplicitAny": "error",
+        "useAwait": "error"
+      },
+      "style": {
+        "useReadonlyClassProperties": "error",
+        "noNonNullAssertion": "error",
+        "noProcessEnv": "error",
+        "useImportType": "error",
+        "useConsistentArrayType": {
+          "level": "error",
+          "options": {
+            "syntax": "shorthand"
+          }
+        },
+        "noParameterAssign": "error",
+        "useThrowOnlyError": "error"
+      },
+      "performance": {
+        "noBarrelFile": "error",
+        "noReExportAll": "error"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": {
+            "maxAllowedComplexity": 15
+          }
+        }
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "noDrizzleDeleteWithoutWhere": "error",
+        "noDrizzleUpdateWithoutWhere": "error",
+        "useExhaustiveSwitchCases": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.grit"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["packages/protocol/**", "packages/core/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@idenzy/domain": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party.",
+                  "@idenzy/persistence": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party.",
+                  "@idenzy/crypto": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party.",
+                  "@idenzy/cache": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party.",
+                  "@idenzy/compliance": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party.",
+                  "@idenzy/config": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party.",
+                  "@idenzy/observability": "protocol and core are leaves (PROJECT.md 8.3). They import nothing first-party."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@idenzy/persistence": "domain must not import infrastructure (PROJECT.md 8.3). Declare an abstract port here and let infrastructure extend it.",
+                  "@idenzy/cache": "domain must not import infrastructure (PROJECT.md 8.3). Declare an abstract port here and let infrastructure extend it.",
+                  "@idenzy/crypto": "domain must not import infrastructure (PROJECT.md 8.3). Declare an abstract port here and let infrastructure extend it.",
+                  "@idenzy/messaging": "domain must not import infrastructure (PROJECT.md 8.3). Declare an abstract port here and let infrastructure extend it.",
+                  "@idenzy/templating": "domain must not import infrastructure (PROJECT.md 8.3). Declare an abstract port here and let infrastructure extend it.",
+                  "@idenzy/compliance": "domain must not import infrastructure (PROJECT.md 8.3). Declare an abstract port here and let infrastructure extend it.",
+                  "@idenzy/observability": "domain must not import infrastructure (PROJECT.md 8.3). Depend on the Logger port in @idenzy/core.",
+                  "@idenzy/providers-oauth": "domain must not import infrastructure (PROJECT.md 8.3). The adapter depends on the domain, never the reverse.",
+                  "@idenzy/providers-email": "domain must not import infrastructure (PROJECT.md 8.3). The adapter depends on the domain, never the reverse.",
+                  "@idenzy/providers-sms": "domain must not import infrastructure (PROJECT.md 8.3). The adapter depends on the domain, never the reverse."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/crypto/**",
+        "packages/persistence/**",
+        "packages/cache/**",
+        "packages/compliance/**",
+        "packages/messaging/**",
+        "packages/templating/**",
+        "packages/providers-oauth/**",
+        "packages/providers-email/**",
+        "packages/providers-sms/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@idenzy/ui": "infrastructure packages must not import front-end code (PROJECT.md 8.3).",
+                  "@idenzy/js": "infrastructure packages must not import an SDK (PROJECT.md 8.3).",
+                  "@idenzy/node": "infrastructure packages must not import an SDK (PROJECT.md 8.3)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/sdk/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@idenzy/domain": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/persistence": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/crypto": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/cache": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/compliance": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/config": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/observability": "an SDK ships to customers and may import only protocol and core (PROJECT.md 8.3)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@idenzy/domain": "panel UI may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/persistence": "panel UI may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/crypto": "panel UI may import only protocol and core (PROJECT.md 8.3).",
+                  "@idenzy/compliance": "panel UI may import only protocol and core (PROJECT.md 8.3)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.spec.ts", "packages/testing/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/persistence/src/schema/**"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noBarrelFile": "off"
+          }
+        }
+      }
+    }
+  ]
+}

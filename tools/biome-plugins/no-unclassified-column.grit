@@ -1,0 +1,24 @@
+// PROJECT.md 4.13.2: every column is declared through classified(), which is what
+// generates the RoPA, the data map, the log redaction allowlist and the data-subject
+// field lists. A bare column silently escapes all four.
+//
+// This is the fast editor-time check. The authoritative gate is `pnpm compliance:check`,
+// which walks the built schema object rather than the source text and therefore cannot
+// be fooled by an aliased import or an unusual call shape.
+language js
+
+pair($key, $value) where {
+  $value <: contains bubble `$fn($...)` where {
+    $fn <: or {
+      `text`, `varchar`, `char`, `uuid`, `integer`, `bigint`, `smallint`, `serial`,
+      `boolean`, `timestamp`, `date`, `time`, `jsonb`, `json`, `bytea`, `numeric`,
+      `real`, `doublePrecision`, `inet`, `cidr`
+    }
+  },
+  $value <: not contains `classified($...)`,
+  register_diagnostic(
+    span = $value,
+    message = "Declare this column through classified() so it appears in the RoPA, data map, log allowlist and DSR field lists (PROJECT.md 4.13.2).",
+    severity = "error"
+  )
+}

@@ -25,7 +25,8 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 ### 0.1 Repository and toolchain
 
 - [x] `git init`, repo-local identity, `.gitignore`, `.nvmrc`, `.editorconfig`
-- [x] `.npmrc` with `ignore-scripts=true`, isolated node-linker, frozen lockfile (§7.6)
+- [x] Supply-chain settings in `pnpm-workspace.yaml`: `ignoreScripts`, isolated node-linker,
+      frozen lockfile, exact saves (§7.6). Not `.npmrc`, which pnpm 11 ignores for these.
 - [x] README stating the headless position and the compliance posture
 - [ ] pnpm workspace definition and root `package.json` scripts
 - [ ] `tsconfig.base.json` with the full strict set from §7.1, extended by every package
@@ -33,7 +34,7 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [ ] Biome config with the §7.5 rule table, and `overrides` transcribing the §8.3 layer boundaries
 - [ ] GritQL plugin `no-raw-throw` banning `throw new Error(...)` (§7.2.8)
 - [ ] GritQL plugin rejecting bare Drizzle columns that skip `classified()` (§4.13.2)
-- [ ] husky, lint-staged and commitlint; document that `ignore-scripts` means running
+- [ ] husky, lint-staged and commitlint; document that `ignoreScripts` means running
       `pnpm run prepare` once after clone
 - [ ] `docker-compose.yml` with Postgres 17 and Valkey
 - [ ] `pnpm dev` boots containers, migrates, and starts every app through Turbo

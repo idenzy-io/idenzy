@@ -74,7 +74,7 @@ with. The §7 rules are only worth writing down if they are actually applied to 
 
 - **husky** for git hooks, **lint-staged** running `biome check --write` on staged files,
   **commitlint** enforcing Conventional Commits.
-- Because `.npmrc` sets `ignore-scripts=true` for supply-chain reasons (§7.6), husky's `prepare`
-  script does not run automatically on install. `pnpm run prepare` is run once after cloning, and the
-  README and bootstrap script both say so.
+- Because the workspace sets `ignoreScripts: true` for supply-chain reasons (§7.6), husky's
+  `prepare` script does not run automatically on install. `pnpm run prepare` is run once after
+  cloning, and the README and bootstrap script both say so.
 - Hooks catch mistakes early. **CI is the gate**, and no rule is allowed to exist only in a hook.

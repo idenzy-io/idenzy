@@ -1,0 +1,13 @@
+// PROJECT.md 7.2.8: every thrown error is an IdenzyError subclass with a stable,
+// machine-readable code. Customers build their own error messages from those codes
+// (PROJECT.md 1.1), so a bare Error is an untranslatable dead end at the SDK boundary.
+language js
+
+`throw new $ctor($...)` as $stmt where {
+  $ctor <: or { `Error`, `TypeError`, `RangeError`, `SyntaxError` },
+  register_diagnostic(
+    span = $stmt,
+    message = "Throw an IdenzyError subclass with a stable code, not a bare Error (PROJECT.md 7.2.8).",
+    severity = "error"
+  )
+}

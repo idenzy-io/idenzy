@@ -50,7 +50,8 @@ Task-level plan: **[todo.md](./todo.md)**.
 ## Getting started
 
 ```bash
-pnpm install                 # lifecycle scripts are disabled by default (see .npmrc)
+pnpm install                 # lifecycle scripts are disabled (see pnpm-workspace.yaml)
+pnpm run prepare             # installs git hooks; needed because ignoreScripts is on
 docker compose up -d         # Postgres 17 + Valkey
 pnpm db:migrate              # apply migrations, roles, grants and RLS policies
 pnpm dev                     # every app, hot reload, through Turbo

@@ -4,13 +4,33 @@ packages:
   - packages/sdk/*
   - tools/*
 
-# Single source of truth for shared dependency versions (PROJECT.md 7.6).
-# Packages reference these as "catalog:" so a bump happens in one place.
+# Supply-chain and reproducibility settings (PROJECT.md 7.6).
+#
+# These live here, not in .npmrc. pnpm 11 does not read project .npmrc for them,
+# so writing `ignore-scripts=true` there looks correct and silently does nothing:
+# exactly how a supply-chain control ends up documented but not in effect.
+# Verify with `pnpm config list`.
+ignoreScripts: true
+nodeLinker: isolated
+strictPeerDependencies: true
+autoInstallPeers: false
+resolutionMode: highest
+preferFrozenLockfile: true
+saveExact: true
+engineStrict: true
+
+# Anything that genuinely needs a native build is allowlisted here and requires
+# reviewer sign-off to add (PROJECT.md 7.6).
+onlyBuiltDependencies:
+  - argon2
+
+# Single source of truth for shared dependency versions. Packages reference these
+# as "catalog:" so a bump happens in one place.
 catalog:
   # Toolchain. TypeScript is pinned to 6.0.x deliberately: TS 7 is released, but
   # @nestjs/cli 12 depends on typescript ~6.0.2 and Nest DI needs emitDecoratorMetadata.
   typescript: 6.0.3
-  '@types/node': 26.0.4
+  '@types/node': 26.4.1
   turbo: 2.10.12
   vitest: 4.1.11
   '@vitest/coverage-v8': 4.1.11
@@ -45,8 +65,3 @@ catalog:
   # Testing
   testcontainers: 12.2.0
   '@testcontainers/postgresql': 12.2.0
-
-onlyBuiltDependencies:
-  # .npmrc sets ignore-scripts=true. Anything that genuinely needs a native build is
-  # listed here and requires reviewer sign-off to add (PROJECT.md 7.6).
-  - argon2

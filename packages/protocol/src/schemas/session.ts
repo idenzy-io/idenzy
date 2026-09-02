@@ -39,5 +39,26 @@ export const sessionCreatedSchema = z.object({
   refreshToken: z.string().optional(),
 });
 
+/**
+ * What a refresh returns.
+ *
+ * There is no `user` here on purpose: a refresh is a token operation, and re-sending the
+ * profile on every rotation would make the most frequent endpoint in the system also the
+ * one that leaks the most if a token is misdirected.
+ */
+export const sessionRefreshedSchema = z.object({
+  sessionId: sessionIdSchema,
+  accessToken: z.string(),
+  accessTokenExpiresAt: isoDateTimeSchema,
+  refreshToken: z.string().optional(),
+});
+
+/** "Your devices". Ordered most recently active first, with the caller's own marked. */
+export const sessionListSchema = z.object({
+  sessions: z.array(sessionSummarySchema),
+});
+
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type SessionCreated = z.infer<typeof sessionCreatedSchema>;
+export type SessionRefreshed = z.infer<typeof sessionRefreshedSchema>;
+export type SessionList = z.infer<typeof sessionListSchema>;

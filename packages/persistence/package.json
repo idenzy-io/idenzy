@@ -26,6 +26,7 @@
   "dependencies": {
     "@idenzy/compliance": "workspace:*",
     "@idenzy/core": "workspace:*",
+    "@idenzy/domain": "workspace:*",
     "@idenzy/protocol": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "catalog:"

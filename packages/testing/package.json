@@ -21,11 +21,13 @@
   },
   "dependencies": {
     "@idenzy/core": "workspace:*",
+    "@idenzy/domain": "workspace:*",
     "@idenzy/persistence": "workspace:*",
+    "@idenzy/protocol": "workspace:*",
+    "@testcontainers/postgresql": "catalog:",
     "drizzle-orm": "catalog:",
     "pg": "catalog:",
-    "testcontainers": "catalog:",
-    "@testcontainers/postgresql": "catalog:"
+    "testcontainers": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -468,6 +468,9 @@ importers:
       '@idenzy/core':
         specifier: workspace:*
         version: link:../core
+      '@idenzy/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@idenzy/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -512,9 +515,15 @@ importers:
       '@idenzy/core':
         specifier: workspace:*
         version: link:../core
+      '@idenzy/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@idenzy/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@idenzy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@testcontainers/postgresql':
         specifier: 'catalog:'
         version: 12.1.0

@@ -1,6 +1,6 @@
 import { InternalError, ResourceConflictError } from "@idenzy/core/errors/errors";
 import { eq, type SQL } from "drizzle-orm";
-import type { PgTableWithColumns, TableConfig } from "drizzle-orm/pg-core";
+import type { PgTable } from "drizzle-orm/pg-core";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 
@@ -13,9 +13,22 @@ interface PostgresError {
   readonly constraint?: string;
 }
 
+/**
+ * Finds the driver error inside whatever wrapped it.
+ *
+ * Drizzle raises a `DrizzleQueryError` carrying the pg error as `cause`, so reading
+ * `code` off the caught value alone finds nothing and every constraint violation would
+ * surface as a 500. The walk is bounded because a cause chain can be cyclic.
+ */
 function postgresErrorCode(error: unknown): PostgresError {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    return error as PostgresError;
+  let current: unknown = error;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof current !== "object" || current === null) return {};
+    if ("code" in current && typeof (current as PostgresError).code === "string") {
+      return current as PostgresError;
+    }
+    if (!("cause" in current)) return {};
+    current = (current as { cause: unknown }).cause;
   }
   return {};
 }
@@ -27,8 +40,12 @@ function postgresErrorCode(error: unknown): PostgresError {
  * filter is structural rather than something each query has to remember. RLS at the
  * database is the second, independent line, and the negative tests prove it holds when
  * this one is deliberately bypassed.
+ *
+ * The constraint is `PgTable`, not `PgTableWithColumns`: `.enableRLS()` returns
+ * `Omit<PgTableWithColumns<T>, "enableRLS">`, so every table in our schema fails the
+ * narrower constraint.
  */
-export abstract class BaseRepository<TTable extends PgTableWithColumns<TableConfig>> {
+export abstract class BaseRepository<TTable extends PgTable> {
   protected constructor(
     protected readonly tx: Transaction,
     protected readonly context: TenantContext,

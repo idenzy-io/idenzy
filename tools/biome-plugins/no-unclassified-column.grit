@@ -2,9 +2,10 @@
 // generates the RoPA, the data map, the log redaction allowlist and the data-subject
 // field lists. A bare column silently escapes all four.
 //
-// This is the fast editor-time check. The authoritative gate is `pnpm compliance:check`,
-// which walks the built schema object rather than the source text and therefore cannot
-// be fooled by an aliased import or an unusual call shape.
+// The authoritative gate is the type system: classified() returns a branded builder and
+// classifiedTable accepts only branded builders, so an unclassified column fails to
+// compile. This rule exists because that type error surfaces at the table definition,
+// which is further from the mistake than the column itself.
 language js
 
 pair($key, $value) where {
@@ -15,7 +16,7 @@ pair($key, $value) where {
       `real`, `doublePrecision`, `inet`, `cidr`
     }
   },
-  $value <: not contains `classified($...)`,
+  $value <: not contains or { `classified($...)`, `encrypted($...)` },
   register_diagnostic(
     span = $value,
     message = "Declare this column through classified() so it appears in the RoPA, data map, log allowlist and DSR field lists (PROJECT.md 4.13.2).",

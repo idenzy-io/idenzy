@@ -46,8 +46,16 @@ Four artifacts are generated from that single declaration:
 
 ## Why this specific design
 
-**A new column cannot escape classification.** The wrapper is the only sanctioned way to declare one,
-and a lint rule rejects bare Drizzle columns. Forgetting is a build failure.
+**A new column cannot escape classification.** `classified()` returns a branded builder and
+`classifiedTable` accepts only branded builders, so an unclassified column fails to compile:
+
+```
+Property '[CLASSIFIED]' is missing in type 'PgTextBuilder<...>'
+```
+
+This is stronger than the lint rule originally planned. A lint rule can be defeated by an aliased
+import or an unusual call shape; a type cannot. The GritQL rule is kept as editor-time feedback,
+because a type error at the table definition points somewhere less obvious than the column itself.
 
 **The documentation cannot go stale.** It is a build output. CI regenerates it and fails if the
 committed copy differs, exactly like a lockfile.

@@ -384,14 +384,27 @@ This is the keystone decision of the whole section.
 Every column in the Drizzle schema is declared through a typed wrapper that carries its classification, its processing purpose and its retention rule:
 
 ```ts
-email: classified(text("email"), {
-  class: DataClass.Pii,
-  purpose: Purpose.Authentication,
-  retention: Retention.UntilAccountDeletion,
-  subjectField: true,          // returned by a data-subject access request
-  erasable: Erasure.Tombstone, // erasure replaces it, keeps the row for audit integrity
-})
+export const users = classifiedTable("users", {
+  email: classified(text("email"), {
+    class: DataClass.Pii,
+    purpose: Purpose.Authentication,
+    retention: Retention.UntilAccountDeletion,
+    subjectField: true,           // returned by a data-subject access request
+    erasure: Erasure.Tombstone,   // erasure replaces it, keeps the row for audit integrity
+  }),
+});
 ```
+
+`classified()` returns a *branded* column builder, and `classifiedTable` accepts only
+branded builders. An unclassified column is therefore a **compile error**, not a lint
+warning:
+
+```
+Property '[CLASSIFIED]' is missing in type 'PgTextBuilder<...>'
+```
+
+That distinction matters. A lint rule can be defeated by an aliased import or an unusual
+call shape; a type cannot.
 
 From that single declaration we **generate** four artifacts that would otherwise drift apart:
 
@@ -400,7 +413,7 @@ From that single declaration we **generate** four artifacts that would otherwise
 3. the Pino redaction allowlist, so a PII column is structurally unloggable (§4.13.8),
 4. the field lists that data-subject export and erasure operate on (§4.13.6).
 
-The properties this buys are worth naming. A new column **cannot escape classification**, because the wrapper is the only way to declare one and a bare Drizzle column fails the schema lint. The compliance documentation **cannot go stale**, because it is a build output, not a document someone maintains. And a data-subject export **cannot silently miss a field**, because it reads the same source the schema does.
+The properties this buys are worth naming. A new column **cannot escape classification**, because the type system rejects it. The compliance documentation **cannot go stale**, because it is a build output, not a document someone maintains. And a data-subject export **cannot silently miss a field**, because it reads the same source the schema does.
 
 A generated document is regenerated in CI and the build fails if the committed copy differs, exactly like a lockfile.
 
@@ -690,6 +703,7 @@ A new provider is then about 40 lines and cannot omit a security step. That prop
   | `style/noProcessEnv` | environment variables are read only in `@idenzy/config`, never scattered |
   | `style/noNonNullAssertion` | `!` hides exactly the cases `noUncheckedIndexedAccess` exists to surface |
   | GritQL plugin `no-raw-throw` | `throw new Error(...)` is rejected in favour of an `IdenzyError` subclass (§7.2.8) |
+  | GritQL plugin `no-unclassified-column` | a bare Drizzle column that skips `classified()`. Editor-time feedback only; the real gate is the type system (§4.13.2) |
 
   Biome's GritQL plugin support is what lets us express the project-specific bans as real lint errors rather than review folklore. Custom rules live in `tools/biome-plugins/`.
 - **Husky** for git hooks, with **lint-staged** running `biome check --write` on staged files and **commitlint** enforcing Conventional Commits. Because the workspace sets `ignoreScripts: true` for supply-chain reasons (§7.6), the `prepare` script does not run automatically on install: run `pnpm run prepare` once after cloning, which the bootstrap script and the README both state. Hooks are a convenience that catches mistakes early; CI is the gate that actually enforces (§8.4), and no hook is allowed to be the only place a rule is checked.

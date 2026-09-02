@@ -52,3 +52,5 @@ tmp/
 
 # Nuxt build caches
 **/node_modules/.cache/
+# Nuxt static generate output
+apps/*/dist/

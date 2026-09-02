@@ -61,6 +61,7 @@ catalog:
   # Front end
   nuxt: 4.5.2
   vue: 3.5.42
+  vue-tsc: 3.3.11
 
   # Validation and observability
   zod: 4.5.4

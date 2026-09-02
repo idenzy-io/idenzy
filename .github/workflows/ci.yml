@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Turbo needs no network for correctness; remote cache is added when the team is.
+  TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+jobs:
+  verify:
+    name: typecheck, lint, unit, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # --frozen-lockfile is the supply-chain control, not a convenience: it fails if
+      # the lockfile and manifests disagree, which is how a dependency gets swapped in
+      # without review (PROJECT.md 7.6).
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify lifecycle scripts are disabled
+        run: |
+          test "$(pnpm config get ignoreScripts)" = "true" \
+            || { echo "ignoreScripts is not in effect; see PROJECT.md 7.6"; exit 1; }
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Lint and format
+        run: pnpm exec biome ci .
+
+      - name: Unit tests
+        run: pnpm turbo run test
+
+      - name: Build
+        run: pnpm turbo run build
+
+      # Section 4.13.2: the data map and RoPA are generated from the schema. If a schema
+      # change did not regenerate them they are stale, and a stale compliance document is
+      # worse for an audit than none. Same contract as a lockfile.
+      - name: Compliance artifacts are current
+        run: pnpm compliance:check
+
+  integration:
+    name: integration (containers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build
+
+      # Includes the RLS negative tests and the audit append-only tests. These are the
+      # ones that must never be allowed to become optional (PROJECT.md 7.4).
+      - name: Integration tests
+        run: pnpm turbo run test:integration
+
+  supply-chain:
+    name: dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Known advisories
+        run: pnpm audit --audit-level moderate
+
+      # CycloneDX SBOM per release, kept as compliance evidence (PROJECT.md 4.13.9).
+      - name: Generate SBOM
+        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.json --omit dev
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          if-no-files-found: warn

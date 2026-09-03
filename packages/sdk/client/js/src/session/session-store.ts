@@ -68,6 +68,16 @@ export class SessionStore {
   private current: SessionSnapshot;
   private readonly initial: SessionSnapshot;
   private restored: boolean;
+  /**
+   * Whether the client has an opinion yet.
+   *
+   * Until it does, what it reports is not an answer: a client that has not rotated says
+   * signed-out because it has nothing, not because nobody is signed in. That is the whole
+   * difference between the seed a server worked out and the client's opening position, and
+   * publishing the second over the first is how a server-rendered signed-in page turns into a
+   * sign-in screen the moment a component subscribes.
+   */
+  private looked: boolean;
   private readonly listeners = new Set<() => void>();
   private detach: (() => void) | null = null;
 
@@ -78,6 +88,7 @@ export class SessionStore {
     const restores = options.restore ?? true;
     this.initial = options.initial ?? LOADING_SESSION;
     this.restored = !restores;
+    this.looked = !restores && options.initial === undefined;
     this.current = options.initial ?? (restores ? LOADING_SESSION : snapshotOf(client));
   }
 
@@ -115,16 +126,32 @@ export class SessionStore {
     try {
       await this.client.restore();
     } finally {
+      this.looked = true;
       this.publish(snapshotOf(this.client));
     }
   }
 
+  /**
+   * Starts following the client, skipping the echo.
+   *
+   * `Idenzy.subscribe` calls its listener immediately, which is what a component wants and
+   * what this does not: that first call reports the client's opening position, and before the
+   * client has looked, its opening position is not an answer. Every later emission is one,
+   * because something happened to cause it.
+   *
+   * Re-attaching resyncs where the client is known to have an opinion, so a store whose last
+   * subscriber left and came back does not show what was true when they left.
+   */
   private attach(): void {
-    this.detach ??= this.client.subscribe(() => {
-      // Ignored until the first restore settles, so a client that has not looked yet cannot
-      // answer signed-out over a seed the server worked out from a cookie.
-      if (this.restored) this.publish(snapshotOf(this.client));
+    if (this.detach !== null) return;
+    let echo = true;
+    this.detach = this.client.subscribe(() => {
+      if (echo) return;
+      this.looked = true;
+      this.publish(snapshotOf(this.client));
     });
+    echo = false;
+    if (this.looked || this.client.session !== null) this.publish(snapshotOf(this.client));
   }
 
   private release(): void {

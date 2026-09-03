@@ -38,15 +38,47 @@ describe("before the first rotation answers", () => {
     expect(store.snapshot().user).toBeNull();
   });
 
-  it("ignores what the client says until the restore it was seeded ahead of settles", () => {
+  /**
+   * A client that has not rotated reports signed-out because it has nothing, not because
+   * nobody is signed in, and `subscribe` reports that opening position immediately. Letting
+   * it through would turn a server-rendered signed-in page into a sign-in screen the moment
+   * a component subscribed.
+   */
+  it("keeps the seed when a subscriber arrives before the client has looked", () => {
     const seed = seededSession("usr_00000000000000000001", "ses_00000000000000000001");
-    const client = build(new FakeTransport(refused));
-    const store = new SessionStore(client, { initial: seed });
+    const store = new SessionStore(build(new FakeTransport(refused)), { initial: seed });
+
     store.subscribe(() => undefined);
 
-    client.signOut().catch(() => undefined);
+    expect(store.snapshot()).toEqual(seed);
+  });
 
-    expect(store.snapshot().status).toBe("signed-in");
+  it("keeps the seed even where nothing is going to restore, which is a server render", () => {
+    const seed = seededSession("usr_00000000000000000001", "ses_00000000000000000001");
+    const store = new SessionStore(build(new FakeTransport(refused)), {
+      restore: false,
+      initial: seed,
+    });
+
+    store.subscribe(() => undefined);
+
+    expect(store.snapshot()).toEqual(seed);
+  });
+
+  it("follows the client the moment it does have an opinion", async () => {
+    const seed = seededSession("usr_00000000000000000001", "ses_00000000000000000009");
+    const transport = new FakeTransport((request) =>
+      request.url.endsWith("v1/auth/anonymous") ? json(200, sessionCreated()) : refused(),
+    );
+    const client = build(transport);
+    const store = new SessionStore(client, { restore: false, initial: seed });
+    store.subscribe(() => undefined);
+
+    await client.signIn.anonymously();
+
+    // The seed named the user and carried no profile; the real session carries one.
+    expect(store.snapshot().sessionId).not.toBe("ses_00000000000000000009");
+    expect(store.snapshot().user).toEqual(user());
   });
 });
 
@@ -112,17 +144,35 @@ describe("subscribers", () => {
   });
 
   /** Nothing may be left hanging off a client that outlives the view that was watching it. */
-  it("let go of the client when the last one unsubscribes", async () => {
+  it("are not told anything after the last one unsubscribes", async () => {
     const transport = new FakeTransport((request) =>
       request.url.endsWith("v1/auth/anonymous") ? json(200, sessionCreated()) : refused(),
     );
     const client = build(transport);
     const store = new SessionStore(client, { restore: false });
-    const unsubscribe = store.subscribe(() => undefined);
+    let told = 0;
+    const unsubscribe = store.subscribe(() => {
+      told += 1;
+    });
 
     unsubscribe();
     await client.signIn.anonymously();
 
-    expect(store.snapshot().status).toBe("signed-out");
+    expect(told).toBe(0);
+  });
+
+  /** A view that left and came back must not be shown what was true when it left. */
+  it("catch up on what happened while nothing was listening", async () => {
+    const transport = new FakeTransport((request) =>
+      request.url.endsWith("v1/auth/anonymous") ? json(200, sessionCreated()) : refused(),
+    );
+    const client = build(transport);
+    const store = new SessionStore(client, { restore: false });
+    store.subscribe(() => undefined)();
+
+    await client.signIn.anonymously();
+    store.subscribe(() => undefined);
+
+    expect(store.snapshot().status).toBe("signed-in");
   });
 });

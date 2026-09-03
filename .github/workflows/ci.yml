@@ -60,6 +60,12 @@ jobs:
       - name: Compliance artifacts are current
         run: pnpm compliance:check
 
+      # The starter templates in examples/ are what `idenzy init` writes, generated from the
+      # same templates. A change to a template that did not regenerate them leaves the copy a
+      # customer reads first disagreeing with the one the CLI would write.
+      - name: Starter templates are current
+        run: pnpm examples:check
+
   integration:
     name: integration (containers)
     runs-on: ubuntu-latest

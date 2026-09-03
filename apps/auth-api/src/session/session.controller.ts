@@ -1,6 +1,7 @@
 import { MissingCredentialsError } from "@idenzy/core/errors";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
+import { SessionTransport } from "@idenzy/protocol/http/headers";
 import {
   type RefreshSession,
   refreshSessionSchema,
@@ -38,7 +39,7 @@ export class SessionController {
     @Body(new ZodValidationPipe(refreshSessionSchema)) body: RefreshSession,
   ): Promise<SessionRefreshed> {
     const context = flowContextFrom(request);
-    const issued = await this.refresh.rotate(context, presentedToken(body.refreshToken));
+    const issued = await this.refresh.rotate(context, presentedToken(request, body.refreshToken));
     return toRefreshed(issued, body.includeUser);
   }
 
@@ -50,12 +51,19 @@ export class SessionController {
     body: SignOut & RefreshSession,
   ): Promise<void> {
     const context = flowContextFrom(request);
-    await this.sessions.signOut(context, presentedToken(body.refreshToken), body.scope);
+    await this.sessions.signOut(context, presentedToken(request, body.refreshToken), body.scope);
   }
 }
 
-/** Until cookie mode exists, a client that presents nothing is missing credentials. */
-function presentedToken(token: string | undefined): string {
+/**
+ * The declared transport picks exactly one source, and there is deliberately no fallback.
+ *
+ * Reading the body when the cookie is missing would let an attacker declare header mode to
+ * skip the cross-site checks that protect cookie mode, while the browser still attaches the
+ * cookie to everything. One mode, one source.
+ */
+function presentedToken(request: FastifyRequest, fromBody: string | undefined): string {
+  const token = request.transport === SessionTransport.Cookie ? request.refreshCookie : fromBody;
   if (token === undefined) throw new MissingCredentialsError();
   return token;
 }

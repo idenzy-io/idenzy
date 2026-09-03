@@ -283,3 +283,43 @@ describe("reuse detection", () => {
     );
   });
 });
+
+describe("the claims a rotation carries", () => {
+  /**
+   * A rotation does not undo a proof. Minting without the factor age would make `fva`
+   * vanish one access-token lifetime after a step-up, so a customer gating on it would
+   * ask the user to prove a factor they had just proved.
+   */
+  it("keeps the factor age a step-up wrote onto the session", async () => {
+    const { rows } = await harness.owner.query<{ id: string }>(
+      `INSERT INTO users (project_id, email, email_verified) VALUES ($1, $2, true) RETURNING id`,
+      [PROJECT, "fva-rotation@a.test"],
+    );
+    const userId = rows[0]?.id ?? "";
+    const provedAt = new Date(clock.nowMs() - 60_000);
+    const issued = await sessions.issueSession(context, {
+      userId,
+      amr: [AuthMethod.Password, AuthMethod.Totp, AuthMethod.Mfa],
+      factorVerifiedAt: provedAt,
+    });
+
+    const rotated = await refresh.rotate(context, issued.refreshToken);
+
+    expect(claimsOf(issued.accessToken).fva).toBeGreaterThanOrEqual(60);
+    expect(claimsOf(rotated.accessToken).fva).toBeGreaterThanOrEqual(60);
+  });
+
+  it("omits it entirely for a session that never proved one", async () => {
+    const { refreshToken } = await signIn("fva-absent@a.test");
+    const rotated = await refresh.rotate(context, refreshToken);
+
+    expect(claimsOf(rotated.accessToken).fva).toBeUndefined();
+  });
+});
+
+/** The payload, read the way a customer's verifier would after checking the signature. */
+function claimsOf(token: string): { fva?: number } {
+  return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as {
+    fva?: number;
+  };
+}

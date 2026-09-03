@@ -137,12 +137,16 @@ export class RefreshService {
       this.clock.inSeconds(this.config.get("SESSION_IDLE_TTL_SECONDS")),
     );
 
+    // Carried across the rotation rather than dropped. The factor age belongs to the
+    // session and a rotation does not undo the proof: minting without it would make `fva`
+    // disappear one access-token lifetime after a step-up, so a customer gating on it
+    // would ask the user to prove a factor they had just proved.
     const access = await this.sessions.mintAccessToken(
       tenant,
       session.userId,
       sessionId,
       session.amr,
-      null,
+      session.factorVerifiedAt,
     );
     return {
       kind: "rotated",

@@ -17,9 +17,16 @@ works, it is convenient, and it is why a session survives a reload.
 
 ## Decision
 
-**The default store is memory. We ship no web-storage implementation.** `RefreshTokenStore` is
-an interface with one shipped implementation, `MemoryRefreshTokenStore`, and a customer who
-needs persistence supplies their own.
+**The default store is memory.** `RefreshTokenStore` is the seam, `MemoryRefreshTokenStore` is
+what a client gets unless it is told otherwise, and nothing in the SDK selects web storage on a
+customer's behalf.
+
+**We also ship `LocalStorageRefreshTokenStore`, and it is never a default.** A customer who
+needs a session to survive a reload before they have an auth domain passes it explicitly, in
+their own code, where a reviewer can see it.
+
+> Amended 2026-09-03. The original decision shipped no such class at all. See *Why we ship the
+> thing we argued against* below; the default, and every reason for it, are unchanged.
 
 ## Rationale
 
@@ -48,6 +55,25 @@ full-page redirect to another origin and back, so memory is guaranteed to be gon
 needed. And what it is worth is nothing on its own: single use, minutes long, and useless
 without the code it pairs with, which only ever reaches the registered redirect URI.
 
+## Why we ship the thing we argued against
+
+The argument above is about the *default*, and the original decision drew a second conclusion
+from it that does not follow: that we should ship no such store at all.
+
+Nobody's session stops needing to survive a reload because we declined to write the class. What
+actually happens is that the customer writes it, in an afternoon, and theirs is worse than ours
+in ways that are invisible until they matter. It forgets to remove the entry on sign-out, so a
+shared machine keeps a live credential after the user believed they left. It uses one key for
+two projects, so switching environments resumes a session against the wrong one. It stores the
+access token beside the refresh token because both were in the response.
+
+Ours removes the entry on sign-out, namespaces by publishable key, and holds one value. The
+class carries the cost in its own docstring, so it is legible at the call site rather than in a
+document nobody reads twice.
+
+This is a narrower claim than "web storage is fine". It is that between a store we wrote and a
+store they wrote, ours is safer, and those are the only two options that were ever on the table.
+
 ## Consequences
 
 - On the shared API host in header mode, closing the tab signs the user out. That is documented
@@ -55,8 +81,9 @@ without the code it pairs with, which only ever reaches the registered redirect 
 - Mobile and desktop SDKs implement this interface over Keychain, Keystore and SecureStore
   (PROJECT.md 4.4). That is the case the seam exists for, and there the storage is genuinely
   protected by the platform rather than by a same-origin rule.
-- A customer who insists writes about ten lines in their own repository. That is a visible,
-  reviewable act on their side rather than a flag on ours.
+- A customer who insists passes one class to the constructor. That is a visible, reviewable act
+  in their repository rather than a flag in ours, and it is the line a security review greps
+  for.
 - Revisit if the field shows customers writing that store anyway. The answer then is to make
   cookie mode easier to reach, such as provisioning an auth domain during `idenzy init`, rather
   than to ship the store.

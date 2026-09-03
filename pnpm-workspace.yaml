@@ -1,7 +1,8 @@
 packages:
   - apps/*
   - packages/*
-  - packages/sdk/*
+  - packages/sdk/client/*
+  - packages/sdk/server/*
   - tools/*
 
 # Supply-chain and reproducibility settings (PROJECT.md 7.6).

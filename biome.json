@@ -192,6 +192,24 @@
       }
     },
     {
+      "includes": ["packages/sdk/server/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@idenzy/js": "a server SDK may not import a client SDK: @idenzy/js holds a session and speaks to the DOM (PROJECT.md 8.3).",
+                  "@idenzy/react": "a server SDK may not import a client SDK (PROJECT.md 8.3)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/ui/**"],
       "linter": {
         "rules": {

@@ -773,11 +773,12 @@ idenzy/
 │   ├── ui/                       # @idenzy/ui, shared Vue components for landing/client/admin ONLY.
 │   │                             #   Internal, never published, and never authentication UI (§1.1).
 │   └── sdk/
-│       ├── js/                   # @idenzy/js         (public)
-│       ├── node/                 # @idenzy/node       (public, server SDK)
-│       ├── nuxt/                 # @idenzy/nuxt       (public)
-│       ├── react/  next/  vue/  svelte/              (public)
-│       └── nest/                 # @idenzy/nest       (public, guards + module for customers on NestJS)
+│       ├── client/               # runs in a browser or on a device. DOM lib, no Node globals.
+│       │   ├── js/               # @idenzy/js         (public), the one the rest are built on
+│       │   └── react/  next/  vue/  nuxt/  svelte/   (public)
+│       └── server/               # runs on a server. Verifies tokens, never holds a session.
+│           ├── node/             # @idenzy/node       (public, server SDK)
+│           └── nest/             # @idenzy/nest       (public, guards + module for customers on NestJS)
 ├── infra/
 │   ├── terraform/                # cells, LB, Cloud Run, SQL, KMS, Armor
 │   └── docker/                   # Dockerfiles, distroless runtime images
@@ -800,8 +801,9 @@ Every SDK package is a client library. **No package in this tree, published or i
 | `core` | `protocol` (for the error-code enum that `IdenzyError` carries) | everything else |
 | `domain` | `protocol`, `core` | `persistence`, `cache`, `providers-*`, any app |
 | `crypto`, `persistence`, `cache`, `providers-*`, `messaging`, `templating`, `compliance` | `protocol`, `core`, `domain` (to implement its abstract ports) | each other's internals, any app |
-| `sdk/*` | `protocol`, `core` | `domain`, `persistence`, anything server-side |
-| `ui` | `protocol`, `core` | `domain`, `persistence`, `sdk/*` internals, any app |
+| `sdk/client/*` | `protocol`, `core`, `@idenzy/js`, and `@idenzy/node` where the framework also renders on a server | `domain`, `persistence`, `crypto`, and every other package of ours |
+| `sdk/server/*` | `protocol`, `core` | any client SDK, and everything a `sdk/client/*` may never import |
+| `ui` | `protocol`, `core` | `domain`, `persistence`, `sdk` internals, any app |
 | apps | any package | another app |
 
 `domain` declaring an abstract `EmailProvider` and `providers-email` extending it is the inversion that keeps this acyclic: the concrete adapter depends on the domain, never the reverse.

@@ -114,7 +114,7 @@ one is a breaking change.
 
 ## Working on the browser-facing edge
 
-Four rules, each of which is load-bearing somewhere it is not obvious.
+Five rules, each of which is load-bearing somewhere it is not obvious.
 
 - **Tenant resolution is first-present-wins, not a fallback chain.** Header, then
   `Authorization`, then `Host`. A header that is present but unresolvable is a hard failure;
@@ -131,6 +131,11 @@ Four rules, each of which is load-bearing somewhere it is not obvious.
   `app.customer.com` to `auth.customer.com` works and `app.customer.com` to the shared API host
   never will. Cookie mode is refused where it cannot work rather than granted and dropped,
   because a cookie the browser discards looks exactly like a sign-in that does nothing.
+- **A route a browser *navigates* to cannot name its project.** A top-level navigation carries
+  neither our header nor `Authorization`, so it resolves by `Host` alone and works only behind a
+  custom auth domain. Anything a browser has to start on the shared host needs a JSON twin it
+  can call and navigate itself, which is what `POST v1/auth/oauth/:provider/start` is for. The
+  twin is also stricter: not being `@BrowserNavigation()`, it keeps the cross-site checks.
 
 The cross-site checks run **before the credential is stashed on the request**. A forged request
 that consumed the victim's refresh token would trip reuse detection, which revokes the whole
@@ -138,6 +143,37 @@ family: without that ordering, an attacker could sign someone out of every devic
 their browser send one request. Four routes are exempt via `@BrowserNavigation()` because
 Apple form-posts its callback with its own `Origin`; they are defended by a one-shot `state`
 and a single-use code instead.
+
+## Working on `@idenzy/js`
+
+The client half of the edge above. It may import `protocol` and `core` and nothing else, which
+Biome enforces per path, and its `tsconfig` sets `types: []` with the DOM lib so a Node global
+is a compile error rather than a runtime one in somebody's browser.
+
+- **A flow that ends in a session extends `SessionFlow` and finishes through `establish`.**
+  Posting the credentials and returning the body looks like it worked: the customer gets a user
+  object, their form navigates, and the client is still signed out. Nobody finds that until a
+  later screen asks for a token.
+- **Refresh is single-flight per tab and locked across tabs, and neither half is optional.**
+  The promise covers components sharing a tab; `navigator.locks` covers tabs sharing a cookie,
+  which is the case a promise cannot see. Two rotations of one token revoke the family
+  (ADR-0007). Never add a retry: a refresh whose response was not observed is an unknown state,
+  and re-sending converts it into a certain logout.
+- **Renewal is lazy, never timed.** A background timer keeps a session alive in a tab nobody is
+  looking at, which turns an idle timeout into no timeout at all.
+- **The refresh token is not on `Session` and never goes to web storage** (ADR-0008). `Session`
+  is the object handed to customer code, logged and serialised; the credential that mints tokens
+  for the life of the session stays out of it. The PKCE verifier in `sessionStorage` is the one
+  exception and the ADR says why it does not generalise.
+- **Responses are parsed with the protocol's schemas, never cast.** A proxy, a captive portal or
+  a mistyped API URL all answer 200 with something shaped nothing like us, and a cast turns that
+  into a `TypeError` inside a customer's component with nothing pointing at the cause.
+- Errors are two classes and not fifty. The server subclasses per code so its filter can map a
+  class to a status; a client already has the status, so a subclass per code would only be a
+  second list to keep in step with `@idenzy/protocol`.
+- A cancelled WebAuthn prompt keeps the browser's own `DOMException`. `NotAllowedError` and
+  `InvalidStateError` are a web platform contract older than ours.
+- The package is `private` until Changesets exists. Publishing is its own change.
 
 ## Adding an authentication flow
 

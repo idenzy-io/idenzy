@@ -7,6 +7,7 @@
  * covers both. Nothing navigates afterwards: the session changes, everything reading it
  * updates, and where the user goes next is your application's decision.
  */
+import type { AuthResult, MfaChallenge } from "@idenzy/js/mfa/auth-result";
 import { useIdenzy } from "@idenzy/vue";
 import { ref } from "vue";
 import { describeAuthError } from "./auth-errors";
@@ -16,7 +17,26 @@ const email = ref("");
 const code = ref("");
 const password = ref("");
 const codeSent = ref(false);
+const challenge = ref<MfaChallenge | null>(null);
+const factorCode = ref("");
 const error = ref<string | null>(null);
+
+/** A session, or the factor still owed. The second is not a failure and not a session. */
+function finish(result: AuthResult): void {
+  if (result.status === "mfa_required") challenge.value = result.challenge;
+}
+
+async function submitSecondFactor(): Promise<void> {
+  error.value = null;
+  const pending = challenge.value;
+  if (pending === null) return;
+  try {
+    await pending.submit({ factor: pending.factors[0], code: factorCode.value });
+    challenge.value = null;
+  } catch (failure) {
+    error.value = describeAuthError(failure);
+  }
+}
 
 async function sendCode(): Promise<void> {
   error.value = null;
@@ -31,7 +51,7 @@ async function sendCode(): Promise<void> {
 async function verifyCode(): Promise<void> {
   error.value = null;
   try {
-    await idenzy.signIn.verifyOtp({ code: code.value });
+    finish(await idenzy.signIn.verifyOtp({ code: code.value }));
   } catch (failure) {
     error.value = describeAuthError(failure);
   }
@@ -40,7 +60,9 @@ async function verifyCode(): Promise<void> {
 async function signInWithPassword(): Promise<void> {
   error.value = null;
   try {
-    await idenzy.signIn.withPassword({ email: email.value, password: password.value });
+    finish(
+      await idenzy.signIn.withPassword({ email: email.value, password: password.value }),
+    );
   } catch (failure) {
     error.value = describeAuthError(failure);
   }
@@ -60,6 +82,17 @@ async function continueWithGoogle(): Promise<void> {
   <main>
     <h1>Sign in</h1>
     <p v-if="error" role="alert">{{ error }}</p>
+
+    <form v-if="challenge" @submit.prevent="submitSecondFactor">
+      <h2>One more step</h2>
+      <label for="factorCode">
+        {{ challenge.factors[0] === "recovery"
+          ? "A recovery code"
+          : "The code from your authenticator app" }}
+      </label>
+      <input id="factorCode" v-model="factorCode" autocomplete="one-time-code" />
+      <button type="submit">Continue</button>
+    </form>
 
     <form v-if="codeSent" @submit.prevent="verifyCode">
       <label for="code">The code we emailed you</label>

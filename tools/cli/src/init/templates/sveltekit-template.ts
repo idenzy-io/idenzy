@@ -157,6 +157,7 @@ const LAYOUT = `<script lang="ts">
 `;
 
 const SIGN_IN = `<script lang="ts">
+  import type { AuthResult, MfaChallenge } from "@idenzy/js/mfa/auth-result";
   import { getIdenzy } from "@idenzy/svelte";
   import { goto } from "$app/navigation";
   import { describeAuthError } from "$lib/auth-errors";
@@ -166,6 +167,9 @@ const SIGN_IN = `<script lang="ts">
    *
    * A one-time code needs no password, no redirect and no deep link, and it signs up an
    * address that has no account yet, so the same form covers both.
+   *
+   * Either can end at a second factor rather than a session, which is what \`finish\` is
+   * for. A page that navigated anyway would land a half-signed-in visitor on your home page.
    */
   const { client } = getIdenzy();
 
@@ -173,7 +177,30 @@ const SIGN_IN = `<script lang="ts">
   let code = $state("");
   let password = $state("");
   let codeSent = $state(false);
+  let challenge = $state<MfaChallenge | null>(null);
+  let factorCode = $state("");
   let error = $state<string | null>(null);
+
+  async function finish(result: AuthResult): Promise<void> {
+    if (result.status === "mfa_required") {
+      challenge = result.challenge;
+      return;
+    }
+    await goto("/");
+  }
+
+  async function submitSecondFactor(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    error = null;
+    const pending = challenge;
+    if (pending === null) return;
+    try {
+      await pending.submit({ factor: pending.factors[0], code: factorCode });
+      await goto("/");
+    } catch (failure) {
+      error = describeAuthError(failure);
+    }
+  }
 
   async function sendCode(event: SubmitEvent): Promise<void> {
     event.preventDefault();
@@ -190,8 +217,7 @@ const SIGN_IN = `<script lang="ts">
     event.preventDefault();
     error = null;
     try {
-      await client.signIn.verifyOtp({ code });
-      await goto("/");
+      await finish(await client.signIn.verifyOtp({ code }));
     } catch (failure) {
       error = describeAuthError(failure);
     }
@@ -201,8 +227,7 @@ const SIGN_IN = `<script lang="ts">
     event.preventDefault();
     error = null;
     try {
-      await client.signIn.withPassword({ email, password });
-      await goto("/");
+      await finish(await client.signIn.withPassword({ email, password }));
     } catch (failure) {
       error = describeAuthError(failure);
     }
@@ -221,6 +246,19 @@ const SIGN_IN = `<script lang="ts">
 <main>
   <h1>Sign in</h1>
   {#if error}<p role="alert">{error}</p>{/if}
+
+  {#if challenge}
+    <form onsubmit={submitSecondFactor}>
+      <h2>One more step</h2>
+      <label for="factorCode">
+        {challenge.factors[0] === "recovery"
+          ? "A recovery code"
+          : "The code from your authenticator app"}
+      </label>
+      <input id="factorCode" bind:value={factorCode} autocomplete="one-time-code" />
+      <button type="submit">Continue</button>
+    </form>
+  {/if}
 
   {#if codeSent}
     <form onsubmit={verifyCode}>
@@ -267,8 +305,9 @@ const SIGN_UP = `<script lang="ts">
     event.preventDefault();
     error = null;
     try {
-      await client.signUp.withPassword({ email, password, displayName });
-      await goto("/");
+      const result = await client.signUp.withPassword({ email, password, displayName });
+      // A brand new account has no second factor, so this is a session every time today.
+      if (result.status === "authenticated") await goto("/");
     } catch (failure) {
       error = describeAuthError(failure);
     }

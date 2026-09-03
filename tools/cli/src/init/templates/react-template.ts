@@ -108,7 +108,8 @@ export function IdenzyRoot({ children }: { readonly children: ReactNode }): Reac
 }
 `;
 
-const SIGN_IN = `import { useIdenzy } from "@idenzy/react";
+const SIGN_IN = `import type { AuthResult, MfaChallenge } from "@idenzy/js/mfa/auth-result";
+import { useIdenzy } from "@idenzy/react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { describeAuthError } from "./auth-errors";
 
@@ -121,6 +122,9 @@ import { describeAuthError } from "./auth-errors";
  *
  * Nothing navigates after a successful sign-in. The session changes, every component reading
  * it re-renders, and where the user goes next is your application's decision.
+ *
+ * Every way in can end at a second factor rather than a session, which is what \`finish\`
+ * below is for. A page that ignored that would look like nothing happened.
  */
 export function SignIn(): ReactNode {
   const idenzy = useIdenzy();
@@ -128,7 +132,26 @@ export function SignIn(): ReactNode {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
+  const [factorCode, setFactorCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  /** A session, or the factor still owed. The second is not a failure and not a session. */
+  function finish(result: AuthResult): void {
+    if (result.status === "mfa_required") setChallenge(result.challenge);
+  }
+
+  async function submitSecondFactor(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    if (challenge === null) return;
+    try {
+      await challenge.submit({ factor: challenge.factors[0], code: factorCode });
+      setChallenge(null);
+    } catch (failure) {
+      setError(describeAuthError(failure));
+    }
+  }
 
   async function sendCode(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -145,7 +168,7 @@ export function SignIn(): ReactNode {
     event.preventDefault();
     setError(null);
     try {
-      await idenzy.signIn.verifyOtp({ code });
+      finish(await idenzy.signIn.verifyOtp({ code }));
     } catch (failure) {
       setError(describeAuthError(failure));
     }
@@ -155,7 +178,7 @@ export function SignIn(): ReactNode {
     event.preventDefault();
     setError(null);
     try {
-      await idenzy.signIn.withPassword({ email, password });
+      finish(await idenzy.signIn.withPassword({ email, password }));
     } catch (failure) {
       setError(describeAuthError(failure));
     }
@@ -174,6 +197,26 @@ export function SignIn(): ReactNode {
     <main>
       <h1>Sign in</h1>
       {error === null ? null : <p role="alert">{error}</p>}
+
+      {challenge === null ? null : (
+        <form onSubmit={submitSecondFactor}>
+          <h2>One more step</h2>
+          <label htmlFor="factorCode">
+            {challenge.factors[0] === "recovery"
+              ? "A recovery code"
+              : "The code from your authenticator app"}
+          </label>
+          <input
+            id="factorCode"
+            name="factorCode"
+            inputMode={challenge.factors[0] === "recovery" ? "text" : "numeric"}
+            autoComplete="one-time-code"
+            value={factorCode}
+            onChange={(event) => setFactorCode(event.target.value)}
+          />
+          <button type="submit">Continue</button>
+        </form>
+      )}
 
       {codeSent ? (
         <form onSubmit={verifyCode}>

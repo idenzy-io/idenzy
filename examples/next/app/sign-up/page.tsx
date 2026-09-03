@@ -25,8 +25,10 @@ export default function SignUpPage() {
     event.preventDefault();
     setError(null);
     try {
-      await idenzy.signUp.withPassword({ email, password, displayName });
-      router.push("/");
+      const result = await idenzy.signUp.withPassword({ email, password, displayName });
+      // A brand new account has no second factor, so this is a session every time today.
+      // Reading the status anyway is what keeps the page right if that ever changes.
+      if (result.status === "authenticated") router.push("/");
     } catch (failure) {
       setError(describeAuthError(failure));
     }

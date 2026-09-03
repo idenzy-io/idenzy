@@ -18,8 +18,9 @@
     event.preventDefault();
     error = null;
     try {
-      await client.signUp.withPassword({ email, password, displayName });
-      await goto("/");
+      const result = await client.signUp.withPassword({ email, password, displayName });
+      // A brand new account has no second factor, so this is a session every time today.
+      if (result.status === "authenticated") await goto("/");
     } catch (failure) {
       error = describeAuthError(failure);
     }

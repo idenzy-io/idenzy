@@ -4,6 +4,8 @@ import type { OAuthProvider } from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
 import { FetchHttpClient } from "@idenzy/providers-oauth/fetch-http-client";
 import { AppleProvider } from "@idenzy/providers-oauth/providers/apple-provider";
+import { DiscordProvider } from "@idenzy/providers-oauth/providers/discord-provider";
+import { FacebookProvider } from "@idenzy/providers-oauth/providers/facebook-provider";
 import { GithubProvider } from "@idenzy/providers-oauth/providers/github-provider";
 import { GoogleProvider } from "@idenzy/providers-oauth/providers/google-provider";
 import { MicrosoftProvider } from "@idenzy/providers-oauth/providers/microsoft-provider";
@@ -47,6 +49,8 @@ import { ProviderRegistry } from "./provider-registry.js";
           [ProviderId.Microsoft, new MicrosoftProvider(http, clock, flows, allowlist)],
           [ProviderId.Github, new GithubProvider(http, clock, flows, allowlist)],
           [ProviderId.Apple, new AppleProvider(http, clock, flows, allowlist)],
+          [ProviderId.Facebook, new FacebookProvider(http, clock, flows, allowlist)],
+          [ProviderId.Discord, new DiscordProvider(http, clock, flows, allowlist)],
         ]);
       },
     },

@@ -5,6 +5,8 @@ import {
 } from "@idenzy/testing/oauth-provider-conformance";
 import { describe, expect, it } from "vitest";
 import { AppleProvider } from "../src/providers/apple-provider.js";
+import { DiscordProvider } from "../src/providers/discord-provider.js";
+import { FacebookProvider } from "../src/providers/facebook-provider.js";
 import { GithubProvider } from "../src/providers/github-provider.js";
 import { GoogleProvider } from "../src/providers/google-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
@@ -17,6 +19,10 @@ const providers = {
   github: (d: OAuthProviderDependencies) =>
     new GithubProvider(d.http, d.clock, d.flows, d.allowlist),
   apple: (d: OAuthProviderDependencies) => new AppleProvider(d.http, d.clock, d.flows, d.allowlist),
+  facebook: (d: OAuthProviderDependencies) =>
+    new FacebookProvider(d.http, d.clock, d.flows, d.allowlist),
+  discord: (d: OAuthProviderDependencies) =>
+    new DiscordProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -81,6 +87,20 @@ describe("provider specifics", () => {
     expect(url.searchParams.get("scope")).toBe("read:user user:email");
   });
 
+  /**
+   * Facebook drops a Graph version roughly every two years, and an unpinned call starts
+   * failing on their schedule rather than ours.
+   */
+  it("pins the Graph version Facebook is called on", () => {
+    const url = new URL(providers.facebook(deps()).authorizationUrl(credentials, request));
+    expect(url.pathname.startsWith("/v21.0/")).toBe(true);
+  });
+
+  it("asks Discord for the address and the flag that says whether it is confirmed", () => {
+    const url = new URL(providers.discord(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.get("scope")).toBe("identify email");
+  });
+
   it("sends Microsoft to the directory the project configured", () => {
     const url = new URL(
       providers
@@ -95,5 +115,125 @@ describe("provider specifics", () => {
   it("defaults Microsoft to the endpoint that accepts both account kinds", () => {
     const url = new URL(providers.microsoft(deps()).authorizationUrl(credentials, request));
     expect(url.pathname.startsWith("/common/")).toBe(true);
+  });
+});
+
+/**
+ * Drives a whole callback with scripted answers, which is the only way to reach a profile
+ * mapping: `fetchProfile` runs inside the inherited ordering and no adapter exposes it.
+ *
+ * The mapping is worth the setup. `emailVerified` is the field that decides whether a social
+ * sign-in may take over an existing account on the same address (PROJECT.md 4.6), so a
+ * provider that reports true without the provider having said so is an account takeover.
+ */
+function completing(answers: readonly { status: number; data: unknown }[]): {
+  deps: OAuthProviderDependencies;
+  callbackFor: (provider: string) => {
+    provider: string;
+    state: string;
+    code: string;
+    callbackUri: string;
+  };
+} {
+  let next = 0;
+  const flow = {
+    id: "flow-1",
+    provider: "any",
+    codeVerifier: "v".repeat(64),
+    nonce: null,
+    clientCodeChallenge: null,
+    redirectUri: "https://app.test/finish",
+    linkUserId: null,
+    expiresAt: new Date("2026-01-01T00:10:00Z"),
+  };
+  return {
+    deps: {
+      http: {
+        json: () => {
+          const answer = answers[next] ?? { status: 500, data: {} };
+          next += 1;
+          return Promise.resolve(answer);
+        },
+      } as never,
+      clock: {
+        now: () => new Date("2026-01-01T00:00:00Z"),
+        nowMs: () => Date.parse("2026-01-01T00:00:00Z"),
+        inSeconds: (seconds: number) =>
+          new Date(Date.parse("2026-01-01T00:00:00Z") + seconds * 1000),
+      } as never,
+      flows: { start: () => Promise.resolve(""), consume: () => Promise.resolve(flow) },
+      allowlist: { isAllowed: () => Promise.resolve(true) },
+    },
+    callbackFor: (provider) => ({
+      provider,
+      state: "state-value",
+      code: "code-value",
+      callbackUri: "https://auth.test/cb",
+    }),
+  };
+}
+
+const GRANT = { status: 200, data: { access_token: "provider-access-token" } };
+
+describe("profile mapping", () => {
+  it("reports a Discord address as confirmed only when Discord says it is", async () => {
+    const user = { id: "9001", username: "ada", global_name: "Ada", email: "ada@example.test" };
+    for (const [verified, expected] of [
+      [true, true],
+      [false, false],
+      [undefined, false],
+    ] as const) {
+      const script = completing([GRANT, { status: 200, data: { ...user, verified } }]);
+      const provider = providers.discord(script.deps);
+
+      const { profile } = await provider.completeFlow(
+        "project",
+        credentials,
+        script.callbackFor(provider.id),
+      );
+
+      expect(profile.emailVerified).toBe(expected);
+      expect(profile.providerUserId).toBe("9001");
+      expect(profile.displayName).toBe("Ada");
+    }
+  });
+
+  /** A username is changeable and reusable; an account keyed on one can be taken over. */
+  it("keys a Discord identity on the snowflake and not the username", async () => {
+    const script = completing([
+      GRANT,
+      { status: 200, data: { id: "9001", username: "ada", verified: true } },
+    ]);
+    const provider = providers.discord(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(profile.providerUserId).toBe("9001");
+    expect(profile.emailVerified).toBe(false);
+  });
+
+  /**
+   * Facebook confirms addresses in practice and asserts nothing about it in the payload.
+   * An assumption is not an assertion, so this one links nothing.
+   */
+  it("never reports a Facebook address as confirmed", async () => {
+    const script = completing([
+      GRANT,
+      { status: 200, data: { id: "42", name: "Ada", email: "ada@example.test" } },
+    ]);
+    const provider = providers.facebook(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(profile.email).toBe("ada@example.test");
+    expect(profile.emailVerified).toBe(false);
   });
 });

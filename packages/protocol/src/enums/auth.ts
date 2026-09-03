@@ -36,3 +36,16 @@ export const SessionRevokeReason = {
   AbsoluteTimeout: "absolute_timeout",
 } as const;
 export type SessionRevokeReason = (typeof SessionRevokeReason)[keyof typeof SessionRevokeReason];
+
+/**
+ * What a single-use verification token is for.
+ *
+ * Part of the wire contract because the SDK's confirm helper takes it, and because a
+ * token minted for one purpose must never be accepted for another: a reset token that
+ * could verify an address would let anyone who can request a reset mark it verified.
+ */
+export const VerificationPurpose = {
+  EmailVerification: "email_verification",
+  PasswordReset: "password_reset",
+} as const;
+export type VerificationPurpose = (typeof VerificationPurpose)[keyof typeof VerificationPurpose];

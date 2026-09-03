@@ -90,6 +90,30 @@ describe("tenant isolation holds at the database", () => {
     expect(rows[0]?.rolbypassrls).toBe(false);
   });
 
+  /**
+   * Migration 0001 granted by looping over the tables that existed when it ran, and it
+   * runs once. Every later migration that adds a tenant table has to repeat that loop,
+   * and this is what notices when one did not: the table is unreadable by the app role,
+   * which shows up as a permission error on a route nobody tested yet.
+   */
+  it("grants the app role its four privileges on every table except the audit trail", async () => {
+    const { rows } = await harness.owner.query<{ relname: string; missing: string }>(
+      `SELECT c.relname,
+              string_agg(p.priv, ',') FILTER (
+                WHERE NOT has_table_privilege('idenzy_app', c.oid, p.priv)
+              ) AS missing
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)
+       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relname <> 'audit_events'
+       GROUP BY c.relname
+       HAVING count(*) FILTER (
+         WHERE NOT has_table_privilege('idenzy_app', c.oid, p.priv)
+       ) > 0`,
+    );
+    expect(rows).toEqual([]);
+  });
+
   it("forces RLS on every protected table, so ownership is not an escape hatch", async () => {
     const { rows } = await harness.owner.query<{ count: string }>(
       `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

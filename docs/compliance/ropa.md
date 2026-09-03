@@ -47,7 +47,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** days_30, until_account_deletion, years_6
-- **Tables:** `idempotency_keys`, `identities`, `magic_link_tokens`, `oauth_flows`, `otp_challenges`, `users`, `webauthn_credentials`
+- **Tables:** `email_change_requests`, `idempotency_keys`, `identities`, `magic_link_tokens`, `oauth_flows`, `otp_challenges`, `users`, `webauthn_credentials`
 - **Categories of personal data:**
 
   - pii: avatarUrl
@@ -56,6 +56,7 @@ certification; see PROJECT.md 4.13.10.
   - pii: email
   - pii: metadataPrivate
   - pii: metadataPublic
+  - pii: newEmail
   - pii: phone
   - pii: providerData
   - pii: providerUserId

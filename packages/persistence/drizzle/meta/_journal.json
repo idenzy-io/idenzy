@@ -22,6 +22,20 @@
       "when": 1788391005567,
       "tag": "0002_project_resolution_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788396001142,
+      "tag": "0003_youthful_krista_starr",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788396011164,
+      "tag": "0004_nasty_catseye",
+      "breakpoints": true
     }
   ]
 }

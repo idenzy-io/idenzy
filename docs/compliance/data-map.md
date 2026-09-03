@@ -11,11 +11,11 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 23 |
+| pii | 24 |
 | phi | 0 |
-| secret | 12 |
+| secret | 16 |
 | pseudonymous | 22 |
-| operational | 183 |
+| operational | 206 |
 
 ## `api_keys`
 
@@ -61,6 +61,26 @@ Notes:
 - `prevHash`: Hash of the preceding entry for this project. Genesis is 64 zeroes.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
+## `auth_codes`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `amr` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `codeHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `redirectUri` | operational | service_configuration | days_30 | no | not_applicable | no |
+| `userId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `amr`: Pinned at issue time, so an exchange cannot claim a method it did not prove.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `redirectUri`: The allowlisted target this code was minted for. Kept for the audit trail.
+
 ## `data_subject_requests`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -82,6 +102,26 @@ Notes:
 - `dueAt`: Set at intake. Monitored, because a missed statutory deadline is the finding.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `subjectUserId`: Kept after erasure, as proof the erasure was performed.
+
+## `email_change_requests`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `appliedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `newConfirmedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `newEmail` | pii | authentication | days_30 | yes | row_deleted | no |
+| `newTokenHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `oldConfirmedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `oldTokenHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `userId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `email_templates`
 
@@ -476,6 +516,23 @@ Notes:
 - `metadataPrivate`: Readable only with a secret key. Never returned to a client SDK.
 - `metadataPublic`: Customer-controlled. Assume it holds personal data, because it usually does.
 - `passwordAlgoVersion`: Lets a hash be upgraded transparently on next login (PROJECT.md 4.5).
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `verification_tokens`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `purpose` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `tokenHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `userId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `webauthn_credentials`

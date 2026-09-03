@@ -6,6 +6,7 @@ import {
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
 import { index, integer, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { users } from "./identity.js";
 import { config, credential, ephemeralChallenge } from "./presets.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
 
@@ -131,5 +132,184 @@ export const oauthFlows = classifiedTable(
     uniqueIndex("oauth_flows_project_state_key").on(t.projectId, t.state),
     index("oauth_flows_expiry_idx").on(t.expiresAt),
     tenantIsolationPolicy("oauth_flows"),
+  ],
+).enableRLS();
+
+/**
+ * Single-use tokens for email verification and password reset.
+ *
+ * One table rather than one per purpose, because the rules are identical: hashed at
+ * rest, one use, short expiry, and consuming one invalidates every other token
+ * outstanding for that user and purpose. A second table would be a second place to
+ * forget one of those.
+ */
+export const verificationTokens = classifiedTable(
+  "verification_tokens",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(),
+    userId: classified(
+      uuid("user_id")
+        .notNull()
+        .references(() => users.id, { onDelete: "cascade" }),
+      { ...config, loggable: true },
+    ),
+    purpose: classified(text("purpose").notNull(), { ...config, loggable: true }),
+    tokenHash: classified(text("token_hash").notNull(), {
+      ...credential,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    expiresAt: classified(timestamp("expires_at", { withTimezone: true }).notNull(), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    consumedAt: classified(timestamp("consumed_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("verification_tokens_hash_key").on(t.tokenHash),
+    index("verification_tokens_user_purpose_idx").on(t.projectId, t.userId, t.purpose),
+    index("verification_tokens_expiry_idx").on(t.expiresAt),
+    tenantIsolationPolicy("verification_tokens"),
+  ],
+).enableRLS();
+
+/**
+ * A pending email change, which is two confirmations and not one (PROJECT.md 4.5).
+ *
+ * Both token hashes live on the request row rather than in `verification_tokens`,
+ * because the pair is the unit: neither half means anything alone, and the address only
+ * moves when both have been confirmed. Splitting them across rows would make "confirmed
+ * one side" a state that has to be reassembled by a join every time it is read.
+ *
+ * The old address is mailed too, and that is the point of the design: an attacker who
+ * has taken an account wants the change to be invisible to the person losing it.
+ */
+export const emailChangeRequests = classifiedTable(
+  "email_change_requests",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(),
+    userId: classified(
+      uuid("user_id")
+        .notNull()
+        .references(() => users.id, { onDelete: "cascade" }),
+      { ...config, loggable: true },
+    ),
+    newEmail: classified(text("new_email").notNull(), {
+      class: DataClass.Pii,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      subjectField: true,
+      erasure: Erasure.RowDeleted,
+    }),
+    oldTokenHash: classified(text("old_token_hash").notNull(), {
+      ...credential,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    newTokenHash: classified(text("new_token_hash").notNull(), {
+      ...credential,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    oldConfirmedAt: classified(timestamp("old_confirmed_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    newConfirmedAt: classified(timestamp("new_confirmed_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    appliedAt: classified(timestamp("applied_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    expiresAt: classified(timestamp("expires_at", { withTimezone: true }).notNull(), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("email_change_requests_old_token_key").on(t.oldTokenHash),
+    uniqueIndex("email_change_requests_new_token_key").on(t.newTokenHash),
+    index("email_change_requests_user_idx").on(t.projectId, t.userId),
+    tenantIsolationPolicy("email_change_requests"),
+  ],
+).enableRLS();
+
+/**
+ * The single-use code a redirect carries back to the customer's own route
+ * (PROJECT.md 4.6, 4.7).
+ *
+ * Every flow that ends in a browser redirect finishes here: magic link now, OAuth next.
+ * The redirect target cannot carry a session, because a token in a URL is a token in
+ * browser history, in a Referer header and in the customer's access logs. It carries a
+ * code that is worth nothing without a POST from the SDK, and worth nothing twice.
+ *
+ * `amr` is pinned at issue time so the exchange cannot claim a stronger method than the
+ * one that was actually proved.
+ */
+export const authCodes = classifiedTable(
+  "auth_codes",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(),
+    userId: classified(
+      uuid("user_id")
+        .notNull()
+        .references(() => users.id, { onDelete: "cascade" }),
+      { ...config, loggable: true },
+    ),
+    codeHash: classified(text("code_hash").notNull(), {
+      ...credential,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    amr: classified(text("amr").array().notNull().default([]), {
+      ...config,
+      loggable: true,
+      note: "Pinned at issue time, so an exchange cannot claim a method it did not prove.",
+    }),
+    redirectUri: classified(text("redirect_uri").notNull(), {
+      ...config,
+      retention: Retention.Days30,
+      note: "The allowlisted target this code was minted for. Kept for the audit trail.",
+    }),
+    expiresAt: classified(timestamp("expires_at", { withTimezone: true }).notNull(), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    consumedAt: classified(timestamp("consumed_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("auth_codes_hash_key").on(t.codeHash),
+    index("auth_codes_expiry_idx").on(t.expiresAt),
+    tenantIsolationPolicy("auth_codes"),
   ],
 ).enableRLS();

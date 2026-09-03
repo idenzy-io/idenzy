@@ -1,0 +1,37 @@
+{
+  "name": "@idenzy/angular",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/idenzy-angular.d.ts",
+      "default": "./dist/idenzy-angular.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=18.0.0"
+  },
+  "dependencies": {
+    "@idenzy/js": "workspace:*",
+    "@idenzy/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@angular/core": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

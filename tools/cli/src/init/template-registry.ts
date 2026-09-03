@@ -1,7 +1,9 @@
 import type { ProjectManifest } from "../project-manifest.js";
 import type { FrameworkTemplate } from "./framework-template.js";
 import { NextTemplate } from "./templates/next-template.js";
+import { NuxtTemplate } from "./templates/nuxt-template.js";
 import { ReactTemplate } from "./templates/react-template.js";
+import { SvelteKitTemplate } from "./templates/sveltekit-template.js";
 import { VueTemplate } from "./templates/vue-template.js";
 
 /**
@@ -14,6 +16,8 @@ import { VueTemplate } from "./templates/vue-template.js";
  */
 export const TEMPLATES: readonly FrameworkTemplate[] = [
   new NextTemplate(),
+  new NuxtTemplate(),
+  new SvelteKitTemplate(),
   new VueTemplate(),
   new ReactTemplate(),
 ];

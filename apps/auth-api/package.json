@@ -28,6 +28,7 @@
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",
+    "@simplewebauthn/server": "catalog:",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",
     "pg": "catalog:",

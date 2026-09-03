@@ -10,6 +10,7 @@ import { MagicLinkModule } from "./magic-link/magic-link.module.js";
 import { OAuthModule } from "./oauth/oauth.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 import { OtpModule } from "./otp/otp.module.js";
+import { PasskeyModule } from "./passkey/passkey.module.js";
 import { PasswordModule } from "./password/password.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
 import { SessionModule } from "./session/session.module.js";
@@ -36,6 +37,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     PasswordModule,
     OtpModule,
     MagicLinkModule,
+    PasskeyModule,
     OAuthModule,
     AccountModule,
     AnonymousModule,

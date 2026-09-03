@@ -7,6 +7,14 @@ export const AuthMethod = {
   MagicLink: "link",
   Passkey: "webauthn",
   Totp: "totp",
+  /**
+   * RFC 8176's own value for "more than one factor was used".
+   *
+   * Carried alongside the two methods rather than instead of them, because a customer
+   * checking for step-up wants to know that two were proved without having to enumerate
+   * which pairs count.
+   */
+  Mfa: "mfa",
   RecoveryCode: "recovery",
   Oauth: "oauth",
   IdTokenExchange: "id_token",

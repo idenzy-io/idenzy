@@ -4,9 +4,11 @@ import type { OAuthProvider } from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
 import { FetchHttpClient } from "@idenzy/providers-oauth/fetch-http-client";
 import { AppleProvider } from "@idenzy/providers-oauth/providers/apple-provider";
+import { BitbucketProvider } from "@idenzy/providers-oauth/providers/bitbucket-provider";
 import { DiscordProvider } from "@idenzy/providers-oauth/providers/discord-provider";
 import { FacebookProvider } from "@idenzy/providers-oauth/providers/facebook-provider";
 import { GithubProvider } from "@idenzy/providers-oauth/providers/github-provider";
+import { GitlabProvider } from "@idenzy/providers-oauth/providers/gitlab-provider";
 import { GoogleProvider } from "@idenzy/providers-oauth/providers/google-provider";
 import { LinkedinProvider } from "@idenzy/providers-oauth/providers/linkedin-provider";
 import { MicrosoftProvider } from "@idenzy/providers-oauth/providers/microsoft-provider";
@@ -57,6 +59,8 @@ import { ProviderRegistry } from "./provider-registry.js";
           [ProviderId.Twitch, new TwitchProvider(http, clock, flows, allowlist)],
           [ProviderId.Linkedin, new LinkedinProvider(http, clock, flows, allowlist)],
           [ProviderId.X, new XProvider(http, clock, flows, allowlist)],
+          [ProviderId.Gitlab, new GitlabProvider(http, clock, flows, allowlist)],
+          [ProviderId.Bitbucket, new BitbucketProvider(http, clock, flows, allowlist)],
         ]);
       },
     },

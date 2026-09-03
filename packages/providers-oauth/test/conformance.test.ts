@@ -5,9 +5,11 @@ import {
 } from "@idenzy/testing/oauth-provider-conformance";
 import { describe, expect, it } from "vitest";
 import { AppleProvider } from "../src/providers/apple-provider.js";
+import { BitbucketProvider } from "../src/providers/bitbucket-provider.js";
 import { DiscordProvider } from "../src/providers/discord-provider.js";
 import { FacebookProvider } from "../src/providers/facebook-provider.js";
 import { GithubProvider } from "../src/providers/github-provider.js";
+import { GitlabProvider } from "../src/providers/gitlab-provider.js";
 import { GoogleProvider } from "../src/providers/google-provider.js";
 import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
@@ -31,6 +33,10 @@ const providers = {
   linkedin: (d: OAuthProviderDependencies) =>
     new LinkedinProvider(d.http, d.clock, d.flows, d.allowlist),
   x: (d: OAuthProviderDependencies) => new XProvider(d.http, d.clock, d.flows, d.allowlist),
+  gitlab: (d: OAuthProviderDependencies) =>
+    new GitlabProvider(d.http, d.clock, d.flows, d.allowlist),
+  bitbucket: (d: OAuthProviderDependencies) =>
+    new BitbucketProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -135,6 +141,47 @@ describe("provider specifics", () => {
   it("defaults Microsoft to the endpoint that accepts both account kinds", () => {
     const url = new URL(providers.microsoft(deps()).authorizationUrl(credentials, request));
     expect(url.pathname.startsWith("/common/")).toBe(true);
+  });
+
+  it("sends GitLab to gitlab.com when a project configured no instance of its own", () => {
+    const url = new URL(providers.gitlab(deps()).authorizationUrl(credentials, request));
+    expect(url.origin + url.pathname).toBe("https://gitlab.com/oauth/authorize");
+  });
+
+  it("sends GitLab to the self-managed instance a project configured", () => {
+    const url = new URL(
+      providers
+        .gitlab(deps())
+        .authorizationUrl(
+          { ...credentials, config: { instance: "https://git.contoso.test/" } },
+          request,
+        ),
+    );
+    expect(url.origin + url.pathname).toBe("https://git.contoso.test/oauth/authorize");
+  });
+
+  /**
+   * The instance is the host a client secret is posted to. A value that is not plainly an
+   * https origin is refused rather than called, which is the difference between a
+   * misconfiguration and an outbound request somebody else chose the target of.
+   */
+  it("refuses a GitLab instance that is not an https url", () => {
+    for (const instance of [
+      "http://git.contoso.test",
+      "https://a:b@git.contoso.test",
+      "not-a-url",
+    ]) {
+      expect(() =>
+        providers
+          .gitlab(deps())
+          .authorizationUrl({ ...credentials, config: { instance } }, request),
+      ).toThrow();
+    }
+  });
+
+  it("asks Bitbucket for the account and the address, which live behind separate scopes", () => {
+    const url = new URL(providers.bitbucket(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.get("scope")).toBe("account email");
   });
 });
 
@@ -318,6 +365,71 @@ describe("profile mapping", () => {
     );
 
     expect(profile.email).toBe("ada@example.test");
+    expect(profile.emailVerified).toBe(false);
+  });
+
+  /** The user resource carries no address, so the confirmed one comes from a second call. */
+  it("takes the Bitbucket address from the primary confirmed entry, and keys on the uuid", async () => {
+    const script = completing([
+      GRANT,
+      {
+        status: 200,
+        data: {
+          uuid: "{9a1b-uuid}",
+          nickname: "ada",
+          display_name: "Ada",
+          links: { avatar: { href: "https://avatars.test/ada" } },
+        },
+      },
+      {
+        status: 200,
+        data: {
+          values: [
+            { email: "old@example.test", is_primary: false, is_confirmed: true },
+            { email: "ada@example.test", is_primary: true, is_confirmed: true },
+          ],
+        },
+      },
+    ]);
+    const provider = providers.bitbucket(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    // Basic client authentication, which the base owns: the secret is in the header and
+    // nowhere else, because RFC 6749 refuses both at once.
+    expect(script.requests[0]?.headers?.["authorization"]).toBe(
+      `Basic ${Buffer.from("client-id:secret").toString("base64")}`,
+    );
+    expect(script.requests[0]?.form?.["client_secret"]).toBeUndefined();
+    expect(profile.providerUserId).toBe("{9a1b-uuid}");
+    expect(profile.email).toBe("ada@example.test");
+    expect(profile.emailVerified).toBe(true);
+    expect(profile.displayName).toBe("Ada");
+  });
+
+  /** An unconfirmed address is the same as no address: nothing may be linked on one. */
+  it("signs a Bitbucket user in with no address rather than an unconfirmed one", async () => {
+    const script = completing([
+      GRANT,
+      { status: 200, data: { uuid: "{9a1b-uuid}", display_name: "Ada" } },
+      {
+        status: 200,
+        data: { values: [{ email: "ada@example.test", is_primary: true, is_confirmed: false }] },
+      },
+    ]);
+    const provider = providers.bitbucket(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(profile.email).toBeNull();
     expect(profile.emailVerified).toBe(false);
   });
 });

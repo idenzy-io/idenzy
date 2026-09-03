@@ -9,14 +9,17 @@ import { AppleProvider } from "../src/providers/apple-provider.js";
 import { BitbucketProvider } from "../src/providers/bitbucket-provider.js";
 import { DiscordProvider } from "../src/providers/discord-provider.js";
 import { FacebookProvider } from "../src/providers/facebook-provider.js";
+import { FigmaProvider } from "../src/providers/figma-provider.js";
 import { GithubProvider } from "../src/providers/github-provider.js";
 import { GitlabProvider } from "../src/providers/gitlab-provider.js";
 import { GoogleProvider } from "../src/providers/google-provider.js";
 import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
 import { SlackProvider } from "../src/providers/slack-provider.js";
+import { SpotifyProvider } from "../src/providers/spotify-provider.js";
 import { TwitchProvider } from "../src/providers/twitch-provider.js";
 import { XProvider } from "../src/providers/x-provider.js";
+import { ZoomProvider } from "../src/providers/zoom-provider.js";
 
 const providers = {
   google: (d: OAuthProviderDependencies) =>
@@ -40,6 +43,10 @@ const providers = {
   bitbucket: (d: OAuthProviderDependencies) =>
     new BitbucketProvider(d.http, d.clock, d.flows, d.allowlist),
   slack: (d: OAuthProviderDependencies) => new SlackProvider(d.http, d.clock, d.flows, d.allowlist),
+  spotify: (d: OAuthProviderDependencies) =>
+    new SpotifyProvider(d.http, d.clock, d.flows, d.allowlist),
+  figma: (d: OAuthProviderDependencies) => new FigmaProvider(d.http, d.clock, d.flows, d.allowlist),
+  zoom: (d: OAuthProviderDependencies) => new ZoomProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -191,6 +198,12 @@ describe("provider specifics", () => {
     const url = new URL(providers.slack(deps()).authorizationUrl(credentials, request));
     expect(url.searchParams.get("scope")).toBe("openid profile email");
     expect(url.searchParams.get("nonce")).toBe("n");
+  });
+
+  /** Signing somebody in should not ask them for their files. */
+  it("asks Figma only for the scope its profile call needs", () => {
+    const url = new URL(providers.figma(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.get("scope")).toBe("current_user:read");
   });
 });
 
@@ -418,6 +431,82 @@ describe("profile mapping", () => {
     expect(profile.email).toBe("ada@example.test");
     expect(profile.emailVerified).toBe(true);
     expect(profile.displayName).toBe("Ada");
+  });
+
+  /**
+   * Three providers take basic client authentication, and the base owns both halves of it:
+   * the secret goes in the header and leaves the form, because RFC 6749 refuses both at
+   * once and a provider that gets both may accept it or may not.
+   */
+  it.each(["spotify", "figma", "zoom"] as const)(
+    "authenticates to %s in the header, and only in the header",
+    async (name) => {
+      const script = completing([GRANT, { status: 200, data: { id: "1" } }]);
+      const provider = providers[name](script.deps);
+
+      await provider.completeFlow("project", credentials, script.callbackFor(provider.id));
+
+      expect(script.requests[0]?.headers?.["authorization"]).toBe(
+        `Basic ${Buffer.from("client-id:secret").toString("base64")}`,
+      );
+      expect(script.requests[0]?.form?.["client_secret"]).toBeUndefined();
+      expect(script.requests[0]?.form?.["code_verifier"]).toBe("v".repeat(64));
+    },
+  );
+
+  /** Spotify's own reference says the address it hands over is unproven. */
+  it("never reports a Spotify address as confirmed", async () => {
+    const script = completing([
+      GRANT,
+      {
+        status: 200,
+        data: {
+          id: "adalovelace",
+          display_name: "Ada",
+          email: "ada@example.test",
+          images: [{ url: "https://avatars.test/ada" }],
+        },
+      },
+    ]);
+    const provider = providers.spotify(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(profile.email).toBe("ada@example.test");
+    expect(profile.emailVerified).toBe(false);
+    expect(profile.avatarUrl).toBe("https://avatars.test/ada");
+  });
+
+  /** Zoom reports confirmation as 1 or 0, so anything truthy is not good enough. */
+  it("reads Zoom's confirmation flag as the number it is", async () => {
+    for (const [verified, expected] of [
+      [1, true],
+      [0, false],
+      ["1", false],
+      [undefined, false],
+    ] as const) {
+      const script = completing([
+        GRANT,
+        {
+          status: 200,
+          data: { id: "z-1", email: "ada@example.test", first_name: "Ada", verified },
+        },
+      ]);
+      const provider = providers.zoom(script.deps);
+
+      const { profile } = await provider.completeFlow(
+        "project",
+        credentials,
+        script.callbackFor(provider.id),
+      );
+
+      expect(profile.emailVerified).toBe(expected);
+      expect(profile.displayName).toBe("Ada");
+    }
   });
 
   /** An unconfirmed address is the same as no address: nothing may be linked on one. */

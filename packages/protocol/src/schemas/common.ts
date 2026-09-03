@@ -10,6 +10,7 @@ export const IdPrefix = {
   Session: "ses",
   Challenge: "chl",
   Passkey: "pky",
+  Factor: "mfa",
 } as const;
 export type IdPrefix = (typeof IdPrefix)[keyof typeof IdPrefix];
 
@@ -52,6 +53,7 @@ export const userIdSchema = z.string().regex(/^usr_[0-9a-zA-Z]{20,}$/);
 export const sessionIdSchema = z.string().regex(/^ses_[0-9a-zA-Z]{20,}$/);
 export const challengeIdSchema = z.string().regex(/^chl_[0-9a-zA-Z]{20,}$/);
 export const passkeyIdSchema = z.string().regex(/^pky_[0-9a-zA-Z]{20,}$/);
+export const factorIdSchema = z.string().regex(/^mfa_[0-9a-zA-Z]{20,}$/);
 
 /**
  * Passwords are bounded, not composed. Minimum 8 and maximum 256 per NIST 800-63B;

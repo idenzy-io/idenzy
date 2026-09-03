@@ -1,9 +1,6 @@
 import { z } from "zod";
-import { MfaFactorType } from "../enums/auth.js";
 import { Channel } from "../enums/delivery.js";
 import { emailSchema, isoDateTimeSchema, passwordSchema, phoneSchema } from "./common.js";
-
-const mfaFactorValues = Object.values(MfaFactorType) as [MfaFactorType, ...MfaFactorType[]];
 
 export const signUpWithPasswordSchema = z.object({
   email: emailSchema,
@@ -42,12 +39,6 @@ export const verifyOtpSchema = z.object({
 export const exchangeCodeSchema = z.object({
   code: z.string().min(20),
   codeVerifier: z.string().min(43).max(128).optional(),
-});
-
-export const submitMfaSchema = z.object({
-  challengeId: z.string(),
-  factor: z.enum(mfaFactorValues),
-  code: z.string().min(6).max(20),
 });
 
 /**
@@ -186,7 +177,6 @@ export type SignInWithPassword = z.infer<typeof signInWithPasswordSchema>;
 export type StartOtp = z.infer<typeof startOtpSchema>;
 export type VerifyOtp = z.infer<typeof verifyOtpSchema>;
 export type ExchangeCode = z.infer<typeof exchangeCodeSchema>;
-export type SubmitMfa = z.infer<typeof submitMfaSchema>;
 export type ChallengeStarted = z.infer<typeof challengeStartedSchema>;
 export type RefreshSession = z.infer<typeof refreshSessionSchema>;
 export type SignOut = z.infer<typeof signOutSchema>;

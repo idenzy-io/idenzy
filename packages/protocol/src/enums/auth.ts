@@ -24,6 +24,20 @@ export const MfaFactorType = {
 } as const;
 export type MfaFactorType = (typeof MfaFactorType)[keyof typeof MfaFactorType];
 
+/**
+ * What a second-factor challenge stands in front of.
+ *
+ * Part of the wire contract because the answer differs: a sign-in challenge produces a
+ * session, a step-up challenge produces a fresh access token for the session that is
+ * already there. It is also a check rather than a label, since a challenge minted to
+ * confirm a sensitive action must not be spendable as a sign-in.
+ */
+export const MfaChallengePurpose = {
+  SignIn: "sign_in",
+  StepUp: "step_up",
+} as const;
+export type MfaChallengePurpose = (typeof MfaChallengePurpose)[keyof typeof MfaChallengePurpose];
+
 /** Why a session ended. Surfaced to the customer in the session list and webhooks. */
 export const SessionRevokeReason = {
   SignedOut: "signed_out",

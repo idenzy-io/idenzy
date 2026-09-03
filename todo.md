@@ -227,7 +227,11 @@ what an SSR seed is, each of the other three was fifteen lines around
 target in §3.3 and the whole Edge/SSR row with it.
 
 The conformance suite that holds them to the same behaviour is in, and the five browser
-bindings pass it. What is left in 1.5 is `idenzy init` and the starter templates.
+bindings pass it. `idenzy init` and the starter templates are in too, and they are one
+implementation: `examples/` is generated from the templates the CLI scaffolds from, so the
+starter a customer reads cannot drift from the one they are given. What is left in 1.5 is
+the half of `@idenzy/node` that waits on 1.6: webhook verification and the management
+client have no server halves to talk to yet.
 
 ### 1.1 Core auth flows
 
@@ -368,8 +372,14 @@ bindings pass it. What is left in 1.5 is `idenzy init` and the starter templates
       tests run it against a reference binding and four broken ones, so the suite is known
       to fail when a binding drops a null seed, collapses `loading`, publishes the client's
       opening position over a seed, or leaves a listener on a client it no longer watches
-- [ ] `idenzy init` scaffolding working routes into the customer's repository
-- [ ] Starter templates per framework, in `examples/`
+- [x] `idenzy init` scaffolding working routes into the customer's repository. `@idenzy/cli`
+      detects the framework from `package.json` and writes sign-in, sign-up, OTP and OAuth
+      routes plus the environment keys they read. A file already there is kept rather than
+      overwritten, because the second run is the one that would take a restyled sign-in page
+      with it, and a secret key is refused on its prefix before anything is written
+- [x] Starter templates per framework, in `examples/`: Next, Nuxt, SvelteKit, Vue and React,
+      generated from the `init` templates so the copy a customer reads first cannot drift
+      from what the CLI writes. CI runs `pnpm examples:check` and fails when the two disagree
 
 ### 1.6 Platform
 

@@ -556,6 +556,37 @@ A concrete provider needs an explicit constructor that only calls `super`. It is
 useless: it widens the abstract base's `protected` constructor to `public`, which is what
 lets the registry build one. Biome flags it, so the suppression carries that reason.
 
+## Working on `idenzy init` and the starter templates
+
+`@idenzy/cli` writes working sign-in, sign-up, one-time-code and OAuth routes into a
+customer's own repository. What it leaves behind is their code from the moment it lands:
+they restyle it, rename it and never update it, which is the opposite of a component
+dependency and the only honest way to promise a fast integration while shipping no UI
+(ADR-0002). Nothing it writes may import a component of ours, because there is none.
+
+- **A framework is a subclass of `FrameworkTemplate` and a line in the registry.** The base
+  owns the environment file, its two keys and the install line; a template supplies the
+  routes and the framework's own next steps. The registry's order is the detection rule and
+  it runs most specific first: a Next application has React in it and a Nuxt one has Vue, so
+  a general template listed too early would answer for the frameworks built on it.
+- **`TemplateConformanceSuite` runs against every template.** It checks what a scaffold gets
+  wrong quietly: a way in that is missing, an import the developer was never told to install,
+  a path that climbs out of the directory they named, a secret key written into a browser
+  bundle. It does not check that the scaffolded code runs, which would mean installing five
+  frameworks to test five templates.
+- **`examples/` is generated from those same templates**, so the starter a customer reads
+  first cannot drift from what the CLI writes. Change a template, run
+  `pnpm examples:generate`, commit the result; CI runs `pnpm examples:check` and fails when
+  the two disagree, the same contract as the compliance artifacts. Biome does not lint
+  `examples/` for the same reason it does not lint those: two writers of one file is a fight
+  the generator has to win.
+- **A file that is already there is kept, never overwritten.** The second run of `init` is
+  the dangerous one, because by then the sign-in page has been restyled. `--force` is how
+  somebody asks for the other thing, and the environment file is merged key by key so a real
+  publishable key is never replaced by a placeholder from a flag.
+- **The key is refused on its prefix, before anything is written.** A secret key scaffolded
+  into a client bundle is published at the next build, and nothing after that unpublishes it.
+
 ## Tests are typechecked, and were not always
 
 Every package with a `test/` directory has a `tsconfig.test.json`, and `typecheck` runs it

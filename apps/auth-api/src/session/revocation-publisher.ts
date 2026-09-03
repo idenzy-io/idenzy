@@ -28,17 +28,26 @@ export class RevocationPublisher {
   ) {}
 
   /**
-   * Specific sessions, as the public ids a token carries.
+   * Specific sessions, as the public ids a token carries, at the instant they were revoked.
+   *
+   * The instant is the one written to the session row, not the one this call happens at, so
+   * the reconciler replaying the same outbox event lands on the same entry rather than
+   * pushing its expiry forward.
    *
    * The key is the project's uuid because it is ours and never leaves; the members are
    * public ids because they are published and because `sid` is what the SDK compares.
    */
-  async sessionsRevoked(tenant: TenantContext, sessionIds: readonly string[]): Promise<void> {
+  async sessionsRevoked(
+    tenant: TenantContext,
+    sessionIds: readonly string[],
+    at: Date,
+  ): Promise<void> {
     if (sessionIds.length === 0) return;
     await this.attempt(tenant, () =>
       this.set.revokeSessions(
         tenant.projectId,
         sessionIds.map((id) => PublicId.encode(IdPrefix.Session, id).value),
+        at,
       ),
     );
   }
@@ -50,9 +59,9 @@ export class RevocationPublisher {
    * user with many devices would otherwise write one entry each. The watermark is one
    * entry whatever the count, which is what keeps the published set bounded.
    */
-  async userRevoked(tenant: TenantContext, userId: string): Promise<void> {
+  async userRevoked(tenant: TenantContext, userId: string, at: Date): Promise<void> {
     await this.attempt(tenant, () =>
-      this.set.revokeUser(tenant.projectId, PublicId.encode(IdPrefix.User, userId).value),
+      this.set.revokeUser(tenant.projectId, PublicId.encode(IdPrefix.User, userId).value, at),
     );
   }
 

@@ -36,7 +36,7 @@ interface Repositories {
  */
 type Rotation =
   | { readonly kind: "rotated"; readonly session: IssuedSession }
-  | { readonly kind: "reused"; readonly sessionId: string }
+  | { readonly kind: "reused"; readonly sessionId: string; readonly at: Date }
   | { readonly kind: "invalid" }
   | { readonly kind: "session_revoked" }
   | { readonly kind: "session_expired" };
@@ -68,7 +68,7 @@ export class RefreshService {
     // session nobody asked us to revoke, so it is the one revocation a customer's verifier
     // has no other way to hear about (ADR-0009).
     if (rotation.kind === "reused") {
-      await this.revocations.sessionsRevoked(tenant, [rotation.sessionId]);
+      await this.revocations.sessionsRevoked(tenant, [rotation.sessionId], rotation.at);
     }
     return this.resolve(rotation, context);
   }
@@ -188,7 +188,7 @@ export class RefreshService {
       millisecondsSinceRotation: sinceRotation,
       likelyCause: likelyCause(sinceRotation),
     });
-    return { kind: "reused", sessionId };
+    return { kind: "reused", sessionId, at: now };
   }
 
   /** Throws after the transaction has committed, so the revocations survive the error. */

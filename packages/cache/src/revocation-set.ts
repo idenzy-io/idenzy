@@ -81,19 +81,30 @@ export class RevocationSet {
   ) {}
 
   /**
-   * Ends specific sessions.
+   * Ends specific sessions, as of the instant they were revoked.
+   *
+   * The instant is passed rather than read from the clock, and that is what makes a replay
+   * free: the reconciler re-applies the same event to the same score, so an entry ages out
+   * on schedule instead of being pushed forward every time it is seen again.
    *
    * Called after the transaction has committed, never before. A write that preceded the
    * commit could revoke a session the transaction then rolled back, and a false entry is
    * not self-correcting: the set is keyed by session id, and refreshing mints a new
    * access token for the same session, so nothing the client does clears it (ADR-0009).
    */
-  async revokeSessions(projectId: string, sessionIds: readonly string[]): Promise<void> {
+  async revokeSessions(
+    projectId: string,
+    sessionIds: readonly string[],
+    revokedAt: Date,
+  ): Promise<void> {
     if (sessionIds.length === 0) return;
     const key = this.sessionsKey(projectId);
-    const at = this.seconds();
+    const at = secondsOf(revokedAt);
     await this.commands.zadd(key, ...sessionIds.flatMap((id) => [at, id]));
-    await Promise.all([this.prune(key, at), this.commands.expire(key, this.retentionSeconds)]);
+    await Promise.all([
+      this.prune(key, this.seconds()),
+      this.commands.expire(key, this.retentionSeconds),
+    ]);
   }
 
   /**
@@ -104,18 +115,21 @@ export class RevocationSet {
    * second-accurate, so the alternative to under-revoking by under a second is revoking
    * tokens minted after the event, and ADR-0009 says which of those two we take.
    */
-  async revokeUser(projectId: string, userId: string): Promise<void> {
+  async revokeUser(projectId: string, userId: string, revokedAt: Date): Promise<void> {
     const key = this.usersKey(projectId);
-    const at = this.seconds();
+    const at = secondsOf(revokedAt);
     await this.commands.zadd(key, at, userId);
-    await Promise.all([this.prune(key, at), this.commands.expire(key, this.retentionSeconds)]);
+    await Promise.all([
+      this.prune(key, this.seconds()),
+      this.commands.expire(key, this.retentionSeconds),
+    ]);
   }
 
   /** The same for every session in a project, which is what a key compromise needs. */
-  async revokeProject(projectId: string): Promise<void> {
+  async revokeProject(projectId: string, revokedAt: Date): Promise<void> {
     await this.commands.set(
       this.projectKey(projectId),
-      String(this.seconds()),
+      String(secondsOf(revokedAt)),
       "EX",
       this.retentionSeconds,
     );
@@ -211,6 +225,11 @@ function score(raw: string | null): number | null {
   if (raw === null) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Floored, because `iat` is only accurate to the second and the comparison is against it. */
+function secondsOf(at: Date): number {
+  return Math.floor(at.getTime() / 1000);
 }
 
 /** Strictly below, so a token issued in the watermark's own second survives it. */

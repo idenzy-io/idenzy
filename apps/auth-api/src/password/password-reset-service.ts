@@ -132,12 +132,14 @@ export class PasswordResetService {
         signedOutOtherSessions: input.signOutOtherSessions,
         at: now.toISOString(),
       });
-      return input.signOutOtherSessions ? token.userId : null;
+      return input.signOutOtherSessions ? { userId: token.userId, at: now } : null;
     });
 
     // A watermark rather than the session list, because a reset is exactly the case where
     // the list can be long and the reason to publish it is that somebody else may hold
     // one of them (ADR-0009). After the commit, like every other publish.
-    if (signedOut !== null) await this.revocations.userRevoked(tenant, signedOut);
+    if (signedOut !== null) {
+      await this.revocations.userRevoked(tenant, signedOut.userId, signedOut.at);
+    }
   }
 }

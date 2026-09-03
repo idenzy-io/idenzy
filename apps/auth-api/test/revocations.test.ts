@@ -128,7 +128,7 @@ describe("who may read the set", () => {
 
 describe("the published snapshot", () => {
   it("is a signed statement anyone with our JWKS can check", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
 
     const response = await fetch(`${base}/v1/revocations`, withSecretKey());
     const payload = await claims(await response.text());
@@ -167,7 +167,7 @@ describe("the published snapshot", () => {
   });
 
   it("carries a bulk revocation as one watermark, not a list of sessions", async () => {
-    await set.revokeUser(PROJECT, "usr_00000000000000000001");
+    await set.revokeUser(PROJECT, "usr_00000000000000000001", clock.now());
 
     const response = await fetch(`${base}/v1/revocations`, withSecretKey());
     const payload = (await claims(await response.text())) as { users: unknown[] };
@@ -221,7 +221,7 @@ describe("polling it", () => {
   it("answers afresh once something has been revoked", async () => {
     const first = await fetch(`${base}/v1/revocations`, withSecretKey());
     const etag = first.headers.get("etag") ?? "";
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
 
     const second = await fetch(`${base}/v1/revocations`, withSecretKey({ "if-none-match": etag }));
 

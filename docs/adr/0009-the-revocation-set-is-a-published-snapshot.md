@@ -83,12 +83,36 @@ somebody's session.
 
 Writing to Valkey after a commit is a dual write, and dual writes lose. Every revocation site
 already enqueues `session.revoked` inside the same transaction as the revocation itself, so the
-durable record exists whatever Valkey does. A worker replays those events into the set.
+durable record exists whatever Valkey does. `RevocationReconciler` in the workers replays those
+events into the set on a timer.
 
 That makes the synchronous write an optimisation on top of a transactional guarantee rather than
-the guarantee itself: a Valkey blip delays propagation to the worker's next pass instead of
-losing the revocation permanently. Writing it any other way would mean a revocation could be
-absent from the set with nothing left to notice it.
+the guarantee itself: a Valkey blip delays propagation to the reconciler's next pass instead of
+losing the revocation permanently.
+
+The stronger reason is not a failed write at all. **Valkey is a cache.** A restart empties every
+project's set, and because the published snapshot is served from that set, every customer polling
+it would be told that nothing is revoked. Nothing in the request path would notice, because
+nothing in the request path reads the set: our own guard reads the session row. Without the
+reconciler, a routine cache restart silently opens the exact window this whole design exists to
+close.
+
+**It sweeps a window rather than following a cursor**, and that falls out of a property worth
+naming. The set is keyed by the *instant of the revocation*, taken from the event, not by the
+instant of the write. Replaying an event therefore lands on the entry it already wrote, so a
+sweep is idempotent and an entry still ages out on schedule. Keying by write time instead would
+push every entry's expiry forward on every pass, and a set bounded by retention would become a
+set bounded by nothing.
+
+A window also keeps the reconciler out of the outbox's own `published_at`, which belongs to the
+relay that will drain this table to Pub/Sub. Two consumers sharing one watermark is a bug waiting
+for the second consumer to be written.
+
+The read crosses tenants, which RLS forbids by construction: a relay serves every project and
+has no `app.project_id`. The narrow fix is the one migration 0002 already used for project
+resolution, a SECURITY DEFINER function scoped to exactly this read. `revocation_events_since`
+returns two topics and nothing else, so it cannot become a way to read every event any project
+has emitted, and there is a test that fails if that filter is removed.
 
 ### A secret key, not a public URL
 
@@ -157,6 +181,10 @@ our own API, so the set is only ever an accelerator there.
   project.
 - The set is per cell. A revocation must reach the cell the customer polls, so replication lag
   between cells is part of the propagation number we advertise and not a detail below it.
+- The reconciler sweeps every project's window on each pass rather than only what changed. That
+  is affordable because the window is small by construction, and it is what makes the sweep
+  stateless. If it ever stops being affordable, the answer is a longer interval before it is a
+  cursor, because a cursor reintroduces the state a window exists to avoid.
 - Consuming the set stays opt-in in the server SDKs. A customer who does not turn it on keeps a
   package that makes no network call of its own, which is what `@idenzy/node` documents today.
 - Turning it on means giving a server SDK a secret key, which it does not need for anything else.

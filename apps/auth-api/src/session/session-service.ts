@@ -138,7 +138,7 @@ export class SessionService implements SessionIssuer {
         scope,
         at: now.toISOString(),
       });
-      return { userId: session.userId, sessionIds };
+      return { userId: session.userId, sessionIds, at: now };
     });
 
     // Published after the commit, so nothing is announced that the transaction could
@@ -146,8 +146,8 @@ export class SessionService implements SessionIssuer {
     // than one entry per device.
     if (ended === null) return;
     await (scope === "all"
-      ? this.revocations.userRevoked(tenant, ended.userId)
-      : this.revocations.sessionsRevoked(tenant, ended.sessionIds));
+      ? this.revocations.userRevoked(tenant, ended.userId, ended.at)
+      : this.revocations.sessionsRevoked(tenant, ended.sessionIds, ended.at));
   }
 
   /**
@@ -191,7 +191,7 @@ export class SessionService implements SessionIssuer {
     sessionId: string,
   ): Promise<void> {
     const tenant = tenantContextFrom(context);
-    await this.uow.run(tenant, async (tx) => {
+    const revokedAt = await this.uow.run(tenant, async (tx) => {
       const sessions = new SessionRepository(tx, tenant);
       const target = await sessions.findById(sessionId);
       if (target === null || target.userId !== principal.userId) {
@@ -206,9 +206,10 @@ export class SessionService implements SessionIssuer {
         scope: "current",
         at: now.toISOString(),
       });
+      return now;
     });
 
-    await this.revocations.sessionsRevoked(tenant, [sessionId]);
+    await this.revocations.sessionsRevoked(tenant, [sessionId], revokedAt);
   }
 
   private async revokeOne(

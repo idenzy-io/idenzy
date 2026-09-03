@@ -398,6 +398,22 @@ that look arbitrary until you know what they are avoiding.
   both access-token verifiers require `JWT`, and `TokenIssuer.issueStatement` refuses to put
   `sub` or `sid` in a statement at all. Any one of those alone would be a single point of
   failure for token confusion (RFC 8725 section 3.11).
+- **The reconciler is why a failed write is survivable, and a cache restart is not fatal.**
+  `RevocationReconciler` in `apps/workers` sweeps the outbox and replays revocations into the
+  set. The failed write is the smaller reason: Valkey is a cache, so a restart empties every
+  project's set and the published snapshot starts telling every customer that nothing is
+  revoked, with nothing in the request path to notice.
+- **The set is keyed by the instant of the revocation, not the instant of the write.** That is
+  what makes replaying free: a sweep lands on the entry it already wrote, and the entry still
+  ages out on schedule. Key it by write time and every pass pushes every expiry forward, so a
+  set bounded by retention becomes a set bounded by nothing.
+- **The reconciler reads a window, never a cursor, and never touches `published_at`.** That
+  column belongs to the relay that will drain the outbox to Pub/Sub, and two consumers sharing
+  one watermark is a bug waiting for the second one to be written.
+- **`revocation_events_since` is SECURITY DEFINER and deliberately narrow.** A relay serves
+  every project and has no `app.project_id`, so the read has to cross tenants. It returns two
+  topics and nothing else, which is what stops it becoming a way to read every event any
+  project has emitted. A test fails if that filter goes.
 - **Retention is one access token lifetime plus skew.** A token minted immediately before a
   revocation expires one lifetime later, so nothing older can still be presented. That bound
   is the only reason the set is small enough to publish whole, and pruning runs on write as

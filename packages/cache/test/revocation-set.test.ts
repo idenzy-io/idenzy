@@ -118,14 +118,14 @@ function subject(overrides: Partial<{ sessionId: string; userId: string; issuedA
 
 describe("revoking a session", () => {
   it("answers revoked, and only for that session", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
 
     expect(await set.isRevoked(PROJECT, subject())).toBe(true);
     expect(await set.isRevoked(PROJECT, subject({ sessionId: OTHER_SESSION }))).toBe(false);
   });
 
   it("kills every token for it, however recently one was minted", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
     clock.advance(30);
 
     // A refresh mints a new access token for the same session, so `iat` moves and `sid`
@@ -134,13 +134,13 @@ describe("revoking a session", () => {
   });
 
   it("writes several in one round trip rather than one each", async () => {
-    await set.revokeSessions(PROJECT, [SESSION, OTHER_SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION, OTHER_SESSION], clock.now());
 
     expect(commands.calls.filter((call) => call === "zadd")).toHaveLength(1);
   });
 
   it("does nothing at all for an empty list", async () => {
-    await set.revokeSessions(PROJECT, []);
+    await set.revokeSessions(PROJECT, [], clock.now());
 
     expect(commands.calls).toHaveLength(0);
   });
@@ -153,7 +153,7 @@ describe("a user watermark", () => {
     const issued = Math.floor(clock.nowMs() / 1000);
     clock.advance(10);
 
-    await set.revokeUser(PROJECT, USER);
+    await set.revokeUser(PROJECT, USER, clock.now());
 
     expect(await set.isRevoked(PROJECT, subject({ issuedAt: issued }))).toBe(true);
   });
@@ -166,13 +166,13 @@ describe("a user watermark", () => {
    * ADR-0009 refuses because nothing the client does can clear it.
    */
   it("spares a token issued in its own second", async () => {
-    await set.revokeUser(PROJECT, USER);
+    await set.revokeUser(PROJECT, USER, clock.now());
 
     expect(await set.isRevoked(PROJECT, subject())).toBe(false);
   });
 
   it("spares a token issued after it", async () => {
-    await set.revokeUser(PROJECT, USER);
+    await set.revokeUser(PROJECT, USER, clock.now());
     clock.advance(5);
 
     expect(await set.isRevoked(PROJECT, subject())).toBe(false);
@@ -183,7 +183,7 @@ describe("a user watermark", () => {
     const issued = Math.floor(clock.nowMs() / 1000);
     clock.advance(10);
 
-    await set.revokeUser(PROJECT, USER);
+    await set.revokeUser(PROJECT, USER, clock.now());
 
     expect(
       await set.isRevoked(
@@ -200,7 +200,7 @@ describe("a project watermark", () => {
     const issued = Math.floor(clock.nowMs() / 1000);
     clock.advance(10);
 
-    await set.revokeProject(PROJECT);
+    await set.revokeProject(PROJECT, clock.now());
 
     expect(
       await set.isRevoked(
@@ -215,7 +215,7 @@ describe("a project watermark", () => {
     const issued = Math.floor(clock.nowMs() / 1000);
     clock.advance(10);
 
-    await set.revokeProject(PROJECT);
+    await set.revokeProject(PROJECT, clock.now());
 
     expect(await set.isRevoked("prj_00000000000000000002", subject({ issuedAt: issued }))).toBe(
       false,
@@ -225,7 +225,7 @@ describe("a project watermark", () => {
 
 describe("retention", () => {
   it("stops answering revoked once nothing it covers can still be live", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
     clock.advance(RETENTION + 1);
 
     expect(await set.isRevoked(PROJECT, subject())).toBe(false);
@@ -237,19 +237,35 @@ describe("retention", () => {
    * project, which is the one way a bounded set stops being bounded.
    */
   it("prunes on write, not only when something asks for the snapshot", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
     clock.advance(RETENTION + 1);
 
-    await set.revokeSessions(PROJECT, [OTHER_SESSION]);
+    await set.revokeSessions(PROJECT, [OTHER_SESSION], clock.now());
 
     expect([...(commands.sorted.get(`rev:s:${PROJECT}`) ?? [])].map(([id]) => id)).toEqual([
       OTHER_SESSION,
     ]);
   });
 
+  /**
+   * What makes the reconciler free to replay. It re-applies the same outbox event on every
+   * pass, and an entry whose score moved forward each time would never age out: the set
+   * would stop being bounded by retention and start being bounded by nothing.
+   */
+  it("lands a replayed revocation on the same entry rather than a fresher one", async () => {
+    const revokedAt = clock.now();
+    await set.revokeSessions(PROJECT, [SESSION], revokedAt);
+    clock.advance(120);
+
+    await set.revokeSessions(PROJECT, [SESSION], revokedAt);
+    clock.advance(RETENTION - 119);
+
+    expect(await set.isRevoked(PROJECT, subject())).toBe(false);
+  });
+
   /** So a project that stops revoking stops holding a set at all. */
   it("gives the key an expiry every time it writes", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
 
     expect(commands.expiries.get(`rev:s:${PROJECT}`)).toBe(RETENTION);
   });
@@ -258,9 +274,9 @@ describe("retention", () => {
 describe("the published snapshot", () => {
   it("carries all three shapes", async () => {
     clock.advance(10);
-    await set.revokeSessions(PROJECT, [SESSION]);
-    await set.revokeUser(PROJECT, USER);
-    await set.revokeProject(PROJECT);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
+    await set.revokeUser(PROJECT, USER, clock.now());
+    await set.revokeProject(PROJECT, clock.now());
     const at = Math.floor(clock.nowMs() / 1000);
 
     const snapshot = await set.snapshot(PROJECT);
@@ -271,10 +287,10 @@ describe("the published snapshot", () => {
   });
 
   it("drops what has aged out, so the payload cannot grow with tenure", async () => {
-    await set.revokeSessions(PROJECT, [SESSION]);
-    await set.revokeUser(PROJECT, USER);
+    await set.revokeSessions(PROJECT, [SESSION], clock.now());
+    await set.revokeUser(PROJECT, USER, clock.now());
     clock.advance(RETENTION + 1);
-    await set.revokeSessions(PROJECT, [OTHER_SESSION]);
+    await set.revokeSessions(PROJECT, [OTHER_SESSION], clock.now());
 
     const snapshot = await set.snapshot(PROJECT);
 

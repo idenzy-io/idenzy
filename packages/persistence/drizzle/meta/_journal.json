@@ -64,6 +64,20 @@
       "when": 1788416657909,
       "tag": "0008_lowly_boomer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788419373628,
+      "tag": "0009_shallow_havok",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788419384917,
+      "tag": "0010_webauthn_rls_and_grants",
+      "breakpoints": true
     }
   ]
 }

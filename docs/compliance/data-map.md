@@ -13,9 +13,9 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 |---|---|
 | pii | 26 |
 | phi | 0 |
-| secret | 16 |
-| pseudonymous | 22 |
-| operational | 209 |
+| secret | 17 |
+| pseudonymous | 23 |
+| operational | 223 |
 
 ## `api_keys`
 
@@ -546,15 +546,35 @@ Notes:
 
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
+## `webauthn_challenges`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `ceremony` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `challengeHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `userId` | pseudonymous | authentication | days_30 | no | row_deleted | no |
+
+Notes:
+
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `userId`: Set for registration, which happens in a session. Null for authentication.
+
 ## `webauthn_credentials`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `aaguid` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `backupEligible` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `backupState` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `credentialId` | pii | authentication | until_account_deletion | yes | tombstone | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `lastUsedAt` | operational | account_management | until_account_deletion | yes | not_applicable | no |
 | `name` | pii | account_management | until_account_deletion | yes | tombstone | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `publicKey` | pseudonymous | authentication | until_account_deletion | no | null_out | no |
@@ -564,9 +584,29 @@ Notes:
 
 Notes:
 
+- `backupEligible`: The signed BE flag. Fixed for the credential's life: an authenticator that changes it is not the one we registered.
+- `backupState`: The signed BS flag, which does move: an eligible credential is backed up later, not at registration.
+- `lastUsedAt`: Advanced on every successful assertion, so the owner can tell which passkey is stale.
 - `name`: User-chosen label, such as the name of a phone.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `signCount`: A decrease suggests a cloned authenticator and is a security signal.
+
+## `webauthn_relying_parties`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `origins` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `rpId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `rpName` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `origins`: Exact match. No wildcards, for the same reason redirect_uris has none.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `rpName`: Shown by the authenticator when it asks. The customer's product name, not ours.
 
 ## `webhook_deliveries`
 

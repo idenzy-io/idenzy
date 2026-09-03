@@ -89,10 +89,19 @@ export const webauthnCredentials = classifiedTable(
     }),
     transports: classified(text("transports").array().notNull().default([]), accountOperational),
     aaguid: classified(text("aaguid"), accountOperational),
-    backupEligible: classified(
-      boolean("backup_eligible").notNull().default(false),
-      accountOperational,
-    ),
+    backupEligible: classified(boolean("backup_eligible").notNull().default(false), {
+      ...accountOperational,
+      note: "The signed BE flag. Fixed for the credential's life: an authenticator that changes it is not the one we registered.",
+    }),
+    backupState: classified(boolean("backup_state").notNull().default(false), {
+      ...accountOperational,
+      note: "The signed BS flag, which does move: an eligible credential is backed up later, not at registration.",
+    }),
+    lastUsedAt: classified(timestamp("last_used_at", { withTimezone: true }), {
+      ...accountOperational,
+      subjectField: true,
+      note: "Advanced on every successful assertion, so the owner can tell which passkey is stale.",
+    }),
     name: classified(text("name"), {
       class: DataClass.Pii,
       purpose: Purpose.AccountManagement,

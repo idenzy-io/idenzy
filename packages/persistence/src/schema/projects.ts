@@ -118,6 +118,43 @@ export const redirectUris = classifiedTable(
   ],
 ).enableRLS();
 
+/**
+ * The WebAuthn relying party a project's passkeys belong to (PROJECT.md 4.7).
+ *
+ * One row per project, and the unique index is what makes that structural. A credential
+ * is bound to the RP ID it was created under and no other, so a project with two of them
+ * would have two disjoint sets of passkeys and a sign-in that works or not depending on
+ * which page the user started from. Better to make the second one impossible than to
+ * explain it.
+ *
+ * `origins` is a second, exact-match allowlist rather than something derived from
+ * `rpId`. The RP ID is a registrable suffix, so `example.com` covers every subdomain of
+ * it, and inferring the origins from that would silently let any subdomain a customer
+ * does not control assert their users' passkeys. Native apps need entries that are not
+ * URLs at all (`android:apk-key-hash:...`), which the same column carries.
+ */
+export const webauthnRelyingParties = classifiedTable(
+  "webauthn_relying_parties",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(),
+    rpId: classified(text("rp_id").notNull(), { ...config, loggable: true }),
+    rpName: classified(text("rp_name").notNull(), {
+      ...config,
+      note: "Shown by the authenticator when it asks. The customer's product name, not ours.",
+    }),
+    origins: classified(text("origins").array().notNull().default([]), {
+      ...config,
+      note: "Exact match. No wildcards, for the same reason redirect_uris has none.",
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("webauthn_relying_parties_project_key").on(t.projectId),
+    tenantIsolationPolicy("webauthn_relying_parties"),
+  ],
+).enableRLS();
+
 /** Publishable and secret API keys. Only the hash and a display prefix are stored. */
 export const apiKeys = classifiedTable(
   "api_keys",

@@ -77,6 +77,60 @@ export const otpChallenges = classifiedTable(
 ).enableRLS();
 
 /**
+ * The nonce a WebAuthn ceremony has to sign over (PROJECT.md 4.7).
+ *
+ * Only the digest is kept. Unlike the OAuth verifier we never have to present this value
+ * to anybody: the browser sends the challenge back inside `clientDataJSON` and our only
+ * job is to say whether it is the one we issued, which a comparison of digests answers.
+ * So a leak of this table yields nothing an attacker could sign against.
+ *
+ * `userId` is set for registration and null for authentication, and the asymmetry is the
+ * design rather than a missing column. Registration happens inside a session, so the
+ * challenge is pinned to the account it may enrol a credential onto and cannot be
+ * redirected to another. Authentication has nobody yet: the credential the browser
+ * chooses is what names the user, which is what makes a passkey sign-in usernameless.
+ */
+export const webauthnChallenges = classifiedTable(
+  "webauthn_challenges",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(),
+    ceremony: classified(text("ceremony").notNull(), { ...config, loggable: true }),
+    challengeHash: classified(text("challenge_hash").notNull(), {
+      ...credential,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    userId: classified(
+      uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+      {
+        ...ephemeralChallenge,
+        loggable: true,
+        note: "Set for registration, which happens in a session. Null for authentication.",
+      },
+    ),
+    expiresAt: classified(timestamp("expires_at", { withTimezone: true }).notNull(), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    consumedAt: classified(timestamp("consumed_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("webauthn_challenges_hash_key").on(t.challengeHash),
+    index("webauthn_challenges_expiry_idx").on(t.expiresAt),
+    tenantIsolationPolicy("webauthn_challenges"),
+  ],
+).enableRLS();
+
+/**
  * Magic link tokens.
  *
  * `redirectUri` is resolved against the project allowlist at issue time and stored, so

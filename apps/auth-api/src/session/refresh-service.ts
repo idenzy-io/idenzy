@@ -19,6 +19,7 @@ import { type Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-o
 import { SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
+import { RevocationPublisher } from "./revocation-publisher.js";
 import { SessionService } from "./session-service.js";
 
 interface Repositories {
@@ -35,7 +36,7 @@ interface Repositories {
  */
 type Rotation =
   | { readonly kind: "rotated"; readonly session: IssuedSession }
-  | { readonly kind: "reused" }
+  | { readonly kind: "reused"; readonly sessionId: string }
   | { readonly kind: "invalid" }
   | { readonly kind: "session_revoked" }
   | { readonly kind: "session_expired" };
@@ -55,6 +56,7 @@ export class RefreshService {
     private readonly sessions: SessionService,
     private readonly config: AppConfig,
     private readonly logger: Logger,
+    private readonly revocations: RevocationPublisher,
   ) {}
 
   async rotate(context: FlowContext, presented: string): Promise<IssuedSession> {
@@ -62,6 +64,12 @@ export class RefreshService {
     const rotation = await this.uow.run(tenant, (tx) =>
       this.attempt(tx, tenant, context, hashToken(presented)),
     );
+    // After the commit, and before the throw that follows it. Reuse detection revokes a
+    // session nobody asked us to revoke, so it is the one revocation a customer's verifier
+    // has no other way to hear about (ADR-0009).
+    if (rotation.kind === "reused") {
+      await this.revocations.sessionsRevoked(tenant, [rotation.sessionId]);
+    }
     return this.resolve(rotation, context);
   }
 
@@ -180,7 +188,7 @@ export class RefreshService {
       millisecondsSinceRotation: sinceRotation,
       likelyCause: likelyCause(sinceRotation),
     });
-    return { kind: "reused" };
+    return { kind: "reused", sessionId };
   }
 
   /** Throws after the transaction has committed, so the revocations survive the error. */

@@ -1,20 +1,23 @@
 import { SystemClock } from "@idenzy/core/time/clock";
+import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import { IssuerTokenVerifier } from "@idenzy/crypto/tokens/token-verifier";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
+import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SessionPrincipal } from "../dist/session/session.guard.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig } from "./fixtures.js";
+import { testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const clock = new SystemClock();
+const revocations = testRevocations(clock);
 const config = testConfig();
 
 let uow: UnitOfWork;
@@ -36,7 +39,7 @@ beforeAll(async () => {
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   verifier = new IssuerTokenVerifier(issuer, config.get("ISSUER_BASE_URL"));
-  sessions = new SessionService(uow, clock, issuer, config);
+  sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -66,13 +69,19 @@ async function newUser(email: string): Promise<string> {
   return rows[0]?.id ?? "";
 }
 
-async function signIn(userId: string): Promise<{ sessionId: string; accessToken: string }> {
+async function signIn(
+  userId: string,
+): Promise<{ sessionId: string; accessToken: string; refreshToken: string }> {
   const issued = await sessions.issueSession(context, {
     userId,
     amr: [AuthMethod.Password],
     requiresMfa: false,
   });
-  return { sessionId: issued.sessionId, accessToken: issued.accessToken };
+  return {
+    sessionId: issued.sessionId,
+    accessToken: issued.accessToken,
+    refreshToken: issued.refreshToken,
+  };
 }
 
 function principal(userId: string, sessionId: string): SessionPrincipal {
@@ -196,5 +205,55 @@ describe("revoking a session", () => {
       ),
     );
     expect(Number(alive.rows[0]?.count)).toBe(0);
+  });
+
+  /**
+   * The published half. A customer's verifier is offline, so the session row this test's
+   * neighbours assert on is invisible to it: the set is the only way the revocation
+   * reaches them before the access token expires (ADR-0009).
+   */
+  it("publishes the ended session where an offline verifier can see it", async () => {
+    const userId = await newUser("published@a.test");
+    const session = await signIn(userId);
+
+    await sessions.revokeSession(context, principal(userId, session.sessionId), session.sessionId);
+
+    const snapshot = await revocations.set.snapshot(PROJECT);
+    expect(snapshot.sessions).toContain(PublicId.encode(IdPrefix.Session, session.sessionId).value);
+  });
+
+  /** Public ids, because that is what a token carries and what the SDK compares. */
+  it("publishes the id the token carries, never the database uuid", async () => {
+    const userId = await newUser("public-id@a.test");
+    const session = await signIn(userId);
+
+    await sessions.revokeSession(context, principal(userId, session.sessionId), session.sessionId);
+
+    const snapshot = await revocations.set.snapshot(PROJECT);
+    expect(snapshot.sessions).not.toContain(session.sessionId);
+    expect(snapshot.sessions.every((id) => id.startsWith("ses_"))).toBe(true);
+  });
+});
+
+describe("signing out everywhere", () => {
+  /**
+   * One watermark, not one entry per device. A user with many sessions would otherwise
+   * write one entry each, and a published set has to stay bounded by the retention window
+   * rather than by how many devices somebody owns (ADR-0009).
+   */
+  it("publishes a single user watermark rather than every session it ended", async () => {
+    const userId = await newUser("everywhere@a.test");
+    const first = await signIn(userId);
+    await signIn(userId);
+    await signIn(userId);
+    const before = (await revocations.set.snapshot(PROJECT)).sessions.length;
+
+    await sessions.signOut(context, first.refreshToken, "all");
+
+    const snapshot = await revocations.set.snapshot(PROJECT);
+    expect(snapshot.sessions).toHaveLength(before);
+    expect(snapshot.users).toContainEqual(
+      expect.objectContaining({ userId: PublicId.encode(IdPrefix.User, userId).value }),
+    );
   });
 });

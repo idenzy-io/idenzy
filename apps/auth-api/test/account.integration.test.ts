@@ -24,7 +24,7 @@ import { PasswordResetService } from "../dist/password/password-reset-service.js
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig } from "./fixtures.js";
+import { testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -32,6 +32,7 @@ const RESET_PAGE = "https://app.test/reset";
 const VERIFY_PAGE = "https://app.test/verify";
 const CHANGE_PAGE = "https://app.test/email";
 const clock = new SystemClock();
+const revocations = testRevocations(clock);
 const config = testConfig();
 const hasher = new Argon2idHasher();
 
@@ -71,13 +72,22 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  const sessions = new SessionService(uow, clock, issuer, config);
+  const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
   mail = new CapturingEmailProvider();
   const mailer = new Mailer(uow, new TemplateRenderer(new NoStoredTemplates()), mail, config);
   const targets = new RedirectTargets(uow);
 
-  reset = new PasswordResetService(uow, clock, hasher, new NoBreaches(), mailer, targets, config);
+  reset = new PasswordResetService(
+    uow,
+    clock,
+    hasher,
+    new NoBreaches(),
+    mailer,
+    targets,
+    config,
+    revocations.publisher,
+  );
   verification = new EmailVerificationService(uow, clock, mailer, targets, config);
   profile = new ProfileService(uow);
   changes = new EmailChangeService(uow, clock, mailer, targets, config);

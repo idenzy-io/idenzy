@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { RefreshService } from "./refresh-service.js";
+import { RevocationPublisher } from "./revocation-publisher.js";
 import { SessionController } from "./session.controller.js";
 import { SessionGuard } from "./session.guard.js";
 import { SessionCookieInterceptor } from "./session-cookie.interceptor.js";
@@ -13,7 +14,8 @@ import { SessionsController } from "./sessions.controller.js";
  * Sessions, refresh rotation and revocation (PROJECT.md 9.2).
  *
  * Exports SessionService because every auth flow needs it as its SessionIssuer, and
- * exports nothing else: rotation is reachable only through the controller.
+ * RevocationPublisher because a password reset ends sessions too. Rotation stays
+ * unexported: it is reachable only through the controller.
  */
 @Module({
   controllers: [SessionController, SessionsController],
@@ -21,6 +23,7 @@ import { SessionsController } from "./sessions.controller.js";
     SessionService,
     RefreshService,
     SessionCookies,
+    RevocationPublisher,
     // Ordered before SessionGuard on purpose: it decides how the session is carried, and
     // the wiring test pins that order because a global guard's position is otherwise an
     // implicit consequence of module import order.
@@ -31,6 +34,6 @@ import { SessionsController } from "./sessions.controller.js";
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_INTERCEPTOR, useClass: SessionCookieInterceptor },
   ],
-  exports: [SessionService, SessionCookies],
+  exports: [SessionService, SessionCookies, RevocationPublisher],
 })
 export class SessionModule {}

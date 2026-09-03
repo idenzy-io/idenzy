@@ -10,6 +10,7 @@ import { EmailVerificationService } from "../dist/account/email-verification-ser
 import { AnonymousFlow } from "../dist/anonymous/anonymous.flow.js";
 import { AnonymousUpgradeFlow } from "../dist/anonymous/anonymous-upgrade.flow.js";
 import { AppModule } from "../dist/app.module.js";
+import { VALKEY } from "../dist/cache/cache.module.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
 import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
@@ -20,8 +21,9 @@ import { PasswordResetService } from "../dist/password/password-reset-service.js
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { RefreshService } from "../dist/session/refresh-service.js";
+import { RevocationPublisher } from "../dist/session/revocation-publisher.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig } from "./fixtures.js";
+import { TestValkey, testConfig } from "./fixtures.js";
 
 /**
  * Compiles the composition root, which is the only way to catch a whole class of DI
@@ -40,6 +42,11 @@ describe("the composition root", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AppConfig)
       .useValue(testConfig())
+      // Overridden for the same reason AppConfig is: building the real client opens a
+      // socket, and a composition-root test that needed Valkey running would be a test of
+      // the environment rather than of the wiring.
+      .overrideProvider(VALKEY)
+      .useValue(new TestValkey())
       .compile();
 
     expect(moduleRef.get(AppConfig)).toBeInstanceOf(AppConfig);
@@ -47,6 +54,7 @@ describe("the composition root", () => {
     expect(moduleRef.get(TokenIssuer)).toBeInstanceOf(TokenIssuer);
     expect(moduleRef.get(SessionService)).toBeInstanceOf(SessionService);
     expect(moduleRef.get(RefreshService)).toBeInstanceOf(RefreshService);
+    expect(moduleRef.get(RevocationPublisher)).toBeInstanceOf(RevocationPublisher);
     // The flows are where a symbol-token mistake would show up, since FlowHooks and
     // FlowAudit are interfaces and cannot be resolved by type.
     expect(moduleRef.get(PasswordSignUpFlow)).toBeInstanceOf(PasswordSignUpFlow);

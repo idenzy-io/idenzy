@@ -21,6 +21,7 @@ import type { ConfirmPasswordReset } from "@idenzy/protocol/schemas/auth";
 import { Injectable } from "@nestjs/common";
 import { Mailer } from "../delivery/mailer.js";
 import { RedirectKind, RedirectTargets } from "../delivery/redirect-targets.js";
+import { RevocationPublisher } from "../session/revocation-publisher.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
 /**
@@ -46,6 +47,7 @@ export class PasswordResetService {
     private readonly mailer: Mailer,
     private readonly targets: RedirectTargets,
     private readonly config: AppConfig,
+    private readonly revocations: RevocationPublisher,
   ) {}
 
   async request(context: FlowContext, email: string): Promise<void> {
@@ -96,7 +98,7 @@ export class PasswordResetService {
     const hashed = await this.hasher.hash(input.password);
     const tenant = tenantContextFrom(context);
 
-    await this.uow.run(tenant, async (tx) => {
+    const signedOut = await this.uow.run(tenant, async (tx) => {
       const tokens = new VerificationTokenRepository(tx, tenant);
       const token = await tokens.findByHash(
         VerificationPurpose.PasswordReset,
@@ -130,6 +132,12 @@ export class PasswordResetService {
         signedOutOtherSessions: input.signOutOtherSessions,
         at: now.toISOString(),
       });
+      return input.signOutOtherSessions ? token.userId : null;
     });
+
+    // A watermark rather than the session list, because a reset is exactly the case where
+    // the list can be long and the reason to publish it is that somebody else may hold
+    // one of them (ADR-0009). After the commit, like every other publish.
+    if (signedOut !== null) await this.revocations.userRevoked(tenant, signedOut);
   }
 }

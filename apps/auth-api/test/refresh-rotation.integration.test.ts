@@ -1,20 +1,23 @@
 import { SystemClock } from "@idenzy/core/time/clock";
+import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod, SessionRevokeReason } from "@idenzy/protocol/enums/auth";
+import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RefreshService } from "../dist/session/refresh-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { SilentLogger, testConfig } from "./fixtures.js";
+import { SilentLogger, testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const clock = new SystemClock();
+const revocations = testRevocations(clock);
 const config = testConfig();
 
 let uow: UnitOfWork;
@@ -36,8 +39,15 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  sessions = new SessionService(uow, clock, issuer, config);
-  refresh = new RefreshService(uow, clock, sessions, config, new SilentLogger());
+  sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  refresh = new RefreshService(
+    uow,
+    clock,
+    sessions,
+    config,
+    new SilentLogger(),
+    revocations.publisher,
+  );
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -173,6 +183,22 @@ describe("reuse detection", () => {
       ),
     );
     expect(Number(revoked.rows[0]?.count)).toBe(0);
+  });
+
+  /**
+   * The same survival property, one layer out. Reuse detection revokes a session nobody
+   * asked us to revoke, so a customer's offline verifier has no other way to hear about
+   * it, and the publish happens after the commit and before the throw. Getting that order
+   * wrong loses the one revocation that most needs to propagate (ADR-0009).
+   */
+  it("publishes the revoked session despite the error it raises", async () => {
+    const { refreshToken, sessionId } = await signIn("reuse-published@a.test");
+    await refresh.rotate(context, refreshToken);
+
+    await expect(refresh.rotate(context, refreshToken)).rejects.toThrow();
+
+    const snapshot = await revocations.set.snapshot(PROJECT);
+    expect(snapshot.sessions).toContain(PublicId.encode(IdPrefix.Session, sessionId).value);
   });
 
   it("stops the successor token working once the family is revoked", async () => {

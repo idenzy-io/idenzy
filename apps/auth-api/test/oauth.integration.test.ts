@@ -34,12 +34,13 @@ import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
 import { OAuthService } from "../dist/oauth/oauth-service.js";
 import { ProviderRegistry } from "../dist/oauth/provider-registry.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig } from "./fixtures.js";
+import { testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const REGISTERED = "https://app.test/auth/social";
 const clock = new SystemClock();
+const revocations = testRevocations(clock);
 const config = testConfig();
 const encryptor = new FieldEncryptor(developmentDataKey("test"));
 
@@ -136,7 +137,7 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  const sessions = new SessionService(uow, clock, issuer, config);
+  const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
   const flows = new DatabaseOAuthFlowStore(uow, encryptor);
   const allowlist = new DatabaseRedirectAllowlist(uow);

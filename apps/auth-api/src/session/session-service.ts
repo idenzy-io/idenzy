@@ -22,6 +22,7 @@ import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import type { SessionList } from "@idenzy/protocol/schemas/session";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
+import { RevocationPublisher } from "./revocation-publisher.js";
 import type { SessionPrincipal } from "./session.guard.js";
 
 export type SignOutScope = "current" | "all";
@@ -41,6 +42,7 @@ export class SessionService implements SessionIssuer {
     private readonly clock: Clock,
     private readonly tokens: TokenIssuer,
     private readonly config: AppConfig,
+    private readonly revocations: RevocationPublisher,
   ) {}
 
   async issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<IssuedSession> {
@@ -110,17 +112,17 @@ export class SessionService implements SessionIssuer {
    */
   async signOut(context: FlowContext, presented: string, scope: SignOutScope): Promise<void> {
     const tenant = tenantContextFrom(context);
-    await this.uow.run(tenant, async (tx) => {
+    const ended = await this.uow.run(tenant, async (tx) => {
       const refresh = new RefreshTokenRepository(tx, tenant);
       const sessions = new SessionRepository(tx, tenant);
 
       const state = await refresh.findByHash(hashToken(presented));
-      if (state === null) return;
+      if (state === null) return null;
       const session = await sessions.findById(state.sessionId);
-      if (session === null) return;
+      if (session === null) return null;
 
       const now = this.clock.now();
-      const ended =
+      const sessionIds =
         scope === "all"
           ? await sessions.revokeAllForUser(
               session.userId,
@@ -128,15 +130,24 @@ export class SessionService implements SessionIssuer {
               now,
             )
           : await this.revokeOne(sessions, session.id, now);
-      await refresh.revokeForSessions(ended, now);
+      await refresh.revokeForSessions(sessionIds, now);
 
       await new OutboxRepository(tx, tenant).enqueue("session.revoked", {
         userId: session.userId,
-        sessionIds: [...ended],
+        sessionIds: [...sessionIds],
         scope,
         at: now.toISOString(),
       });
+      return { userId: session.userId, sessionIds };
     });
+
+    // Published after the commit, so nothing is announced that the transaction could
+    // still roll back (ADR-0009). Signing out everywhere publishes one watermark rather
+    // than one entry per device.
+    if (ended === null) return;
+    await (scope === "all"
+      ? this.revocations.userRevoked(tenant, ended.userId)
+      : this.revocations.sessionsRevoked(tenant, ended.sessionIds));
   }
 
   /**
@@ -196,6 +207,8 @@ export class SessionService implements SessionIssuer {
         at: now.toISOString(),
       });
     });
+
+    await this.revocations.sessionsRevoked(tenant, [sessionId]);
   }
 
   private async revokeOne(

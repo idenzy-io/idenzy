@@ -1,5 +1,11 @@
+import { type RevocationCommands, RevocationSet } from "@idenzy/cache/revocation-set";
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
+import type { Clock } from "@idenzy/core/time/clock";
+// From `dist`, like every other app test: Vitest transforms with Rolldown, which does not
+// apply the decorator semantics NestJS needs, and a class imported from `src` here would be
+// a different identity from the one the tests construct.
+import { RevocationPublisher } from "../dist/session/revocation-publisher.js";
 
 /**
  * A config parsed from a fixed environment rather than a hand-built object, so a test
@@ -26,5 +32,78 @@ export class SilentLogger extends Logger {
   override error(): void {}
   override child(): Logger {
     return this;
+  }
+}
+
+/**
+ * The revocation set's seven commands, in memory.
+ *
+ * Integration tests use a real `RevocationSet` over this rather than a stubbed publisher,
+ * because what is worth asserting is that a revocation actually reaches the set on the
+ * paths that perform one, and a stub would assert only that we called our own method.
+ */
+export class InMemoryRevocationCommands implements RevocationCommands {
+  readonly sorted = new Map<string, Map<string, number>>();
+  readonly strings = new Map<string, string>();
+
+  zadd(key: string, ...scoreMembers: (string | number)[]): Promise<unknown> {
+    const set = this.sorted.get(key) ?? new Map<string, number>();
+    for (let index = 0; index + 1 < scoreMembers.length; index += 2) {
+      set.set(String(scoreMembers[index + 1]), Number(scoreMembers[index]));
+    }
+    this.sorted.set(key, set);
+    return Promise.resolve(set.size);
+  }
+
+  zscore(key: string, member: string): Promise<string | null> {
+    const found = this.sorted.get(key)?.get(member);
+    return Promise.resolve(found === undefined ? null : String(found));
+  }
+
+  zremrangebyscore(key: string, _min: string, max: string): Promise<unknown> {
+    const set = this.sorted.get(key);
+    if (set === undefined) return Promise.resolve(0);
+    const bound = Number(max.startsWith("(") ? max.slice(1) : max);
+    for (const [member, score] of [...set]) {
+      if (score < bound) set.delete(member);
+    }
+    return Promise.resolve(0);
+  }
+
+  zrange(key: string, _start: number, _stop: number, _scores: "WITHSCORES"): Promise<string[]> {
+    const set = this.sorted.get(key);
+    if (set === undefined) return Promise.resolve([]);
+    return Promise.resolve([...set].flatMap(([member, score]) => [member, String(score)]));
+  }
+
+  set(key: string, value: string, _mode: "EX", _seconds: number): Promise<unknown> {
+    this.strings.set(key, value);
+    return Promise.resolve("OK");
+  }
+
+  get(key: string): Promise<string | null> {
+    return Promise.resolve(this.strings.get(key) ?? null);
+  }
+
+  expire(): Promise<unknown> {
+    return Promise.resolve(1);
+  }
+}
+
+/** A publisher over an in-memory set, with the set handed back so a test can read it. */
+export function testRevocations(clock: Clock): {
+  publisher: RevocationPublisher;
+  set: RevocationSet;
+  commands: InMemoryRevocationCommands;
+} {
+  const commands = new InMemoryRevocationCommands();
+  const set = new RevocationSet(commands, clock, 360);
+  return { publisher: new RevocationPublisher(set, new SilentLogger()), set, commands };
+}
+
+/** The in-memory set plus the one connection method the shutdown hook calls. */
+export class TestValkey extends InMemoryRevocationCommands {
+  quit(): Promise<string> {
+    return Promise.resolve("OK");
   }
 }

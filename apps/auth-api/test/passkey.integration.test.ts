@@ -16,10 +16,11 @@ import { PasskeyService } from "../dist/passkey/passkey-service.js";
 import { RelyingPartyResolver } from "../dist/passkey/relying-party-resolver.js";
 import { encodeUserHandle } from "../dist/passkey/user-handle.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig } from "./fixtures.js";
+import { testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const clock = new SystemClock();
+const revocations = testRevocations(clock);
 const config = testConfig();
 
 const PROJECT = "22222222-2222-2222-2222-222222222222";
@@ -70,7 +71,7 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  const sessions = new SessionService(uow, clock, issuer, config);
+  const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
   const ceremony = new PasskeyCeremony();
   resolver = new RelyingPartyResolver(uow);
   service = new PasskeyService(uow, clock, config, ceremony, resolver);

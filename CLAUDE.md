@@ -193,6 +193,29 @@ is a compile error rather than a runtime one in somebody's browser.
   `InvalidStateError` are a web platform contract older than ours.
 - The package is `private` until Changesets exists. Publishing is its own change.
 
+## Working on `@idenzy/react`
+
+Small on purpose: a provider, three hooks, and a store that adapts one to the other. Four
+things are load-bearing.
+
+- **The client is a prop, never built in the provider.** An `Idenzy` owns the session and
+  the single-flight promise, so a render that built a second one puts two clients on one
+  page rotating the same refresh token, and the second rotation revokes the family
+  (ADR-0007). A client swapped underneath the tree throws rather than being ignored: the
+  quiet version leaves every hook reporting a session nobody is calling any more.
+- **`useSession()` has a status `@idenzy/js` does not.** `loading` covers the window before
+  the first rotation answers. Without it an application renders its signed-out tree for a
+  frame on every load, which is a sign-in form flashed at somebody already signed in.
+- **The snapshot has to be referentially stable.** `useSyncExternalStore` reads it on every
+  render, so returning a fresh object is an infinite loop and not a slow component.
+  `SessionStore` caches, compares field by field, and publishes only on a real change.
+- **Restore runs once per store however many times the effect fires.** React 19 mounts,
+  cleans up and mounts again in development. The rotation underneath is single-flight
+  anyway, and the guard is what makes the second call free rather than merely survivable.
+
+There is deliberately no `useToken()`: a token outlives neither the render it was fetched
+in nor the call it was for, and renewal here is lazy on purpose.
+
 ## Adding an authentication flow
 
 Extend `AuthFlow` in `@idenzy/domain` and implement `verify` only. The base owns MFA

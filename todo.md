@@ -206,8 +206,9 @@ The SDKs (1.5) are what the fifteen-minute exit criterion is actually measured a
 and `@idenzy/js` is the one they are all built on. It is done: the session and its single
 renewal, single-flight refresh under a cross-tab lock, negotiated transport, every flow
 that ends in a session, the passkey ceremonies, OAuth with PKCE, the session list and the
-device name that keeps it from being a list of blanks. Next are the framework packages,
-starting with `@idenzy/react`.
+device name that keeps it from being a list of blanks. `@idenzy/react` is the first
+framework binding on top of it, and it is a provider and three hooks with no UI in it.
+`@idenzy/next` is next, and it is the one the exit criterion actually names.
 
 ### 1.1 Core auth flows
 
@@ -302,7 +303,11 @@ starting with `@idenzy/react`.
       creation. The name is the client's to give, on `X-Idenzy-Device-Name` and only on the
       request that creates a session; the server stores it and never derives one, because
       parsing a user agent rots and a wrong guess on a security screen is worse than a blank
-- [ ] `@idenzy/react` hooks
+- [x] `@idenzy/react` hooks: `IdenzyProvider` plus `useIdenzy`, `useSession` and `useUser`.
+      The client is a prop and never built in a render, because two clients on one page
+      rotate the same token and the second rotation revokes the family (ADR-0007). The
+      session gains a third status, `loading`, which is what keeps an application from
+      flashing its sign-in screen at someone who is already signed in
 - [ ] `@idenzy/next` with App Router support and middleware
 - [ ] `@idenzy/nuxt` module and composables
 - [ ] `@idenzy/node` server SDK: JWKS verification, webhook verification, management API

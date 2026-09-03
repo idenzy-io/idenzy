@@ -9,8 +9,8 @@ An access token is verified offline against a cached JWKS, which is what makes a
 page for a signed-in user cost no round trip (PROJECT.md 4.3). The price is stated where it is
 charged: an offline verifier cannot see a session revoked in the last few minutes, so a revoked
 session keeps working until its access token expires. PROJECT.md 4.2 already commits to the
-remedy, a revocation set of session ids revoked in the last max-TTL window, cached in Valkey and
-exposed on a signed cacheable endpoint.
+remedy: a revocation set of session ids revoked in the last max-TTL window, cached in Valkey and
+exposed on a signed endpoint. It sketched that endpoint as cacheable, which this record revises.
 
 `RevocationSet` exists in `@idenzy/cache`. Nothing constructs a Valkey client and nothing calls
 it, so the set is empty in every environment and no revocation has ever reached it.
@@ -30,9 +30,10 @@ is a worse product than the problem it solves.
 
 **We publish the set. We do not answer questions about it.**
 
-The auth API maintains the set in Valkey per project. A signed, cacheable endpoint serves the
-whole current set. A server SDK polls that endpoint on a timer and checks an in-process replica,
-so a revocation check on the request path is a hash lookup with no I/O.
+The auth API maintains the set in Valkey per project. A signed endpoint, reachable only with the
+project's secret key, serves the whole current set. A server SDK polls that endpoint on a timer
+and checks an in-process replica, so a revocation check on the request path is a hash lookup with
+no I/O.
 
 Three kinds of entry, because one shape cannot carry all three cases:
 
@@ -57,8 +58,8 @@ expire on their own, the set is small: it holds only what was revoked in the las
 even a large project is hundreds to low thousands of ids. Publishing the whole thing every time
 means there is no cursor to drift, no missed event to recover, no ordering to guarantee, and a
 poll that fails costs nothing because the next one is complete. `ETag` makes an unchanged set a
-304, and the edge absorbs the fan-out, so a customer running five hundred instances does not
-reach our origin.
+304, so a customer running five hundred pollers costs us five hundred conditional requests and
+almost no bytes.
 
 A delta feed would buy bytes we are not short of and cost correctness we would have to prove.
 
@@ -89,19 +90,44 @@ the guarantee itself: a Valkey blip delays propagation to the worker's next pass
 losing the revocation permanently. Writing it any other way would mean a revocation could be
 absent from the set with nothing left to notice it.
 
-### The snapshot is signed because it is cacheable
+### A secret key, not a public URL
 
-Cacheable means a CDN, a proxy, or somebody on the path can serve an old copy. Without a
-signature they could serve any copy. That is the attack this endpoint invites and it has to be
-closed at the payload, not at the transport.
+PROJECT.md 4.2 sketched this as a *cacheable* endpoint, which reads as public. It cannot be.
+
+The payload names users whose sessions were all ended, and when. A project id is not a secret:
+it is the `aud` of every access token we sign, so it reaches every browser the customer serves.
+A public endpoint addressed by project id would therefore let anyone who has ever held one token
+poll that project's revocation stream indefinitely and watch its users' security events. That is
+a surveillance channel handed out with every sign-in.
+
+So it takes the project's secret key on `Authorization`, which the existing tenant guard already
+resolves and already records as the one credential that is a machine acting rather than an
+application being used. A publishable key is refused: that is the key that reaches browsers, and
+it is the whole reason the endpoint cannot be public.
+
+The cost is that a shared CDN cannot serve it, so the fan-out lands on our origin. An `ETag` over
+the content is what makes that affordable: a poll that finds nothing changed is a 304 with no
+body and no signature, which is the common case by a wide margin. The response is
+`Cache-Control: private`, because a shared cache keyed on the URL would serve one project's set
+to another project's key.
+
+### It is signed as well as authenticated
+
+TLS ends wherever the customer terminates it, and a private cache is still a cache. The signature
+is what makes the payload's origin checkable at the SDK rather than at the last hop.
 
 It is a JWS signed with the project's own ES256 key, so an SDK verifies it with the JWKS it
 already caches: no new key material, no second trust root, no new verification path to get wrong.
 
-It carries `iat` and `exp`. Without an expiry, an attacker who controls the cache could pin one
-snapshot forever and revocation would silently stop working with nothing observable from either
-end. With one, a frozen snapshot becomes a stale snapshot, which is a state the SDK can see and
-act on.
+That reuse creates the one hazard worth naming. The same key signs access tokens, so a signature
+alone does not say which kind of statement is in hand. Two things separate them. A snapshot
+carries a `typ` that is not `JWT`, and both access-token verifiers now require `JWT`. And the
+issuer refuses to put `sub` or `sid` in a statement at all, so a snapshot cannot be shaped like a
+credential even if some future verifier forgets to check the media type.
+
+It carries `iat` and `exp`. Without an expiry, anything on the path could pin one snapshot
+forever and revocation would silently stop working with nothing observable from either end. With
+one, a frozen snapshot becomes a stale snapshot, which is a state the SDK can see and act on.
 
 ### A stale replica is a third state
 
@@ -133,5 +159,11 @@ our own API, so the set is only ever an accelerator there.
   between cells is part of the propagation number we advertise and not a detail below it.
 - Consuming the set stays opt-in in the server SDKs. A customer who does not turn it on keeps a
   package that makes no network call of its own, which is what `@idenzy/node` documents today.
+- Turning it on means giving a server SDK a secret key, which it does not need for anything else.
+  That is a real addition to what a customer configures, and it is server-side only: a secret key
+  in a browser bundle is the mistake the publishable key exists to prevent.
+- If origin fan-out ever becomes the constraint, the escape hatch is a short-lived signed URL
+  rather than making the endpoint public, because the leak is in the payload and not the
+  transport.
 - No certification is claimed anywhere here. This is an architecture decision, not a control
   (PROJECT.md 4.13.10).

@@ -18,6 +18,8 @@ export interface MintOptions {
   readonly fva?: number;
   readonly expiresInSeconds?: number;
   readonly extra?: Readonly<Record<string, unknown>>;
+  /** The JOSE media type. Anything but `JWT` is a statement of another kind. */
+  readonly typ?: string;
 }
 
 /**
@@ -39,7 +41,7 @@ export async function testIssuer(kid = "test-key"): Promise<TestIssuer> {
         ...(options.fva === undefined ? {} : { fva: options.fva }),
         ...options.extra,
       })
-        .setProtectedHeader({ alg: "ES256", kid, typ: "JWT" })
+        .setProtectedHeader({ alg: "ES256", kid, typ: options.typ ?? "JWT" })
         .setIssuer(options.issuer ?? ISSUER)
         .setAudience(options.audience ?? PROJECT)
         .setSubject(options.subject ?? "usr_00000000000000000001")

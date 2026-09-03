@@ -15,7 +15,7 @@ export const VALKEY = "VALKEY";
  * after we would call it expired. Retaining for that much longer than the lifetime means
  * the set still covers a token somebody else's clock thinks is alive.
  */
-const SKEW_SECONDS = 60;
+export const REVOCATION_SKEW_SECONDS = 60;
 
 /**
  * Closes the connection when the application does.
@@ -64,7 +64,11 @@ export class ValkeyLifecycle implements OnApplicationShutdown {
       provide: RevocationSet,
       inject: [VALKEY, Clock, AppConfig],
       useFactory: (valkey: ValkeyClient, clock: Clock, config: AppConfig): RevocationSet =>
-        new RevocationSet(valkey, clock, config.get("ACCESS_TOKEN_TTL_SECONDS") + SKEW_SECONDS),
+        new RevocationSet(
+          valkey,
+          clock,
+          config.get("ACCESS_TOKEN_TTL_SECONDS") + REVOCATION_SKEW_SECONDS,
+        ),
     },
     ValkeyLifecycle,
   ],

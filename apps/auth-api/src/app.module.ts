@@ -15,6 +15,7 @@ import { OtpModule } from "./otp/otp.module.js";
 import { PasskeyModule } from "./passkey/passkey.module.js";
 import { PasswordModule } from "./password/password.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
+import { RevocationController } from "./revocation/revocation.controller.js";
 import { SessionModule } from "./session/session.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 import { WellKnownController } from "./well-known/well-known.controller.js";
@@ -46,6 +47,6 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     AccountModule,
     AnonymousModule,
   ],
-  controllers: [HealthController, WellKnownController],
+  controllers: [HealthController, WellKnownController, RevocationController],
 })
 export class AppModule {}

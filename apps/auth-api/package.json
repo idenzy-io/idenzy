@@ -42,6 +42,7 @@
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "argon2": "catalog:",
+    "jose": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

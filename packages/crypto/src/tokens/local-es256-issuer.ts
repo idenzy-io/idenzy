@@ -36,12 +36,23 @@ export class LocalEs256Issuer extends TokenIssuer {
     return new LocalEs256Issuer(clock, issuer, ttlSeconds, privateKey, publicJwk);
   }
 
+  /**
+   * The header the base assembled, with our `kid` added.
+   *
+   * It used to be discarded and replaced with a hardcoded `typ: "JWT"`, which made the
+   * base's header argument a lie and would have signed a revocation snapshot as an access
+   * token. The media type is the only thing separating the two, since both carry the same
+   * signature from the same key.
+   */
   protected override async sign(
-    _header: object,
+    header: object,
     payload: object,
   ): Promise<{ jwt: string; kid: string }> {
     const jwt = await new SignJWT(payload as Record<string, unknown>)
-      .setProtectedHeader({ alg: "ES256", typ: "JWT", kid: this.publicJwk.kid })
+      .setProtectedHeader({
+        ...(header as { alg: string; typ: string }),
+        kid: this.publicJwk.kid,
+      })
       .sign(this.privateKey);
     return { jwt, kid: this.publicJwk.kid };
   }

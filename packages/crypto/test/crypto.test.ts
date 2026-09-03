@@ -216,3 +216,26 @@ describe("random tokens", () => {
     expect(safeCompareHex("", "")).toBe(false);
   });
 });
+
+/**
+ * One key signs access tokens and revocation snapshots, so the issuer is where the two are
+ * kept apart. A statement that could carry `sub` and `sid` would be a credential minted by
+ * a method nobody thinks of as minting credentials.
+ */
+describe("signing a statement that is not an access token", () => {
+  it("refuses to type one as an access token", async () => {
+    const issuer = await LocalEs256Issuer.create(new SystemClock(), "https://auth.test", 300);
+
+    await expect(issuer.issueStatement("JWT", "prj_x", {}, 60)).rejects.toMatchObject({
+      code: "internal_error",
+    });
+  });
+
+  it("refuses to give one the claims that name a session", async () => {
+    const issuer = await LocalEs256Issuer.create(new SystemClock(), "https://auth.test", 300);
+
+    await expect(
+      issuer.issueStatement("idenzy-revocations+jwt", "prj_x", { sub: "usr_x", sid: "ses_x" }, 60),
+    ).rejects.toMatchObject({ code: "internal_error" });
+  });
+});

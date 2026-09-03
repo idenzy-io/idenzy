@@ -83,6 +83,9 @@ export class AccessTokenVerifier {
         algorithms: ["ES256"],
         clockTolerance: this.tolerance,
         requiredClaims: ["sub", "sid", "iat", "exp"],
+        // The project key signs more than access tokens, and a signature alone does not
+        // say which kind of statement is in hand (RFC 8725 section 3.11).
+        typ: "JWT",
       });
       return read(payload);
     } catch (error: unknown) {

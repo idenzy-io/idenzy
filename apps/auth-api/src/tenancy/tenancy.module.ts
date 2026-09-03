@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { DATABASE } from "../persistence/persistence.module.js";
 import { ProjectResolver } from "./project-resolver.js";
+import { SecretKeyGuard } from "./secret-key.guard.js";
 import { TenantResolutionGuard } from "./tenant-resolution.guard.js";
 
 /**
@@ -22,6 +23,8 @@ import { TenantResolutionGuard } from "./tenant-resolution.guard.js";
       useFactory: (db: NodePgDatabase) => new ProjectResolver(db),
     },
     { provide: APP_GUARD, useClass: TenantResolutionGuard },
+    // After it, and the order matters: this reads the credential kind that one recorded.
+    { provide: APP_GUARD, useClass: SecretKeyGuard },
   ],
   exports: [ProjectResolver],
 })

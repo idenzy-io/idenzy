@@ -144,3 +144,17 @@ describe("reading the token out of a request", () => {
     ).rejects.toBeInstanceOf(MissingCredentialsError);
   });
 });
+
+/**
+ * The project key signs revocation snapshots as well as access tokens, so a signature is
+ * not evidence of which one is in hand. This token is otherwise perfect: right issuer,
+ * right audience, live, and carrying the `sub` and `sid` a session token carries. Only the
+ * media type says it is something else (RFC 8725 section 3.11).
+ */
+describe("a statement of another kind", () => {
+  it("is refused even when it is shaped exactly like an access token", async () => {
+    const statement = await tokens.mint({ typ: "idenzy-revocations+jwt" });
+
+    await expect(verifier.verify(statement)).rejects.toBeInstanceOf(AccessTokenInvalidError);
+  });
+});

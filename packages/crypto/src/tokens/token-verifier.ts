@@ -43,6 +43,9 @@ export class IssuerTokenVerifier extends TokenVerifier {
       const { payload } = await jwtVerify(token, createLocalJWKSet(keys), {
         issuer: this.issuerUrl,
         algorithms: ["ES256"],
+        // The same key signs revocation snapshots, so the media type is the only thing
+        // separating them from an access token (RFC 8725 section 3.11).
+        typ: "JWT",
       });
       return read(payload);
     } catch (error: unknown) {

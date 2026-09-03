@@ -215,6 +215,7 @@ export abstract class OAuthProvider {
     const response = await this.http.json<Readonly<Record<string, unknown>>>({
       url: this.tokenEndpoint(credentials),
       method: "POST",
+      headers: this.tokenHeaders(credentials),
       form: await this.tokenRequest(credentials, callback, flow),
     });
     if (response.status >= 400) {
@@ -225,6 +226,17 @@ export abstract class OAuthProvider {
       });
     }
     return this.mapGrant(response.data);
+  }
+
+  /**
+   * Headers on the token request, and empty for almost every provider.
+   *
+   * The exception is a provider that requires HTTP Basic client authentication rather than
+   * credentials in the body: X does, and RFC 6749 forbids presenting both, so such an adapter
+   * fills this in and drops `client_secret` from `tokenRequest`.
+   */
+  protected tokenHeaders(_credentials: ProviderCredentials): Record<string, string> {
+    return {};
   }
 
   protected tokenRequest(

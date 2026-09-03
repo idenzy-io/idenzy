@@ -11,6 +11,7 @@ import { GoogleProvider } from "@idenzy/providers-oauth/providers/google-provide
 import { LinkedinProvider } from "@idenzy/providers-oauth/providers/linkedin-provider";
 import { MicrosoftProvider } from "@idenzy/providers-oauth/providers/microsoft-provider";
 import { TwitchProvider } from "@idenzy/providers-oauth/providers/twitch-provider";
+import { XProvider } from "@idenzy/providers-oauth/providers/x-provider";
 import { Module } from "@nestjs/common";
 import { SessionModule } from "../session/session.module.js";
 import { DatabaseOAuthFlowStore } from "./database-oauth-flow-store.js";
@@ -55,6 +56,7 @@ import { ProviderRegistry } from "./provider-registry.js";
           [ProviderId.Discord, new DiscordProvider(http, clock, flows, allowlist)],
           [ProviderId.Twitch, new TwitchProvider(http, clock, flows, allowlist)],
           [ProviderId.Linkedin, new LinkedinProvider(http, clock, flows, allowlist)],
+          [ProviderId.X, new XProvider(http, clock, flows, allowlist)],
         ]);
       },
     },

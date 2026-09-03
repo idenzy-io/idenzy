@@ -12,6 +12,7 @@ import { GoogleProvider } from "../src/providers/google-provider.js";
 import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
 import { TwitchProvider } from "../src/providers/twitch-provider.js";
+import { XProvider } from "../src/providers/x-provider.js";
 
 const providers = {
   google: (d: OAuthProviderDependencies) =>
@@ -29,6 +30,7 @@ const providers = {
     new TwitchProvider(d.http, d.clock, d.flows, d.allowlist),
   linkedin: (d: OAuthProviderDependencies) =>
     new LinkedinProvider(d.http, d.clock, d.flows, d.allowlist),
+  x: (d: OAuthProviderDependencies) => new XProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -146,6 +148,11 @@ describe("provider specifics", () => {
  */
 function completing(answers: readonly { status: number; data: unknown }[]): {
   deps: OAuthProviderDependencies;
+  requests: {
+    url: string;
+    headers?: Record<string, string>;
+    form?: Record<string, string>;
+  }[];
   callbackFor: (provider: string) => {
     provider: string;
     state: string;
@@ -154,6 +161,11 @@ function completing(answers: readonly { status: number; data: unknown }[]): {
   };
 } {
   let next = 0;
+  const requests: {
+    url: string;
+    headers?: Record<string, string>;
+    form?: Record<string, string>;
+  }[] = [];
   const flow = {
     id: "flow-1",
     provider: "any",
@@ -165,9 +177,11 @@ function completing(answers: readonly { status: number; data: unknown }[]): {
     expiresAt: new Date("2026-01-01T00:10:00Z"),
   };
   return {
+    requests,
     deps: {
       http: {
-        json: () => {
+        json: (request: (typeof requests)[number]) => {
+          requests.push(request);
           const answer = answers[next] ?? { status: 500, data: {} };
           next += 1;
           return Promise.resolve(answer);
@@ -232,6 +246,34 @@ describe("profile mapping", () => {
 
     expect(profile.providerUserId).toBe("9001");
     expect(profile.emailVerified).toBe(false);
+  });
+
+  /**
+   * X takes HTTP Basic client authentication and RFC 6749 forbids presenting credentials
+   * two ways at once, so the secret has to leave the form when it enters the header.
+   */
+  it("authenticates to X in the header, and only in the header", async () => {
+    const script = completing([
+      GRANT,
+      { status: 200, data: { data: { id: "5", name: "Ada", username: "ada" } } },
+    ]);
+    const provider = providers.x(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    const token = script.requests[0];
+    expect(token?.headers?.["authorization"]).toBe(
+      `Basic ${Buffer.from("client-id:secret").toString("base64")}`,
+    );
+    expect(token?.form?.["client_secret"]).toBeUndefined();
+    expect(token?.form?.["code_verifier"]).toBe("v".repeat(64));
+    // X releases no address, so nothing here can be linked to an existing account.
+    expect(profile.email).toBeNull();
+    expect(profile.providerUserId).toBe("5");
   });
 
   /** Helix answers with a one-element array, and wants the client id in a header of its own. */

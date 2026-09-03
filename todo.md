@@ -208,7 +208,10 @@ renewal, single-flight refresh under a cross-tab lock, negotiated transport, eve
 that ends in a session, the passkey ceremonies, OAuth with PKCE, the session list and the
 device name that keeps it from being a list of blanks. `@idenzy/react` is the first
 framework binding on top of it, and it is a provider and three hooks with no UI in it.
-`@idenzy/next` is next, and it is the one the exit criterion actually names.
+`@idenzy/node` came before the framework packages rather than after, because a page
+rendered on a server verifies a token rather than holding a session, and `@idenzy/next`
+needs that half to exist. `@idenzy/next` is next, and it is the one the exit criterion
+actually names.
 
 ### 1.1 Core auth flows
 
@@ -310,7 +313,11 @@ framework binding on top of it, and it is a provider and three hooks with no UI 
       flashing its sign-in screen at someone who is already signed in
 - [ ] `@idenzy/next` with App Router support and middleware
 - [ ] `@idenzy/nuxt` module and composables
-- [ ] `@idenzy/node` server SDK: JWKS verification, webhook verification, management API
+- [~] `@idenzy/node` server SDK. Access-token verification is done: remote JWKS with the
+      cache and the one refetch a rotation needs, `aud` required because one issuer serves
+      every project and the audience is the only thing separating tenants, and reading the
+      token out of a request so SSR costs no round trip. Webhook verification and the
+      management client wait on their server halves, which are 1.6 and not built yet
 - [ ] SDK conformance suite that every client must pass
 - [ ] `idenzy init` scaffolding working routes into the customer's repository
 - [ ] Starter templates per framework, in `examples/`

@@ -216,6 +216,26 @@ things are load-bearing.
 There is deliberately no `useToken()`: a token outlives neither the render it was fetched
 in nor the call it was for, and renewal here is lazy on purpose.
 
+## Working on `@idenzy/node`
+
+The server half, and the smallest package we ship. It verifies; it never holds a session.
+
+- **`aud` is required and the constructor refuses a project id that is not one.** One issuer
+  serves every project on a deployment, so `iss` and the signing key are shared and the
+  audience is the only thing separating tenants. A verifier that skipped it would accept a
+  perfectly good token minted for somebody else's project, and there is a test that says so.
+- **A JWKS endpoint that cannot be reached is not a bad token.** `JWKSTimeout`, `JWKSInvalid`
+  and a `fetch` `TypeError` are rethrown as themselves; wrapping them in
+  `AccessTokenInvalidError` would sign every user out of a customer's application for the
+  length of an outage. An unknown `kid` is the opposite case: `jose` has already refetched by
+  then, so the key really is not ours and the token really is invalid.
+- **Verification is offline and that is a trade, not a free win.** A revoked session stays
+  verifiable until its access token expires, which is why the default lifetime is short and
+  why anything needing instant revocation has to consume the revocation set (PROJECT.md 4.2),
+  which this package does not do yet.
+- It may import `protocol` and `core` and nothing else of ours, and Biome refuses `@idenzy/js`
+  here by path: a client SDK holds a session and speaks to the DOM.
+
 ## Adding an authentication flow
 
 Extend `AuthFlow` in `@idenzy/domain` and implement `verify` only. The base owns MFA

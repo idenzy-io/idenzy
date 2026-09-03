@@ -27,6 +27,15 @@ export interface FlowContext {
    * because the fallback chain is a template concern and not a request one.
    */
   readonly locale: string | null;
+  /**
+   * A CAPTCHA or app-attestation token the client solved for, or null.
+   *
+   * Carried on the context rather than on the schema of the one route that reads it
+   * today, for the same reason the device name is: the next route that spends money on a
+   * request is one somebody would add without the field, and a token that has to be
+   * threaded through a body is a token a new flow forgets.
+   */
+  readonly attestation: string | null;
 }
 
 /**

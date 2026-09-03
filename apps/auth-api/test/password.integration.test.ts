@@ -56,6 +56,7 @@ const context: FlowContext = {
   userAgent: "vitest",
   deviceName: null,
   locale: "en",
+  attestation: null,
 };
 const tenant = new TenantContext(PROJECT, "req_password", "user");
 

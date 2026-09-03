@@ -31,6 +31,15 @@ export const IdenzyHeader = {
    * decides anything from it.
    */
   DeviceName: "x-idenzy-device-name",
+  /**
+   * A CAPTCHA or app-attestation token, for the routes that spend money on a request
+   * (PROJECT.md 4.8).
+   *
+   * A header rather than a body field, on the same reasoning as the device name: it gates
+   * whole routes rather than one payload, and the next route that sends an SMS is one
+   * somebody would add without remembering to put the field on its schema.
+   */
+  Attestation: "x-idenzy-attestation",
 } as const;
 export type IdenzyHeader = (typeof IdenzyHeader)[keyof typeof IdenzyHeader];
 

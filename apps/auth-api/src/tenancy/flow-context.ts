@@ -22,6 +22,7 @@ export function flowContextFrom(request: FastifyRequest): FlowContext {
     userAgent: request.headers["user-agent"] ?? null,
     deviceName: deviceName(request.headers[IdenzyHeader.DeviceName]),
     locale: preferredLocale(request.headers["accept-language"]),
+    attestation: attestation(request.headers[IdenzyHeader.Attestation]),
   };
 }
 
@@ -50,6 +51,20 @@ function deviceName(header: string | string[] | undefined): string | null {
     .replaceAll(/\s+/gu, " ")
     .trim();
   return decoded.length === 0 ? null : decoded.slice(0, 200);
+}
+
+/**
+ * The attestation token a client sent, or null.
+ *
+ * Taken raw and never decoded. Every provider issues these as URL-safe base64 already,
+ * and a token is checked against the issuer's own copy: normalising it here could only
+ * turn a valid token into one that fails to match. The cap is generous because App
+ * Attest assertions are the long ones, and anything past it is not a token.
+ */
+function attestation(header: string | string[] | undefined): string | null {
+  if (typeof header !== "string") return null;
+  const trimmed = header.trim();
+  return trimmed.length === 0 || trimmed.length > 8192 ? null : trimmed;
 }
 
 function decode(value: string): string {

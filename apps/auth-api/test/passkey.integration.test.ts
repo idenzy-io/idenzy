@@ -42,6 +42,7 @@ const context: FlowContext = {
   userAgent: "vitest",
   deviceName: null,
   locale: "en",
+  attestation: null,
 };
 const otherContext: FlowContext = { ...context, projectId: OTHER_PROJECT };
 const tenant = new TenantContext(PROJECT, "req_passkey", "user");

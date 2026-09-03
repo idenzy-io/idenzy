@@ -235,6 +235,40 @@ export class SpendCapReachedError extends ForbiddenError {
   }
 }
 
+/**
+ * A plan or per-project ceiling, not a burst. Distinct from RateLimited because there is
+ * no retry-after that helps: the caller has to raise the quota or wait for the period.
+ */
+export class QuotaExceededError extends ForbiddenError {
+  override readonly code = ErrorCode.QuotaExceeded;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "The project quota for this channel is exhausted.", options);
+  }
+}
+
+/**
+ * The target hard-bounced or complained, so we will never send to it again
+ * (PROJECT.md 11.1).
+ *
+ * Enforced in the `EmailProvider` base before any transport runs. Sending anyway is how
+ * a shared sending domain's reputation is destroyed, and reputation is shared across
+ * every project on it, so this is not a per-project decision to override.
+ */
+export class DeliverySuppressedError extends ForbiddenError {
+  override readonly code = ErrorCode.DeliverySuppressed;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This address is suppressed and cannot be sent to.", options);
+  }
+}
+
+/** The transport refused or failed. Retryable, unlike suppression. */
+export class DeliveryFailedError extends UpstreamError {
+  override readonly code = ErrorCode.DeliveryFailed;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "The message could not be delivered.", options);
+  }
+}
+
 export class ProviderUnavailableError extends UpstreamError {
   override readonly code = ErrorCode.ProviderUnavailable;
   constructor(options: ErrorOptions = {}) {

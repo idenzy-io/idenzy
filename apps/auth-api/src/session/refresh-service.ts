@@ -138,6 +138,7 @@ export class RefreshService {
       session: {
         sessionId,
         userId: session.userId,
+        user,
         accessToken: access.token,
         accessTokenExpiresAt: access.expiresAt,
         refreshToken,

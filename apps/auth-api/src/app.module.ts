@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
+import { FlowsModule } from "./flows/flows.module.js";
 import { HealthController } from "./health/health.controller.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
+import { PasswordModule } from "./password/password.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
 import { SessionModule } from "./session/session.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
@@ -21,8 +23,10 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     ObservabilityModule,
     PersistenceModule,
     CryptoModule,
+    FlowsModule,
     TenancyModule,
     SessionModule,
+    PasswordModule,
   ],
   controllers: [HealthController, WellKnownController],
 })

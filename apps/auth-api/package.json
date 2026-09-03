@@ -37,6 +37,7 @@
     "@nestjs/testing": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "argon2": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

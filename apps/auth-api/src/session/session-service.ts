@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AppConfig } from "@idenzy/config/app-config";
+import { InternalError } from "@idenzy/core/errors/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
@@ -45,7 +46,14 @@ export class SessionService implements SessionIssuer {
     const refreshToken = generateOpaqueToken();
     const now = this.clock.now();
 
-    const sessionId = await this.uow.run(tenant, async (tx) => {
+    const { sessionId, user } = await this.uow.run(tenant, async (tx) => {
+      const users = new UserRepository(tx, tenant);
+      const found = await users.findById(subject.userId);
+      if (found === null) {
+        throw new InternalError({
+          detail: { reason: "a flow verified a user that does not exist", userId: subject.userId },
+        });
+      }
       const sessions = new SessionRepository(tx, tenant);
       const session = await sessions.create({
         userId: subject.userId,
@@ -67,7 +75,7 @@ export class SessionService implements SessionIssuer {
         expiresAt: this.clock.inSeconds(this.config.get("REFRESH_TOKEN_TTL_SECONDS")),
       });
 
-      await new UserRepository(tx, tenant).recordSignIn(subject.userId, now);
+      await users.recordSignIn(subject.userId, now);
       await new OutboxRepository(tx, tenant).enqueue("session.created", {
         sessionId: session.id,
         userId: subject.userId,
@@ -76,13 +84,14 @@ export class SessionService implements SessionIssuer {
         userAgent: context.userAgent,
         at: now.toISOString(),
       });
-      return session.id;
+      return { sessionId: session.id, user: found };
     });
 
     const access = await this.mintAccessToken(tenant, subject.userId, sessionId, subject.amr, null);
     return {
       sessionId,
       userId: subject.userId,
+      user,
       accessToken: access.token,
       accessTokenExpiresAt: access.expiresAt,
       refreshToken,

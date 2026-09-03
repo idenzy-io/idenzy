@@ -60,9 +60,57 @@ export class Argon2idHasher extends PasswordHasher {
     }
   }
 
+  /**
+   * Compares the parameters recorded inside the hash with the current ones.
+   *
+   * Parsed rather than prefix-matched, because the encoded parameter order is the
+   * library's choice and not ours: argon2 emits `m,p,t`, so matching the literal
+   * `m=65536,t=3,p=1` never succeeded and every sign-in rehashed forever.
+   *
+   * Memory and time use `<` rather than `!=`, so a hash produced under stronger settings
+   * is left alone instead of being quietly downgraded.
+   */
   override needsRehash(hash: string): boolean {
-    return !hash.startsWith("$argon2id$v=19$m=65536,t=3,p=1");
+    const parsed = parseArgon2(hash);
+    if (parsed === null) return true;
+    return (
+      parsed.variant !== "argon2id" ||
+      parsed.version !== 19 ||
+      parsed.memoryCost < ARGON2_OPTIONS.memoryCost ||
+      parsed.timeCost < ARGON2_OPTIONS.timeCost ||
+      parsed.parallelism !== ARGON2_OPTIONS.parallelism
+    );
   }
+}
+
+interface Argon2Parameters {
+  readonly variant: string;
+  readonly version: number;
+  readonly memoryCost: number;
+  readonly timeCost: number;
+  readonly parallelism: number;
+}
+
+/** PHC string: `$argon2id$v=19$m=65536,p=1,t=3$salt$digest`. Null when it is not one. */
+function parseArgon2(hash: string): Argon2Parameters | null {
+  const parts = hash.split("$");
+  const [, variant, versionField, parameterField] = parts;
+  if (parts.length < 6 || variant === undefined || parameterField === undefined) return null;
+
+  const version = Number(versionField?.replace("v=", ""));
+  const parameters = new Map(
+    parameterField.split(",").map((pair) => {
+      const [key, value] = pair.split("=");
+      return [key ?? "", Number(value)] as const;
+    }),
+  );
+  const memoryCost = parameters.get("m");
+  const timeCost = parameters.get("t");
+  const parallelism = parameters.get("p");
+  if (memoryCost === undefined || timeCost === undefined || parallelism === undefined) return null;
+  if (!Number.isFinite(version)) return null;
+
+  return { variant, version, memoryCost, timeCost, parallelism };
 }
 
 /**

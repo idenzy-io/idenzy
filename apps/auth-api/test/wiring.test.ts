@@ -5,6 +5,8 @@ import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { Test } from "@nestjs/testing";
 import { describe, expect, it } from "vitest";
 import { AppModule } from "../dist/app.module.js";
+import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
+import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { RefreshService } from "../dist/session/refresh-service.js";
 import { SessionService } from "../dist/session/session-service.js";
 import { testConfig } from "./fixtures.js";
@@ -33,6 +35,10 @@ describe("the composition root", () => {
     expect(moduleRef.get(TokenIssuer)).toBeInstanceOf(TokenIssuer);
     expect(moduleRef.get(SessionService)).toBeInstanceOf(SessionService);
     expect(moduleRef.get(RefreshService)).toBeInstanceOf(RefreshService);
+    // The flows are where a symbol-token mistake would show up, since FlowHooks and
+    // FlowAudit are interfaces and cannot be resolved by type.
+    expect(moduleRef.get(PasswordSignUpFlow)).toBeInstanceOf(PasswordSignUpFlow);
+    expect(moduleRef.get(PasswordSignInFlow)).toBeInstanceOf(PasswordSignInFlow);
 
     await moduleRef.close();
   });

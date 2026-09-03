@@ -1,5 +1,6 @@
 import { MfaRequiredError } from "@idenzy/core/errors/errors";
 import type { AuthMethod } from "@idenzy/protocol/enums/auth";
+import type { User } from "../entities/user.js";
 
 export interface AuthenticatedSubject {
   readonly userId: string;
@@ -23,6 +24,8 @@ export interface FlowContext {
 export interface IssuedSession {
   readonly sessionId: string;
   readonly userId: string;
+  /** Carried here so presenting the result never needs a second read of the row. */
+  readonly user: User;
   readonly accessToken: string;
   readonly accessTokenExpiresAt: Date;
   readonly refreshToken: string;

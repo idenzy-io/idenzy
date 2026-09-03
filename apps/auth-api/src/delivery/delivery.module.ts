@@ -12,6 +12,7 @@ import { DatabaseSuppressionList } from "./database-suppression-list.js";
 import { DatabaseTemplateStore } from "./database-template-store.js";
 import { DatabaseUsageMeter } from "./database-usage-meter.js";
 import { Mailer } from "./mailer.js";
+import { RedirectTargets } from "./redirect-targets.js";
 
 /**
  * Outbound email (PROJECT.md 11).
@@ -46,7 +47,8 @@ import { Mailer } from "./mailer.js";
       ) => new LoggingEmailProvider(suppression, meter, logger, config.get("IDENZY_ENV")),
     },
     Mailer,
+    RedirectTargets,
   ],
-  exports: [Mailer, EmailProvider, TemplateRenderer],
+  exports: [Mailer, RedirectTargets, EmailProvider, TemplateRenderer],
 })
 export class DeliveryModule {}

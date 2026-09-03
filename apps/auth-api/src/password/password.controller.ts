@@ -1,6 +1,10 @@
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import {
+  type ConfirmPasswordReset,
+  confirmPasswordResetSchema,
+  type RequestPasswordReset,
+  requestPasswordResetSchema,
   type SignInWithPassword,
   type SignUpWithPassword,
   signInWithPasswordSchema,
@@ -12,6 +16,7 @@ import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { PasswordResetService } from "./password-reset-service.js";
 import { PasswordSignInFlow } from "./password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "./password-sign-up.flow.js";
 
@@ -27,6 +32,7 @@ export class PasswordController {
   constructor(
     private readonly signUpFlow: PasswordSignUpFlow,
     private readonly signInFlow: PasswordSignInFlow,
+    private readonly reset: PasswordResetService,
   ) {}
 
   @Post("sign-up/password")
@@ -47,6 +53,28 @@ export class PasswordController {
   ): Promise<SessionCreated> {
     const context = flowContextFrom(request);
     return present(await this.signInFlow.authenticate(context, body));
+  }
+
+  /**
+   * Always 202, for an address we know and one we do not. A different answer here is the
+   * classic way a reset form becomes an account enumeration oracle.
+   */
+  @Post("password/reset")
+  @HttpCode(202)
+  requestReset(
+    @Req() request: FastifyRequest,
+    @Body(new ZodValidationPipe(requestPasswordResetSchema)) body: RequestPasswordReset,
+  ): Promise<void> {
+    return this.reset.request(flowContextFrom(request), body.email);
+  }
+
+  @Post("password/reset/confirm")
+  @HttpCode(204)
+  confirmReset(
+    @Req() request: FastifyRequest,
+    @Body(new ZodValidationPipe(confirmPasswordResetSchema)) body: ConfirmPasswordReset,
+  ): Promise<void> {
+    return this.reset.confirm(flowContextFrom(request), body);
   }
 }
 

@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AccountModule } from "./account/account.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
 import { DeliveryModule } from "./delivery/delivery.module.js";
@@ -33,6 +34,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     PasswordModule,
     OtpModule,
     MagicLinkModule,
+    AccountModule,
   ],
   controllers: [HealthController, WellKnownController],
 })

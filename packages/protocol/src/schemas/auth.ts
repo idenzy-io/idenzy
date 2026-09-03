@@ -101,6 +101,26 @@ export const confirmEmailChangeSchema = z.object({
 });
 
 /**
+ * The answer to confirming one half of an email change.
+ *
+ * `applied` is false until both addresses have confirmed, so a customer's UI can say
+ * that the other confirmation is still outstanding rather than claiming the address
+ * moved when it has not (PROJECT.md 4.5).
+ */
+export const emailChangeConfirmedSchema = z.object({
+  applied: z.boolean(),
+});
+
+/**
+ * Confirms an email verification link. Same shape as the change confirmation and
+ * deliberately a separate schema: the two tokens are not interchangeable, and one
+ * endpoint taking both would be the place that stopped enforcing it.
+ */
+export const confirmEmailVerificationSchema = z.object({
+  token: z.string().min(20),
+});
+
+/**
  * Magic link. `redirectUri` must already be registered for the project: it is pinned to
  * the token at issue time, so the destination cannot change between sending the mail
  * and clicking it (PROJECT.md 4.7).
@@ -134,6 +154,8 @@ export type RequestPasswordReset = z.infer<typeof requestPasswordResetSchema>;
 export type ConfirmPasswordReset = z.infer<typeof confirmPasswordResetSchema>;
 export type RequestEmailChange = z.infer<typeof requestEmailChangeSchema>;
 export type ConfirmEmailChange = z.infer<typeof confirmEmailChangeSchema>;
+export type ConfirmEmailVerification = z.infer<typeof confirmEmailVerificationSchema>;
+export type EmailChangeConfirmed = z.infer<typeof emailChangeConfirmedSchema>;
 export type StartMagicLink = z.infer<typeof startMagicLinkSchema>;
 export type MagicLinkCallback = z.infer<typeof magicLinkCallbackSchema>;
 export type UpgradeAnonymous = z.infer<typeof upgradeAnonymousSchema>;

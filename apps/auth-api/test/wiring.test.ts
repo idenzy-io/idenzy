@@ -5,10 +5,13 @@ import { EmailProvider } from "@idenzy/domain/ports/email-provider";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { Test } from "@nestjs/testing";
 import { describe, expect, it } from "vitest";
+import { EmailChangeService } from "../dist/account/email-change-service.js";
+import { EmailVerificationService } from "../dist/account/email-verification-service.js";
 import { AppModule } from "../dist/app.module.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
 import { EmailOtpFlow } from "../dist/otp/email-otp.flow.js";
+import { PasswordResetService } from "../dist/password/password-reset-service.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { RefreshService } from "../dist/session/refresh-service.js";
@@ -45,6 +48,9 @@ describe("the composition root", () => {
     expect(moduleRef.get(PasswordSignInFlow)).toBeInstanceOf(PasswordSignInFlow);
     expect(moduleRef.get(EmailOtpFlow)).toBeInstanceOf(EmailOtpFlow);
     expect(moduleRef.get(MagicLinkFlow)).toBeInstanceOf(MagicLinkFlow);
+    expect(moduleRef.get(PasswordResetService)).toBeInstanceOf(PasswordResetService);
+    expect(moduleRef.get(EmailVerificationService)).toBeInstanceOf(EmailVerificationService);
+    expect(moduleRef.get(EmailChangeService)).toBeInstanceOf(EmailChangeService);
     // The delivery stack, whose transport refuses to construct outside development, so
     // this also pins that the test environment is the one it will accept.
     expect(moduleRef.get(Mailer)).toBeInstanceOf(Mailer);

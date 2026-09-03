@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { redirectUris } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -43,7 +43,10 @@ export class RedirectUriRepository extends BaseRepository<typeof redirectUris> {
     const rows = await this.tx
       .select({ uri: redirectUris.uri })
       .from(redirectUris)
-      .where(and(this.tenantScope(), eq(redirectUris.kind, kind)));
+      .where(and(this.tenantScope(), eq(redirectUris.kind, kind)))
+      // Ordered so "the project's reset page" is the same URI on every request, whatever
+      // order the rows were written in.
+      .orderBy(asc(redirectUris.uri));
     return rows.map((row) => row.uri);
   }
 }

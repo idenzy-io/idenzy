@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { SessionModule } from "../session/session.module.js";
 import { HibpRangeChecker } from "./hibp-range-checker.js";
 import { PasswordController } from "./password.controller.js";
+import { PasswordResetService } from "./password-reset-service.js";
 import { PasswordSignInFlow } from "./password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "./password-sign-up.flow.js";
 
@@ -19,6 +20,7 @@ import { PasswordSignUpFlow } from "./password-sign-up.flow.js";
   providers: [
     PasswordSignUpFlow,
     PasswordSignInFlow,
+    PasswordResetService,
     {
       provide: BreachedPasswordChecker,
       inject: [Logger],

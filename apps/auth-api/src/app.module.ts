@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AccountModule } from "./account/account.module.js";
 import { AnonymousModule } from "./anonymous/anonymous.module.js";
 import { CacheModule } from "./cache/cache.module.js";
+import { ClaimsModule } from "./claims/claims.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
 import { DeliveryModule } from "./delivery/delivery.module.js";
@@ -35,6 +36,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     PersistenceModule,
     CacheModule,
     CryptoModule,
+    ClaimsModule,
     HttpModule,
     FlowsModule,
     TenancyModule,

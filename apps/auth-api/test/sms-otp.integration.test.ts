@@ -23,7 +23,7 @@ import { OtpVerification } from "../dist/otp/otp-verification.js";
 import { SmsOtpFlow } from "../dist/otp/sms-otp.flow.js";
 import { SmsOtpService } from "../dist/otp/sms-otp-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "55555555-5555-5555-5555-555555555555";
@@ -85,7 +85,14 @@ beforeAll(async () => {
   uow = new UnitOfWork(harness.db);
   gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  const sessions = new SessionService(
+    uow,
+    clock,
+    issuer,
+    config,
+    revocations.publisher,
+    claimTemplates(uow, clock),
+  );
 
   transcript = new CapturingLogger();
   const geography = new MetadataPhoneGeography();
@@ -275,7 +282,14 @@ describe("verifying an sms challenge", () => {
 
 async function sessionsFor(): Promise<SessionService> {
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  return new SessionService(uow, clock, issuer, config, revocations.publisher);
+  return new SessionService(
+    uow,
+    clock,
+    issuer,
+    config,
+    revocations.publisher,
+    claimTemplates(uow, clock),
+  );
 }
 
 async function verifiedCount(): Promise<number> {

@@ -143,7 +143,7 @@ export class RefreshService {
     // would ask the user to prove a factor they had just proved.
     const access = await this.sessions.mintAccessToken(
       tenant,
-      session.userId,
+      user,
       sessionId,
       session.amr,
       session.factorVerifiedAt,

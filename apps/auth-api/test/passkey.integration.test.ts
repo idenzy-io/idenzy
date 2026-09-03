@@ -17,7 +17,7 @@ import { PasskeyService } from "../dist/passkey/passkey-service.js";
 import { RelyingPartyResolver } from "../dist/passkey/relying-party-resolver.js";
 import { encodeUserHandle } from "../dist/passkey/user-handle.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const clock = new SystemClock();
@@ -74,7 +74,14 @@ beforeAll(async () => {
   uow = new UnitOfWork(harness.db);
   const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  const sessions = new SessionService(
+    uow,
+    clock,
+    issuer,
+    config,
+    revocations.publisher,
+    claimTemplates(uow, clock),
+  );
   const ceremony = new PasskeyCeremony();
   resolver = new RelyingPartyResolver(uow);
   service = new PasskeyService(uow, clock, config, ceremony, resolver);

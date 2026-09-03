@@ -5,6 +5,10 @@ import type { Clock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+// From `dist`, like every other app test: Vitest transforms with Rolldown, which does not
+// apply the decorator semantics NestJS needs, and a class imported from `src` here would be
+// a different identity from the one the tests construct.
+import { ClaimTemplateService } from "../dist/claims/claim-template-service.js";
 import { MfaFactorRegistry } from "../dist/mfa/factor-registry.js";
 import { MfaChallengeGate } from "../dist/mfa/mfa-challenge-gate.js";
 import { PasskeyFactor } from "../dist/mfa/passkey.factor.js";
@@ -12,9 +16,6 @@ import { RecoveryCodeFactor } from "../dist/mfa/recovery-code.factor.js";
 import { TotpFactor } from "../dist/mfa/totp.factor.js";
 import { PasskeyCeremony } from "../dist/passkey/passkey-ceremony.js";
 import { RelyingPartyResolver } from "../dist/passkey/relying-party-resolver.js";
-// From `dist`, like every other app test: Vitest transforms with Rolldown, which does not
-// apply the decorator semantics NestJS needs, and a class imported from `src` here would be
-// a different identity from the one the tests construct.
 import { RevocationPublisher } from "../dist/session/revocation-publisher.js";
 
 /**
@@ -137,4 +138,15 @@ export function testMfaGate(uow: UnitOfWork, clock: Clock, config: AppConfig): M
       new RecoveryCodeFactor(uow, clock),
     ),
   );
+}
+
+/**
+ * The real claim-template service, which every `SessionService` needs.
+ *
+ * Real rather than a stub returning an empty template, because "a project that configured
+ * nothing gets nothing extra" is the property worth holding, and a stub would assert only
+ * that we called our own method.
+ */
+export function claimTemplates(uow: UnitOfWork, clock: Clock): ClaimTemplateService {
+  return new ClaimTemplateService(uow, clock);
 }

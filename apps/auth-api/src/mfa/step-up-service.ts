@@ -3,6 +3,7 @@ import { ChallengeInvalidError, ReauthenticationRequiredError } from "@idenzy/co
 import { Clock } from "@idenzy/core/time/clock";
 import type { FlowContext, IssuedChallenge } from "@idenzy/domain/ports/auth-flow";
 import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
+import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod, MfaChallengePurpose } from "@idenzy/protocol/enums/auth";
 import type { StepUpCompleted, SubmitMfa } from "@idenzy/protocol/schemas/mfa";
@@ -112,19 +113,23 @@ export class StepUpService {
     const tenant = tenantContextFrom(context);
     const at = this.clock.now();
     const amr = [...principal.amr.filter(isAuthMethod), proved, AuthMethod.Mfa];
-    const recorded = await this.uow.run(tenant, (tx) =>
-      new SessionRepository(tx, tenant).recordFactorVerification(
+    // The user is loaded in the same transaction that records the proof, because the
+    // project's claim template renders from it and reading it afterwards would be a second
+    // round trip for a row this statement already had to touch.
+    const { recorded, user } = await this.uow.run(tenant, async (tx) => ({
+      recorded: await new SessionRepository(tx, tenant).recordFactorVerification(
         principal.sessionId,
         principal.userId,
         at,
         dedupe(amr),
       ),
-    );
-    if (!recorded) throw new ChallengeInvalidError();
+      user: await new UserRepository(tx, tenant).findById(principal.userId),
+    }));
+    if (!recorded || user === null) throw new ChallengeInvalidError();
 
     const access = await this.sessions.mintAccessToken(
       tenant,
-      principal.userId,
+      user,
       principal.sessionId,
       dedupe(amr),
       at,

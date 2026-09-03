@@ -17,7 +17,7 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -55,7 +55,14 @@ beforeAll(async () => {
   uow = new UnitOfWork(harness.db);
   gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  const sessions = new SessionService(
+    uow,
+    clock,
+    issuer,
+    config,
+    revocations.publisher,
+    claimTemplates(uow, clock),
+  );
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
 
@@ -224,6 +231,7 @@ describe("upgrading one", () => {
         await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300),
         config,
         revocations.publisher,
+        claimTemplates(uow, clock),
       ),
       new NullFlowHooks(),
       new OutboxFlowAudit(uow, clock),

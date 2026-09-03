@@ -5,6 +5,7 @@ import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
 import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
+import type { User } from "@idenzy/domain/entities/user";
 import type {
   AuthenticatedSubject,
   FlowContext,
@@ -21,6 +22,7 @@ import { SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import type { SessionList } from "@idenzy/protocol/schemas/session";
 import { Injectable } from "@nestjs/common";
+import { ClaimTemplateService } from "../claims/claim-template-service.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 import { RevocationPublisher } from "./revocation-publisher.js";
 import type { SessionPrincipal } from "./session.guard.js";
@@ -43,6 +45,7 @@ export class SessionService implements SessionIssuer {
     private readonly tokens: TokenIssuer,
     private readonly config: AppConfig,
     private readonly revocations: RevocationPublisher,
+    private readonly claims: ClaimTemplateService,
   ) {}
 
   async issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<IssuedSession> {
@@ -94,7 +97,7 @@ export class SessionService implements SessionIssuer {
 
     const access = await this.mintAccessToken(
       tenant,
-      subject.userId,
+      user,
       sessionId,
       subject.amr,
       subject.factorVerifiedAt,
@@ -230,22 +233,33 @@ export class SessionService implements SessionIssuer {
   /**
    * Claims are public ids, not database uuids: a customer verifying our token offline
    * sees the same identifiers our API returns, and nothing about our row layout.
+   *
+   * The user is taken rather than an id because the project's claim template renders from
+   * it, and every caller already holds one: a session was just issued for them, a rotation
+   * just checked they may still sign in, a step-up just read them. Passing an id would
+   * have meant loading the row a second time on the hottest path in the system.
+   *
+   * The template is read here rather than by each caller, so a new one that mints a token
+   * cannot leave a project's custom claims out. That read is a primary-key lookup on a
+   * tiny table today; the project-config cache PROJECT.md 4.2 assumes is what removes it.
    */
   async mintAccessToken(
     tenant: TenantContext,
-    userId: string,
+    user: User,
     sessionId: string,
     amr: readonly string[],
     factorVerifiedAt: Date | null,
   ): Promise<{ token: string; expiresAt: Date }> {
+    const custom = (await this.claims.load(tenant)).render(user);
     const issued = await this.tokens.issue({
-      sub: PublicId.encode(IdPrefix.User, userId).value,
+      sub: PublicId.encode(IdPrefix.User, user.id).value,
       sid: PublicId.encode(IdPrefix.Session, sessionId).value,
       aud: PublicId.encode(IdPrefix.Project, tenant.projectId).value,
       amr,
       ...(factorVerifiedAt === null
         ? {}
         : { fva: Math.floor((this.clock.nowMs() - factorVerifiedAt.getTime()) / 1000) }),
+      custom,
     });
     return { token: issued.token, expiresAt: issued.expiresAt };
   }

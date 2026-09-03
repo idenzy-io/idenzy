@@ -12,7 +12,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RefreshService } from "../dist/session/refresh-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { SilentLogger, testConfig, testRevocations } from "./fixtures.js";
+import { claimTemplates, SilentLogger, testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -40,7 +40,14 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
-  sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  sessions = new SessionService(
+    uow,
+    clock,
+    issuer,
+    config,
+    revocations.publisher,
+    claimTemplates(uow, clock),
+  );
   refresh = new RefreshService(
     uow,
     clock,

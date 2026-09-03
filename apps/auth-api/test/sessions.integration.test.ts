@@ -12,7 +12,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SessionPrincipal } from "../dist/session/session.guard.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { claimTemplates, testConfig, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -40,7 +40,14 @@ beforeAll(async () => {
   uow = new UnitOfWork(harness.db);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   verifier = new IssuerTokenVerifier(issuer, config.get("ISSUER_BASE_URL"));
-  sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  sessions = new SessionService(
+    uow,
+    clock,
+    issuer,
+    config,
+    revocations.publisher,
+    claimTemplates(uow, clock),
+  );
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)

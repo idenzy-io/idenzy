@@ -2,7 +2,7 @@ import { ValidationFailedError } from "@idenzy/core/errors";
 import { Channel } from "@idenzy/protocol/enums/delivery";
 import { type ChallengeStarted, challengeStartedSchema } from "@idenzy/protocol/schemas/auth";
 import type { ApiClient } from "../http/api-client.js";
-import type { Session } from "../session/session.js";
+import type { AuthResult } from "../mfa/auth-result.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { SessionFlow } from "./session-flow.js";
 
@@ -58,7 +58,7 @@ export class OtpFlow extends SessionFlow {
   }
 
   /** Takes the challenge from the last `start`, or an explicit one across a page load. */
-  verify(input: { readonly code: string; readonly challengeId?: string }): Promise<Session> {
+  verify(input: { readonly code: string; readonly challengeId?: string }): Promise<AuthResult> {
     const challengeId = input.challengeId ?? this.challengeId;
     if (challengeId === null || challengeId === undefined) {
       throw new ValidationFailedError({

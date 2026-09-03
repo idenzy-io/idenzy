@@ -1,7 +1,7 @@
 import type { upgradeAnonymousSchema } from "@idenzy/protocol/schemas/auth";
 import type { z } from "zod";
 import type { ApiClient } from "../http/api-client.js";
-import type { Session } from "../session/session.js";
+import type { AuthResult } from "../mfa/auth-result.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { SessionFlow } from "./session-flow.js";
 
@@ -20,11 +20,11 @@ export class AnonymousFlow extends SessionFlow {
     super(api, sessions);
   }
 
-  signIn(): Promise<Session> {
+  signIn(): Promise<AuthResult> {
     return this.establish({ method: "POST", path: "v1/auth/anonymous" });
   }
 
-  async upgrade(input: UpgradeAnonymousInput): Promise<Session> {
+  async upgrade(input: UpgradeAnonymousInput): Promise<AuthResult> {
     return this.establish({
       method: "POST",
       path: "v1/auth/anonymous/upgrade",

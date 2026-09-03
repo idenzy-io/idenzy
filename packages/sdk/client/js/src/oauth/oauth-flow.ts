@@ -4,7 +4,7 @@ import type { Navigation } from "../browser/navigation.js";
 import { codeFromRedirect } from "../browser/redirect-result.js";
 import { SessionFlow } from "../flows/session-flow.js";
 import type { ApiClient } from "../http/api-client.js";
-import type { Session } from "../session/session.js";
+import type { AuthResult } from "../mfa/auth-result.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { PkceChallenge } from "./pkce.js";
 import type { PkceStore } from "./pkce-store.js";
@@ -62,14 +62,19 @@ export class OAuthFlow extends SessionFlow {
     return this.authorize(`v1/auth/oauth/${input.provider}/link`, input, token);
   }
 
-  /** Finishes on the customer's own route, or does nothing when there is no code there. */
-  completeFromRedirect(): Promise<Session | null> {
+  /**
+   * Finishes on the customer's own route, or does nothing when there is no code there.
+   *
+   * Null still means "this page was not a redirect from us". A completed exchange can now
+   * come back as a challenge, so the two are different answers and the union is what says so.
+   */
+  completeFromRedirect(): Promise<AuthResult | null> {
     const code = codeFromRedirect(this.navigation.current());
     return code === null ? Promise.resolve(null) : this.exchange(code);
   }
 
   /** The single-use code from our redirect, spent with the verifier this browser kept. */
-  exchange(code: string): Promise<Session> {
+  exchange(code: string): Promise<AuthResult> {
     const verifier = this.pkce.take();
     return this.establish({
       method: "POST",

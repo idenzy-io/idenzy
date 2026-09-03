@@ -50,4 +50,9 @@ export class Session {
   withUser(user: PublicUser): Session {
     return new Session(this.id, user, this.accessToken, this.accessTokenExpiresAt);
   }
+
+  /** The same session with a fresher token, which is what a step-up produces. */
+  withToken(accessToken: string, expiresAt: Date): Session {
+    return new Session(this.id, this.user, accessToken, expiresAt);
+  }
 }

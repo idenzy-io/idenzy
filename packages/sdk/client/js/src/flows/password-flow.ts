@@ -6,7 +6,7 @@ import type {
 } from "@idenzy/protocol/schemas/auth";
 import type { z } from "zod";
 import type { ApiClient } from "../http/api-client.js";
-import type { Session } from "../session/session.js";
+import type { AuthResult } from "../mfa/auth-result.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { SessionFlow } from "./session-flow.js";
 
@@ -29,11 +29,11 @@ export class PasswordFlow extends SessionFlow {
     super(api, sessions);
   }
 
-  signUp(input: SignUpWithPasswordInput): Promise<Session> {
+  signUp(input: SignUpWithPasswordInput): Promise<AuthResult> {
     return this.establish({ method: "POST", path: "v1/auth/sign-up/password", body: input });
   }
 
-  signIn(input: SignInWithPasswordInput): Promise<Session> {
+  signIn(input: SignInWithPasswordInput): Promise<AuthResult> {
     return this.establish({ method: "POST", path: "v1/auth/sign-in/password", body: input });
   }
 

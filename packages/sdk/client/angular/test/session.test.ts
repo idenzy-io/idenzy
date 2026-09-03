@@ -53,6 +53,7 @@ function restored(): unknown {
 
 function created(): unknown {
   return {
+    status: "authenticated",
     user: profile(),
     sessionId: "ses_00000000000000000002",
     accessToken: "access.new",

@@ -57,6 +57,7 @@ function user(): PublicUser {
 
 function sessionCreated(): unknown {
   return {
+    status: "authenticated",
     user: user(),
     sessionId: "ses_00000000000000000002",
     accessToken: "access.new",

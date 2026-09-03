@@ -12,6 +12,7 @@ import { ApiClient } from "./http/api-client.js";
 import { type CookieJar, DocumentCookieJar } from "./http/cookie-jar.js";
 import { FetchTransport, type Transport } from "./http/transport.js";
 import { TransportMode } from "./http/transport-mode.js";
+import { MfaApi } from "./mfa/mfa-api.js";
 import { OAuthFlow } from "./oauth/oauth-flow.js";
 import { type PkceStore, SessionStoragePkceStore } from "./oauth/pkce-store.js";
 import { PasskeyFlow } from "./passkey/passkey-flow.js";
@@ -66,6 +67,7 @@ export class Idenzy {
   readonly anonymous: AnonymousFlow;
   readonly account: AccountApi;
   readonly sessions: SessionsApi;
+  readonly mfa: MfaApi;
 
   private readonly manager: SessionManager;
 
@@ -99,6 +101,7 @@ export class Idenzy {
     this.anonymous = new AnonymousFlow(api, this.manager);
     this.account = new AccountApi(api, this.manager);
     this.sessions = new SessionsApi(api, this.manager);
+    this.mfa = new MfaApi(api, this.manager);
     this.signIn = new SignIn(
       this.password,
       this.otp,

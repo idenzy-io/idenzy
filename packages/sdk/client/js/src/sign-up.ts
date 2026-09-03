@@ -1,5 +1,5 @@
 import type { PasswordFlow, SignUpWithPasswordInput } from "./flows/password-flow.js";
-import type { Session } from "./session/session.js";
+import type { AuthResult } from "./mfa/auth-result.js";
 
 /**
  * Registration, which is one method because only one way in needs a separate one.
@@ -13,7 +13,7 @@ import type { Session } from "./session/session.js";
 export class SignUp {
   constructor(private readonly password: PasswordFlow) {}
 
-  withPassword(input: SignUpWithPasswordInput): Promise<Session> {
+  withPassword(input: SignUpWithPasswordInput): Promise<AuthResult> {
     return this.password.signUp(input);
   }
 }

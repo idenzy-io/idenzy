@@ -163,6 +163,23 @@ export class SessionManager {
   }
 
   /**
+   * Swaps the access token for a newer one on the same session, after a step-up.
+   *
+   * Nothing else about the session changed, so the refresh token is untouched: rotating the
+   * credential that mints tokens because a check only read one would be a rotation nobody
+   * asked for, and rotation is the operation where doing it twice revokes the family.
+   */
+  replaceToken(accessToken: string, expiresAt: Date): Session {
+    const current = this.current;
+    if (current === null) throw new MissingCredentialsError();
+    // No emit: the status, the user and the session id are all the same, and a listener
+    // watching for a change would be woken for one that did not happen.
+    const next = current.withToken(accessToken, expiresAt);
+    this.set(next);
+    return next;
+  }
+
+  /**
    * Replaces the profile without touching the tokens, for the reads that return a newer one.
    *
    * Always tells the listeners, unlike `set`: the status has not changed, and a changed

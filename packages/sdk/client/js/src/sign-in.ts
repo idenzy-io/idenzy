@@ -3,9 +3,9 @@ import type { AnonymousFlow } from "./flows/anonymous-flow.js";
 import type { MagicLinkFlow, StartMagicLinkInput } from "./flows/magic-link-flow.js";
 import type { OtpFlow, SmsOtpOptions } from "./flows/otp-flow.js";
 import type { PasswordFlow, SignInWithPasswordInput } from "./flows/password-flow.js";
+import type { AuthResult } from "./mfa/auth-result.js";
 import type { OAuthFlow, StartOAuthInput } from "./oauth/oauth-flow.js";
 import type { PasskeyFlow, PasskeySignInOptions } from "./passkey/passkey-flow.js";
-import type { Session } from "./session/session.js";
 
 /**
  * Every way in, named the way a customer's form reads.
@@ -47,11 +47,11 @@ export class SignIn {
   }
 
   /** Completes the code we sent, over either channel. The challenge names which. */
-  verifyOtp(input: { readonly code: string; readonly challengeId?: string }): Promise<Session> {
+  verifyOtp(input: { readonly code: string; readonly challengeId?: string }): Promise<AuthResult> {
     return this.otp.verify(input);
   }
 
-  withPassword(input: SignInWithPasswordInput): Promise<Session> {
+  withPassword(input: SignInWithPasswordInput): Promise<AuthResult> {
     return this.password.signIn(input);
   }
 
@@ -65,12 +65,12 @@ export class SignIn {
     return this.oauth.signIn(input);
   }
 
-  withPasskey(options?: PasskeySignInOptions): Promise<Session> {
+  withPasskey(options?: PasskeySignInOptions): Promise<AuthResult> {
     return this.passkeys.signIn(options);
   }
 
   /** A real session with no credential behind it, upgradeable later without losing the id. */
-  anonymously(): Promise<Session> {
+  anonymously(): Promise<AuthResult> {
     return this.anonymous.signIn();
   }
 }

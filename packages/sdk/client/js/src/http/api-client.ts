@@ -70,6 +70,26 @@ export class ApiClient {
   }
 
   /**
+   * For the routes whose honest answer is "there is nothing here", which they say with 204.
+   *
+   * A separate method rather than a nullable schema, because the distinction is in the status
+   * and not the body: a 204 has no body to parse, and treating an empty one as a parse failure
+   * would turn a correct answer into a transport error.
+   */
+  async sendOptional<T>(schema: ZodType<T>, spec: RequestSpec): Promise<T | null> {
+    const response = await this.exchange(spec);
+    if (response.status === 204) return null;
+    const parsed = schema.safeParse(readJson(response.body));
+    if (!parsed.success) {
+      throw new IdenzyTransportError(
+        `The answer from ${spec.path} was not the shape this endpoint promises.`,
+        { status: response.status, cause: parsed.error },
+      );
+    }
+    return parsed.data;
+  }
+
+  /**
    * One attempt, or two when the first was refused for asking for cookie mode.
    *
    * The retry is safe and it is worth saying why rather than trusting that it is. The refusal

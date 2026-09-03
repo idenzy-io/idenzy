@@ -75,13 +75,34 @@ export function user(overrides: Partial<PublicUser> = {}): PublicUser {
   };
 }
 
-export function sessionCreated(overrides: Partial<SessionCreated> = {}): SessionCreated {
+/**
+ * The body a session-creating route answers with.
+ *
+ * `status` is part of it now: every way in answers a discriminated union, so a fixture
+ * without the discriminant is a fixture the SDK correctly refuses to parse.
+ */
+export function sessionCreated(
+  overrides: Partial<SessionCreated> = {},
+): SessionCreated & { status: "authenticated" } {
   return {
+    status: "authenticated",
     user: user(),
     sessionId: "ses_00000000000000000001",
     accessToken: "access.one",
     accessTokenExpiresAt: "2026-09-03T12:05:00.000Z",
     refreshToken: "refresh.one",
+    ...overrides,
+  };
+}
+
+/** The other half of the union: a sign-in that stopped at a second factor. */
+export function mfaRequired(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    status: "mfa_required",
+    challengeId: "chl_00000000000000000009",
+    purpose: "sign_in",
+    factors: ["totp", "recovery"],
+    expiresAt: "2026-09-03T12:05:00.000Z",
     ...overrides,
   };
 }

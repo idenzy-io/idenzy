@@ -9,7 +9,7 @@ import {
 import { IdenzyConfigurationError } from "../errors.js";
 import { SessionFlow } from "../flows/session-flow.js";
 import type { ApiClient } from "../http/api-client.js";
-import type { Session } from "../session/session.js";
+import type { AuthResult } from "../mfa/auth-result.js";
 import type { SessionManager } from "../session/session-manager.js";
 import {
   fromAssertion,
@@ -58,7 +58,7 @@ export class PasskeyFlow extends SessionFlow {
   }
 
   /** Signs in with whichever passkey the user picks. Takes no address and names none. */
-  async signIn(options: PasskeySignInOptions = {}): Promise<Session> {
+  async signIn(options: PasskeySignInOptions = {}): Promise<AuthResult> {
     const started = await this.api.send(passkeyAuthenticationOptionsSchema, {
       method: "POST",
       path: "v1/auth/passkeys/authentication/options",

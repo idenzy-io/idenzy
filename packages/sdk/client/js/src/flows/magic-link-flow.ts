@@ -5,7 +5,7 @@ import {
 } from "@idenzy/protocol/schemas/auth";
 import type { z } from "zod";
 import type { ApiClient } from "../http/api-client.js";
-import type { Session } from "../session/session.js";
+import type { AuthResult } from "../mfa/auth-result.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { SessionFlow } from "./session-flow.js";
 
@@ -38,7 +38,7 @@ export class MagicLinkFlow extends SessionFlow {
   }
 
   /** Called on the landing route with the `code` query parameter we sent it. */
-  exchange(code: string): Promise<Session> {
+  exchange(code: string): Promise<AuthResult> {
     return this.establish({
       method: "POST",
       path: "v1/auth/magic-link/exchange",

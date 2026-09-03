@@ -289,7 +289,12 @@ measured against.
 
 ### 1.5 SDKs
 
-- [ ] `@idenzy/js` core: session state, token refresh, storage rules, stable error codes
+- [ ] `@idenzy/js` core: session state, token refresh, storage rules, stable error codes.
+      Single-flight refresh via `navigator.locks` is a requirement rather than an
+      optimisation, because the server stays strict about reuse (ADR-0007)
+- [ ] `signOutEverywhere()` and the session list in the SDK, plus device naming at session
+      creation: `deviceName` is hard-coded null today, so a "your devices" screen lists
+      unnamed rows
 - [ ] `@idenzy/react` hooks
 - [ ] `@idenzy/next` with App Router support and middleware
 - [ ] `@idenzy/nuxt` module and composables
@@ -300,12 +305,24 @@ measured against.
 
 ### 1.6 Platform
 
-- [ ] PKCE on our own exchange codes. `exchangeCodeSchema` already accepts an optional
-      `codeVerifier` and nothing checks it, which is a wire promise we do not keep yet
-- [ ] Web first-party cookie mode: `__Host-` cookie, CSRF double-submit, Origin and
-      Fetch-Metadata checks (§4.3). Applies to every endpoint that returns a session, so
-      it lands once and centrally rather than per route. Until then the refresh token
-      travels in the request body, which is the documented header mode
+- [x] PKCE on our own exchange codes, for OAuth and deliberately not magic links: a link is
+      clicked in a different browser from the one that started it, so a verifier held by the
+      starter would fail the normal case every time. Verified after the code is consumed, so a
+      wrong verifier burns it
+- [x] `X-Idenzy-Publishable-Key`, so a browser can name its project while `Authorization`
+      carries the user's token. First-present-wins, and `pk_` only
+- [x] Browser origins as their own exact-match allowlist (`project_origins`, ADR-0006), and
+      cross-origin access with credentials. Enforced on the actual response; the preflight is
+      strict only where `Host` names a project, because it cannot see the key header
+- [x] Web first-party cookie mode: `__Host-idenzy-refresh` for the opaque credential and
+      `__Host-idenzy-session` for the access token, so SSR verifies offline with no network
+      call. CSRF double-submit, Origin and Fetch-Metadata checks, all applied by one
+      interceptor and one guard rather than per route. Header mode stays the documented
+      cross-site fallback
+- [x] `GET /v1/users/me`, and `includeUser` on refresh, so an SDK boot is one round trip
+- [x] Reuse telemetry on `security.refresh_token_reused`. Nothing branches on it (ADR-0007)
+- [ ] Cookie mode is implemented but unusable in production until custom auth domains exist:
+      `SameSite` is a site rule, so it needs the auth API to be same-site with the app
 - [ ] Project creation, API keys, custom auth domain provisioning
 - [ ] Webhooks with HMAC signing, retries and replay safety
 - [ ] Usage metering and the MAU HyperLogLog sketch
@@ -320,6 +337,16 @@ measured against.
 - [ ] `SmsProvider` base, Twilio and AWS End User Messaging adapters, `ProviderRouter`
 - [ ] Spend caps, country allowlists and pumping detection
 - [ ] TOTP MFA, recovery codes, step-up authentication and the `fva` claim
+- [ ] Customer-defined claim templates: a dashboard-configured mapping from user columns and
+      `metadata_public`/`metadata_private` into the access token, applied by the token issuer.
+      Costs nothing at issue time, because the project config is already cached and the user
+      row is already loaded, unlike the synchronous `customize-claims` hook in phase 3. Four
+      rules it must carry: reserved claims (`iss`, `sub`, `aud`, `exp`, `iat`, `nbf`, `jti`,
+      `sid`, `amr`, `acr`, `fva`) cannot be targeted, and the denylist lives in
+      `@idenzy/protocol` so the server and the dashboard cannot disagree; a claim marked
+      required fails token issue rather than emitting the token without it; mapping from
+      `metadata_private` is a publication and needs an explicit acknowledgement; and the total
+      claim bytes are capped at template-save time, because tokens travel in a header
 - [ ] Vue, SvelteKit, Flutter, iOS, Android and React Native SDKs
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
@@ -388,6 +415,10 @@ measured against.
 - [ ] Platform storage rules audited per SDK: Keychain, Keystore, SecureStore, HttpOnly cookies
 - [ ] npm provenance and CI-only publishing (§7.6)
 - [ ] Measure time-from-signup-to-first-successful-auth, target under 15 minutes (§15)
+- [ ] Consume the Valkey revocation set from `@idenzy/node` and the SSR helpers. Revocation is
+      already immediate against our own API, because `SessionGuard` reads the session row. It
+      is not immediate for anything verifying offline, which is the cost of zero-network-call
+      SSR and the reason the default token TTL is short
 
 ### Docs
 

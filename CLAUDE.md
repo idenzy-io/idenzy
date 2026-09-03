@@ -81,6 +81,17 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
   which bites hardest when handing our own parsed types to a third-party function.
   Conditionally spread the key instead of conditionally setting the value:
   `...(x === undefined ? {} : { transports: x })`.
+- **`CREATE OR REPLACE FUNCTION` cannot change a return type.** Adding an output column to
+  `resolve_project_by_host` or `resolve_project_by_key_hash` means `DROP` then `CREATE`, and
+  privileges do **not** survive the drop, so the `REVOKE ... FROM PUBLIC` and `GRANT EXECUTE
+  ... TO idenzy_app` from migration 0002 must be repeated in the same migration. Forgetting
+  them fails in one way only: the function looks healthy, `idenzy_app` loses its only
+  Host-to-project lookup, and every request answers `unknown_project`.
+- **Throwing inside `uow.run` rolls back what the transaction already did.** That is usually
+  what you want and twice now it was not: reuse detection has to survive the error it raises,
+  and a failed PKCE check has to leave the exchange code spent. Both compute an outcome inside
+  the transaction and throw after it commits. If a check's whole point is that something stays
+  consumed, it belongs outside.
 - **argon2 encodes its parameters as `m,p,t`, not `m,t,p`.** `needsRehash` used to
   prefix-match the wrong order, so it never recognised a hash it had just produced and
   every sign-in rehashed the password again. Parse the PHC string; do not match it.
@@ -100,6 +111,33 @@ Add the code to `@idenzy/protocol/errors/codes`, then a subclass of the right st
 class in `@idenzy/core/errors`. `throw new Error(...)` is a lint error. Codes are
 a public API promise: customers build every user-facing message from them, so renaming
 one is a breaking change.
+
+## Working on the browser-facing edge
+
+Four rules, each of which is load-bearing somewhere it is not obvious.
+
+- **Tenant resolution is first-present-wins, not a fallback chain.** Header, then
+  `Authorization`, then `Host`. A header that is present but unresolvable is a hard failure;
+  falling through to `Host` would let a request that named project A execute against whatever
+  project the Host maps to, and nobody would notice.
+- **The publishable-key header takes `pk_` only**, refused on the prefix before any lookup, so
+  a real secret key and a fabricated one cost the same work and give the same answer.
+- **CORS is enforced on the actual response, not the preflight.** A preflight cannot see the
+  key header, so it can only be strict where `Host` names a project. An unregistered origin
+  gets a normal answer with no `Access-Control-Allow-Origin`, never a 403: the refusal is the
+  browser's, and a hard status would tell a prober the difference between "checked and
+  refused" and "never configured".
+- **Cookie mode needs a custom auth domain, and `SameSite` is why.** It is a *site* rule, so
+  `app.customer.com` to `auth.customer.com` works and `app.customer.com` to the shared API host
+  never will. Cookie mode is refused where it cannot work rather than granted and dropped,
+  because a cookie the browser discards looks exactly like a sign-in that does nothing.
+
+The cross-site checks run **before the credential is stashed on the request**. A forged request
+that consumed the victim's refresh token would trip reuse detection, which revokes the whole
+family: without that ordering, an attacker could sign someone out of every device by making
+their browser send one request. Four routes are exempt via `@BrowserNavigation()` because
+Apple form-posts its callback with its own `Origin`; they are defended by a one-shot `state`
+and a single-use code instead.
 
 ## Adding an authentication flow
 
@@ -127,6 +165,10 @@ The address a challenge belongs to cannot be hashed at all, because verification
 name it in order to create the account behind it. Those columns are `encrypted()` under
 the project's data key, and `otp_challenges` carries both: the hash for the "is there
 already a live code" seek, the ciphertext for the read-back.
+
+`auth_codes.code_challenge` is the mirror image of the OAuth verifier two paragraphs down.
+There we are the *client* and must present the value, so it is encrypted. Here we are the
+*server* and only ever compare, so we store the digest and never the verifier.
 
 A WebAuthn challenge is the easy case and is SHA-256: 256 bits of random with nothing to
 sweep, and the browser hands it back inside `clientDataJSON` so we only ever compare it.

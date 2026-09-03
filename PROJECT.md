@@ -268,11 +268,14 @@ One threat class is **absent by construction**: we render no HTML on any custome
 
 ### 4.3 Web: first-party cookie model
 
-- Customer maps `auth.customer.com` by CNAME to our global load balancer (Certificate Manager issues the TLS cert automatically via DNS authorization).
-- Session cookie: `__Host-` prefixed, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain` attribute leakage. Contains an opaque session reference, not the JWT.
+- Customer maps `auth.customer.com` by CNAME to our global load balancer (Certificate Manager issues the TLS cert automatically via DNS authorization). **This is a precondition, not a convenience.** `SameSite` is a *site* rule, so `app.customer.com` to `auth.customer.com` is same-site and the cookie flows, while `app.customer.com` to our shared API host is cross-site and it never will. On the shared host, header mode is the only mode. Localhost is the development exception.
+- Two cookies, both `__Host-` prefixed, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain` attribute leakage. `__Host-idenzy-refresh` holds an opaque session reference and never the JWT. `__Host-idenzy-session` holds the short-lived access token, so an SSR helper verifies it offline against a cached JWKS and renders with **no network call**, which is what §3.3 promises. The cost is stated where it belongs: an offline verifier cannot see a revocation until that token expires, which is what the revocation set (§4.2) exists to fix and why the default TTL is five minutes.
+- A third cookie, `__Host-idenzy-csrf`, is deliberately readable by JavaScript: double-submit only works if the client can echo it back in a header. The `__Host-` prefix is what makes plain double-submit sound here, because it forbids `Domain` and so no sibling subdomain can write a cookie this host will read.
 - Access token is delivered to the app's JS only in memory, never `localStorage`, or read server-side by SSR helpers from the cookie via the session exchange endpoint.
 - **CSRF**: SameSite=Lax, plus a double-submit token for state-changing endpoints, plus Origin and Fetch-Metadata checks.
-- Cross-subdomain and cross-origin SPA setups are supported through a documented "token in Authorization header" mode, labeled as such and with strict CORS allowlists.
+- Cross-subdomain and cross-origin SPA setups are supported through a documented "token in Authorization header" mode, labeled as such and with strict CORS allowlists. A client declares its mode per request with `X-Idenzy-Session-Transport`, because one project serves a web app and a mobile app that cannot want the same thing. Asking for cookie mode where it cannot work is refused plainly rather than granted and silently dropped.
+- The project is named by `X-Idenzy-Publishable-Key`, checked before `Authorization` and with `Host` as the last fallback. It is **first-present-wins, not a fallback chain**: a header that is present but unresolvable is a hard failure, because falling through to `Host` would let a request that named one project execute against another. The header takes publishable keys only, and a secret key in it is refused on the prefix alone, before any lookup, so it cannot be used to validate a stolen secret key from a browser.
+- Browser origins are their own exact-match allowlist per project (`project_origins`), derived from nothing (ADR-0006).
 - **The auth API returns JSON and HTTP redirects only. It never returns HTML.** A `Content-Type` of `text/html` from an auth endpoint is a bug, and there is a test asserting it. This is what makes the headless decision a security property rather than only a product one: the customer's Content-Security-Policy governs the sign-in page, and no script of ours runs on it.
 
 ### 4.4 Mobile and desktop
@@ -297,6 +300,7 @@ One threat class is **absent by construction**: we render no HTML on any custome
 ### 4.6 OAuth and social sign-in hardening
 
 - Authorization code with PKCE (S256) always; `state` bound to the client session; `nonce` for OIDC; exact-match redirect URI allowlist per project (no wildcards, except an explicit dev-mode `localhost`).
+- **PKCE also applies to our own exchange codes, for OAuth and deliberately not for magic links.** A link is started in one browser and clicked in another, often a mail client's, so a verifier held by the starting browser would fail the normal case every time. The column is nullable and the rule is verify-if-and-only-if-a-challenge-was-stored; magic links are carried by single use, a two-minute life and a redirect pinned at issue.
 - Provider-issuer validation prevents mix-up attacks.
 - **Account linking rules**: auto-link only when the provider asserts `email_verified=true`, otherwise require proof via email OTP. Configurable per project. This single rule prevents the most common IdP-based account takeover.
 - Provider access and refresh tokens are stored with envelope encryption (KMS-wrapped DEK per project) and only when the customer opts in ("I need the provider token").
@@ -856,7 +860,7 @@ Ordered, declarative, identical for every route:
 
 1. **Cloud Armor / LB**: WAF, edge rate limits, TLS termination (§4.9).
 2. **Fastify hooks**: request id, structured log binding, body-size cap, JSON schema-compiled parse.
-3. **`TenantResolutionGuard`**: resolves the project from Host or publishable/secret key, loads cached project config, populates `TenantContext`. No tenant, no request.
+3. **`TenantResolutionGuard`**: resolves the project from the publishable-key header, then an API key on `Authorization`, then `Host`, first-present-wins. Loads cached project config and populates `TenantContext`. No tenant, no request.
 4. **`AuthGuard` subclasses**: `PublishableKeyGuard`, `SecretKeyGuard`, `SessionGuard`, `StaffGuard`. All extend a common `BaseAuthGuard` that owns the timing-safe comparison and the failure shape.
 5. **`RateLimitInterceptor`**: selects a `RateLimitStrategy` (per IP, per identifier, per project, per endpoint) declared by a decorator on the handler.
 6. **`ValidationPipe`**: schema parse of params, query and body into DTO classes. Unknown fields rejected.

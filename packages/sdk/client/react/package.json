@@ -30,6 +30,7 @@
     "@idenzy/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@idenzy/sdk-conformance": "workspace:*",
     "@testing-library/dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",

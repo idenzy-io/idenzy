@@ -30,6 +30,7 @@
     "@idenzy/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@idenzy/sdk-conformance": "workspace:*",
     "@angular/core": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

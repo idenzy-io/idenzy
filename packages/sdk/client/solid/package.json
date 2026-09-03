@@ -30,6 +30,7 @@
     "@idenzy/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@idenzy/sdk-conformance": "workspace:*",
     "jsdom": "catalog:",
     "solid-js": "catalog:",
     "typescript": "catalog:",

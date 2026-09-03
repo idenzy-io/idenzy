@@ -1,3 +1,4 @@
+import { MissingCredentialsError } from "@idenzy/core/errors";
 import type { Clock } from "@idenzy/core/time/clock";
 import type { SessionCreated } from "@idenzy/protocol/schemas/session";
 import { sessionRefreshedSchema } from "@idenzy/protocol/schemas/session";
@@ -78,6 +79,19 @@ export class SessionManager {
     if (current === null && !this.canRefresh()) return null;
     const renewed = await this.tryRefresh();
     return renewed === null ? null : renewed.accessToken;
+  }
+
+  /**
+   * The token, or the same refusal the server would have given.
+   *
+   * Used by everything that acts on an existing account. It throws the class the API throws,
+   * so a customer's handler branches on `missing_credentials` without caring whether the
+   * request was refused or never sent.
+   */
+  async requireToken(): Promise<string> {
+    const token = await this.getToken();
+    if (token === null) throw new MissingCredentialsError();
+    return token;
   }
 
   /**

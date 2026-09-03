@@ -5,12 +5,14 @@ import { protectRoutes } from "../src/middleware.js";
 import { IdenzyServer } from "../src/server.js";
 
 const ISSUER = "https://auth.acme.test";
+const COLD = "https://auth.cold.test";
 const PROJECT = "prj_00000000000000000001";
 const SESSION_COOKIE = "__Host-idenzy-session";
 
 let jwks: JSONWebKeySet;
 let mint: (options?: { audience?: string; expiresIn?: string }) => Promise<string>;
 let idenzy: IdenzyServer;
+let cold: IdenzyServer;
 
 beforeAll(async () => {
   const { publicKey, privateKey } = await generateKeyPair("ES256", { extractable: true });
@@ -25,12 +27,16 @@ beforeAll(async () => {
       .setExpirationTime(options.expiresIn ?? "5m")
       .sign(privateKey);
 
-  vi.stubGlobal("fetch", () =>
-    Promise.resolve(
+  // Everything answers with the key set except `auth.cold.test`, which is how a verifier
+  // that cannot reach our JWKS endpoint at all is built in a test.
+  vi.stubGlobal("fetch", (input: URL | string) => {
+    if (String(input).includes(COLD)) return Promise.reject(new TypeError("fetch failed"));
+    return Promise.resolve(
       new Response(JSON.stringify(jwks), { headers: { "content-type": "application/json" } }),
-    ),
-  );
+    );
+  });
   idenzy = new IdenzyServer({ issuerUrl: ISSUER, projectId: PROJECT });
+  cold = new IdenzyServer({ issuerUrl: COLD, projectId: PROJECT });
 });
 
 function request(path: string, cookie?: string): NextRequest {
@@ -73,6 +79,27 @@ describe("the session on an incoming request", () => {
 
     expect(verified?.amr).toEqual(["pwd"]);
     expect(verified?.projectId).toBe(PROJECT);
+  });
+
+  /**
+   * A seed's null already means "the server could not tell", which renders `loading`.
+   * Throwing here would be a 500 on every page of a customer's site for the length of an
+   * outage, and the site does not need us in order to render.
+   */
+  it("is null rather than a throw when the key set cannot be fetched at all", async () => {
+    const live = `${SESSION_COOKIE}=${await mint()}`;
+
+    await expect(cold.sessionFor(request("/", live))).resolves.toBeNull();
+  });
+
+  /**
+   * The one method here that does throw, and it has to. Authorisation code told "no claims"
+   * when the truth is "cannot tell" refuses the right people for the wrong reason.
+   */
+  it("still reports an unreachable key set from verify, as itself", async () => {
+    const headers = new Headers({ authorization: `Bearer ${await mint()}` });
+
+    await expect(cold.verify(headers)).rejects.toThrow(TypeError);
   });
 });
 
@@ -118,6 +145,44 @@ describe("middleware that protects routes", () => {
     const location = new URL(response.headers.get("location") ?? "");
     expect(location.searchParams.get("next")).toBe("/app/settings");
     expect(location.search).not.toContain("secret-token");
+  });
+
+  /**
+   * The failure this gate must not have. Redirecting a signed-in visitor to a sign-in page
+   * because our key endpoint is unreachable signs them out for the length of the outage and
+   * asks them to fix something that is not broken on their side.
+   */
+  it("answers 503 rather than a redirect when it cannot judge the token at all", async () => {
+    const response = await protectRoutes({
+      idenzy: cold,
+      isProtected: () => true,
+      signInUrl: "/sign-in",
+    })(request("/app/settings", `${SESSION_COOKIE}=${await mint()}`));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("retry-after")).toBe("30");
+  });
+
+  it("serves the page instead where the customer asked for that explicitly", async () => {
+    const response = await protectRoutes({
+      idenzy: cold,
+      isProtected: () => true,
+      signInUrl: "/sign-in",
+      onUnverifiable: "allow",
+    })(request("/app/settings", `${SESSION_COOKIE}=${await mint()}`));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  /** An expired token was read and refused, which is a "no" and not a "cannot tell". */
+  it("still redirects for a credential it could read and would not accept", async () => {
+    const stale = await mint({ expiresIn: "-1m" });
+
+    const response = await middleware()(request("/app/settings", `${SESSION_COOKIE}=${stale}`));
+
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/sign-in");
   });
 
   it("keeps the URL clean when the customer asked for no return parameter", async () => {

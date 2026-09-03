@@ -45,10 +45,22 @@ export class IdenzyServer {
     return this.sessionFor({ headers: await headers() });
   }
 
-  /** The same, where the request is already in hand. Middleware and Route Handlers. */
+  /**
+   * The same, where the request is already in hand. Middleware and Route Handlers.
+   *
+   * Never throws, unlike `verify`, and the difference is what each answer is for. This one
+   * returns a seed, and a seed's null already means "the server could not tell", which
+   * renders `loading` and lets the browser settle it against the refresh cookie the server
+   * never had. Throwing instead would put a 500 on every page of a customer's site for the
+   * length of a JWKS outage, and the site does not need us in order to render.
+   */
   async sessionFor(request: { readonly headers: Headers }): Promise<SessionSnapshot | null> {
-    const verified = await this.verify(request.headers);
-    return verified === null ? null : seededSession(verified.userId, verified.sessionId);
+    try {
+      const verified = await this.verify(request.headers);
+      return verified === null ? null : seededSession(verified.userId, verified.sessionId);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -57,7 +69,9 @@ export class IdenzyServer {
    *
    * Null rather than throwing, because "nobody is signed in" is a state a page renders and
    * not an exception it handles. A verification that failed for any other reason, a key set
-   * that could not be fetched, comes back as itself.
+   * that could not be fetched, comes back as itself: authorisation code told "no claims"
+   * when the truth is "cannot tell" would refuse the right people for the wrong reason. This
+   * is the one method here that throws, and `protectRoutes` is built on it for that reason.
    */
   async verify(headers: Headers): Promise<VerifiedAccessToken | null> {
     try {

@@ -68,6 +68,37 @@ export class OAuthController {
   }
 
   /**
+   * The same start, asked for as JSON, for a browser that cannot name its project any
+   * other way.
+   *
+   * A top-level navigation carries neither our publishable-key header nor `Authorization`,
+   * so the GET above resolves by `Host` alone and therefore works only behind a custom auth
+   * domain. On the shared API host a browser asks here with the header, gets the URL back,
+   * and navigates itself, which is the same move the link route already makes for a reason
+   * it shares: the thing that names the project cannot ride on a navigation.
+   *
+   * It is also stricter than the navigation rather than a way around it. Not being marked
+   * `@BrowserNavigation`, it keeps the cross-site checks that the redirecting routes have to
+   * give up because Apple posts its callback with its own `Origin`.
+   */
+  @Post(":provider/start")
+  @HttpCode(200)
+  async startAsJson(
+    @Req() request: FastifyRequest,
+    @Param("provider") provider: string,
+    @Body(new ZodValidationPipe(startOauthSchema)) body: StartOauth,
+  ): Promise<AuthorizationStarted> {
+    const authorizationUrl = await this.service.start(
+      flowContextFrom(request),
+      provider,
+      body.redirectUri,
+      null,
+      body.codeChallenge ?? null,
+    );
+    return { authorizationUrl };
+  }
+
+  /**
    * Attaching a provider to an account that already exists.
    *
    * JSON rather than a redirect, and that is what makes it safe without cookie mode: a

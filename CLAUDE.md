@@ -239,19 +239,28 @@ Four rules every one of them keeps.
   short-lived half, so a visitor whose token expired an hour ago still holds a refresh cookie
   and is still signed in. Null seeds `loading` and the browser settles it. Seeding signed-out
   puts a sign-in form in the HTML for somebody who does not need one.
-- **The helper never throws for a credential it could not read, an outage included.** A
-  handle, a middleware or a root loader that threw is a 500 or an error boundary on every
-  page of a customer's site for the length of a JWKS outage, and the site does not need us in
-  order to render. `@idenzy/next` is the exception and it is a known gap rather than a
-  decision: `verify` rethrows anything that is not a credential problem, `sessionFor` is
-  built on it, and `protectRoutes` therefore propagates a JWKS outage into middleware. A
-  Server Component can catch that. Middleware answering 500 for a whole site cannot.
+- **A seed never throws, an outage included.** A handle, a middleware or a root loader that
+  threw is a 500 or an error boundary on every page of a customer's site for the length of a
+  JWKS outage, and the site does not need us in order to render. Null renders `loading`.
+  `@idenzy/next` is the only one that also exposes the claims directly, and `verify` there
+  does throw on an unreadable key set, deliberately: authorisation code told "no claims" when
+  the truth is "cannot tell" refuses the right people for the wrong reason. `sessionFor` and
+  `session` are seeds and swallow it.
 - **The verifier is built once, at module scope.** The key set is cached inside it, and one
   per request fetches the key set per request. There is a test in each package that asserts
   one fetch across two requests.
 - **No route guard anywhere but Next**, where `protectRoutes` exists because middleware has
   nothing else to be. Elsewhere it is two lines a customer owns, and where an unauthenticated
   visitor lands is a product decision in any case (ADR-0002).
+
+`protectRoutes` is the one place the three-way distinction is visible, and it is worth
+understanding before touching it. A gate needs three answers where a seed needs two: signed
+in, a credential read and refused, and a credential that could not be judged at all. It is
+built on `verify` and not `sessionFor` for exactly that reason. The third answer is 503 with
+a `Retry-After`, never a redirect: sending a signed-in visitor to a sign-in page because our
+key endpoint is unreachable signs them out for the length of the outage and asks them to fix
+something that is not broken on their side. `onUnverifiable: "allow"` is the explicit loose
+choice, and it is defensible only because the gate was never an authorisation decision.
 
 What differs, where the difference is not obvious:
 

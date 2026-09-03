@@ -328,12 +328,13 @@ behaviour, `idenzy init`, and the starter templates.
       `@idenzy/react` re-exported; what Next adds is `IdenzyServer`, which verifies the
       session cookie in a Server Component, Route Handler or middleware with no network
       call, and `protectRoutes`, which redirects to a page in the customer's own app
-- [ ] `@idenzy/next` is the one SSR helper that still propagates a JWKS outage. `verify`
-      rethrows anything that is not a credential problem, `sessionFor` is built on it, and
-      `protectRoutes` therefore turns an outage into a 500 on every protected page. A
-      Server Component can catch that and middleware cannot, so `protectRoutes` should
-      treat an unreadable key set the way the other four helpers do. Found while writing
-      them
+- [x] A JWKS outage no longer takes a Next application down. `sessionFor` and `session`
+      are seeds and answer null for an unreadable key set, like the other four helpers;
+      `verify` still throws, because authorisation code told "no claims" when the truth
+      is "cannot tell" refuses the right people for the wrong reason. `protectRoutes` is
+      built on `verify` for that third answer and returns 503 with a `Retry-After` rather
+      than redirecting, since a redirect to sign-in during an outage signs everybody out
+      for the length of it. `onUnverifiable: "allow"` is the named loose choice
 - [x] `@idenzy/nuxt` module and composables. Given a project id the server verifies the
       cookie itself and seeds the payload, so the browser hydrates from the snapshot the
       HTML was rendered from. One client per request, never a module singleton

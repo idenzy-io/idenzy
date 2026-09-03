@@ -210,6 +210,9 @@ importers:
       '@idenzy/providers-oauth':
         specifier: workspace:*
         version: link:../../packages/providers-oauth
+      '@idenzy/providers-sms':
+        specifier: workspace:*
+        version: link:../../packages/providers-sms
       '@idenzy/templating':
         specifier: workspace:*
         version: link:../../packages/templating

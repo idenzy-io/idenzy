@@ -50,6 +50,12 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
 - **`drizzle-kit` does not generate roles, grants, `FORCE ROW LEVEL SECURITY` or
   partitioning.** Those are hand-authored migrations made with `pnpm db:custom`, in the
   same numbered sequence. Read them as SQL.
+- **A new tenant table needs its own FORCE RLS and grant migration.** Migration 0001
+  applied both by looping over the tables that existed when it ran, and it ran once. A
+  table added later gets its policy from `drizzle-kit` and neither FORCE nor a grant,
+  which means `idenzy_app` cannot read it at all and the owner can read across tenants.
+  Copy the two `DO` blocks from `0004_nasty_catseye.sql`; they are dynamic and
+  idempotent. Two tests in `packages/testing` fail if you forget.
 - **`useLiteralKeys` is off** because it contradicts `noPropertyAccessFromIndexSignature`,
   which requires `process.env["X"]`. TypeScript wins.
 - **Biome's `useImportType` breaks NestJS DI.** Rewriting an injected dependency to
@@ -76,6 +82,8 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
 2. `pnpm db:generate`, then read the generated SQL before committing it.
 3. `pnpm compliance:generate` and commit the regenerated artifacts.
 4. If it is a tenant table, confirm it carries `projectId` and a tenant isolation policy.
+5. If it is a *new* table, add the FORCE RLS and grant blocks in a `pnpm db:custom`
+   migration. See the note above; the policy alone is not enough.
 
 ## Adding an error
 
@@ -98,6 +106,18 @@ Anything security-critical needs a test that asserts the attack fails (PROJECT.m
 not only that the happy path works. The existing ones are the models: refresh reuse
 revoking the family, revoking a stranger's session answering 404, and a missing user
 costing the same Argon2 work as a wrong password.
+
+## Storing something a challenge has to read back
+
+A one-time code, a link token and an exchange code are all hashed at rest, but they are
+not hashed the same way and the difference is not stylistic. A 256-bit random token is
+SHA-256, because there is nothing to sweep. A six-digit OTP is an **Argon2id hash**,
+because a million candidates fall to an offline sweep the moment that table leaks.
+
+The address a challenge belongs to cannot be hashed at all, because verification has to
+name it in order to create the account behind it. Those columns are `encrypted()` under
+the project's data key, and `otp_challenges` carries both: the hash for the "is there
+already a live code" seek, the ciphertext for the read-back.
 
 ## Adding a provider, factor or channel
 

@@ -180,10 +180,20 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 **Exit criteria.** A developer can sign up, create a project, install `@idenzy/next`, and have working
 email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
-**Status.** The session core is in: sign-up, sign-in, sign-out, refresh rotation with
-reuse detection, the session list and session revocation, all with integration tests that
-assert the attack fails. Everything still unchecked in 1.1 needs email delivery (1.4)
-before it can be finished, which is the next thing to build.
+**Status.** 1.1 is done except account linking, which waits on OAuth. Delivery (1.4) is
+built as far as it can go without a third-party sender: the `EmailProvider` base, its
+conformance suite, the suppression list, the usage counter, the template binding sandbox
+with its locale fallback, and the English default templates. The only transport is
+`LoggingEmailProvider`, which prints the message and refuses to construct outside
+development, so the first real adapter is a change to `DeliveryModule` and nothing else.
+
+Two things now block a deploy rather than one. `TokenIssuer` already refused to start
+outside development without KMS; `FieldEncryptor` now does the same, because OTP and
+magic-link targets are envelope encrypted and the per-project data key is KMS-wrapped.
+Both are the same piece of work.
+
+Next is OAuth (1.2), which closes account linking and gives `auth_codes` its second
+consumer.
 
 ### 1.1 Core auth flows
 
@@ -193,10 +203,13 @@ before it can be finished, which is the next thing to build.
       into `PasswordSignUpFlow` and `PasswordSignInFlow`, both `AuthFlow` subclasses
 - [x] Sign-up, sign-in, sign-out, session listing, session revocation
 - [x] Refresh token rotation with family-based reuse detection, and the attack test
-- [ ] `EmailOtpFlow`, the default passwordless path
-- [ ] `MagicLinkFlow` redirecting to a registered customer URL with a single-use code (§4.7)
-- [ ] Password reset and email change, both requiring confirmation on old and new addresses
-- [ ] `AnonymousFlow` with upgrade to a full account
+- [x] `EmailOtpFlow`, the default passwordless path. Signs in and signs up, because the
+      code proves the same thing either way; an address proved this way is stored verified
+- [x] `MagicLinkFlow` redirecting to a registered customer URL with a single-use code (§4.7)
+- [x] Password reset and email change, both requiring confirmation on old and new addresses.
+      Email change has no step-up in front of it yet: §4.5 asks for a recent factor
+      verification and that arrives with MFA in phase 2, so it takes a session and says so
+- [x] `AnonymousFlow` with upgrade to a full account, keeping the user id
 - [~] Account linking rules driven by `email_verified` (§4.6). `AccountLinkingPolicy` and
       its tests exist in `@idenzy/domain`; nothing calls it until OAuth lands
 
@@ -217,11 +230,24 @@ before it can be finished, which is the next thing to build.
 
 ### 1.4 Delivery
 
-- [ ] `EmailProvider` base and conformance suite
-- [ ] SES adapter, shared sending domain, SPF, DKIM, DMARC
-- [ ] Bounce and complaint webhook into the suppression list
-- [ ] MJML template engine with a sandboxed binding and locale fallback
-- [ ] Default templates in English, then the wider locale set
+- [x] `EmailProvider` base and conformance suite. The suite tests inherited guarantees,
+      not transport: suppressed and over-quota sends are refused and unmetered, a success
+      is metered once, and suppression is reported ahead of quota
+- [x] `LoggingEmailProvider`, the development transport. Prints the whole message and
+      refuses to construct outside development, because the field allowlist cannot protect
+      a log *message*
+- [x] Suppression list and the daily usage counter, both enforced by the base class
+- [ ] SES adapter, shared sending domain, SPF, DKIM, DMARC. Deliberately not started:
+      nothing is deployed yet, and the base plus the conformance suite are what a new
+      adapter has to satisfy either way
+- [ ] Bounce and complaint webhook into the suppression list. The list and its repository
+      exist and are enforced; the webhook needs a provider to receive one from
+- [~] Template engine. The binding sandbox and the locale fallback chain are done, in
+      `@idenzy/templating`. MJML compilation is not: it is CPU-bound work belonging on the
+      worker pool with output cached by version (§9.6), and the built-in templates are
+      authored as plain HTML because they sit on the request path of every OTP and never
+      change at runtime. Customer-authored MJML compiles when the studio lands
+- [~] Default templates in English are shipped. The wider locale set is not
 - [ ] Template studio v1 inside the `client` panel
 
 ### 1.5 SDKs
@@ -343,8 +369,11 @@ before it can be finished, which is the next thing to build.
       millisecond would fork the chain. The fix is a monotonic sequence column, which is a
       schema change to a partitioned append-only table, so it is done deliberately with
       the relay rather than in passing (§4.13.3).
-- [ ] KMS token issuer. `auth-api` refuses to boot outside development rather than sign
-      with an ephemeral in-process key, so this blocks any deploy (§4.2).
+- [ ] KMS token issuer, and the per-project data encryption key alongside it. `auth-api`
+      refuses to boot outside development rather than sign with an ephemeral in-process
+      key (§4.2), and `FieldEncryptor` now refuses on the same terms rather than encrypt
+      OTP and magic-link targets under a key derived from the cell code (§4.13.4). One
+      piece of work, two things blocking a deploy.
 - [ ] Valkey revocation set is not wired into `SessionGuard`, which reads the session row
       instead. Affordable while every authenticated route queries anyway; not affordable
       once one does not (§4.2).

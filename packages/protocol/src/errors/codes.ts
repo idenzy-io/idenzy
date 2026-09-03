@@ -70,6 +70,9 @@ export const ErrorCode = {
   DeliverySuppressed: "delivery_suppressed",
   DeliveryFailed: "delivery_failed",
 
+  // Access-token claim templates
+  ClaimTemplateUnsatisfied: "claim_template_unsatisfied",
+
   // Customer-supplied hooks
   HookRejected: "hook_rejected",
   HookTimedOut: "hook_timed_out",

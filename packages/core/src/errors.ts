@@ -434,6 +434,24 @@ export class ProviderUnavailableError extends UpstreamError {
   }
 }
 
+/**
+ * A token could not be issued as the project's claim template asks.
+ *
+ * A required claim resolved to nothing, or the rendered claims were larger than a token
+ * may carry. Failing is the point: a claim a customer's authorisation code branches on is
+ * one where absent and false read the same, so emitting the token without it would let a
+ * sign-in through a check that never ran.
+ *
+ * 500 because nothing the end user did is wrong and nothing they can do will fix it. The
+ * detail names the claim and reaches the customer's logs, never the response.
+ */
+export class ClaimTemplateUnsatisfiedError extends ServerError {
+  override readonly code = ErrorCode.ClaimTemplateUnsatisfied;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This project's token configuration could not be applied.", options);
+  }
+}
+
 /** The catch-all. Its message is fixed so nothing internal leaks through the filter. */
 export class InternalError extends ServerError {
   override readonly code = ErrorCode.Internal;

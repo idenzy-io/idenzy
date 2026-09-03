@@ -1,6 +1,8 @@
 import type { ProjectManifest } from "../project-manifest.js";
 import type { FrameworkTemplate } from "./framework-template.js";
 import { NextTemplate } from "./templates/next-template.js";
+import { ReactTemplate } from "./templates/react-template.js";
+import { VueTemplate } from "./templates/vue-template.js";
 
 /**
  * Every framework `idenzy init` can scaffold, most specific first.
@@ -10,7 +12,11 @@ import { NextTemplate } from "./templates/next-template.js";
  * built on them. Adding a template means adding it here in the right place, which the
  * conformance suite checks by resolving each template's own markers back to it.
  */
-export const TEMPLATES: readonly FrameworkTemplate[] = [new NextTemplate()];
+export const TEMPLATES: readonly FrameworkTemplate[] = [
+  new NextTemplate(),
+  new VueTemplate(),
+  new ReactTemplate(),
+];
 
 /** The template for what this project already depends on, or null where nothing matches. */
 export function resolveTemplate(manifest: ProjectManifest): FrameworkTemplate | null {

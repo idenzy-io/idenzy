@@ -6,6 +6,11 @@ import { RedirectUriRepository } from "@idenzy/persistence/repository/redirect-u
 import { SuppressionRepository } from "@idenzy/persistence/repository/suppression-repository";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { VerificationTokenRepository } from "@idenzy/persistence/repository/verification-token-repository";
+import {
+  WebauthnCeremony,
+  WebauthnChallengeRepository,
+} from "@idenzy/persistence/repository/webauthn-challenge-repository";
+import { WebauthnCredentialRepository } from "@idenzy/persistence/repository/webauthn-credential-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { VerificationPurpose } from "@idenzy/protocol/enums/auth";
@@ -28,6 +33,8 @@ interface Repos {
   readonly changes: EmailChangeRepository;
   readonly suppressions: SuppressionRepository;
   readonly redirects: RedirectUriRepository;
+  readonly passkeyChallenges: WebauthnChallengeRepository;
+  readonly passkeys: WebauthnCredentialRepository;
 }
 
 function inTenant<T>(projectId: string, work: (repos: Repos) => Promise<T>): Promise<T> {
@@ -42,6 +49,8 @@ function inTenant<T>(projectId: string, work: (repos: Repos) => Promise<T>): Pro
       changes: new EmailChangeRepository(tx, context),
       suppressions: new SuppressionRepository(tx, context),
       redirects: new RedirectUriRepository(tx, context),
+      passkeyChallenges: new WebauthnChallengeRepository(tx, context),
+      passkeys: new WebauthnCredentialRepository(tx, context),
     }),
   );
 }
@@ -296,6 +305,63 @@ describe("email changes", () => {
     expect(row?.id).toBe(id);
     expect(row?.appliedAt).toBeNull();
     expect(row?.expiresAt.getTime()).toBeLessThan(Date.now());
+  });
+});
+
+describe("passkey challenges and credentials", () => {
+  const startCeremony = (project: string) =>
+    inTenant(project, ({ passkeyChallenges }) =>
+      passkeyChallenges.create({
+        ceremony: WebauthnCeremony.Authentication,
+        challengeHash: `h-${Math.random()}`,
+        userId: null,
+        expiresAt: inTen(),
+      }),
+    );
+
+  it("hands a challenge to exactly one claimant, whatever arrives together", async () => {
+    const id = await startCeremony(PROJECT_A);
+    const outcomes = await Promise.all([
+      inTenant(PROJECT_A, ({ passkeyChallenges }) => passkeyChallenges.claim(id, new Date())),
+      inTenant(PROJECT_A, ({ passkeyChallenges }) => passkeyChallenges.claim(id, new Date())),
+    ]);
+    expect(outcomes.filter((row) => row !== null)).toHaveLength(1);
+  });
+
+  it("keeps one project's challenges out of another's", async () => {
+    const id = await startCeremony(PROJECT_A);
+    const stolen = await inTenant(PROJECT_B, ({ passkeyChallenges }) =>
+      passkeyChallenges.claim(id, new Date()),
+    );
+    expect(stolen).toBeNull();
+    // Still available to the project that minted it, so the attempt consumed nothing.
+    const mine = await inTenant(PROJECT_A, ({ passkeyChallenges }) =>
+      passkeyChallenges.claim(id, new Date()),
+    );
+    expect(mine).not.toBeNull();
+  });
+
+  it("will not resolve a credential id registered by another project", async () => {
+    await inTenant(PROJECT_A, ({ passkeys }) =>
+      passkeys.register({
+        userId: aliceId,
+        credentialId: "cred-shared",
+        publicKey: "pk",
+        signCount: 0,
+        transports: ["internal"],
+        aaguid: null,
+        backupEligible: true,
+        backupState: true,
+        name: null,
+      }),
+    );
+
+    expect(
+      await inTenant(PROJECT_A, ({ passkeys }) => passkeys.findByCredentialId("cred-shared")),
+    ).not.toBeNull();
+    expect(
+      await inTenant(PROJECT_B, ({ passkeys }) => passkeys.findByCredentialId("cred-shared")),
+    ).toBeNull();
   });
 });
 

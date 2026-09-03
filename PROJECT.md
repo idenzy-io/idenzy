@@ -908,7 +908,7 @@ The one genuine gap is **table partitioning**, which `drizzle-kit` does not gene
 | `DataSubjectRequestHandler` | AccessHandler, ErasureHandler, PortabilityHandler, RectificationHandler (§4.13.6) |
 | `AuthFlow` | PasswordFlow, EmailOtpFlow, SmsOtpFlow, MagicLinkFlow, PasskeyFlow, OAuthFlow, AnonymousFlow, IdTokenExchangeFlow. The base owns hook invocation, audit, session creation and event emission ordering. |
 
-`AuthFlow` is the most important of these: every way a user can sign in ends in the same inherited `issueSession()` path, so session creation, MFA gating, `amr` claim assembly and event emission are written once.
+`AuthFlow` is the most important of these: every way a user can sign in ends in the same inherited path, so MFA gating, session creation, `amr` claim assembly and event emission are written once. That path has two endings and not one: `authenticate` returns the session it issued, or the second factor the subject still owes, which is a discriminated union rather than an error because a first factor that verified is not a failure (ADR-0010).
 
 ### 9.6 Node-specific operational rules
 

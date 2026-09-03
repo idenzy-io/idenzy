@@ -481,6 +481,10 @@ gating, hook invocation, session creation and audit ordering, and a flow that wa
 skip any of them would have to stop extending it, which is visible in a diff. Sign-up is
 an `AuthFlow` too: establishing the subject there means creating them.
 
+`verify` returns an `AuthenticatedSubject`, whose `factorVerifiedAt` says whether the flow
+itself proved a factor rather than whether one is owed. That is the gate's business, and
+`authenticate` therefore returns a session *or* a challenge (ADR-0010).
+
 `FlowHooks` and `FlowAudit` are interfaces, so they are injected with the symbol tokens
 in `apps/auth-api/src/flows/flow-tokens.ts` rather than by type.
 
@@ -541,11 +545,54 @@ authenticator: a real P-256 key, real CBOR, a real signature. That is deliberate
 attack worth testing here (replayed challenge, cloned counter, wrong origin, another
 tenant's credential) is one a fake verifier would happily accept.
 
+## Working on the second factor
+
+Five rules, and the first one is the shape everything else hangs off.
+
+- **An authentication ends in a session or a challenge, and never an error** (ADR-0010).
+  `AuthFlow.authenticate` returns a union, the wire discriminates on `status`, and `@idenzy/js`
+  mirrors it as `AuthResult`. A first factor that verified is not a failure: modelling it as one
+  would put the normal path of every MFA sign-in in the same `catch` as a wrong password, and a
+  session object with a nullable token compiles everywhere and fails on a later screen. Every
+  flow returns it, including the ones that cannot challenge, because which those are is our
+  decision and it changes.
+- **The gate decides, not the flow.** `MfaGate` is consulted where the old throw stood: after
+  `verify`, before the hooks, before anything that creates a session. It answers null for a
+  subject that already carries a `factorVerifiedAt`, which is what stops a passkey ceremony
+  being followed by a demand for a code, and null for a user with nothing enrolled, because a
+  challenge nobody can answer is a sign-in that cannot be completed rather than one refused.
+- **One refusal, whatever went wrong.** `MfaFactor.check` returns a boolean and only the base
+  throws, so a wrong code, a spent step, a crossed-off recovery code and a factor the user never
+  enrolled are indistinguishable. Everyone who reaches a challenge has already got past a first
+  factor, which is exactly where a stolen password puts an attacker.
+- **A TOTP code is spent by writing its step back.** `Totp.verify` returns the step rather than a
+  boolean for that reason: a code is valid for its whole thirty seconds, so the only defence
+  against one read over a shoulder is refusing a step already used. The counter moves with a
+  `greatest()` guard, because two requests inside one step would otherwise let the second write
+  it back down.
+- **A recovery code is spent scoped to its user, never looked up by digest.** They are compared
+  by value, so a lookup on the digest alone would sign the caller in as whoever owned the code.
+  They are 100 bits, which is what makes SHA-256 defensible where a six-digit OTP needs Argon2id;
+  Argon2id could not be used here anyway, because a submitted code is checked against every
+  unspent code the user holds.
+
+Two more things are easy to get wrong by accident. Recovery codes go with the last factor when
+it is removed: ten single-use passwords must not outlive the thing they were the fallback for,
+on an account whose owner believes they turned MFA off. And a step-up challenge is pinned to the
+session it was minted in as well as to the user, or a device that proved nothing inherits a proof
+made somewhere else.
+
+`assertRecent` is called from the service performing the action rather than from a guard. A guard
+would have to run after `SessionGuard`, and getting that order wrong is a silent bypass rather
+than a loud failure. It lets a user with nothing enrolled past, which is the honest shape of the
+guarantee: the check is worth exactly as much as the second factor behind it.
+
 ## Adding a provider, factor or channel
 
 Extend the family's abstract base in `@idenzy/domain/ports` and implement only what
 varies. The base owns what must never be skipped: the state check for OAuth, the
-suppression check for email, the spend reservation for SMS. Do not re-implement those in
+suppression check for email, the spend reservation for SMS, the single refusal for an
+MFA factor. Do not re-implement those in
 a subclass, and do not add an abstraction until there are two real implementations.
 
 For an OAuth provider that means an endpoint pair and a profile mapping, plus running

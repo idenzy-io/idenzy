@@ -241,7 +241,8 @@ client have no server halves to talk to yet.
 ### 1.1 Core auth flows
 
 - [x] Abstract `AuthFlow` with the inherited `issueSession()` path (§9.5). The base also
-      owns MFA gating, which phase 2 turns from a throw into a challenge
+      owns MFA gating, which phase 2 turned from a throw into a challenge: `authenticate`
+      answers with a session or with the factor still owed (ADR-0010)
 - [x] `PasswordFlow`: Argon2id, HIBP k-anonymity check, timing-equalized failures. Split
       into `PasswordSignUpFlow` and `PasswordSignInFlow`, both `AuthFlow` subclasses
 - [x] Sign-up, sign-in, sign-out, session listing, session revocation
@@ -250,8 +251,9 @@ client have no server halves to talk to yet.
       code proves the same thing either way; an address proved this way is stored verified
 - [x] `MagicLinkFlow` redirecting to a registered customer URL with a single-use code (§4.7)
 - [x] Password reset and email change, both requiring confirmation on old and new addresses.
-      Email change has no step-up in front of it yet: §4.5 asks for a recent factor
-      verification and that arrives with MFA in phase 2, so it takes a session and says so
+      Email change now has the step-up §4.5 asks for: a recent factor verification, checked in
+      the service performing the change rather than in a guard, because a guard would have to
+      run after `SessionGuard` and getting that order wrong is a silent bypass
 - [x] `AnonymousFlow` with upgrade to a full account, keeping the user id
 - [x] Account linking rules driven by `email_verified` (§4.6). Wired into the OAuth
       callback, with the test that matters: an unverified provider address matching an
@@ -312,9 +314,10 @@ client have no server halves to talk to yet.
       for `mediation: "conditional"`, which is only possible because the server half names no
       credential: authentication options take no identifier, so autofill has something
       discoverable to offer whoever is at the keyboard
-- [ ] Passkey as a second factor and for step-up. Phase 2, with the rest of MFA: the
-      ceremony is the same one, what changes is `AuthFlow` gating a challenge rather than
-      throwing
+- [ ] Passkey as a second factor and for step-up. The rest of MFA landed without it: the
+      gating it was waiting for exists, `MfaFactor` is the base it would extend, and
+      `MfaFactorConformanceSuite` is what it would have to pass. What is left is a factor whose
+      proof is a ceremony rather than a code, which is the one shape the family has not had
 
 ### 1.4 Delivery
 
@@ -387,6 +390,10 @@ client have no server halves to talk to yet.
       is what lets a five-minute token behave like a sixty-second one without asking us
       anything on the request path. Webhook verification and the management client wait on
       their server halves, which are 1.6 and not built yet
+- [x] Every way in returns `AuthResult`, a union of a session and the challenge still owed.
+      The challenge carries `submit` rather than a bare id, because that call is the one that
+      creates the session and therefore the one the device name has to ride on: a name sent
+      only on the first request would leave every MFA user's device list a column of blanks
 - [x] SDK conformance suite that every client must pass. `BindingConformanceSuite` in
       `@idenzy/sdk-conformance` is ten cases over an adapter each binding provides, and the
       five browser bindings run it; Next and Nuxt inherit it from React and Vue. Its own
@@ -432,10 +439,29 @@ client have no server halves to talk to yet.
 
 ## Phase 2: Public launch (8 weeks)
 
-**Status.** The SMS half of the first three items is in, end to end: a customer can start a
-code over SMS, verify it through the same call the email channel uses, and be signed in or
-signed up on a number nobody had before. What sits in front of that send is the point of the
-work, because SMS is the one channel where a request costs us money before it reaches anybody.
+**Status.** MFA is the second thing to land here, and it changed the shape of every way in: an authentication now answers with a session or with the second factor
+it still owes, which is a discriminated union on the wire and in every SDK rather than an
+error (ADR-0010). A first factor that verified is not a failure, and a page that had to catch
+one would put the normal path of every MFA sign-in in the same handler as a wrong password.
+
+`AuthFlow` finally uses the slot it has had since phase 0. The gate sits where the throw
+stood, after `verify` and before anything that creates a session, and it answers null in two
+cases that are worth stating: a subject that already proved a factor age owes nothing, which
+is what stops a passkey ceremony being followed by a demand for a code, and a user with
+nothing enrolled owes nothing, because a challenge nobody can answer is a sign-in that cannot
+be completed rather than one that is refused.
+
+`factorVerifiedAt` replaced `requiresMfa` on the subject and the direction is reversed on
+purpose: a flow no longer says whether a factor is owed, which is the gate's business, and
+instead says whether it proved one itself. That is what feeds the `fva` claim, which had been
+declared in `TokenIssuer` since phase 0 with nothing to set it, and it is what step-up is
+compared against. Changing an address now asks for a recent factor, which is the §4.5
+requirement that had been outstanding since phase 1.
+
+The SMS half of the first three items is in, end to end: a customer can start a code over SMS,
+verify it through the same call the email channel uses, and be signed in or signed up on a
+number nobody had before. What sits in front of that send is the point of the work, because
+SMS is the one channel where a request costs us money before it reaches anybody.
 
 The controls are ordered rather than assembled. Placing the number is free and settles two
 refusals on its own, attestation runs before any counter so nobody can burn a stranger's
@@ -466,7 +492,23 @@ template pipeline of its own rather than a branch in the OTP flow.
       is three signals: a per-number ceiling, a per-address ceiling, a thousand-block counter
       for the consecutive numbers that dodge both, and the send-to-verify ratio for a run that
       has defeated everything else and still cannot make anybody type the code in
-- [ ] TOTP MFA, recovery codes, step-up authentication and the `fva` claim
+- [~] TOTP MFA, recovery codes, step-up authentication and the `fva` claim. TOTP and recovery
+      codes are done and pass `MfaFactorConformanceSuite`; passkey and SMS as second factors
+      are the two names in the enum that are not wired. TOTP is RFC 6238 with the document's
+      own vectors in the tests, and `verify` returns the step a code came from rather than a
+      boolean, because a code is valid for its whole step and the only defence against a
+      shoulder-surfed one is refusing a step already spent. Recovery codes are 100 bits, which
+      is what makes SHA-256 defensible where a six-digit OTP needs Argon2id; a memory-hard hash
+      could not be used here anyway, since a submitted code is checked against every unspent
+      code the user holds. Enrolment is two calls, because the second is what proves the secret
+      reached the authenticator: a factor usable from the moment it was generated would let a
+      user whose QR code failed to scan lock themselves out at their next sign-in
+- [ ] Step-up is real but it is worth exactly as much as the second factor behind it. A user
+      with nothing enrolled passes, because a step-up asks for something the caller holds and
+      demanding one from somebody who holds nothing would lock them out of their own address
+      for ever. Re-authenticating with a password instead is the honest fix and is not built
+- [ ] A project-level "require a second factor of everybody". Today MFA is owed because the
+      user enrolled something, which is per user rather than per project
 - [ ] Customer-defined claim templates: a dashboard-configured mapping from user columns and
       `metadata_public`/`metadata_private` into the access token, applied by the token issuer.
       Costs nothing at issue time, because the project config is already cached and the user

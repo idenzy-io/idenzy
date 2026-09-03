@@ -13,6 +13,7 @@
  */
 import type { Idenzy } from "@idenzy/js";
 import { IdenzyConfigurationError } from "@idenzy/js/errors";
+import { type SessionSnapshot, SessionStore } from "@idenzy/js/session/session-store";
 import type { PublicUser } from "@idenzy/protocol/schemas/user";
 import {
   createContext,
@@ -22,7 +23,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type SessionSnapshot, SessionStore } from "./session-store.js";
 
 export type { SessionSnapshot };
 
@@ -52,6 +52,14 @@ export interface IdenzyProviderProps {
    * a server-rendered tree holding a session does.
    */
   readonly restore?: boolean;
+  /**
+   * What the server already worked out, from a session cookie it verified there.
+   *
+   * Both sides then start from the same snapshot, which is what stops hydration swapping a
+   * signed-out tree for a signed-in one in front of the user. `@idenzy/next` passes this;
+   * an application rendering only in the browser has nothing to put here.
+   */
+  readonly initialSession?: SessionSnapshot;
   readonly children: ReactNode;
 }
 
@@ -65,9 +73,16 @@ export interface IdenzyProviderProps {
 export function IdenzyProvider({
   client,
   restore = true,
+  initialSession,
   children,
 }: IdenzyProviderProps): ReactNode {
-  const [value] = useState(() => ({ client, store: new SessionStore(client, restore) }));
+  const [value] = useState(() => ({
+    client,
+    store: new SessionStore(client, {
+      restore,
+      ...(initialSession === undefined ? {} : { initial: initialSession }),
+    }),
+  }));
   if (value.client !== client) {
     // Silently keeping the first would leave every hook reporting a session from a client
     // nobody is calling any more, which looks like a signed-in user whose requests all fail.
@@ -103,7 +118,7 @@ export function useIdenzy(): Idenzy {
  */
 export function useSession(): SessionSnapshot {
   const { store } = useIdenzyContext();
-  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
+  return useSyncExternalStore(store.subscribe, store.snapshot, store.serverSnapshot);
 }
 
 /**

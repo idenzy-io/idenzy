@@ -1,4 +1,5 @@
 import { IdenzyConfigurationError } from "@idenzy/js/errors";
+import { seededSession } from "@idenzy/js/session/session-store";
 import { cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { StrictMode, useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,6 +67,30 @@ describe("useSession", () => {
     await instance.signIn.anonymously();
 
     await waitFor(() => expect(result.current.status).toBe("signed-in"));
+  });
+});
+
+describe("a session the server already worked out", () => {
+  /**
+   * Both sides start from the same snapshot, which is the point: hydration that swapped a
+   * signed-out tree for a signed-in one would do it in front of the user.
+   */
+  it("renders signed in on the first paint, before any request has been made", () => {
+    const transport = new FakeTransport(() => json(200, sessionRefreshed()));
+    const seed = seededSession("usr_00000000000000000001", "ses_00000000000000000009");
+    const { result } = renderHook(() => useSession(), {
+      wrapper: ({ children }) => (
+        <IdenzyProvider client={client(transport)} initialSession={seed}>
+          {children}
+        </IdenzyProvider>
+      ),
+    });
+
+    expect(result.current.status).toBe("signed-in");
+    expect(result.current.sessionId).toBe("ses_00000000000000000009");
+    // The token names the user and does not carry the profile, so this is null until the
+    // rotation that follows brings one back.
+    expect(result.current.user).toBeNull();
   });
 });
 

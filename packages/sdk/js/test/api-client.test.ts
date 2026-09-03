@@ -6,7 +6,11 @@ import { IdenzyConfig } from "../src/config.js";
 import { IdenzyApiError, IdenzyTransportError } from "../src/errors.js";
 import { ApiClient } from "../src/http/api-client.js";
 import type { CookieJar } from "../src/http/cookie-jar.js";
+import { TransportMode } from "../src/http/transport-mode.js";
 import { errorBody, FakeTransport, json, user } from "./fixtures.js";
+
+/** The downgrade notice is a developer aid, not something a test needs to hear. */
+const silent = (): void => {};
 
 class StubJar implements CookieJar {
   constructor(private readonly values: Record<string, string> = {}) {}
@@ -26,7 +30,7 @@ function clientFor(
     apiUrl: "https://auth.acme.test",
     sessionTransport,
   });
-  return new ApiClient(config, transport, jar);
+  return new ApiClient(config, transport, jar, new TransportMode(sessionTransport, silent));
 }
 
 describe("ApiClient", () => {

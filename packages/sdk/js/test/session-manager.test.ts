@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { IdenzyConfig } from "../src/config.js";
 import { ApiClient } from "../src/http/api-client.js";
 import type { CookieJar } from "../src/http/cookie-jar.js";
+import { TransportMode } from "../src/http/transport-mode.js";
 import { type RefreshLock, WebLocksRefreshLock } from "../src/session/refresh-lock.js";
 import { MemoryRefreshTokenStore } from "../src/session/refresh-token-store.js";
 import { SessionManager, type SessionState } from "../src/session/session-manager.js";
@@ -30,9 +31,10 @@ function build(
   });
   const clock = new FixedClock();
   const tokens = new MemoryRefreshTokenStore();
-  const api = new ApiClient(config, transport, NO_COOKIES);
+  const transportMode = new TransportMode(mode, () => {});
+  const api = new ApiClient(config, transport, NO_COOKIES, transportMode);
   const held = lock ?? new WebLocksRefreshLock(config.publishableKey);
-  return { clock, tokens, sessions: new SessionManager(api, config, tokens, clock, held) };
+  return { clock, tokens, sessions: new SessionManager(api, transportMode, tokens, clock, held) };
 }
 
 let transport: FakeTransport;

@@ -79,12 +79,28 @@ describe("one-time codes", () => {
 });
 
 describe("acting on an account", () => {
+  /**
+   * A fresh client asks once, because in cookie mode there may be a credential it cannot see,
+   * and takes the answer. What it must not do is present a token it does not have.
+   */
   it("refuses like the server would when nobody is signed in", async () => {
-    const client = build(new FakeTransport(() => json(200, sessionCreated())));
+    const transport = new FakeTransport(() => json(401, errorBody(ErrorCode.MissingCredentials)));
+    const client = build(transport);
 
     await expect(client.account.me()).rejects.toMatchObject({
       code: ErrorCode.MissingCredentials,
     });
+    expect(transport.to("v1/users/me")).toHaveLength(0);
+  });
+
+  it("stops asking the server once it knows nobody is signed in", async () => {
+    const transport = new FakeTransport(() => json(401, errorBody(ErrorCode.MissingCredentials)));
+    const client = build(transport);
+
+    await expect(client.account.me()).rejects.toMatchObject({ code: ErrorCode.MissingCredentials });
+    await expect(client.account.me()).rejects.toMatchObject({ code: ErrorCode.MissingCredentials });
+
+    expect(transport.to("v1/auth/refresh")).toHaveLength(1);
   });
 
   it("carries the token on the routes that need one", async () => {

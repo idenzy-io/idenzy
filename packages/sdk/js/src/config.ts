@@ -1,7 +1,7 @@
-import { SessionTransport } from "@idenzy/protocol/http/headers";
 import { ApiKeyPrefix, isPublishableKey, isSecretKey } from "@idenzy/protocol/schemas/common";
 import { IdenzyConfigurationError } from "./errors.js";
 import type { FetchLike } from "./http/transport.js";
+import type { SessionTransportPreference } from "./http/transport-mode.js";
 
 /** Loopback, where a browser treats http as secure and a developer has no certificate. */
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
@@ -12,11 +12,14 @@ export interface IdenzyOptions {
   /** The auth API this project answers on: a custom auth domain, or ours in development. */
   readonly apiUrl: string;
   /**
-   * How the session is carried. Header mode works everywhere and is the default; cookie
-   * mode needs a custom auth domain, and asking for it elsewhere is refused by the server
-   * rather than granted and silently dropped (PROJECT.md 4.3).
+   * How the session is carried, and `auto` is the default worth keeping.
+   *
+   * Cookie mode is better and needs a custom auth domain, which the client cannot detect from
+   * its own URL: a custom domain is a CNAME and looks like any other host from here. So `auto`
+   * asks for cookie mode and steps down to header mode if the server says it cannot work.
+   * Naming a mode explicitly disables that, in both directions (PROJECT.md 4.3).
    */
-  readonly sessionTransport?: SessionTransport;
+  readonly sessionTransport?: SessionTransportPreference;
   /** A substitute `fetch`, for a proxy, tracing, or a runtime without a global one. */
   readonly fetch?: FetchLike;
 }
@@ -34,20 +37,15 @@ export class IdenzyConfig {
   private constructor(
     readonly publishableKey: string,
     readonly apiUrl: URL,
-    readonly sessionTransport: SessionTransport,
+    readonly sessionTransport: SessionTransportPreference,
   ) {}
 
   static parse(options: IdenzyOptions): IdenzyConfig {
     return new IdenzyConfig(
       assertPublishable(options.publishableKey),
       assertSecureUrl(options.apiUrl),
-      options.sessionTransport ?? SessionTransport.Header,
+      options.sessionTransport ?? "auto",
     );
-  }
-
-  /** True where the browser attaches cookies for us and the CSRF header has to be echoed. */
-  get usesCookies(): boolean {
-    return this.sessionTransport === SessionTransport.Cookie;
   }
 
   /** Absolute, and resolved against a base that always ends in a slash. */

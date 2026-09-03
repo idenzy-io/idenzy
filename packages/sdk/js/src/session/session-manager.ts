@@ -3,9 +3,9 @@ import type { Clock } from "@idenzy/core/time/clock";
 import type { SessionCreated } from "@idenzy/protocol/schemas/session";
 import { sessionRefreshedSchema } from "@idenzy/protocol/schemas/session";
 import type { PublicUser } from "@idenzy/protocol/schemas/user";
-import type { IdenzyConfig } from "../config.js";
 import { IdenzyApiError, IdenzyTransportError } from "../errors.js";
 import type { ApiClient } from "../http/api-client.js";
+import type { TransportMode } from "../http/transport-mode.js";
 import type { RefreshLock } from "./refresh-lock.js";
 import type { RefreshTokenStore } from "./refresh-token-store.js";
 import { Session } from "./session.js";
@@ -41,11 +41,19 @@ export type SessionListener = (state: SessionState) => void;
 export class SessionManager {
   private current: Session | null = null;
   private pending: Promise<Session> | null = null;
+  /**
+   * Set once a rotation has come back refused, and cleared the moment a session is adopted.
+   *
+   * Without it a signed-out page asks the server again on every call that wants a token, which
+   * on a public landing page is a request per component. `restore()` clears it, because that
+   * call is a deliberate "check again" and the answer may have changed in another tab.
+   */
+  private knownSignedOut = false;
   private readonly listeners = new Set<SessionListener>();
 
   constructor(
     private readonly api: ApiClient,
-    private readonly config: IdenzyConfig,
+    private readonly mode: TransportMode,
     private readonly tokens: RefreshTokenStore,
     private readonly clock: Clock,
     private readonly lock: RefreshLock,
@@ -61,6 +69,7 @@ export class SessionManager {
 
   /** Takes a freshly issued session, storing the refresh token where the mode expects it. */
   adopt(created: SessionCreated): Session {
+    this.knownSignedOut = false;
     if (created.refreshToken !== undefined) this.tokens.write(created.refreshToken);
     const session = Session.fromCreated(created);
     this.set(session);
@@ -105,6 +114,7 @@ export class SessionManager {
    * the same round trip.
    */
   restore(): Promise<Session | null> {
+    this.knownSignedOut = false;
     if (!this.canRefresh()) return Promise.resolve(null);
     return this.tryRefresh();
   }
@@ -147,6 +157,7 @@ export class SessionManager {
   }
 
   clear(): void {
+    this.knownSignedOut = true;
     this.tokens.clear();
     this.set(null);
   }
@@ -208,9 +219,16 @@ export class SessionManager {
     return session;
   }
 
-  /** Cookie mode may have a credential we cannot see, so it always tries. */
+  /**
+   * Cookie mode may hold a credential this client cannot see, so it always tries.
+   *
+   * Read at the moment of the call, never cached. A client negotiating its transport starts
+   * optimistic, and a cached answer from before the first request would keep asking a server
+   * that has already said no.
+   */
   private canRefresh(): boolean {
-    return this.config.usesCookies || this.tokens.read() !== null;
+    if (this.knownSignedOut) return false;
+    return this.mode.usesCookies || this.tokens.read() !== null;
   }
 
   private set(session: Session | null): void {

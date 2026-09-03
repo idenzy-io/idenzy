@@ -11,6 +11,7 @@ import { PasswordFlow } from "./flows/password-flow.js";
 import { ApiClient } from "./http/api-client.js";
 import { type CookieJar, DocumentCookieJar } from "./http/cookie-jar.js";
 import { FetchTransport, type Transport } from "./http/transport.js";
+import { TransportMode } from "./http/transport-mode.js";
 import { OAuthFlow } from "./oauth/oauth-flow.js";
 import { type PkceStore, SessionStoragePkceStore } from "./oauth/pkce-store.js";
 import { PasskeyFlow } from "./passkey/passkey-flow.js";
@@ -70,14 +71,16 @@ export class Idenzy {
 
   constructor(options: IdenzyOptions, internals: IdenzyInternals = {}) {
     const config = IdenzyConfig.parse(options);
+    const mode = new TransportMode(config.sessionTransport);
     const api = new ApiClient(
       config,
       internals.transport ?? new FetchTransport(options.fetch),
       internals.cookies ?? new DocumentCookieJar(),
+      mode,
     );
     this.manager = new SessionManager(
       api,
-      config,
+      mode,
       internals.refreshTokens ?? new MemoryRefreshTokenStore(),
       internals.clock ?? new SystemClock(),
       internals.refreshLock ?? new WebLocksRefreshLock(config.publishableKey),

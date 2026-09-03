@@ -1,9 +1,11 @@
+import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import { IdenzyCookie, IdenzyHeader } from "@idenzy/protocol/http/headers";
 import type { ZodType } from "zod";
 import type { IdenzyConfig } from "../config.js";
-import { errorFromResponse, IdenzyTransportError } from "../errors.js";
+import { errorFromResponse, IdenzyApiError, IdenzyTransportError } from "../errors.js";
 import type { CookieJar } from "./cookie-jar.js";
-import type { ApiResponse, Transport } from "./transport.js";
+import type { ApiRequest, ApiResponse, Transport } from "./transport.js";
+import type { TransportMode } from "./transport-mode.js";
 
 /** Methods that change something, and therefore the ones the CSRF header belongs on. */
 const UNSAFE = new Set(["POST", "PATCH", "DELETE"]);
@@ -32,6 +34,7 @@ export class ApiClient {
     private readonly config: IdenzyConfig,
     private readonly transport: Transport,
     private readonly cookies: CookieJar,
+    private readonly mode: TransportMode,
   ) {}
 
   /** Sends, then parses the answer. The schema is the protocol's, never a local copy. */
@@ -52,18 +55,45 @@ export class ApiClient {
     await this.exchange(spec);
   }
 
+  /**
+   * One attempt, or two when the first was refused for asking for cookie mode.
+   *
+   * The retry is safe and it is worth saying why rather than trusting that it is. The refusal
+   * comes from a guard that runs before the handler, so the refused request did nothing: no
+   * code spent, no token rotated, no mail sent. Only that one error code is retried, and only
+   * while the mode has a downgrade left to make, so there is no path here that loops.
+   */
   private async exchange(spec: RequestSpec): Promise<ApiResponse> {
+    const response = await this.attempt(spec);
+    if (response.status < 400) return response;
+
+    const refusal = errorFromResponse(response.status, response.body);
+    if (!this.renegotiated(refusal)) throw refusal;
+
+    const retried = await this.attempt(spec);
+    if (retried.status >= 400) throw errorFromResponse(retried.status, retried.body);
+    return retried;
+  }
+
+  private attempt(spec: RequestSpec): Promise<ApiResponse> {
     const body = spec.body === undefined ? undefined : JSON.stringify(spec.body);
-    const response = await this.transport.send({
+    return this.transport.send({
       url: this.config.urlFor(spec.path),
       method: spec.method,
       headers: this.headersFor(spec, body !== undefined),
       body,
-      withCredentials: this.config.usesCookies,
+      withCredentials: this.mode.usesCookies,
       signal: spec.signal,
-    });
-    if (response.status >= 400) throw errorFromResponse(response.status, response.body);
-    return response;
+    } satisfies ApiRequest);
+  }
+
+  /** Short-circuits deliberately: nothing downgrades unless this is the code that means it. */
+  private renegotiated(error: unknown): boolean {
+    return (
+      error instanceof IdenzyApiError &&
+      error.code === ErrorCode.SessionTransportUnavailable &&
+      this.mode.downgrade()
+    );
   }
 
   /**
@@ -75,7 +105,7 @@ export class ApiClient {
     const headers: Record<string, string> = {
       accept: "application/json",
       [IdenzyHeader.PublishableKey]: this.config.publishableKey,
-      [IdenzyHeader.SessionTransport]: this.config.sessionTransport,
+      [IdenzyHeader.SessionTransport]: this.mode.current,
     };
     if (hasBody) headers["content-type"] = "application/json";
     if (spec.accessToken !== undefined) headers["authorization"] = `Bearer ${spec.accessToken}`;
@@ -92,7 +122,7 @@ export class ApiClient {
    * Sending it unconditionally in cookie mode is what keeps this out of every call site.
    */
   private csrfFor(method: string): string | undefined {
-    if (!this.config.usesCookies || !UNSAFE.has(method)) return undefined;
+    if (!this.mode.usesCookies || !UNSAFE.has(method)) return undefined;
     return this.cookies.read(IdenzyCookie.Csrf);
   }
 }

@@ -23,6 +23,14 @@ export interface RequestSpec {
    * bytes on every request that nothing ever looks at.
    */
   readonly namesDevice?: boolean;
+  /**
+   * A CAPTCHA or app-attestation token, for the routes that spend money on a request.
+   *
+   * Per call rather than on the client, because the token is single-use and belongs to the
+   * challenge the visitor just solved. A client that held one would send a stale token on
+   * the second attempt, which fails in the way that looks like the widget is broken.
+   */
+  readonly attestation?: string | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -119,6 +127,11 @@ export class ApiClient {
     if (spec.namesDevice === true && this.config.deviceName !== null) {
       headers[IdenzyHeader.DeviceName] = encodeURIComponent(this.config.deviceName);
     }
+    // Sent exactly as the provider issued it, unlike the device name. This value is
+    // compared byte for byte against the issuer's own copy, and the server has to accept
+    // it raw from callers that are not this SDK, so encoding here would only create a
+    // form the two sides could disagree about.
+    if (spec.attestation !== undefined) headers[IdenzyHeader.Attestation] = spec.attestation;
     if (spec.accessToken !== undefined) headers["authorization"] = `Bearer ${spec.accessToken}`;
     const csrf = this.csrfFor(spec.method);
     if (csrf !== undefined) headers[IdenzyHeader.Csrf] = csrf;

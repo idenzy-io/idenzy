@@ -5,8 +5,8 @@ import type { Navigation } from "./browser/navigation.js";
 import { WindowNavigation } from "./browser/navigation.js";
 import { IdenzyConfig, type IdenzyOptions } from "./config.js";
 import { AnonymousFlow } from "./flows/anonymous-flow.js";
-import { EmailOtpFlow } from "./flows/email-otp-flow.js";
 import { MagicLinkFlow } from "./flows/magic-link-flow.js";
+import { OtpFlow } from "./flows/otp-flow.js";
 import { PasswordFlow } from "./flows/password-flow.js";
 import { ApiClient } from "./http/api-client.js";
 import { type CookieJar, DocumentCookieJar } from "./http/cookie-jar.js";
@@ -59,7 +59,7 @@ export class Idenzy {
   readonly signIn: SignIn;
   readonly signUp: SignUp;
   readonly password: PasswordFlow;
-  readonly otp: EmailOtpFlow;
+  readonly otp: OtpFlow;
   readonly magicLink: MagicLinkFlow;
   readonly oauth: OAuthFlow;
   readonly passkeys: PasskeyFlow;
@@ -87,7 +87,7 @@ export class Idenzy {
     );
 
     this.password = new PasswordFlow(api, this.manager);
-    this.otp = new EmailOtpFlow(api, this.manager);
+    this.otp = new OtpFlow(api, this.manager);
     this.magicLink = new MagicLinkFlow(api, this.manager);
     this.oauth = new OAuthFlow(
       api,

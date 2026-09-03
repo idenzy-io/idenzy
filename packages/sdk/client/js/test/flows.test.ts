@@ -68,18 +68,66 @@ describe("one-time codes", () => {
     expect(() => client.signIn.verifyOtp({ code: "123456" })).toThrowError(/start first/);
   });
 
-  it("names the email channel, which is the only one this phase answers", async () => {
+  it("names the channel it started, so the server never has to guess", async () => {
     const transport = new FakeTransport(() =>
       json(202, { challengeId: "chl_00000000000000000001", expiresAt: "2026-09-03T12:10:00.000Z" }),
     );
     const client = build(transport);
 
     await client.signIn.withEmailOtp({ email: "ada@example.test" });
+    await client.signIn.withSmsOtp({ phone: "+14155550123" });
 
     expect(transport.bodyOf(transport.to("v1/auth/otp/start")[0]!)).toEqual({
       channel: "email",
       email: "ada@example.test",
     });
+    expect(transport.bodyOf(transport.to("v1/auth/otp/start")[1]!)).toEqual({
+      channel: "sms",
+      phone: "+14155550123",
+    });
+  });
+
+  /**
+   * Verify carries no channel, on purpose: the challenge id already names the row, and a
+   * field the client fills is a field it can fill wrongly.
+   */
+  it("completes an sms challenge through the same verify call", async () => {
+    const transport = new FakeTransport((request) =>
+      request.url.endsWith("start")
+        ? json(202, {
+            challengeId: "chl_00000000000000000002",
+            expiresAt: "2026-09-03T12:10:00.000Z",
+          })
+        : json(200, sessionCreated()),
+    );
+    const client = build(transport);
+
+    await client.signIn.withSmsOtp({ phone: "+14155550123" });
+    await client.signIn.verifyOtp({ code: "123456" });
+
+    expect(transport.bodyOf(transport.to("v1/auth/otp/verify")[0]!)).toEqual({
+      challengeId: "chl_00000000000000000002",
+      code: "123456",
+    });
+  });
+
+  /**
+   * The token is per call rather than per client, because it is single-use: one held on
+   * the client would be replayed on the second attempt and refused, which reads to a
+   * customer as the CAPTCHA widget being broken.
+   */
+  it("sends an attestation token on the start that needs it, and on nothing else", async () => {
+    const transport = new FakeTransport(() =>
+      json(202, { challengeId: "chl_00000000000000000003", expiresAt: "2026-09-03T12:10:00.000Z" }),
+    );
+    const client = build(transport);
+
+    await client.signIn.withSmsOtp({ phone: "+14155550123", attestation: "0.AXQ-token" });
+    await client.signIn.withEmailOtp({ email: "ada@example.test" });
+
+    const [sms, email] = transport.to("v1/auth/otp/start");
+    expect(sms?.headers["x-idenzy-attestation"]).toBe("0.AXQ-token");
+    expect(email?.headers["x-idenzy-attestation"]).toBeUndefined();
   });
 });
 

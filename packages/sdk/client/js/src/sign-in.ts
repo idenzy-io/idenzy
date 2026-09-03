@@ -1,7 +1,7 @@
 import type { ChallengeStarted } from "@idenzy/protocol/schemas/auth";
 import type { AnonymousFlow } from "./flows/anonymous-flow.js";
-import type { EmailOtpFlow } from "./flows/email-otp-flow.js";
 import type { MagicLinkFlow, StartMagicLinkInput } from "./flows/magic-link-flow.js";
+import type { OtpFlow, SmsOtpOptions } from "./flows/otp-flow.js";
 import type { PasswordFlow, SignInWithPasswordInput } from "./flows/password-flow.js";
 import type { OAuthFlow, StartOAuthInput } from "./oauth/oauth-flow.js";
 import type { PasskeyFlow, PasskeySignInOptions } from "./passkey/passkey-flow.js";
@@ -22,7 +22,7 @@ import type { Session } from "./session/session.js";
 export class SignIn {
   constructor(
     private readonly password: PasswordFlow,
-    private readonly otp: EmailOtpFlow,
+    private readonly otp: OtpFlow,
     private readonly magicLink: MagicLinkFlow,
     private readonly oauth: OAuthFlow,
     private readonly passkeys: PasskeyFlow,
@@ -31,10 +31,22 @@ export class SignIn {
 
   /** Sends a code. Answers the same way for an address with an account and one without. */
   withEmailOtp(input: { readonly email: string }): Promise<ChallengeStarted> {
-    return this.otp.start(input.email);
+    return this.otp.startEmail(input.email);
   }
 
-  /** Completes the code we sent. The challenge comes from the last `withEmailOtp`. */
+  /**
+   * Texts a code to an E.164 number, and creates the account if the number has none.
+   *
+   * `attestation` carries a CAPTCHA or app-attestation token for projects that require one,
+   * which is the default: SMS costs real money per message, so a project sends only after a
+   * human has been proved to be there (PROJECT.md 4.8).
+   */
+  withSmsOtp(input: { readonly phone: string } & SmsOtpOptions): Promise<ChallengeStarted> {
+    const { phone, ...options } = input;
+    return this.otp.startSms(phone, options);
+  }
+
+  /** Completes the code we sent, over either channel. The challenge names which. */
   verifyOtp(input: { readonly code: string; readonly challengeId?: string }): Promise<Session> {
     return this.otp.verify(input);
   }

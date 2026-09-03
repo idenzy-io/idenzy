@@ -15,9 +15,10 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** until_account_deletion
-- **Tables:** `webauthn_credentials`
+- **Tables:** `mfa_factors`, `webauthn_credentials`
 - **Categories of personal data:**
 
+  - pii: label
   - pii: name
 
 ## audit_and_compliance
@@ -47,7 +48,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** days_30, until_account_deletion, years_6
-- **Tables:** `auth_codes`, `email_change_requests`, `idempotency_keys`, `identities`, `magic_link_tokens`, `oauth_flows`, `otp_challenges`, `users`, `webauthn_challenges`, `webauthn_credentials`
+- **Tables:** `auth_codes`, `email_change_requests`, `idempotency_keys`, `identities`, `magic_link_tokens`, `mfa_challenges`, `oauth_flows`, `otp_challenges`, `users`, `webauthn_challenges`, `webauthn_credentials`
 - **Categories of personal data:**
 
   - pii: avatarUrl
@@ -61,6 +62,8 @@ certification; see PROJECT.md 4.13.10.
   - pii: providerData
   - pii: providerUserId
   - pii: targetEncrypted
+  - pseudonymous: amr
+  - pseudonymous: attempts
   - pseudonymous: clientCodeChallenge
   - pseudonymous: codeChallenge
   - pseudonymous: flowId
@@ -70,6 +73,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: publicKey
   - pseudonymous: requestFingerprint
   - pseudonymous: responseStatus
+  - pseudonymous: sessionId
   - pseudonymous: state
   - pseudonymous: targetHash
   - pseudonymous: userId

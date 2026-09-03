@@ -11,11 +11,11 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 27 |
+| pii | 28 |
 | phi | 0 |
-| secret | 17 |
-| pseudonymous | 25 |
-| operational | 239 |
+| secret | 18 |
+| pseudonymous | 29 |
+| operational | 251 |
 
 ## `api_keys`
 
@@ -203,13 +203,37 @@ Notes:
 - `redirectUri`: Validated against redirect_uris at issue time and pinned for the token's life.
 - `targetEncrypted`: The address the link was sent to, read back when it is clicked.
 
+## `mfa_challenges`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `amr` | pseudonymous | authentication | days_30 | no | row_deleted | no |
+| `attempts` | pseudonymous | authentication | days_30 | no | row_deleted | no |
+| `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `purpose` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `sessionId` | pseudonymous | authentication | days_30 | no | row_deleted | no |
+| `userId` | pseudonymous | authentication | days_30 | no | row_deleted | no |
+
+Notes:
+
+- `amr`: What the first factor proved, carried so the issued session claims both halves.
+- `attempts`: Capped at 5, as for an OTP. Exhaustion kills the challenge (PROJECT.md 4.7).
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `sessionId`: Set for a step-up and null for a sign-in, so a challenge cannot raise the factor age of a session it was not minted in.
+
 ## `mfa_factors`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
+| `counter` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `credential` | secret | authentication | until_account_deletion | no | null_out | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `label` | pii | account_management | until_account_deletion | yes | tombstone | no |
 | `lastUsedAt` | operational | account_management | until_account_deletion | yes | not_applicable | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `secretEncrypted` | secret | authentication | until_account_deletion | no | null_out | yes |
@@ -219,7 +243,25 @@ Notes:
 
 Notes:
 
+- `counter`: The last TOTP step this factor spent. A code from that step or earlier is refused however well it verifies, which is what stops a shoulder-surfed code being replayed inside its own window.
+- `label`: User-chosen name for the authenticator, so two of them are tellable apart.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `mfa_recovery_codes`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `codeHash` | secret | authentication | until_account_deletion | no | null_out | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `usedAt` | operational | account_management | until_account_deletion | yes | not_applicable | no |
+| `userId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `usedAt`: Single use. Set in the same statement that reads the row, so two requests cannot spend one code.
 
 ## `oauth_flows`
 

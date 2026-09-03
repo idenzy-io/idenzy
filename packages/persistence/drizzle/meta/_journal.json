@@ -127,6 +127,20 @@
       "when": 1788460198344,
       "tag": "0017_stiff_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788463017219,
+      "tag": "0018_wet_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788463027981,
+      "tag": "0019_shiny_cable",
+      "breakpoints": true
     }
   ]
 }

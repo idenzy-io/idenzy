@@ -11,6 +11,7 @@ import {
 import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { StepUpService } from "../mfa/step-up-service.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { EmailChangeService } from "./email-change-service.js";
@@ -29,6 +30,7 @@ export class AccountController {
   constructor(
     private readonly verification: EmailVerificationService,
     private readonly changes: EmailChangeService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   @Post("verification")
@@ -47,18 +49,26 @@ export class AccountController {
     return this.verification.confirm(flowContextFrom(request), body.token);
   }
 
+  /**
+   * Moving the address needs a recently proved factor as well as a session
+   * (PROJECT.md 4.5).
+   *
+   * This is the step-up §4.5 always asked for, and it is worth exactly as much as the
+   * second factor behind it: a user who has enrolled none passes, because there is
+   * nothing they could be asked for. What it closes is the case that matters, which is a
+   * stolen session on an account whose owner did set one up.
+   */
   @Post()
   @RequireSession()
   @HttpCode(202)
-  requestChange(
+  async requestChange(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(requestEmailChangeSchema)) body: RequestEmailChange,
   ): Promise<void> {
-    return this.changes.request(
-      flowContextFrom(request),
-      principalOf(request).userId,
-      body.newEmail,
-    );
+    const context = flowContextFrom(request);
+    const principal = principalOf(request);
+    await this.stepUp.assertRecent(context, principal);
+    await this.changes.request(context, principal.userId, body.newEmail);
   }
 
   @Post("confirm")

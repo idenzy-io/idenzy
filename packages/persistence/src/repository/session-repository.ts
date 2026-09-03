@@ -109,6 +109,28 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
       .where(and(this.tenantScope(), eq(sessions.id, id)));
   }
 
+  /**
+   * Records that a second factor was proved inside this session (PROJECT.md 4.5).
+   *
+   * Writes `amr` alongside the timestamp, because the two are one fact: a session that
+   * claimed a factor age without naming what proved it would be a claim nothing backs.
+   * Scoped by user as well as by id, so a step-up cannot raise the factor age of a
+   * session that is not the caller's.
+   */
+  async recordFactorVerification(
+    id: string,
+    userId: string,
+    at: Date,
+    amr: readonly string[],
+  ): Promise<boolean> {
+    const rows = await this.tx
+      .update(sessions)
+      .set({ factorVerifiedAt: at, amr: [...amr] })
+      .where(and(this.tenantScope(), eq(sessions.id, id), eq(sessions.userId, userId)))
+      .returning({ id: sessions.id });
+    return rows.length === 1;
+  }
+
   /** Idempotent: an already-revoked session keeps its original reason and timestamp. */
   async revoke(id: string, reason: SessionRevokeReason, at: Date): Promise<void> {
     await this.tx

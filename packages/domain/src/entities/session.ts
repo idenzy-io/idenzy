@@ -35,6 +35,11 @@ export class Session {
     return this.state.amr;
   }
 
+  /** The instant itself, for a caller comparing it against its own window. */
+  get factorVerifiedAt(): Date | null {
+    return this.state.factorVerifiedAt;
+  }
+
   isRevoked(): boolean {
     return this.state.revokedAt !== null;
   }

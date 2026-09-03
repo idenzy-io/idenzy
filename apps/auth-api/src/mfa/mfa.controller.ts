@@ -3,23 +3,26 @@ import {
   type AuthOutcome as AuthOutcomeBody,
   type ConfirmTotpEnrolment,
   confirmTotpEnrolmentSchema,
+  type MfaChallenge,
   type MfaEnrolmentConfirmed,
   type MfaFactorList,
   type RecoveryCodes,
   type StartTotpEnrolment,
+  type StepUpCompleted,
   type SubmitMfa,
   startTotpEnrolmentSchema,
   submitMfaSchema,
   type TotpEnrolment,
 } from "@idenzy/protocol/schemas/mfa";
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from "@nestjs/common";
-import type { FastifyRequest } from "fastify";
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res } from "@nestjs/common";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
 import { MfaVerificationFlow } from "./mfa-verification.flow.js";
+import { StepUpService } from "./step-up-service.js";
 
 /**
  * Managing your own second factors (PROJECT.md 4.5).
@@ -38,6 +41,7 @@ export class MfaController {
   constructor(
     private readonly enrolment: MfaEnrolmentService,
     private readonly verification: MfaVerificationFlow,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -90,6 +94,44 @@ export class MfaController {
       body.factorId,
       body.code,
     );
+  }
+
+  /**
+   * Asks for a challenge in front of something sensitive (PROJECT.md 4.5).
+   *
+   * 204 rather than a challenge when the caller has no factor to be asked for. A client
+   * that gets it should go ahead with the action: the same absence is what lets them
+   * past the check on the other side.
+   */
+  @Post("step-up")
+  @RequireSession()
+  @HttpCode(200)
+  async startStepUp(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<MfaChallenge | null> {
+    const context = flowContextFrom(request);
+    const challenge = await this.stepUp.start(context, principalOf(request));
+    if (challenge === null) {
+      reply.status(204);
+      return null;
+    }
+    return {
+      challengeId: challenge.challengeId,
+      purpose: challenge.purpose,
+      factors: [...challenge.factors],
+      expiresAt: challenge.expiresAt.toISOString(),
+    };
+  }
+
+  @Post("step-up/verify")
+  @RequireSession()
+  @HttpCode(200)
+  completeStepUp(
+    @Req() request: FastifyRequest,
+    @Body(new ZodValidationPipe(submitMfaSchema)) body: SubmitMfa,
+  ): Promise<StepUpCompleted> {
+    return this.stepUp.complete(flowContextFrom(request), principalOf(request), body);
   }
 
   @Post("recovery-codes")

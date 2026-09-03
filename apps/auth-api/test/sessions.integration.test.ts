@@ -86,7 +86,7 @@ async function signIn(
 }
 
 function principal(userId: string, sessionId: string): SessionPrincipal {
-  return { userId, sessionId, amr: [AuthMethod.Password] };
+  return { userId, sessionId, amr: [AuthMethod.Password], factorVerifiedAt: null };
 }
 
 describe("the access token a session issues", () => {

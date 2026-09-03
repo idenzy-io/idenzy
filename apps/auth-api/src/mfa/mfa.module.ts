@@ -4,9 +4,11 @@ import { SessionModule } from "../session/session.module.js";
 import { MfaFactorRegistry } from "./factor-registry.js";
 import { MfaController } from "./mfa.controller.js";
 import { MfaChallengeGate } from "./mfa-challenge-gate.js";
+import { MfaChallengeVerifier } from "./mfa-challenge-verifier.js";
 import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
 import { MfaVerificationFlow } from "./mfa-verification.flow.js";
 import { RecoveryCodeFactor } from "./recovery-code.factor.js";
+import { StepUpService } from "./step-up-service.js";
 import { TotpFactor } from "./totp.factor.js";
 
 /**
@@ -31,9 +33,11 @@ import { TotpFactor } from "./totp.factor.js";
     MfaFactorRegistry,
     MfaChallengeGate,
     { provide: MFA_GATE, useExisting: MfaChallengeGate },
+    MfaChallengeVerifier,
     MfaEnrolmentService,
     MfaVerificationFlow,
+    StepUpService,
   ],
-  exports: [MFA_GATE, MfaChallengeGate, MfaFactorRegistry, MfaEnrolmentService],
+  exports: [MFA_GATE, MfaChallengeGate, MfaFactorRegistry, MfaEnrolmentService, StepUpService],
 })
 export class MfaModule {}

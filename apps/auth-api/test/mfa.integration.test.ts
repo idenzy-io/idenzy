@@ -1,3 +1,4 @@
+import { InternalError } from "@idenzy/core/errors";
 import { SystemClock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
@@ -18,12 +19,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { MfaFactorRegistry } from "../dist/mfa/factor-registry.js";
+import { MfaChallengeVerifier } from "../dist/mfa/mfa-challenge-verifier.js";
 import { MfaEnrolmentService } from "../dist/mfa/mfa-enrolment-service.js";
 import { MfaVerificationFlow } from "../dist/mfa/mfa-verification.flow.js";
 import { RecoveryCodeFactor } from "../dist/mfa/recovery-code.factor.js";
+import { StepUpService } from "../dist/mfa/step-up-service.js";
 import { TotpFactor } from "../dist/mfa/totp.factor.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
+import type { SessionPrincipal } from "../dist/session/session.guard.js";
 import { SessionService } from "../dist/session/session-service.js";
 import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
@@ -41,6 +45,8 @@ let recoveryFactor: RecoveryCodeFactor;
 let signUp: PasswordSignUpFlow;
 let signIn: PasswordSignInFlow;
 let verification: MfaVerificationFlow;
+let stepUp: StepUpService;
+let _sessionService: SessionService;
 
 class NoBreaches extends BreachedPasswordChecker {
   protected override fetchRange(): Promise<readonly string[]> {
@@ -58,6 +64,12 @@ const context: FlowContext = {
   attestation: null,
 };
 const tenant = new TenantContext(PROJECT, "req_mfa", "user");
+
+/** Narrows away a null the test does not expect, without a bare throw (PROJECT.md 7.2.8). */
+function required<T>(value: T | null): T {
+  if (value === null) throw new InternalError({ detail: { reason: "expected a value" } });
+  return value;
+}
 
 /** The code an authenticator app would be showing for a secret right now. */
 const codeFor = (secret: string): string => new Totp(clock).current(secret);
@@ -97,6 +109,7 @@ beforeAll(async () => {
   const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
+  _sessionService = sessions;
   signUp = new PasswordSignUpFlow(
     sessions,
     new NullFlowHooks(),
@@ -118,6 +131,8 @@ beforeAll(async () => {
   enrolment = new MfaEnrolmentService(uow, clock, encryptor, config);
   totpFactor = new TotpFactor(uow, encryptor, clock);
   recoveryFactor = new RecoveryCodeFactor(uow, clock);
+  const registry = new MfaFactorRegistry(totpFactor, recoveryFactor);
+  const challenges = new MfaChallengeVerifier(uow, clock);
   verification = new MfaVerificationFlow(
     sessions,
     new NullFlowHooks(),
@@ -125,8 +140,10 @@ beforeAll(async () => {
     gate,
     uow,
     clock,
-    new MfaFactorRegistry(totpFactor, recoveryFactor),
+    registry,
+    challenges,
   );
+  stepUp = new StepUpService(uow, clock, config, gate, registry, challenges, sessions);
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -548,5 +565,162 @@ describe("signing in with a second factor", () => {
 
     const issued = sessionOf(await signIn.authenticate(context, { email, password }));
     expect(await amrOf(issued.sessionId)).toEqual([AuthMethod.Password]);
+  });
+});
+
+describe("stepping up inside a session", () => {
+  const password = "a-good-password";
+
+  /**
+   * A session that exists, on an account that has since enrolled an authenticator.
+   *
+   * The order is the realistic one and it is also the only one that works: confirming an
+   * enrolment spends the current TOTP step, so a sign-in that also proved the factor
+   * would leave nothing this test could present. That is the replay defence, not a quirk.
+   */
+  async function signedInThenEnrolled(
+    email: string,
+  ): Promise<{ principal: SessionPrincipal; secret: string; codes: readonly string[] }> {
+    const userId = await newUser(email);
+    const issued = sessionOf(await signIn.authenticate(context, { email, password }));
+    const started = await enrolment.startTotp(context, userId, null);
+    const confirmed = await enrolment.confirmTotp(
+      context,
+      userId,
+      started.factorId,
+      codeFor(started.secret),
+    );
+    return {
+      principal: await principalFor(issued.sessionId),
+      secret: started.secret,
+      codes: confirmed.recoveryCodes?.codes ?? [],
+    };
+  }
+
+  /** Read from the session row, which is where a step-up writes and the guard reads. */
+  async function principalFor(sessionId: string): Promise<SessionPrincipal> {
+    const session = required(
+      await uow.run(tenant, (tx) => new SessionRepository(tx, tenant).findById(sessionId)),
+    );
+    return {
+      userId: session.userId,
+      sessionId,
+      amr: session.amr,
+      factorVerifiedAt: session.factorVerifiedAt,
+    };
+  }
+
+  it("lets a user with nothing enrolled straight past", async () => {
+    const email = "stepup-none@a.test";
+    await newUser(email);
+    const issued = sessionOf(await signIn.authenticate(context, { email, password }));
+    const principal = await principalFor(issued.sessionId);
+
+    await expect(stepUp.assertRecent(context, principal)).resolves.toBeUndefined();
+    expect(await stepUp.start(context, principal)).toBeNull();
+  });
+
+  it("passes when the proof is inside the window", async () => {
+    const { principal } = await signedInThenEnrolled("stepup-fresh@a.test");
+    const fresh: SessionPrincipal = { ...principal, factorVerifiedAt: clock.now() };
+
+    await expect(stepUp.assertRecent(context, fresh)).resolves.toBeUndefined();
+  });
+
+  it("refuses when the proof is older than the window", async () => {
+    const { principal } = await signedInThenEnrolled("stepup-stale@a.test");
+    const stale: SessionPrincipal = {
+      ...principal,
+      factorVerifiedAt: new Date(clock.nowMs() - 60 * 60 * 1000),
+    };
+
+    await expect(stepUp.assertRecent(context, stale)).rejects.toMatchObject({
+      code: "reauthentication_required",
+    });
+  });
+
+  it("refuses a session that never proved a factor at all", async () => {
+    const { principal } = await signedInThenEnrolled("stepup-never@a.test");
+
+    expect(principal.factorVerifiedAt).toBeNull();
+    await expect(stepUp.assertRecent(context, principal)).rejects.toMatchObject({
+      code: "reauthentication_required",
+    });
+  });
+
+  it("mints a fresh token and moves the factor age", async () => {
+    const { principal, secret } = await signedInThenEnrolled("stepup-complete@a.test");
+    const challenge = required(await stepUp.start(context, principal));
+
+    const completed = await stepUp.complete(context, principal, {
+      challengeId: challenge.challengeId,
+      factor: MfaFactorType.Totp,
+      code: nextCodeFor(secret),
+    });
+
+    expect(completed.accessToken.length).toBeGreaterThan(0);
+    const after = await principalFor(principal.sessionId);
+    expect(after.factorVerifiedAt).not.toBeNull();
+    expect(after.amr).toContain(AuthMethod.Mfa);
+    await expect(stepUp.assertRecent(context, after)).resolves.toBeUndefined();
+  });
+
+  /** A recovery code is for a lost phone. Spending one to confirm an action spends it wrongly. */
+  it("does not offer a recovery code, and refuses one that is presented", async () => {
+    const { principal, codes } = await signedInThenEnrolled("stepup-recovery@a.test");
+    const challenge = required(await stepUp.start(context, principal));
+
+    expect(challenge.factors).toEqual([MfaFactorType.Totp]);
+    await expect(
+      stepUp.complete(context, principal, {
+        challengeId: challenge.challengeId,
+        factor: MfaFactorType.RecoveryCode,
+        code: codes[0] ?? "",
+      }),
+    ).rejects.toMatchObject({ code: "mfa_factor_invalid" });
+  });
+
+  /**
+   * A challenge minted in one session must not raise the factor age of another, or a
+   * device that proved nothing inherits a proof made somewhere else.
+   */
+  it("refuses a challenge minted in a different session", async () => {
+    const email = "stepup-pinned@a.test";
+    const { principal, secret } = await signedInThenEnrolled(email);
+    const challenge = required(await stepUp.start(context, principal));
+
+    // A second session for the same user, which is the interesting case: same person,
+    // different device, and still not the session the challenge was minted in.
+    const outcome = challengeOf(await signIn.authenticate(context, { email, password }));
+    const second = sessionOf(
+      await verification.authenticate(context, {
+        challengeId: outcome.challenge.challengeId,
+        factor: MfaFactorType.Totp,
+        code: nextCodeFor(secret),
+      }),
+    );
+    const borrower = await principalFor(second.sessionId);
+
+    await expect(
+      stepUp.complete(context, borrower, {
+        challengeId: challenge.challengeId,
+        factor: MfaFactorType.Totp,
+        code: nextCodeFor(secret),
+      }),
+    ).rejects.toMatchObject({ code: "challenge_invalid" });
+  });
+
+  /** A step-up challenge is not a sign-in, and must not be spendable as one. */
+  it("cannot be spent through the sign-in route", async () => {
+    const { principal, secret } = await signedInThenEnrolled("stepup-crosspurpose@a.test");
+    const challenge = required(await stepUp.start(context, principal));
+
+    await expect(
+      verification.authenticate(context, {
+        challengeId: challenge.challengeId,
+        factor: MfaFactorType.Totp,
+        code: nextCodeFor(secret),
+      }),
+    ).rejects.toMatchObject({ code: "challenge_invalid" });
   });
 });

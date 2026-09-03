@@ -20,6 +20,14 @@ export interface SessionPrincipal {
   readonly userId: string;
   readonly sessionId: string;
   readonly amr: readonly string[];
+  /**
+   * When this session last proved a factor, or null.
+   *
+   * Read from the session row rather than from the token's `fva`, because the row is
+   * what a step-up writes to and the token in hand was minted before it. A caller who
+   * has just stepped up would otherwise still be refused until their next refresh.
+   */
+  readonly factorVerifiedAt: Date | null;
 }
 
 declare module "fastify" {
@@ -69,7 +77,12 @@ export class SessionGuard implements CanActivate {
     );
     if (session === null || !session.isUsable(this.clock)) throw new SessionRevokedError();
 
-    request.principal = { userId: session.userId, sessionId, amr: claims.amr };
+    request.principal = {
+      userId: session.userId,
+      sessionId,
+      amr: claims.amr,
+      factorVerifiedAt: session.factorVerifiedAt,
+    };
     return true;
   }
 }

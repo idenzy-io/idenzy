@@ -211,10 +211,45 @@ export class ReauthenticationRequiredError extends ForbiddenError {
   }
 }
 
+/**
+ * A second factor is owed and no challenge could stand in for it.
+ *
+ * The ordinary case is not an error at all: a flow that owes a factor answers with a
+ * challenge (PROJECT.md 4.5). This is what is left over, which is a project that demands
+ * a second factor from a user who has enrolled none, and there is nothing the client can
+ * submit to get past it.
+ */
 export class MfaRequiredError extends ForbiddenError {
   override readonly code = ErrorCode.MfaRequired;
   constructor(options: ErrorOptions = {}) {
     super(options.message ?? "A second factor is required.", options);
+  }
+}
+
+/**
+ * A factor did not verify.
+ *
+ * One error for a wrong code, a code from the wrong time step, a code already spent, and
+ * a factor the user never enrolled. The last is the one worth stating: a challenge that
+ * answered differently for "you do not have that factor" would enumerate what somebody
+ * holds to anyone who got past a first factor, which is exactly the position a stolen
+ * password puts an attacker in.
+ */
+export class MfaFactorInvalidError extends BadRequestError {
+  override readonly code = ErrorCode.MfaFactorInvalid;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "That code is not correct.", options);
+  }
+}
+
+/**
+ * The user already has this factor, and enrolling a second would be ambiguous rather
+ * than useful. Says so plainly: it is the caller's own account and they can see the list.
+ */
+export class MfaFactorAlreadyEnrolledError extends ConflictError {
+  override readonly code = ErrorCode.MfaFactorAlreadyEnrolled;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "That factor is already enrolled.", options);
   }
 }
 

@@ -226,8 +226,8 @@ what an SSR seed is, each of the other three was fifteen lines around
 `AccessTokenVerifier` and a framework's own request object. That closes every Tier-1 web
 target in §3.3 and the whole Edge/SSR row with it.
 
-What is left in 1.5 is the conformance suite that holds the bindings to the same
-behaviour, `idenzy init`, and the starter templates.
+The conformance suite that holds them to the same behaviour is in, and the five browser
+bindings pass it. What is left in 1.5 is `idenzy init` and the starter templates.
 
 ### 1.1 Core auth flows
 
@@ -362,7 +362,12 @@ behaviour, `idenzy init`, and the starter templates.
       is what lets a five-minute token behave like a sixty-second one without asking us
       anything on the request path. Webhook verification and the management client wait on
       their server halves, which are 1.6 and not built yet
-- [ ] SDK conformance suite that every client must pass
+- [x] SDK conformance suite that every client must pass. `BindingConformanceSuite` in
+      `@idenzy/sdk-conformance` is ten cases over an adapter each binding provides, and the
+      five browser bindings run it; Next and Nuxt inherit it from React and Vue. Its own
+      tests run it against a reference binding and four broken ones, so the suite is known
+      to fail when a binding drops a null seed, collapses `loading`, publishes the client's
+      opening position over a seed, or leaves a listener on a client it no longer watches
 - [ ] `idenzy init` scaffolding working routes into the customer's repository
 - [ ] Starter templates per framework, in `examples/`
 

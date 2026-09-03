@@ -95,6 +95,14 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
 - **argon2 encodes its parameters as `m,p,t`, not `m,t,p`.** `needsRehash` used to
   prefix-match the wrong order, so it never recognised a hash it had just produced and
   every sign-in rehashed the password again. Parse the PHC string; do not match it.
+- **Node has `navigator.locks`, and the refresh lock is named after the publishable key.** Two
+  clients built with the same key queue behind each other, which is the whole point in a
+  browser (ADR-0007) and a hang in a test file: a case that leaves a rotation unanswered holds
+  the lock, and every later client for that key waits on it forever. The symptom is a binding
+  that appears never to restore, with no request in the transport to explain it.
+  `@idenzy/sdk-conformance` gives each client a key of its own. jsdom hides the whole problem,
+  because it has no `navigator.locks` at all, so the suites that run in a browser environment
+  pass either way.
 
 ## Adding a database column
 
@@ -225,6 +233,20 @@ Four rules the store owns, and every binding inherits.
   client holding nothing is signed out. So a binding hands the seed on exactly as it arrives,
   null included. Dropping the key on null is what put the signed-out tree in the HTML of every
   Nuxt page in the module's default configuration, and in SvelteKit's documented call.
+
+Those rules are checked rather than promised. `BindingConformanceSuite` in
+`@idenzy/sdk-conformance` runs ten cases through an adapter the binding provides, and React,
+Vue, Svelte, Angular and Solid each run it in a single test. Next and Nuxt inherit it, because
+their browser halves are `@idenzy/react` re-exported and the Vue plugin. Write the adapter over
+the binding's own provider and its own session primitive: one that reached past them into
+`SessionStore` would pass every case while the thing a customer imports stayed broken. The
+package's own tests run the suite against a reference binding and four deliberately broken
+ones, because a suite that cannot fail proves nothing.
+
+It deliberately does not extend `ConformanceSuite` from `@idenzy/testing`, where the other
+family suites live. That package carries Postgres, Testcontainers and the domain layer behind
+it, and `pnpm test` for `@idenzy/react` must not pull the server stack into its build graph.
+What they would have shared is the loop.
 
 Two of them carry something the others do not, and both are easy to undo by accident.
 

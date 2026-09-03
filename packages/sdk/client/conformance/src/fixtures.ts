@@ -1,9 +1,11 @@
 /**
- * The fixtures every binding's tests were writing for themselves.
+ * What the suite builds its cases out of: a fake transport, a user, and the two session
+ * responses a binding ever sees.
  *
- * Six packages had their own copy of a fake transport, a user and a refresh response, which is
- * six places for one of them to drift into testing something slightly different from the rest.
- * They are here so the conformance suite and a binding's own extra cases share them.
+ * Exported rather than kept private to the suite, so a binding writing a case of its own tests
+ * the same session against the same profile as the shared cases do. Every binding still has a
+ * copy of these from before the suite existed, and the copies can go as each one is next
+ * touched.
  */
 import { Idenzy } from "@idenzy/js";
 import type { ApiRequest, ApiResponse, Transport } from "@idenzy/js/http/transport";

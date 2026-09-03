@@ -12,6 +12,7 @@ import { GitlabProvider } from "@idenzy/providers-oauth/providers/gitlab-provide
 import { GoogleProvider } from "@idenzy/providers-oauth/providers/google-provider";
 import { LinkedinProvider } from "@idenzy/providers-oauth/providers/linkedin-provider";
 import { MicrosoftProvider } from "@idenzy/providers-oauth/providers/microsoft-provider";
+import { SlackProvider } from "@idenzy/providers-oauth/providers/slack-provider";
 import { TwitchProvider } from "@idenzy/providers-oauth/providers/twitch-provider";
 import { XProvider } from "@idenzy/providers-oauth/providers/x-provider";
 import { Module } from "@nestjs/common";
@@ -61,6 +62,7 @@ import { ProviderRegistry } from "./provider-registry.js";
           [ProviderId.X, new XProvider(http, clock, flows, allowlist)],
           [ProviderId.Gitlab, new GitlabProvider(http, clock, flows, allowlist)],
           [ProviderId.Bitbucket, new BitbucketProvider(http, clock, flows, allowlist)],
+          [ProviderId.Slack, new SlackProvider(http, clock, flows, allowlist)],
         ]);
       },
     },

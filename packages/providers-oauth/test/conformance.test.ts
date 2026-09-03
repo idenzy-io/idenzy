@@ -3,7 +3,8 @@ import {
   OAuthProviderConformanceSuite,
   type OAuthProviderDependencies,
 } from "@idenzy/testing/oauth-provider-conformance";
-import { describe, expect, it } from "vitest";
+import { exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppleProvider } from "../src/providers/apple-provider.js";
 import { BitbucketProvider } from "../src/providers/bitbucket-provider.js";
 import { DiscordProvider } from "../src/providers/discord-provider.js";
@@ -13,6 +14,7 @@ import { GitlabProvider } from "../src/providers/gitlab-provider.js";
 import { GoogleProvider } from "../src/providers/google-provider.js";
 import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
+import { SlackProvider } from "../src/providers/slack-provider.js";
 import { TwitchProvider } from "../src/providers/twitch-provider.js";
 import { XProvider } from "../src/providers/x-provider.js";
 
@@ -37,6 +39,7 @@ const providers = {
     new GitlabProvider(d.http, d.clock, d.flows, d.allowlist),
   bitbucket: (d: OAuthProviderDependencies) =>
     new BitbucketProvider(d.http, d.clock, d.flows, d.allowlist),
+  slack: (d: OAuthProviderDependencies) => new SlackProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -182,6 +185,12 @@ describe("provider specifics", () => {
   it("asks Bitbucket for the account and the address, which live behind separate scopes", () => {
     const url = new URL(providers.bitbucket(deps()).authorizationUrl(credentials, request));
     expect(url.searchParams.get("scope")).toBe("account email");
+  });
+
+  it("asks Slack for an id_token, and binds it to the flow with a nonce", () => {
+    const url = new URL(providers.slack(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.get("scope")).toBe("openid profile email");
+    expect(url.searchParams.get("nonce")).toBe("n");
   });
 });
 
@@ -431,5 +440,92 @@ describe("profile mapping", () => {
 
     expect(profile.email).toBeNull();
     expect(profile.emailVerified).toBe(false);
+  });
+});
+
+/**
+ * A real signed id_token, verified through the real JWKS path.
+ *
+ * The OIDC providers map their profile out of claims the base has already verified, and
+ * `fetchProfile` refuses claims it did not verify itself, so there is no way in but a
+ * signature that checks out. That is the right price: the mapping under test is only
+ * reachable in production behind the same four checks.
+ */
+async function signing(): Promise<(claims: Record<string, unknown>) => Promise<string>> {
+  const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
+  const jwk: JWK = { ...(await exportJWK(publicKey)), kid: "test-key", alg: "RS256" };
+  vi.stubGlobal("fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ keys: [jwk] }), {
+        headers: { "content-type": "application/json" },
+      }),
+    ),
+  );
+
+  return (claims) =>
+    new SignJWT(claims)
+      .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+      .setAudience("client-id")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(privateKey);
+}
+
+describe("slack", () => {
+  const TEAM = "https://slack.com/team_id";
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const complete = async (claims: Record<string, unknown>) => {
+    const idToken = await signing();
+    const script = completing([
+      { status: 200, data: { ok: true, access_token: "at", id_token: await idToken(claims) } },
+    ]);
+    const provider = providers.slack(script.deps);
+    return provider.completeFlow("project", credentials, script.callbackFor(provider.id));
+  };
+
+  /**
+   * A Slack member id is unique inside one workspace and not across two, so an account
+   * keyed on `sub` alone would be handed to whichever stranger in another workspace holds
+   * the same id next.
+   */
+  it("keys a Slack identity on the workspace as well as the member", async () => {
+    const { profile } = await complete({
+      iss: "https://slack.com",
+      sub: "U0123",
+      [TEAM]: "T0777",
+      name: "Ada",
+      email: "ada@example.test",
+      email_verified: true,
+      picture: "https://avatars.test/ada",
+    });
+
+    expect(profile.providerUserId).toBe("T0777:U0123");
+    expect(profile.email).toBe("ada@example.test");
+    expect(profile.emailVerified).toBe(true);
+  });
+
+  it("refuses an assertion that names no workspace, rather than keying on the member alone", async () => {
+    await expect(
+      complete({ iss: "https://slack.com", sub: "U0123", email: "ada@example.test" }),
+    ).rejects.toMatchObject({ code: "oauth_provider_error" });
+  });
+
+  it("refuses an assertion signed for another issuer", async () => {
+    await expect(
+      complete({ iss: "https://slack.example.test", sub: "U0123", [TEAM]: "T0777" }),
+    ).rejects.toMatchObject({ code: "oauth_provider_error" });
+  });
+
+  /** Slack is a Web API method in OAuth clothing: it reports failure with a 200 body. */
+  it("refuses a Slack token response that answers 200 with ok:false", async () => {
+    const script = completing([{ status: 200, data: { ok: false, error: "invalid_code" } }]);
+    const provider = providers.slack(script.deps);
+
+    await expect(
+      provider.completeFlow("project", credentials, script.callbackFor(provider.id)),
+    ).rejects.toMatchObject({ code: "oauth_provider_error" });
   });
 });

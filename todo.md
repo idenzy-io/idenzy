@@ -184,10 +184,11 @@ email-password and Google sign-in in their own UI in under 15 minutes, measured.
 sign-in works end to end for Google, Apple, GitHub and Microsoft, and account linking is
 closed along with it.
 
-Passkeys (1.3) are done on the server. Both ceremonies verify, credentials carry their
-sign counter and both backup flags, and the sign-in is usernameless because registration
-demands a resident key. The one part still open is conditional UI, which is a browser
-call and belongs to the SDK in 1.5; the endpoints it needs are the ones that exist.
+Passkeys (1.3) are done on both sides now. Both ceremonies verify, credentials carry
+their sign counter and both backup flags, and the sign-in is usernameless because
+registration demands a resident key. Conditional UI landed with the SDK: it is one option
+on the sign-in call, and it works only because the options endpoint names no credential.
+What is left is passkeys as a second factor, which is phase 2 with the rest of MFA.
 
 Delivery (1.4) is built as far as it can go without a third-party sender: the
 `EmailProvider` base, its conformance suite, the suppression list, the usage counter, the
@@ -201,8 +202,12 @@ outside development without KMS, and `FieldEncryptor` now does the same: OTP tar
 magic-link targets, OAuth PKCE verifiers and provider client secrets are all envelope
 encrypted, and the per-project data key is KMS-wrapped. Both are the same piece of work.
 
-Next are the SDKs (1.5), which is what the fifteen-minute exit criterion is actually
-measured against.
+The SDKs (1.5) are what the fifteen-minute exit criterion is actually measured against,
+and `@idenzy/js` is the one they are all built on. It is done: the session and its single
+renewal, single-flight refresh under a cross-tab lock, negotiated transport, every flow
+that ends in a session, the passkey ceremonies, OAuth with PKCE, the session list and the
+device name that keeps it from being a list of blanks. Next are the framework packages,
+starting with `@idenzy/react`.
 
 ### 1.1 Core auth flows
 
@@ -258,9 +263,10 @@ measured against.
       challenge, a counter that did not advance, an unregistered origin, a credential from
       another project, a forged user handle, and a registration challenge minted for
       someone else. A fake verifier would have accepted every one of them
-- [ ] Conditional UI support in the JS SDK. The server half is done and is what makes it
-      possible: authentication options take no identifier and name no credential, so the
-      browser can offer a passkey from autofill. The remaining work is the SDK call (1.5)
+- [x] Conditional UI support in the JS SDK. `signIn({ conditional: true })` asks the browser
+      for `mediation: "conditional"`, which is only possible because the server half names no
+      credential: authentication options take no identifier, so autofill has something
+      discoverable to offer whoever is at the keyboard
 - [ ] Passkey as a second factor and for step-up. Phase 2, with the rest of MFA: the
       ceremony is the same one, what changes is `AuthFlow` gating a challenge rather than
       throwing
@@ -289,12 +295,13 @@ measured against.
 
 ### 1.5 SDKs
 
-- [ ] `@idenzy/js` core: session state, token refresh, storage rules, stable error codes.
+- [x] `@idenzy/js` core: session state, token refresh, storage rules, stable error codes.
       Single-flight refresh via `navigator.locks` is a requirement rather than an
       optimisation, because the server stays strict about reuse (ADR-0007)
-- [ ] `signOutEverywhere()` and the session list in the SDK, plus device naming at session
-      creation: `deviceName` is hard-coded null today, so a "your devices" screen lists
-      unnamed rows
+- [x] `signOut("all")` and the session list in the SDK, plus device naming at session
+      creation. The name is the client's to give, on `X-Idenzy-Device-Name` and only on the
+      request that creates a session; the server stores it and never derives one, because
+      parsing a user agent rots and a wrong guess on a security screen is worse than a blank
 - [ ] `@idenzy/react` hooks
 - [ ] `@idenzy/next` with App Router support and middleware
 - [ ] `@idenzy/nuxt` module and composables

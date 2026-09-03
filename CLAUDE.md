@@ -177,6 +177,12 @@ is a compile error rather than a runtime one in somebody's browser.
   for the life of the session stays out of it. `LocalStorageRefreshTokenStore` exists and is
   never selected for anybody: a customer on the shared API host passes it themselves. The PKCE
   verifier in `sessionStorage` is a different case and the ADR says why it does not generalise.
+- **The device name is the client's to give, and travels only on `establish`.** It is a
+  header (`X-Idenzy-Device-Name`), percent-encoded because a header carries bytes and a name
+  does not, and it is set on the one call that creates a session rather than in `headersFor`,
+  where it would ride on every request that nothing reads it from. The server never derives
+  one from a user agent: parsing them rots, and a wrong guess on a security screen is worse
+  than a blank.
 - **Responses are parsed with the protocol's schemas, never cast.** A proxy, a captive portal or
   a mistyped API URL all answer 200 with something shaped nothing like us, and a cast turns that
   into a `TypeError` inside a customer's component with nothing pointing at the cause.

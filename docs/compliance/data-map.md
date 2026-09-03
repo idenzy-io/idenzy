@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 17 |
 | pseudonymous | 25 |
-| operational | 227 |
+| operational | 239 |
 
 ## `api_keys`
 
@@ -467,6 +467,31 @@ Notes:
 - `ip`: Personal data under GDPR. Retained one year for abuse investigation.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
+## `sms_policies`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `allowedCountries` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `attestationRequired` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `currency` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `dailySpendCap` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `maxSendsPerVerify` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `perIpHourlyLimit` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `perNumberDailyLimit` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `senderId` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+
+Notes:
+
+- `allowedCountries`: ISO 3166-1 alpha-2, default deny. Empty means the project sends no SMS at all.
+- `attestationRequired`: On by default. A project turning it off is accepting the pumping risk itself.
+- `dailySpendCap`: Hard stop, not an alert threshold. Same scale as usage_daily.sms_cost.
+- `maxSendsPerVerify`: Pumping signal: codes that are never entered. Applied above a daily floor.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `senderId`: Alphanumeric sender id, registered per country. Null uses the shared number.
+
 ## `staff_access_grants`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -512,11 +537,13 @@ Notes:
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `smsCost` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `smsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `smsVerified` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 
 Notes:
 
 - `mauHll`: Sketch only. Cannot be reversed to a user list.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `smsVerified`: Codes actually entered. Sends far above this is the pumping signal (4.8).
 
 ## `users`
 

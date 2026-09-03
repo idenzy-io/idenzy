@@ -113,6 +113,20 @@
       "when": 1788453616151,
       "tag": "0015_revocation_replay_source",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788460187084,
+      "tag": "0016_whole_genesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788460198344,
+      "tag": "0017_stiff_ultimates",
+      "breakpoints": true
     }
   ]
 }

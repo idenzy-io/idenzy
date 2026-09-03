@@ -10,6 +10,8 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -57,6 +59,69 @@ export const emailTemplates = classifiedTable(
     uniqueIndex("email_templates_project_type_locale_key").on(t.projectId, t.type, t.locale),
     tenantIsolationPolicy("email_templates"),
   ],
+).enableRLS();
+
+/**
+ * The fraud and spend controls every SMS send is measured against (PROJECT.md 4.8).
+ *
+ * One row per project, read on the request path before a message costs anything. The
+ * controls live in the database rather than in Valkey because this is the only limit
+ * whose failure mode is a bill: a cache outage must not be able to lift a spend cap, and
+ * `usage_daily.sms_cost` is already the durable counter to measure against.
+ *
+ * `allowedCountries` defaults to empty and that is the point. SMS pumping picks the
+ * destination, so the countries a product does not serve are exactly the ones an
+ * attacker sends to, and a default-allow list is one nobody ever narrows.
+ *
+ * `dailySpendCap` carries the same precision as `usage_daily.sms_cost`, so the cap and
+ * the spend are compared as they are stored and no conversion sits between them.
+ */
+export const smsPolicies = classifiedTable(
+  "sms_policies",
+  {
+    projectId: projectIdColumn(),
+    allowedCountries: classified(text("allowed_countries").array().notNull().default([]), {
+      ...delivery,
+      purpose: Purpose.SecurityAndAbusePrevention,
+      loggable: true,
+      note: "ISO 3166-1 alpha-2, default deny. Empty means the project sends no SMS at all.",
+    }),
+    dailySpendCap: classified(
+      numeric("daily_spend_cap", { precision: 12, scale: 6 }).notNull().default("2.000000"),
+      {
+        ...delivery,
+        purpose: Purpose.SecurityAndAbusePrevention,
+        note: "Hard stop, not an alert threshold. Same scale as usage_daily.sms_cost.",
+      },
+    ),
+    currency: classified(text("currency").notNull().default("USD"), delivery),
+    attestationRequired: classified(boolean("attestation_required").notNull().default(true), {
+      ...delivery,
+      purpose: Purpose.SecurityAndAbusePrevention,
+      loggable: true,
+      note: "On by default. A project turning it off is accepting the pumping risk itself.",
+    }),
+    perNumberDailyLimit: classified(integer("per_number_daily_limit").notNull().default(5), {
+      ...delivery,
+      purpose: Purpose.SecurityAndAbusePrevention,
+    }),
+    perIpHourlyLimit: classified(integer("per_ip_hourly_limit").notNull().default(10), {
+      ...delivery,
+      purpose: Purpose.SecurityAndAbusePrevention,
+    }),
+    maxSendsPerVerify: classified(integer("max_sends_per_verify").notNull().default(6), {
+      ...delivery,
+      purpose: Purpose.SecurityAndAbusePrevention,
+      note: "Pumping signal: codes that are never entered. Applied above a daily floor.",
+    }),
+    senderId: classified(text("sender_id"), {
+      ...delivery,
+      note: "Alphanumeric sender id, registered per country. Null uses the shared number.",
+    }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId] }), tenantIsolationPolicy("sms_policies")],
 ).enableRLS();
 
 /**

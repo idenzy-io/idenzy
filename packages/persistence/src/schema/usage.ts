@@ -39,6 +39,10 @@ export const usageDaily = classifiedTable(
     }),
     emailsSent: classified(bigint("emails_sent", { mode: "number" }).notNull().default(0), billing),
     smsSent: classified(bigint("sms_sent", { mode: "number" }).notNull().default(0), billing),
+    smsVerified: classified(bigint("sms_verified", { mode: "number" }).notNull().default(0), {
+      ...billing,
+      note: "Codes actually entered. Sends far above this is the pumping signal (4.8).",
+    }),
     smsCost: classified(
       numeric("sms_cost", { precision: 12, scale: 6 }).notNull().default("0"),
       billing,

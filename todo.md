@@ -122,7 +122,10 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [x] Valkey client with timeouts and graceful degradation
 - [x] Abstract `RateLimitStrategy`, with fixed window, sliding window and token bucket
 - [ ] `PostgresFallbackStrategy` for a Valkey outage (§6.3)
-- [x] Revocation set: write, query and the signed cacheable endpoint (§4.2)
+- [x] Revocation set: write, query and the signed endpoint (§4.2, ADR-0009). Not cacheable as
+      §4.2 sketched it: the payload names users and times their security events, and a project
+      id is the `aud` of every token we sign, so it takes a secret key and an ETag keeps
+      polling cheap instead of a CDN
 
 ### 0.10 `@idenzy/observability`
 
@@ -355,8 +358,10 @@ behaviour, `idenzy init`, and the starter templates.
 - [~] `@idenzy/node` server SDK. Access-token verification is done: remote JWKS with the
       cache and the one refetch a rotation needs, `aud` required because one issuer serves
       every project and the audience is the only thing separating tenants, and reading the
-      token out of a request so SSR costs no round trip. Webhook verification and the
-      management client wait on their server halves, which are 1.6 and not built yet
+      token out of a request so SSR costs no round trip. `RevocationCache` is done too, and
+      is what lets a five-minute token behave like a sixty-second one without asking us
+      anything on the request path. Webhook verification and the management client wait on
+      their server halves, which are 1.6 and not built yet
 - [ ] SDK conformance suite that every client must pass
 - [ ] `idenzy init` scaffolding working routes into the customer's repository
 - [ ] Starter templates per framework, in `examples/`
@@ -474,10 +479,15 @@ behaviour, `idenzy init`, and the starter templates.
 - [ ] Platform storage rules audited per SDK: Keychain, Keystore, SecureStore, HttpOnly cookies
 - [ ] npm provenance and CI-only publishing (§7.6)
 - [ ] Measure time-from-signup-to-first-successful-auth, target under 15 minutes (§15)
-- [ ] Consume the Valkey revocation set from `@idenzy/node` and the SSR helpers. Revocation is
-      already immediate against our own API, because `SessionGuard` reads the session row. It
-      is not immediate for anything verifying offline, which is the cost of zero-network-call
-      SSR and the reason the default token TTL is short
+- [x] Consume the revocation set from `@idenzy/node` and the SSR helpers. Revocation was
+      already immediate against our own API, because `SessionGuard` reads the session row; it
+      was not immediate for anything verifying offline, which is the cost of zero-network-call
+      SSR and the reason the default token TTL is short. `RevocationCache` closes that gap
+      without giving offline verification up, and it is opt-in everywhere. Four helpers take a
+      built one; Nuxt builds its own from a server-only secret key, because module options are
+      serialised into the build and cannot carry a live object. A revoked session is a
+      credential read and refused, which is what keeps it out of `protectRoutes`'s
+      "cannot tell" branch and out of what `onUnverifiable: "allow"` waves through
 
 ### Docs
 

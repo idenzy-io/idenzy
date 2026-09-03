@@ -276,6 +276,11 @@ Four rules every one of them keeps.
 - **No route guard anywhere but Next**, where `protectRoutes` exists because middleware has
   nothing else to be. Elsewhere it is two lines a customer owns, and where an unauthenticated
   visitor lands is a product decision in any case (ADR-0002).
+- **A revocation set is passed in, never built**, for the same reason the browser client is:
+  it holds a secret key and a polling timer, and its `start` and `close` belong to whoever
+  owns the process. Attaching one is what closes the gap between a revocation and the access
+  token's expiry, and a helper without one verifies exactly as it did before. Nuxt is the
+  exception and the section below says why.
 
 `protectRoutes` is the one place the three-way distinction is visible, and it is worth
 understanding before touching it. A gate needs three answers where a seed needs two: signed
@@ -286,12 +291,31 @@ key endpoint is unreachable signs them out for the length of the outage and asks
 something that is not broken on their side. `onUnverifiable: "allow"` is the explicit loose
 choice, and it is defensible only because the gate was never an authorisation decision.
 
+Which is why **a revoked session is a credential problem and not an outage**, and the list in
+`isCredentialProblem` is where that is decided. It sits with a missing token and an expired
+one, so `verify` answers null and the gate redirects. Let it out as a throw instead and it
+arrives as "cannot tell": 503 to somebody who should be signing in again, and under
+`onUnverifiable: "allow"` the revoked session waved straight through, so the one case the set
+exists to catch becomes the one case the gate stops catching. Three tests fail if it moves.
+
 What differs, where the difference is not obvious:
 
 - **Nuxt** imports its server half dynamically inside the server branch. Svelte and Remix use
   a subpath for the same purpose. Astro needs neither: middleware never reaches a client
   bundle. In Remix the subpath is load-bearing rather than tidy, because a loader lives in the
   same file as the component it feeds, so `@idenzy/remix` publishes no `.` export at all.
+- **Nuxt builds its own revocation set, because its options are serialised.** A module option
+  goes into the build, so there is nowhere for a customer to hand over a live object. It takes
+  a secret key instead, and that key is the only thing in this module that is not public by
+  construction: it goes to `runtimeConfig`, never `runtimeConfig.public`, under its own
+  `server` interface rather than an optional field beside the publishable key. `setup` peels
+  it off by name before either half is written, because a deny list gets a new secret added to
+  it one release late. `secretKey` defaults to `""` so `NUXT_IDENZY_SECRET_KEY` has a key to
+  override; Nuxt discards an env var whose key is absent from runtime config, and the symptom
+  is a set that polls and finds nothing rather than an error. `start` is deliberately not
+  awaited: it fetches before it schedules, and awaiting it on the first render turns a hung
+  connection into a page that never answers. Until it lands the cache reads stale and answers
+  "not revoked", which is the documented fail-open.
 - **`@idenzy/astro` has no client half and will not get one.** An island is React, Vue,
   Svelte, Solid or none of them, so the browser binding is whichever one the customer chose.
 - **`@idenzy/remix` memoises its answer weakly per request**, and that is correctness before
@@ -376,6 +400,12 @@ that look arbitrary until you know what they are avoiding.
   latency and our availability inside their request, which is the property offline
   verification exists to sell. Our own API does not read the set at all: `SessionGuard` reads
   the session row, so revocation is already immediate there.
+- **Everything that verifies offline can hold one, and nothing has to.** `@idenzy/node` takes
+  a `RevocationCache` on its verifier, and the five SSR helpers pass one through to the same
+  place. It stays opt-in in every one of them: a customer who builds none keeps a package
+  whose only outbound call is for the key set. What changes when one is attached is the
+  answer, not the shape of it, so see the SSR helper section for where a revoked session has
+  to land in a gate.
 - **Publish after the commit, never inside it.** The failure directions are not symmetric. A
   missed revocation degrades to the token expiring, which is where we were before the set
   existed. A false one is unrecoverable: the set is keyed by session id, refreshing mints a

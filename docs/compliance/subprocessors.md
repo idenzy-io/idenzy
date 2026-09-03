@@ -8,6 +8,10 @@ maintained: update it in the same pull request that adds or removes a vendor.
 **Nothing here is contracted yet.** This is the intended set for the architecture in
 PROJECT.md, recorded now so the register exists before the first vendor does.
 
+This register is scoped to third parties that process personal data, which is what a DPA
+asks for. The wider list, including the services that see none, is in
+[docs/services.md](../services.md).
+
 ## Infrastructure
 
 | Subprocessor | Purpose | Data processed | Regions |

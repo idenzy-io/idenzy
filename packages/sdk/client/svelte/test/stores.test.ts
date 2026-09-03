@@ -130,6 +130,19 @@ describe("the session store", () => {
     expect(get(context.session)).toEqual(seed);
   });
 
+  /**
+   * What a load function returns for a visitor the server could not place. It means the same
+   * as no seed at all, so the first paint is `loading` and the browser settles it.
+   */
+  it("takes the null a load function returns as no seed at all", () => {
+    const context = createIdenzy({
+      client: client(new FakeTransport(() => answer(200, restored()))),
+      initial: null,
+    });
+
+    expect(get(context.session).status).toBe("loading");
+  });
+
   it("follows a sign-in made through the client", async () => {
     const transport = new FakeTransport((request) =>
       request.url.endsWith("v1/auth/anonymous") ? answer(200, created()) : refused(),

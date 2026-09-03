@@ -1,15 +1,20 @@
-import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
+import { StaticJwks } from "@idenzy/node/jwks";
+import { RevocationCache } from "@idenzy/node/revocations";
+import { REVOCATION_SNAPSHOT_TYP } from "@idenzy/protocol/schemas/revocation";
+import { type CryptoKey, exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { NextRequest } from "next/server";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { protectRoutes } from "../src/middleware.js";
 import { IdenzyServer } from "../src/server.js";
 
 const ISSUER = "https://auth.acme.test";
 const COLD = "https://auth.cold.test";
 const PROJECT = "prj_00000000000000000001";
+const SESSION = "ses_00000000000000000001";
 const SESSION_COOKIE = "__Host-idenzy-session";
 
 let jwks: JSONWebKeySet;
+let signingKey: CryptoKey;
 let mint: (options?: { audience?: string; expiresIn?: string }) => Promise<string>;
 let idenzy: IdenzyServer;
 let cold: IdenzyServer;
@@ -17,6 +22,7 @@ let cold: IdenzyServer;
 beforeAll(async () => {
   const { publicKey, privateKey } = await generateKeyPair("ES256", { extractable: true });
   jwks = { keys: [{ ...(await exportJWK(publicKey)), kid: "k1", alg: "ES256", use: "sig" }] };
+  signingKey = privateKey;
   mint = (options = {}) =>
     new SignJWT({ sid: "ses_00000000000000000001", amr: ["pwd"] })
       .setProtectedHeader({ alg: "ES256", kid: "k1", typ: "JWT" })
@@ -39,10 +45,50 @@ beforeAll(async () => {
   cold = new IdenzyServer({ issuerUrl: COLD, projectId: PROJECT });
 });
 
+const caches: RevocationCache[] = [];
+
+afterEach(() => {
+  for (const cache of caches.splice(0)) cache.close();
+});
+
 function request(path: string, cookie?: string): NextRequest {
   return new NextRequest(`https://app.acme.test${path}`, {
     headers: cookie === undefined ? {} : { cookie },
   });
+}
+
+/**
+ * A real cache holding a real signed snapshot that names `SESSION`, because what is being
+ * tested is how a verified-and-revoked token travels through this package. A stub answering
+ * true would test the plumbing and not the thing.
+ */
+async function revoking(): Promise<RevocationCache> {
+  const now = Math.floor(Date.now() / 1000);
+  const snapshot = await new SignJWT({
+    sessions: [SESSION],
+    users: [],
+    projectRevokedBefore: null,
+    retentionSeconds: 360,
+  })
+    .setProtectedHeader({ alg: "ES256", kid: "k1", typ: REVOCATION_SNAPSHOT_TYP })
+    .setIssuer(ISSUER)
+    .setAudience(PROJECT)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 120)
+    .sign(signingKey);
+
+  const cache = new RevocationCache(
+    {
+      issuerUrl: ISSUER,
+      projectId: PROJECT,
+      secretKey: "sk_test",
+      fetch: () => Promise.resolve(new Response(snapshot)),
+    },
+    new StaticJwks(jwks),
+  );
+  caches.push(cache);
+  await cache.start();
+  return cache;
 }
 
 describe("the session on an incoming request", () => {
@@ -100,6 +146,36 @@ describe("the session on an incoming request", () => {
     const headers = new Headers({ authorization: `Bearer ${await mint()}` });
 
     await expect(cold.verify(headers)).rejects.toThrow(TypeError);
+  });
+
+  /**
+   * Null and not signed-out, which is the same answer this gives an expired token. The
+   * browser holds the refresh cookie the server never had, and a revoked session's family
+   * is revoked with it, so the rotation it tries next is what settles this honestly.
+   */
+  it("seeds null for a session the revocation set has ended", async () => {
+    const revoked = new IdenzyServer({
+      issuerUrl: ISSUER,
+      projectId: PROJECT,
+      revocations: await revoking(),
+    });
+
+    const session = await revoked.sessionFor(request("/", `${SESSION_COOKIE}=${await mint()}`));
+
+    expect(session).toBeNull();
+  });
+
+  /** A credential read and refused, so `verify` answers null rather than throwing. */
+  it("hands authorisation code no claims for a revoked session, and does not throw", async () => {
+    const revoked = new IdenzyServer({
+      issuerUrl: ISSUER,
+      projectId: PROJECT,
+      revocations: await revoking(),
+    });
+
+    await expect(
+      revoked.verify(new Headers({ authorization: `Bearer ${await mint()}` })),
+    ).resolves.toBeNull();
   });
 });
 
@@ -181,6 +257,47 @@ describe("middleware that protects routes", () => {
     const stale = await mint({ expiresIn: "-1m" });
 
     const response = await middleware()(request("/app/settings", `${SESSION_COOKIE}=${stale}`));
+
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/sign-in");
+  });
+
+  /**
+   * A revoked session is a credential read and refused, so it takes the "no" branch and not
+   * the "cannot tell" one. Answering 503 here would tell somebody whose session was ended
+   * that our side is broken, and leave them refreshing a page that will never let them in.
+   */
+  it("redirects a revoked session rather than answering 503", async () => {
+    const response = await protectRoutes({
+      idenzy: new IdenzyServer({
+        issuerUrl: ISSUER,
+        projectId: PROJECT,
+        revocations: await revoking(),
+      }),
+      isProtected: () => true,
+      signInUrl: "/sign-in",
+    })(request("/app/settings", `${SESSION_COOKIE}=${await mint()}`));
+
+    expect(response.status).not.toBe(503);
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/sign-in");
+  });
+
+  /**
+   * The attack this ordering exists to stop. `onUnverifiable: "allow"` is a decision about
+   * an outage, never about a credential: if a revoked session reached that branch it would
+   * be waved straight through, and the one case the revocation set exists to catch would be
+   * the one case the gate stopped catching.
+   */
+  it("still refuses a revoked session where the customer allows the unjudgeable", async () => {
+    const response = await protectRoutes({
+      idenzy: new IdenzyServer({
+        issuerUrl: ISSUER,
+        projectId: PROJECT,
+        revocations: await revoking(),
+      }),
+      isProtected: () => true,
+      signInUrl: "/sign-in",
+      onUnverifiable: "allow",
+    })(request("/app/settings", `${SESSION_COOKIE}=${await mint()}`));
 
     expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/sign-in");
   });

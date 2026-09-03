@@ -13,6 +13,7 @@
  */
 import { type SessionSnapshot, seededSession } from "@idenzy/js/session/session-store";
 import { AccessTokenVerifier, type VerifiedAccessToken } from "@idenzy/node";
+import type { RevocationCache } from "@idenzy/node/revocations";
 
 export interface IdenzyHandleOptions {
   /**
@@ -24,6 +25,17 @@ export interface IdenzyHandleOptions {
   readonly issuerUrl: string;
   /** Seconds of clock skew tolerated on `exp` and `iat`. Small on purpose. */
   readonly clockToleranceSeconds?: number;
+  /**
+   * An in-process copy of the project's revocation set, if the customer built one (ADR-0009).
+   *
+   * Passed in rather than built here, for the same reason the browser client is: it holds a
+   * secret key and a polling timer, and it has a `start` and a `close` that belong to whoever
+   * owns the process. One per server, at module scope alongside the handle.
+   *
+   * With it, a session revoked in the last few minutes is refused here rather than staying
+   * valid until its access token expires, which is the standing cost of verifying offline.
+   */
+  readonly revocations?: RevocationCache;
 }
 
 /**

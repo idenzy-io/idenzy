@@ -183,10 +183,14 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 **Exit criteria.** A developer can sign up, create a project, install `@idenzy/next`, and have working
 email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
-**Status.** 1.1 is done, and 1.2 is done but for the long tail of providers. Social
-sign-in works end to end for Google, Apple, GitHub, Microsoft, Facebook, Discord, Twitch,
-LinkedIn and X, and account linking is closed along with it. Nine names in the provider
-enum have no adapter yet, and they are listed in 1.2 rather than quietly dropped.
+**Status.** 1.1 and 1.2 are done. Social sign-in works end to end for all eighteen social
+providers in the enum, and account linking is closed along with it. The nineteenth name,
+`oidc`, is the generic enterprise connector and belongs to phase 4.
+
+What each provider does and does not assert about an address is in its own docstring,
+because that field alone decides whether a sign-in may take over an existing account. Ten
+of them state it and eight do not, and the eight report unverified rather than assume: an
+assumption is not an assertion.
 
 Passkeys (1.3) are done on both sides now. Both ceremonies verify, credentials carry
 their sign counter and both backup flags, and the sign-in is usernameless because
@@ -266,15 +270,23 @@ client have no server halves to talk to yet.
       matches, and the allowlist is re-checked at the callback and not only at start
 - [x] Instant dev mode restricted to localhost and `*.idenzy.dev`
 - [x] Provider token storage with envelope encryption, opt-in only via `storeTokens`
-- [~] The provider tail from §4.6. Facebook, Discord, Twitch, LinkedIn and X are in, each
-      an endpoint pair and a profile mapping, and each says in its docstring what it does
-      and does not assert about an address: Discord and LinkedIn state it, Facebook and
-      Twitch do not, and X releases no address at all. X is the one that changed the base,
-      which now has a `tokenHeaders` hook because its token endpoint takes HTTP Basic and
-      RFC 6749 forbids presenting credentials two ways at once. Still to write: GitLab,
-      Bitbucket, Slack, Spotify, Notion, Figma, Kakao, Line and Zoom. Notion is the one
-      that needs more than an endpoint pair, because its profile arrives inside the token
-      response rather than from a call of its own
+- [x] The provider tail from §4.6 is closed: Facebook, Discord, Twitch, LinkedIn, X,
+      GitLab, Bitbucket, Slack, Spotify, Notion, Figma, Kakao, LINE and Zoom. Most are an
+      endpoint pair and a profile mapping, and the base absorbed what the exceptions had in
+      common: `clientAuthentication` moves the secret into the header and out of the form
+      together, because RFC 6749 forbids presenting it twice and six providers require
+      that, and `tokenEncoding` exists for Notion alone
+- [x] Four of them are worth reading before adding a fifteenth. Slack's member id is unique
+      only inside a workspace, so the workspace joins the subject and an assertion naming
+      none is refused rather than keyed on the member alone. Kakao states verification in
+      two fields, and the second goes false when the address has moved to another Kakao
+      account. Zoom states it as 1 or 0, so it is compared and not read for truthiness.
+      Notion's profile arrives inside the token response, because the call that looks like
+      the profile endpoint describes the integration's bot and would hand every user of one
+      integration the same account
+- [x] GitLab's instance is a project setting, and so is its issuer. Self-managed GitLab is
+      the common case for the customers who ask for it, and the value is refused unless it
+      is plainly an https origin, because it is the host a client secret gets posted to
 - [x] Linking a provider to a signed-in account is `POST /link` returning JSON, because a
       browser navigation cannot carry an access token. The user id comes from the session
       guard and is pinned to the flow, so the callback links to the caller rather than to

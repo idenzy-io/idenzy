@@ -550,7 +550,16 @@ For an OAuth provider that means an endpoint pair and a profile mapping, plus ru
 for you. `emailVerified` must be false whenever the provider does not explicitly assert
 otherwise, because that field alone decides whether an account can be linked on an
 address. And the subject must be the provider's immutable id, never a username or an
-address: GitHub logins can be renamed and handed to someone else.
+address: GitHub logins can be renamed and handed to someone else, and a Slack member id is
+unique only inside a workspace, so its subject carries the workspace too.
+
+Where the wire format differs the base already has the hook, and it is one hook per
+decision rather than one per symptom. `clientAuthentication` returns `basic` for the six
+providers whose token endpoint refuses credentials in the body, and it moves the secret
+into the header **and** drops `client_secret` from the form, because RFC 6749 forbids
+presenting them both ways and doing half of it is accepted by some providers and refused
+by others. `tokenEncoding` returns `json` for Notion alone, whose API takes nothing else
+and reports a form as an error about the grant type.
 
 A concrete provider needs an explicit constructor that only calls `super`. It is not
 useless: it widens the abstract base's `protected` constructor to `public`, which is what

@@ -140,6 +140,18 @@ export class SessionManager {
     this.set(null);
   }
 
+  /**
+   * Replaces the profile without touching the tokens, for the reads that return a newer one.
+   *
+   * Always tells the listeners, unlike `set`: the status has not changed, and a changed
+   * display name or a newly verified address is exactly what a subscriber is watching for.
+   */
+  updateUser(user: PublicUser): void {
+    if (this.current === null) return;
+    this.current = this.current.withUser(user);
+    this.emit(this.state());
+  }
+
   /** Called immediately with the current state, so a subscriber never has to ask twice. */
   subscribe(listener: SessionListener): () => void {
     this.listeners.add(listener);

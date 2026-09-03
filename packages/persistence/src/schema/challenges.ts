@@ -220,6 +220,10 @@ export const oauthFlows = classifiedTable(
       retention: Retention.Days30,
       note: "The customer route this flow returns to. Re-checked against the allowlist.",
     }),
+    clientCodeChallenge: classified(text("client_code_challenge"), {
+      ...ephemeralChallenge,
+      note: "The SDK's PKCE challenge for OUR exchange code. Not code_verifier_encrypted, which is ours for the provider.",
+    }),
     linkUserId: classified(uuid("link_user_id"), {
       ...config,
       retention: Retention.Days30,
@@ -399,6 +403,10 @@ export const authCodes = classifiedTable(
       ...config,
       loggable: true,
       note: "Pinned at issue time, so an exchange cannot claim a method it did not prove.",
+    }),
+    codeChallenge: classified(text("code_challenge"), {
+      ...ephemeralChallenge,
+      note: "S256 only, and null for magic links, which are clicked in a different browser.",
     }),
     redirectUri: classified(text("redirect_uri").notNull(), {
       ...config,

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { SystemClock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
@@ -21,6 +22,7 @@ import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
+import { startOauthSchema } from "@idenzy/protocol/schemas/auth";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { RedirectKind } from "../dist/delivery/redirect-targets.js";
@@ -486,3 +488,70 @@ async function storedTokensFor(providerUserId: string): Promise<string | null> {
   );
   return rows[0]?.encrypted_tokens ?? null;
 }
+
+describe("PKCE on our own exchange code", () => {
+  const VERIFIER = "v".repeat(64);
+  const CHALLENGE = createHash("sha256").update(VERIFIER).digest("base64url");
+
+  /** Runs the whole dance with a challenge pinned, and returns the code the redirect carries. */
+  async function signInWithPkce(email: string): Promise<string> {
+    provider.profile = { ...provider.profile, email, providerUserId: `pkce-${email}` };
+    const started = new URL(
+      await service.start(context, ProviderId.Google, REGISTERED, null, CHALLENGE),
+    );
+    const state = started.searchParams.get("state") ?? "";
+    const back = new URL(await service.finish(context, ProviderId.Google, state, "provider-code"));
+    return back.searchParams.get("code") ?? "";
+  }
+
+  it("completes when the verifier matches the challenge that started the flow", async () => {
+    const code = await signInWithPkce("pkce-ok@a.test");
+    const issued = await flow.authenticate(context, { code, codeVerifier: VERIFIER });
+    expect(issued.user.email).toBe("pkce-ok@a.test");
+  });
+
+  it("refuses a stolen code, and burns it on the way", async () => {
+    const code = await signInWithPkce("pkce-stolen@a.test");
+
+    // An attacker who intercepted the redirect has the code and not the verifier.
+    await expect(
+      flow.authenticate(context, { code, codeVerifier: "w".repeat(64) }),
+    ).rejects.toMatchObject({ code: "challenge_invalid" });
+
+    // Burning it is the point: the real client cannot rescue the flow either, because by
+    // the time we know the verifier is wrong the code is in somebody else's hands.
+    await expect(
+      flow.authenticate(context, { code, codeVerifier: VERIFIER }),
+    ).rejects.toMatchObject({ code: "challenge_invalid" });
+  });
+
+  it("refuses an exchange that simply omits the verifier", async () => {
+    // The downgrade. Verification is mandatory once a challenge was stored, so stripping
+    // the field is not a way around it.
+    const code = await signInWithPkce("pkce-downgrade@a.test");
+    await expect(flow.authenticate(context, { code })).rejects.toMatchObject({
+      code: "challenge_invalid",
+    });
+  });
+
+  it("rejects a verifier sent where the challenge belongs, at the boundary", () => {
+    // 43 characters is base64url SHA-256 exactly, so the length alone catches the mistake
+    // that matters: a verifier pasted into the challenge slot would publish the secret in
+    // a redirect. The rule is on the wire contract, which is where the request is parsed.
+    expect(
+      startOauthSchema.safeParse({ redirectUri: REGISTERED, codeChallenge: VERIFIER }).success,
+    ).toBe(false);
+    expect(
+      startOauthSchema.safeParse({ redirectUri: REGISTERED, codeChallenge: CHALLENGE }).success,
+    ).toBe(true);
+  });
+
+  it("still exchanges a code minted without a challenge", async () => {
+    // Server-side callers and magic links legitimately have no verifier. A code with no
+    // challenge accepts one and ignores it rather than refusing.
+    const url = await signInThrough({ email: "pkce-none@a.test", providerUserId: "pkce-none" });
+    const code = url.searchParams.get("code") ?? "";
+    const issued = await flow.authenticate(context, { code, codeVerifier: VERIFIER });
+    expect(issued.user.email).toBe("pkce-none@a.test");
+  });
+});

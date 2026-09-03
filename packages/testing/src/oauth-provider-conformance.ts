@@ -60,6 +60,7 @@ class MemoryFlows implements OAuthFlowStore {
       nonce: flow.nonce,
       redirectUri: flow.redirectUri,
       linkUserId: flow.linkUserId,
+      clientCodeChallenge: flow.clientCodeChallenge,
       expiresAt: flow.expiresAt,
     });
     return Promise.resolve(flow.state);
@@ -97,6 +98,7 @@ function liveFlow(expiresAt: Date): StoredFlow {
     provider: "any",
     codeVerifier: "a".repeat(64),
     nonce: null,
+    clientCodeChallenge: null,
     redirectUri: CUSTOMER_ROUTE,
     linkUserId: null,
     expiresAt,

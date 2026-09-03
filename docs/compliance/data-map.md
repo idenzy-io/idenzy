@@ -14,7 +14,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | pii | 26 |
 | phi | 0 |
 | secret | 17 |
-| pseudonymous | 23 |
+| pseudonymous | 25 |
 | operational | 227 |
 
 ## `api_keys`
@@ -66,6 +66,7 @@ Notes:
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `amr` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `codeChallenge` | pseudonymous | authentication | days_30 | no | row_deleted | no |
 | `codeHash` | secret | authentication | days_30 | no | row_deleted | no |
 | `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
@@ -78,6 +79,7 @@ Notes:
 Notes:
 
 - `amr`: Pinned at issue time, so an exchange cannot claim a method it did not prove.
+- `codeChallenge`: S256 only, and null for magic links, which are clicked in a different browser.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `redirectUri`: The allowlisted target this code was minted for. Kept for the audit trail.
 
@@ -223,6 +225,7 @@ Notes:
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
+| `clientCodeChallenge` | pseudonymous | authentication | days_30 | no | row_deleted | no |
 | `codeVerifierEncrypted` | secret | authentication | days_30 | no | row_deleted | yes |
 | `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
@@ -237,6 +240,7 @@ Notes:
 
 Notes:
 
+- `clientCodeChallenge`: The SDK's PKCE challenge for OUR exchange code. Not code_verifier_encrypted, which is ours for the provider.
 - `codeVerifierEncrypted`: Presented to the provider at the token exchange, so it cannot be a digest.
 - `linkUserId`: Set when a signed-in user is attaching a provider rather than signing in.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.

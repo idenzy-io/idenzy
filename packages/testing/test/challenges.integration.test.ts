@@ -192,6 +192,7 @@ describe("links and exchange codes", () => {
         userId: aliceId,
         codeHash: "code-1",
         amr: ["link"],
+        codeChallenge: null,
         redirectUri: "https://app.test/cb",
         expiresAt: inTen(),
       }),

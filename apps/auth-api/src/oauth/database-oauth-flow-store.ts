@@ -31,6 +31,8 @@ export class DatabaseOAuthFlowStore implements OAuthFlowStore {
         redirectUri: flow.redirectUri,
         linkUserId: flow.linkUserId,
         expiresAt: flow.expiresAt,
+        // Stored as given. It is a digest of the client's secret, not the secret.
+        clientCodeChallenge: flow.clientCodeChallenge,
       }),
     );
   }
@@ -54,6 +56,7 @@ export class DatabaseOAuthFlowStore implements OAuthFlowStore {
       redirectUri: row.redirectUri,
       linkUserId: row.linkUserId,
       expiresAt: row.expiresAt,
+      clientCodeChallenge: row.clientCodeChallenge,
     };
   }
 }

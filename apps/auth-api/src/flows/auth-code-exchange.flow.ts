@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { ChallengeExpiredError, ChallengeInvalidError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
-import { hashToken } from "@idenzy/crypto/tokens/random";
+import { hashToken, safeCompareHex } from "@idenzy/crypto/tokens/random";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -41,14 +42,14 @@ export abstract class AuthCodeExchangeFlow extends AuthFlow {
     super(sessions, hooks, audit);
   }
 
-  protected override verify(
+  protected override async verify(
     context: FlowContext,
     credentials: unknown,
   ): Promise<AuthenticatedSubject> {
     const input = parseOrThrow(exchangeCodeSchema, credentials);
     const tenant = tenantContextFrom(context);
 
-    return this.uow.run(tenant, async (tx) => {
+    const redeemed = await this.uow.run(tenant, async (tx) => {
       const codes = new AuthCodeRepository(tx, tenant);
       const code = await codes.findByHash(hashToken(input.code));
       // One answer for unknown, spent and wrong-method, so the table cannot be probed.
@@ -65,8 +66,39 @@ export abstract class AuthCodeExchangeFlow extends AuthFlow {
 
       // Narrowed rather than cast: the column is text, and a value that is no longer a
       // method we recognise must not reach the amr claim of an access token.
-      return { userId: user.id, amr: code.amr.filter(isAuthMethod), requiresMfa: false };
+      return {
+        challenge: code.codeChallenge,
+        subject: { userId: user.id, amr: code.amr.filter(isAuthMethod), requiresMfa: false },
+      };
     });
+
+    // Checked after the transaction has committed, so the code stays spent when the check
+    // fails. Throwing from inside would roll back the very consumption that makes a stolen
+    // code worthless, and the thief could simply try again with the right verifier once they
+    // had it. `RefreshService` defers its revocations for the same reason.
+    assertPkce(redeemed.challenge, input.codeVerifier);
+    return redeemed.subject;
+  }
+}
+
+/**
+ * PKCE on our own exchange code, S256 only (PROJECT.md 4.6).
+ *
+ * Mandatory to verify once a challenge was stored, which is what stops an attacker simply
+ * omitting the verifier to skip the check. A code minted with no challenge accepts a verifier
+ * and ignores it: a server-side exchange with a secret key legitimately has none, and magic
+ * links never do because they are clicked in a different browser from the one that started
+ * them.
+ *
+ * Every failure is `challenge_invalid`, identical to unknown and to already-spent, so a thief
+ * holding a stolen code learns nothing about whether it was ever real.
+ */
+function assertPkce(challenge: string | null, verifier: string | undefined): void {
+  if (challenge === null) return;
+  if (verifier === undefined) throw new ChallengeInvalidError();
+  const presented = createHash("sha256").update(verifier).digest("base64url");
+  if (!safeCompareHex(hashToken(presented), hashToken(challenge))) {
+    throw new ChallengeInvalidError();
   }
 }
 

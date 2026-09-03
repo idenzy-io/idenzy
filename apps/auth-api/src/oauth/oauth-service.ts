@@ -63,6 +63,7 @@ export class OAuthService {
     providerName: string,
     redirectUri: string,
     linkUserId: string | null,
+    clientCodeChallenge: string | null = null,
   ): Promise<string> {
     const provider = this.registry.provider(providerName);
     const { credentials, mode } = await this.registry.configure(context.projectId, providerName);
@@ -87,6 +88,7 @@ export class OAuthService {
       nonce,
       redirectUri,
       linkUserId,
+      clientCodeChallenge,
       expiresAt: this.clock.inSeconds(this.config.get("OAUTH_FLOW_TTL_SECONDS")),
     });
 
@@ -186,6 +188,9 @@ export class OAuthService {
         codeHash: hashToken(code),
         amr: [AuthMethod.Oauth],
         redirectUri: completed.flow.redirectUri,
+        // Carried from the start of the flow, so the browser that began it is the only one
+        // that can finish it. Null when the client sent none, and then nothing is enforced.
+        codeChallenge: completed.flow.clientCodeChallenge,
         expiresAt: this.clock.inSeconds(this.config.get("AUTH_CODE_TTL_SECONDS")),
       });
       return code;

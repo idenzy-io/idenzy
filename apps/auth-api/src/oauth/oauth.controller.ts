@@ -62,6 +62,7 @@ export class OAuthController {
       provider,
       query.redirectUri,
       null,
+      query.codeChallenge ?? null,
     );
     return { url, statusCode: 302 };
   }
@@ -88,6 +89,7 @@ export class OAuthController {
       provider,
       body.redirectUri,
       principalOf(request).userId,
+      body.codeChallenge ?? null,
     );
     return { authorizationUrl };
   }

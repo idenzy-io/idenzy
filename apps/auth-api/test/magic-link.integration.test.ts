@@ -218,6 +218,7 @@ describe("exchanging the code", () => {
         userId: session.userId,
         codeHash: hashToken(code),
         amr: [AuthMethod.Oauth],
+        codeChallenge: null,
         redirectUri: REGISTERED,
         expiresAt: new Date(Date.now() + 60_000),
       }),

@@ -11,6 +11,8 @@ export interface NewAuthCode {
   readonly amr: readonly string[];
   readonly redirectUri: string;
   readonly expiresAt: Date;
+  /** S256 digest, or null when the flow that minted this had no verifier to bind to. */
+  readonly codeChallenge: string | null;
 }
 
 export interface AuthCodeRow {
@@ -20,6 +22,8 @@ export interface AuthCodeRow {
   readonly redirectUri: string;
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
+  /** Non-null means the exchange must present a matching verifier. */
+  readonly codeChallenge: string | null;
 }
 
 /**
@@ -43,6 +47,7 @@ export class AuthCodeRepository extends BaseRepository<typeof authCodes> {
           userId: input.userId,
           codeHash: input.codeHash,
           amr: [...input.amr],
+          codeChallenge: input.codeChallenge,
           redirectUri: input.redirectUri,
           expiresAt: input.expiresAt,
         })
@@ -65,6 +70,7 @@ export class AuthCodeRepository extends BaseRepository<typeof authCodes> {
       id: row.id,
       userId: row.userId,
       amr: row.amr,
+      codeChallenge: row.codeChallenge,
       redirectUri: row.redirectUri,
       expiresAt: row.expiresAt,
       consumedAt: row.consumedAt,

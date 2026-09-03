@@ -131,6 +131,11 @@ export class MagicLinkService {
         codeHash: hashToken(code),
         amr: [AuthMethod.MagicLink],
         redirectUri: link.redirectUri,
+        // No PKCE, and this is the one flow where that is correct rather than missing. A
+        // link is started in one browser and clicked in another, often a mail app's, so a
+        // verifier held by the starting browser would fail the normal case every time.
+        // Single use, a two-minute life and a redirect pinned at issue carry this one.
+        codeChallenge: null,
         expiresAt: this.clock.inSeconds(ttl),
       });
       return link.redirectUri;

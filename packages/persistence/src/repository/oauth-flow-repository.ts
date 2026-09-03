@@ -13,6 +13,7 @@ export interface NewOAuthFlow {
   readonly redirectUri: string;
   readonly linkUserId: string | null;
   readonly expiresAt: Date;
+  readonly clientCodeChallenge: string | null;
 }
 
 export interface OAuthFlowRow {
@@ -23,6 +24,7 @@ export interface OAuthFlowRow {
   readonly redirectUri: string;
   readonly linkUserId: string | null;
   readonly expiresAt: Date;
+  readonly clientCodeChallenge: string | null;
 }
 
 /**
@@ -55,6 +57,7 @@ export class OAuthFlowRepository extends BaseRepository<typeof oauthFlows> {
           nonce: input.nonce,
           redirectUri: input.redirectUri,
           linkUserId: input.linkUserId,
+          clientCodeChallenge: input.clientCodeChallenge,
           expiresAt: input.expiresAt,
         })
         .returning({ id: oauthFlows.id }),
@@ -87,6 +90,7 @@ export class OAuthFlowRepository extends BaseRepository<typeof oauthFlows> {
       nonce: row.nonce,
       redirectUri: row.redirectUri,
       linkUserId: row.linkUserId,
+      clientCodeChallenge: row.clientCodeChallenge,
       expiresAt: row.expiresAt,
     };
   }

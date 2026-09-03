@@ -26,6 +26,11 @@ export interface StoredFlow {
   /** Set when the flow was started to attach a provider to an existing session. */
   readonly linkUserId: string | null;
   readonly expiresAt: Date;
+  /**
+   * The SDK's PKCE challenge for the exchange code this flow will mint. Not to be confused
+   * with `codeVerifier`, which is ours for the provider: two PKCE instances, opposite roles.
+   */
+  readonly clientCodeChallenge: string | null;
 }
 
 export interface NewFlow {
@@ -36,6 +41,11 @@ export interface NewFlow {
   readonly redirectUri: string;
   readonly linkUserId: string | null;
   readonly expiresAt: Date;
+  /**
+   * The SDK's PKCE challenge for the exchange code this flow will mint. Not to be confused
+   * with `codeVerifier`, which is ours for the provider: two PKCE instances, opposite roles.
+   */
+  readonly clientCodeChallenge: string | null;
 }
 
 /**

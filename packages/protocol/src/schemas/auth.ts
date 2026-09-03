@@ -133,6 +133,19 @@ export const confirmEmailVerificationSchema = z.object({
  */
 export const startOauthSchema = z.object({
   redirectUri: z.url(),
+  /**
+   * The SDK's PKCE challenge for the exchange code we will mint, base64url SHA-256 and
+   * therefore exactly 43 characters. Validating the length is free and catches the mistake
+   * that matters: a verifier sent where the challenge belongs, which would publish the secret
+   * in a redirect.
+   *
+   * Only OAuth takes one. A magic link is started in one browser and clicked in another, so a
+   * verifier held by the starting browser would make the normal case fail every time.
+   */
+  codeChallenge: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{43}$/)
+    .optional(),
 });
 
 /** The query a provider hands back. `error` is present when the user declined. */

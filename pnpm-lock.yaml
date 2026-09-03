@@ -768,10 +768,16 @@ importers:
       '@idenzy/js':
         specifier: workspace:*
         version: link:../js
+      '@idenzy/node':
+        specifier: workspace:*
+        version: link:../../server/node
       '@idenzy/protocol':
         specifier: workspace:*
         version: link:../../../protocol
     devDependencies:
+      jose:
+        specifier: 'catalog:'
+        version: 6.2.10
       svelte:
         specifier: 'catalog:'
         version: 5.57.0

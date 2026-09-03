@@ -27,9 +27,11 @@
   },
   "dependencies": {
     "@idenzy/js": "workspace:*",
+    "@idenzy/node": "workspace:*",
     "@idenzy/protocol": "workspace:*"
   },
   "devDependencies": {
+    "jose": "catalog:",
     "svelte": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

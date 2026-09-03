@@ -23,6 +23,34 @@ export interface IdenzyRuntimeOptions {
   readonly issuerUrl?: string;
 }
 
+/**
+ * What the module puts in `runtimeConfig.idenzy`, which stays on the server.
+ *
+ * Its own interface rather than optional fields on the public one, because the boundary
+ * between them is what stops a secret reaching a bundle, and a boundary that is one property
+ * name away from being crossed is not one. Nuxt fills these from `NUXT_IDENZY_*`.
+ *
+ * The other helpers take a built `RevocationCache`. Nuxt cannot: its options are serialised
+ * into the build, so there is nowhere for a customer to hand over a live object with a timer
+ * and a `close`. We own the plugin, so the module builds one instead, and the config it needs
+ * to do that is what this is.
+ */
+export interface IdenzyServerRuntimeOptions {
+  /**
+   * The project's secret key, which is what the revocation endpoint takes.
+   *
+   * Absent, and no set is polled: verification stays signature, issuer, audience and lifetime,
+   * and a revoked session is refused when its access token expires. Present, and it is refused
+   * within roughly one poll (ADR-0009).
+   *
+   * Server-only, and the reason this interface exists. The set names users and times their
+   * security events, so it is not something a browser may hold.
+   */
+  readonly secretKey?: string;
+  /** How often to poll. Roughly the delay a revocation takes to reach this server. */
+  readonly revocationPollIntervalMs?: number;
+}
+
 /** The key the module writes and the plugin reads. Spelled once so they cannot disagree. */
 export const RUNTIME_CONFIG_KEY = "idenzy";
 

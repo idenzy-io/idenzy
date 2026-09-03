@@ -2,7 +2,12 @@ import { Idenzy } from "@idenzy/js";
 import type { SessionSnapshot } from "@idenzy/js/session/session-store";
 import { createIdenzy } from "@idenzy/vue";
 import { defineNuxtPlugin, useRequestHeaders, useRuntimeConfig, useState } from "nuxt/app";
-import { type IdenzyRuntimeOptions, RUNTIME_CONFIG_KEY, SESSION_STATE_KEY } from "./options.js";
+import {
+  type IdenzyRuntimeOptions,
+  type IdenzyServerRuntimeOptions,
+  RUNTIME_CONFIG_KEY,
+  SESSION_STATE_KEY,
+} from "./options.js";
 
 /**
  * One client per Nuxt app, which on the server means one per request.
@@ -17,15 +22,22 @@ import { type IdenzyRuntimeOptions, RUNTIME_CONFIG_KEY, SESSION_STATE_KEY } from
  * browser's cookie to spend, and a server doing it would rotate a token it cannot store.
  */
 export default defineNuxtPlugin(async (nuxtApp) => {
-  const options = useRuntimeConfig().public[RUNTIME_CONFIG_KEY] as IdenzyRuntimeOptions;
+  const config = useRuntimeConfig();
+  const options = config.public[RUNTIME_CONFIG_KEY] as IdenzyRuntimeOptions;
   const onServer = nuxtApp.ssrContext !== undefined;
   const seed = useState<SessionSnapshot | null>(SESSION_STATE_KEY, () => null);
 
   if (onServer) {
+    // Read inside the server branch, not above it. The private half of runtime config is an
+    // empty object in the browser, and reading it there would be harmless today and a habit
+    // that stops being harmless the first time somebody logs what it holds.
+    const server = (config as unknown as Record<string, IdenzyServerRuntimeOptions | undefined>)[
+      RUNTIME_CONFIG_KEY
+    ];
     // Dynamic so `@idenzy/node`, and the JWKS machinery under it, never reaches the browser
     // bundle. Nothing in here is code a client should be shipped.
     const { seedFromRequest } = await import("./server-session.js");
-    seed.value = await seedFromRequest(options, useRequestHeaders(["cookie"]));
+    seed.value = await seedFromRequest(options, useRequestHeaders(["cookie"]), server ?? {});
   }
 
   const client = new Idenzy({

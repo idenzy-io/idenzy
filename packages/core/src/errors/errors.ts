@@ -61,6 +61,57 @@ export class InsufficientScopeError extends ForbiddenError {
 }
 
 /**
+ * A secret key arrived on the browser-facing header.
+ *
+ * 403 rather than 401, which matters to the SDK: a 401 invites it to refresh and retry, and
+ * there is nothing here to retry. Identity was established and the placement is what is
+ * refused. Thrown on the prefix alone, before any lookup, so a real secret key and a
+ * fabricated one are indistinguishable in both body and timing.
+ */
+export class SecretKeyNotPermittedError extends ForbiddenError {
+  override readonly code = ErrorCode.SecretKeyNotPermitted;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "A secret key cannot be used from a browser.", options);
+  }
+}
+
+/** The request's Origin is not on the project's allowlist (PROJECT.md 4.3). */
+export class OriginNotAllowedError extends ForbiddenError {
+  override readonly code = ErrorCode.OriginNotAllowed;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "That origin is not registered for this project.", options);
+  }
+}
+
+/**
+ * Double-submit, Origin or Fetch-Metadata refused a cookie-mode request.
+ *
+ * Thrown before anything is consumed, which is the property worth having: a CSRF attempt must
+ * not burn the victim's refresh token, because that would trip reuse detection and hand an
+ * attacker a way to sign someone out by forging a single request.
+ */
+export class CsrfCheckFailedError extends ForbiddenError {
+  override readonly code = ErrorCode.CsrfCheckFailed;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This request failed its cross-site checks.", options);
+  }
+}
+
+/**
+ * Cookie mode was asked for where it cannot work.
+ *
+ * Said plainly rather than honoured, because a `__Host-` cookie the browser will drop looks
+ * to the customer exactly like a sign-in that silently does nothing. The SDK reads this and
+ * falls back to header mode.
+ */
+export class SessionTransportUnavailableError extends BadRequestError {
+  override readonly code = ErrorCode.SessionTransportUnavailable;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "Cookie mode is not available for this project.", options);
+  }
+}
+
+/**
  * Deliberately identical for "no such user" and "wrong password", and thrown after the
  * same amount of work in both cases (PROJECT.md 4.5). Do not add a distinguishing
  * message or a fast path.

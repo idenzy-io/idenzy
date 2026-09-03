@@ -30,6 +30,22 @@ export function isApiKey(token: string): boolean {
   return Object.values(ApiKeyPrefix).some((prefix) => token.startsWith(prefix));
 }
 
+/**
+ * Told apart by prefix, and the distinction is load-bearing rather than cosmetic.
+ *
+ * A publishable key is meant to sit in a browser bundle; a secret key is meant never to
+ * leave a server. The browser-facing header accepts only the first, so a customer who pastes
+ * the wrong one into client config is refused on the prefix alone, before any lookup happens
+ * and therefore without learning whether the key was real.
+ */
+export function isPublishableKey(token: string): boolean {
+  return token.startsWith(ApiKeyPrefix.Publishable);
+}
+
+export function isSecretKey(token: string): boolean {
+  return token.startsWith(ApiKeyPrefix.Secret);
+}
+
 /** Opaque, prefixed identifiers. Prefixes make a leaked id self-describing in a bug report. */
 export const projectIdSchema = z.string().regex(/^prj_[0-9a-zA-Z]{20,}$/);
 export const userIdSchema = z.string().regex(/^usr_[0-9a-zA-Z]{20,}$/);

@@ -19,6 +19,13 @@ export const ErrorCode = {
   MissingCredentials: "missing_credentials",
   InvalidApiKey: "invalid_api_key",
   InsufficientScope: "insufficient_scope",
+  SecretKeyNotPermitted: "secret_key_not_permitted",
+
+  // Browser-only controls. None of these can be provoked by a non-browser client
+  // (PROJECT.md 4.3), so an SDK that sees one is looking at a misconfiguration.
+  OriginNotAllowed: "origin_not_allowed",
+  CsrfCheckFailed: "csrf_check_failed",
+  SessionTransportUnavailable: "session_transport_unavailable",
 
   // End-user authentication
   InvalidCredentials: "invalid_credentials",

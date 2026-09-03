@@ -69,6 +69,13 @@ export const configSchema = z.object({
    */
   OAUTH_FLOW_TTL_SECONDS: durationSeconds.max(1800).default(600),
 
+  /**
+   * How long a WebAuthn challenge stays signable, and the browser timeout we hand out
+   * with it (PROJECT.md 4.7). Longer than an OTP because the user may have to find a
+   * phone or a security key, and it is a nonce rather than a secret in a mailbox.
+   */
+  WEBAUTHN_CHALLENGE_TTL_SECONDS: durationSeconds.max(900).default(300),
+
   PASSWORD_RESET_TTL_SECONDS: durationSeconds.max(3600).default(900),
 
   /**

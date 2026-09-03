@@ -34,4 +34,24 @@ export abstract class RateLimitStrategy {
       return { allowed: true, remaining: rule.limit, retryAfterSeconds: 0 };
     }
   }
+
+  /**
+   * The same window, without the fail-open.
+   *
+   * For the limits whose failure mode is a bill rather than a lockout. A sign-in attempt
+   * we could not count is worth allowing, because the alternative is an outage in the
+   * cache taking authentication down with it. A paid SMS we could not count is not:
+   * allowing it turns a Valkey outage into an unmetered send window, which is exactly
+   * the window a pumping scheme is waiting for (PROJECT.md 4.8).
+   *
+   * The store's error is propagated rather than turned into a decision here, so the
+   * caller chooses what an unanswerable check means to its own users.
+   */
+  checkStrictly(
+    scope: string,
+    identifier: string,
+    rule: RateLimitRule,
+  ): Promise<RateLimitDecision> {
+    return this.evaluate(`rl:${this.name}:${scope}:${identifier}`, rule);
+  }
 }

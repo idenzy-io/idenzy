@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
 import type { VerificationPurpose } from "@idenzy/protocol/enums/auth";
 import { and, eq, isNull } from "drizzle-orm";
 import { verificationTokens } from "../schema/challenges.js";

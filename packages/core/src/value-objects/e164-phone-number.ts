@@ -1,4 +1,4 @@
-import { ValidationFailedError } from "../errors/errors.js";
+import { ValidationFailedError } from "../errors.js";
 import { ValueObject } from "./value-object.js";
 
 const E164 = /^\+[1-9]\d{6,14}$/;

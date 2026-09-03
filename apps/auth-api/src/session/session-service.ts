@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AppConfig } from "@idenzy/config/app-config";
-import { InternalError, ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { InternalError, ResourceNotFoundError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";

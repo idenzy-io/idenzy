@@ -1,4 +1,4 @@
-import { DeliverySuppressedError } from "@idenzy/core/errors/errors";
+import { DeliverySuppressedError } from "@idenzy/core/errors";
 import { hashToken } from "@idenzy/crypto/tokens/random";
 import type { SuppressionList } from "@idenzy/domain/ports/email-provider";
 import { SuppressionRepository } from "@idenzy/persistence/repository/suppression-repository";

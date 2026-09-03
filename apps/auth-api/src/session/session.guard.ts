@@ -1,4 +1,4 @@
-import { MissingCredentialsError, SessionRevokedError } from "@idenzy/core/errors/errors";
+import { MissingCredentialsError, SessionRevokedError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { TokenVerifier } from "@idenzy/crypto/tokens/token-verifier";

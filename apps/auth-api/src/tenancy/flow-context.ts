@@ -1,4 +1,4 @@
-import { MissingCredentialsError } from "@idenzy/core/errors/errors";
+import { MissingCredentialsError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import type { FastifyRequest } from "fastify";

@@ -1,4 +1,4 @@
-import { MfaRequiredError } from "@idenzy/core/errors/errors";
+import { MfaRequiredError } from "@idenzy/core/errors";
 import type { AuthMethod } from "@idenzy/protocol/enums/auth";
 import type { User } from "../entities/user.js";
 

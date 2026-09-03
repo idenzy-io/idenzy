@@ -1,4 +1,4 @@
-import { ValidationFailedError } from "../errors/errors.js";
+import { ValidationFailedError } from "../errors.js";
 import { ValueObject } from "./value-object.js";
 
 const SHAPE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;

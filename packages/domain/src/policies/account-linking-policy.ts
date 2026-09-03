@@ -1,4 +1,4 @@
-import { IdentityAlreadyLinkedError } from "@idenzy/core/errors/errors";
+import { IdentityAlreadyLinkedError } from "@idenzy/core/errors";
 
 export const LinkDecision = {
   /** The provider account resolves to an existing user. Sign them in. */

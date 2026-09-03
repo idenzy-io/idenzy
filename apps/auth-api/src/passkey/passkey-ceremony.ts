@@ -1,4 +1,4 @@
-import { WebauthnAssertionInvalidError } from "@idenzy/core/errors/errors";
+import { WebauthnAssertionInvalidError } from "@idenzy/core/errors";
 import type {
   AuthenticationResponse,
   PublicKeyCredentialCreationOptions,

@@ -1,5 +1,5 @@
 import { AppConfig } from "@idenzy/config/app-config";
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";

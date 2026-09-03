@@ -1,4 +1,4 @@
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import type { TemplateType } from "@idenzy/protocol/enums/delivery";
 import { bind } from "./binding.js";
 import { englishTemplates } from "./defaults/en.js";

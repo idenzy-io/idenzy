@@ -3,7 +3,7 @@ import {
   ChallengeExpiredError,
   ChallengeInvalidError,
   PasswordBreachedError,
-} from "@idenzy/core/errors/errors";
+} from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";

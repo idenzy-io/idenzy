@@ -2,7 +2,7 @@ import {
   ChallengeAttemptsExhaustedError,
   ChallengeExpiredError,
   ChallengeInvalidError,
-} from "@idenzy/core/errors/errors";
+} from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";

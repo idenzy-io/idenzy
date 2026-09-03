@@ -1,4 +1,4 @@
-import { AccessTokenInvalidError, SessionExpiredError } from "@idenzy/core/errors/errors";
+import { AccessTokenInvalidError, SessionExpiredError } from "@idenzy/core/errors";
 import { createLocalJWKSet, type JSONWebKeySet, jwtVerify } from "jose";
 import type { TokenIssuer } from "./token-issuer.js";
 

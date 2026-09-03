@@ -1,4 +1,4 @@
-import { InvalidCredentialsError, MissingCredentialsError } from "@idenzy/core/errors/errors";
+import { InvalidCredentialsError, MissingCredentialsError } from "@idenzy/core/errors";
 import { Controller, Get, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 

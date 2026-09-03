@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { Session, type SessionState } from "@idenzy/domain/entities/session";
 import type { AuthMethod, SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { and, desc, eq, isNull, ne } from "drizzle-orm";

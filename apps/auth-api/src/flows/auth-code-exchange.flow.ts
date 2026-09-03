@@ -1,4 +1,4 @@
-import { ChallengeExpiredError, ChallengeInvalidError } from "@idenzy/core/errors/errors";
+import { ChallengeExpiredError, ChallengeInvalidError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { hashToken } from "@idenzy/crypto/tokens/random";
 import {

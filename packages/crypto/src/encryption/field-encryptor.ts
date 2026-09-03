@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;

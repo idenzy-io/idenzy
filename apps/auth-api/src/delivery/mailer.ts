@@ -1,5 +1,5 @@
 import { AppConfig } from "@idenzy/config/app-config";
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { EmailProvider } from "@idenzy/domain/ports/email-provider";
 import { ProjectRepository } from "@idenzy/persistence/repository/project-repository";

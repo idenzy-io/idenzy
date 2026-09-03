@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ValidationFailedError } from "../src/errors/errors.js";
+import { ValidationFailedError } from "../src/errors.js";
 import { E164PhoneNumber } from "../src/value-objects/e164-phone-number.js";
 import { EmailAddress } from "../src/value-objects/email-address.js";
 import { PublicId } from "../src/value-objects/public-id.js";

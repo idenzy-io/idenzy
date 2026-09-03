@@ -1,4 +1,4 @@
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import { isIdenzyError } from "@idenzy/core/errors/idenzy-error";
 import { Logger } from "@idenzy/core/logging/logger";
 import { type ArgumentsHost, Catch, type ExceptionFilter } from "@nestjs/common";

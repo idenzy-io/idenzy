@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { UnknownProjectError } from "@idenzy/core/errors/errors";
+import { UnknownProjectError } from "@idenzy/core/errors";
 import { IdenzyHeader } from "@idenzy/protocol/http/headers";
 import { APP_GUARD } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";

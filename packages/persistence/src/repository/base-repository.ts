@@ -1,4 +1,4 @@
-import { InternalError, ResourceConflictError } from "@idenzy/core/errors/errors";
+import { InternalError, ResourceConflictError } from "@idenzy/core/errors";
 import { eq, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { TenantContext } from "../tenancy/tenant-context.js";

@@ -2,7 +2,7 @@ import {
   InvalidApiKeyError,
   MissingCredentialsError,
   SecretKeyNotPermittedError,
-} from "@idenzy/core/errors/errors";
+} from "@idenzy/core/errors";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { IdenzyHeader } from "@idenzy/protocol/http/headers";
 import { isApiKey, isPublishableKey, isSecretKey } from "@idenzy/protocol/schemas/common";

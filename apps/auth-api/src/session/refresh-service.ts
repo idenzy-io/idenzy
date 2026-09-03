@@ -4,7 +4,7 @@ import {
   RefreshTokenReusedError,
   SessionExpiredError,
   SessionRevokedError,
-} from "@idenzy/core/errors/errors";
+} from "@idenzy/core/errors";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";

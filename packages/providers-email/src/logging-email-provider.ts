@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import type { Logger } from "@idenzy/core/logging/logger";
 import {
   EmailProvider,

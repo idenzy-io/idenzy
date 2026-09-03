@@ -1,4 +1,4 @@
-import { OauthProviderError } from "@idenzy/core/errors/errors";
+import { OauthProviderError } from "@idenzy/core/errors";
 import type { HttpClient } from "@idenzy/core/http/http-client";
 import type { Clock } from "@idenzy/core/time/clock";
 import type {

@@ -1,4 +1,4 @@
-import { ValidationFailedError } from "@idenzy/core/errors/errors";
+import { ValidationFailedError } from "@idenzy/core/errors";
 import type { ZodType } from "zod";
 
 /**

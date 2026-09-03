@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { InvalidCredentialsError } from "@idenzy/core/errors/errors";
+import { InvalidCredentialsError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import type { User } from "@idenzy/domain/entities/user";

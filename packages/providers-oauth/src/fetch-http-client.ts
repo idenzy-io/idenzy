@@ -1,4 +1,4 @@
-import { ProviderUnavailableError } from "@idenzy/core/errors/errors";
+import { ProviderUnavailableError } from "@idenzy/core/errors";
 import { HttpClient, type HttpRequest, type HttpResponse } from "@idenzy/core/http/http-client";
 
 /**

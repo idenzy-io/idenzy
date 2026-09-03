@@ -1,4 +1,4 @@
-import { ResourceNotFoundError, ValidationFailedError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError, ValidationFailedError } from "@idenzy/core/errors";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import type { OAuthProvider, ProviderCredentials } from "@idenzy/domain/ports/oauth-provider";
 import { OAuthProviderRepository } from "@idenzy/persistence/repository/oauth-provider-repository";

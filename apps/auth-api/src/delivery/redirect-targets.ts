@@ -1,4 +1,4 @@
-import { RedirectUriNotAllowedError } from "@idenzy/core/errors/errors";
+import { RedirectUriNotAllowedError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { RedirectUriRepository } from "@idenzy/persistence/repository/redirect-uri-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";

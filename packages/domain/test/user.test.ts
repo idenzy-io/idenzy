@@ -1,4 +1,4 @@
-import { AccountBannedError, InvalidCredentialsError } from "@idenzy/core/errors/errors";
+import { AccountBannedError, InvalidCredentialsError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { describe, expect, it } from "vitest";
 import { User, type UserState } from "../src/entities/user.js";

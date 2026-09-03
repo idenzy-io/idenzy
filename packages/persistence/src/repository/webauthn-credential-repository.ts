@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, asc, eq } from "drizzle-orm";
 import { webauthnCredentials } from "../schema/mfa.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";

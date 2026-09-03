@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { User } from "@idenzy/domain/entities/user";
 import { and, eq } from "drizzle-orm";
 import { users } from "../schema/identity.js";

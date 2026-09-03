@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { WebauthnRelyingPartyRepository } from "@idenzy/persistence/repository/webauthn-relying-party-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";

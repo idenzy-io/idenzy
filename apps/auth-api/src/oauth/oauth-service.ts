@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
 import { AppConfig } from "@idenzy/config/app-config";
-import {
-  LinkingRequiresVerificationError,
-  RedirectUriNotAllowedError,
-} from "@idenzy/core/errors/errors";
+import { LinkingRequiresVerificationError, RedirectUriNotAllowedError } from "@idenzy/core/errors";
 import { isIdenzyError } from "@idenzy/core/errors/idenzy-error";
 import { Clock } from "@idenzy/core/time/clock";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";

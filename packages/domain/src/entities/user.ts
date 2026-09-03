@@ -1,4 +1,4 @@
-import { AccountBannedError, InvalidCredentialsError } from "@idenzy/core/errors/errors";
+import { AccountBannedError, InvalidCredentialsError } from "@idenzy/core/errors";
 import type { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";

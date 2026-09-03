@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 
 interface Pending {
   readonly resolve: (value: unknown) => void;

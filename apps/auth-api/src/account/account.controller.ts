@@ -1,4 +1,4 @@
-import { MissingCredentialsError } from "@idenzy/core/errors/errors";
+import { MissingCredentialsError } from "@idenzy/core/errors";
 import {
   type ConfirmEmailChange,
   type ConfirmEmailVerification,

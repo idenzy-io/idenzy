@@ -1,5 +1,5 @@
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
-import type { ErrorOptions } from "./idenzy-error.js";
+import type { ErrorOptions } from "./errors/idenzy-error.js";
 import {
   BadRequestError,
   ConflictError,
@@ -9,7 +9,7 @@ import {
   TooManyRequestsError,
   UnauthorizedError,
   UpstreamError,
-} from "./status-errors.js";
+} from "./errors/status-errors.js";
 
 export class ValidationFailedError extends BadRequestError {
   override readonly code = ErrorCode.ValidationFailed;

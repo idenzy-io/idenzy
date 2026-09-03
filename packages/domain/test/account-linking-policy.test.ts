@@ -1,4 +1,4 @@
-import { IdentityAlreadyLinkedError } from "@idenzy/core/errors/errors";
+import { IdentityAlreadyLinkedError } from "@idenzy/core/errors";
 import { describe, expect, it } from "vitest";
 import { AccountLinkingPolicy, LinkDecision } from "../src/policies/account-linking-policy.js";
 

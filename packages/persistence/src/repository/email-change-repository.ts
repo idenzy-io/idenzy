@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors/errors";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { emailChangeRequests } from "../schema/challenges.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";

@@ -4,7 +4,7 @@ import {
   ChallengeInvalidError,
   ResourceConflictError,
   ResourceNotFoundError,
-} from "@idenzy/core/errors/errors";
+} from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";

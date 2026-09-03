@@ -1,4 +1,4 @@
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import argon2 from "argon2";
 
 export interface HashResult {

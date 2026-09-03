@@ -1,4 +1,4 @@
-import { SecretKeyNotPermittedError, UnknownProjectError } from "@idenzy/core/errors/errors";
+import { SecretKeyNotPermittedError, UnknownProjectError } from "@idenzy/core/errors";
 import { hashToken } from "@idenzy/crypto/tokens/random";
 import { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
 import { Injectable } from "@nestjs/common";

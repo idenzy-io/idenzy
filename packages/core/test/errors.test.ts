@@ -1,12 +1,12 @@
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import { describe, expect, it } from "vitest";
+import { isIdenzyError } from "../src/errors/idenzy-error.js";
 import {
   InternalError,
   InvalidCredentialsError,
   RateLimitedError,
   ValidationFailedError,
-} from "../src/errors/errors.js";
-import { isIdenzyError } from "../src/errors/idenzy-error.js";
+} from "../src/errors.js";
 
 describe("IdenzyError", () => {
   it("carries a stable code and status", () => {

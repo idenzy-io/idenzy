@@ -1,4 +1,4 @@
-import { PasswordBreachedError } from "@idenzy/core/errors/errors";
+import { PasswordBreachedError } from "@idenzy/core/errors";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import {
   type AuthenticatedSubject,

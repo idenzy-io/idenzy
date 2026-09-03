@@ -1,4 +1,4 @@
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError } from "@idenzy/core/errors";
 import type { TemplateValue, TemplateVariables } from "./template.js";
 
 /**

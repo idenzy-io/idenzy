@@ -1,4 +1,4 @@
-import { MissingCredentialsError } from "@idenzy/core/errors/errors";
+import { MissingCredentialsError } from "@idenzy/core/errors";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import type { SessionList } from "@idenzy/protocol/schemas/session";

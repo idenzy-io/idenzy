@@ -1,4 +1,4 @@
-import { ProviderUnavailableError } from "../errors/errors.js";
+import { ProviderUnavailableError } from "../errors.js";
 
 export interface HttpRequest {
   readonly url: string;

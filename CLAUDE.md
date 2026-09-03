@@ -10,7 +10,7 @@ well it works.
 iframes. The auth API returns JSON and HTTP redirects, and an endpoint returning
 `text/html` is a bug with a test asserting against it. If a task seems to need a sign-in
 screen, the answer is an SDK primitive plus a docs example the customer owns. See
-PROJECT.md 1.1 and `docs/adr/0002-headless-no-ui.md`.
+PROJECT.md 1.1 and `docs/adr/0002-no-authentication-ui.md`.
 
 **Every database column is declared through `classified()`.** It is not a convention:
 `classifiedTable` accepts only branded builders, so an unclassified column fails to
@@ -97,7 +97,7 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
 ## Adding an error
 
 Add the code to `@idenzy/protocol/errors/codes`, then a subclass of the right status
-class in `@idenzy/core/errors/errors`. `throw new Error(...)` is a lint error. Codes are
+class in `@idenzy/core/errors`. `throw new Error(...)` is a lint error. Codes are
 a public API promise: customers build every user-facing message from them, so renaming
 one is a breaking change.
 

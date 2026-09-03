@@ -1,4 +1,4 @@
-import { ValidationFailedError } from "../errors/errors.js";
+import { ValidationFailedError } from "../errors.js";
 import { ValueObject } from "./value-object.js";
 
 const DASHED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

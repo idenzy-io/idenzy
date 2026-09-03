@@ -323,6 +323,34 @@ export class RateLimitedError extends TooManyRequestsError {
   }
 }
 
+/**
+ * A human has not been proven to be behind this send (PROJECT.md 4.8).
+ *
+ * SMS is the one channel where a request costs us money before it reaches anybody, so a
+ * project sending to it is asked for a CAPTCHA or an attestation first. The client can
+ * recover: solve the challenge and send it again, which is why this is not RateLimited.
+ */
+export class AttestationRequiredError extends ForbiddenError {
+  override readonly code = ErrorCode.AttestationRequired;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This request needs a CAPTCHA or attestation token.", options);
+  }
+}
+
+/**
+ * The destination is outside the project's allowlist (PROJECT.md 4.8).
+ *
+ * A default-deny list, because the countries a product does not serve are exactly the
+ * ones a pumping scheme sends to: the attacker picks the destination, and an allowlist
+ * is the only control where they cannot.
+ */
+export class CountryNotAllowedError extends ForbiddenError {
+  override readonly code = ErrorCode.CountryNotAllowed;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This project does not send to that destination.", options);
+  }
+}
+
 export class SpendCapReachedError extends ForbiddenError {
   override readonly code = ErrorCode.SpendCapReached;
   constructor(options: ErrorOptions = {}) {

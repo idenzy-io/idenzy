@@ -21,6 +21,13 @@ declare module "fastify" {
     tenant?: TenantContext;
     /** True on @NoTenant routes, so the CORS layer can answer them without credentials. */
     publicRoute?: boolean;
+    /**
+     * The full resolution result, which carries more than the tenant scope does: the CORS
+     * layer needs the origin allowlist and cookie mode needs to know whether a verified
+     * auth domain exists. TenantContext belongs to persistence and should not learn about
+     * either.
+     */
+    project?: ResolvedProject;
   }
 }
 
@@ -64,6 +71,7 @@ export class TenantResolutionGuard implements CanActivate {
 
     const credential = this.credential(request);
     const resolved = await this.resolve(credential);
+    request.project = resolved;
 
     request.tenant = new TenantContext(
       resolved.projectId,

@@ -6,6 +6,7 @@ import { CryptoModule } from "./crypto/crypto.module.js";
 import { DeliveryModule } from "./delivery/delivery.module.js";
 import { FlowsModule } from "./flows/flows.module.js";
 import { HealthController } from "./health/health.controller.js";
+import { HttpModule } from "./http/http.module.js";
 import { MagicLinkModule } from "./magic-link/magic-link.module.js";
 import { OAuthModule } from "./oauth/oauth.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
@@ -30,6 +31,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     ObservabilityModule,
     PersistenceModule,
     CryptoModule,
+    HttpModule,
     FlowsModule,
     TenancyModule,
     DeliveryModule,

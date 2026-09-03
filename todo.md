@@ -432,9 +432,40 @@ client have no server halves to talk to yet.
 
 ## Phase 2: Public launch (8 weeks)
 
-- [ ] SMS and WhatsApp OTP with the full fraud control set (§4.8)
-- [ ] `SmsProvider` base, Twilio and AWS End User Messaging adapters, `ProviderRouter`
-- [ ] Spend caps, country allowlists and pumping detection
+**Status.** The SMS half of the first three items is in, end to end: a customer can start a
+code over SMS, verify it through the same call the email channel uses, and be signed in or
+signed up on a number nobody had before. What sits in front of that send is the point of the
+work, because SMS is the one channel where a request costs us money before it reaches anybody.
+
+The controls are ordered rather than assembled. Placing the number is free and settles two
+refusals on its own, attestation runs before any counter so nobody can burn a stranger's
+allowance by naming their number, and the counters run last because they are the only checks
+that write. All of them are strict: a window we cannot read is a send we do not make, which
+is the opposite of the fail-open that is right for a sign-in attempt.
+
+What is deliberately not done is named rather than quietly folded in. There is no vendor
+adapter, for the same reason there is no SES one: the base and the conformance suite are what
+Twilio or AWS End User Messaging has to satisfy either way, and nothing is deployed to hold
+their credentials. There is no attestation provider either, so a project whose policy requires
+one sends nothing until reCAPTCHA or Turnstile is wired, which is the honest failure. WhatsApp
+is the third name in the channel enum and is untouched: its Cloud API sends pre-approved
+template messages rather than the free text this path renders, so it is a provider and a
+template pipeline of its own rather than a branch in the OTP flow.
+
+- [~] SMS and WhatsApp OTP with the full fraud control set (§4.8). SMS is done and WhatsApp
+      is not started
+- [~] `SmsProvider` base, Twilio and AWS End User Messaging adapters, `ProviderRouter`. The
+      base, the router and the development transport are in, along with the conformance suite
+      that holds an adapter to the ordering in `send`. The router does not retry: a dispatch
+      that failed has already reserved the spend and cannot know whether the message went out,
+      so failover happens on the next request
+- [x] Spend caps, country allowlists and pumping detection. The cap is durable in Postgres
+      rather than cached, because a cache outage must not be able to lift a spend limit. The
+      allowlist is ISO country and defaults to empty, and the geography reads full metadata so
+      allowing the United States does not thereby allow every Caribbean range on +1. Pumping
+      is three signals: a per-number ceiling, a per-address ceiling, a thousand-block counter
+      for the consecutive numbers that dodge both, and the send-to-verify ratio for a run that
+      has defeated everything else and still cannot make anybody type the code in
 - [ ] TOTP MFA, recovery codes, step-up authentication and the `fva` claim
 - [ ] Customer-defined claim templates: a dashboard-configured mapping from user columns and
       `metadata_public`/`metadata_private` into the access token, applied by the token issuer.

@@ -56,6 +56,9 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
   which means `idenzy_app` cannot read it at all and the owner can read across tenants.
   Copy the two `DO` blocks from `0004_nasty_catseye.sql`; they are dynamic and
   idempotent. Two tests in `packages/testing` fail if you forget.
+- **A new tenant table's grant migration is not optional even when the table is config.**
+  `sms_policies` holds the spend cap, so a missing grant would not fail loudly: `idenzy_app`
+  reads no policy, every project looks unconfigured, and SMS refuses everywhere.
 - **`useLiteralKeys` is off** because it contradicts `noPropertyAccessFromIndexSignature`,
   which requires `process.env["X"]`. TypeScript wins.
 - **Biome's `useImportType` breaks NestJS DI.** Rewriting an injected dependency to
@@ -564,6 +567,55 @@ and reports a form as an error about the grant type.
 A concrete provider needs an explicit constructor that only calls `super`. It is not
 useless: it widens the abstract base's `protected` constructor to `public`, which is what
 lets the registry build one. Biome flags it, so the suppression carries that reason.
+
+## Working on the SMS path
+
+The one channel where a request costs us money before it reaches anybody, which is why
+almost everything here is stricter than its email equivalent (PROJECT.md 4.8).
+
+- **The order of the checks in `SmsFraudGuard` is the design, not a sequence.** Placing the
+  number is first because it is free and settles two refusals on its own. Attestation is
+  next, *before any counter*, because a counter is a write: without that ordering anybody
+  could exhaust a stranger's daily allowance by naming their number, and the victim would
+  find their own sign-in refused having never been sent a code. Three tests fail if it moves.
+- **Every counter on this path is strict, and `check` is not the method to use.**
+  `RateLimitStrategy.check` fails open, which is right for a sign-in attempt and wrong here:
+  allowing what we could not count turns a Valkey outage into an unmetered send window.
+  `checkStrictly` propagates the store's error and the guard turns it into a refusal that
+  says "later" rather than "our cache is down".
+- **The spend cap lives in Postgres, and the reservation is one statement.** A cache cannot
+  hold a limit whose failure mode is an invoice. The check and the increment are a single
+  conditional upsert, because a read followed by a write lets two sends that each fit under
+  the cap both pass. The first send of a day takes the insert branch, which no `setWhere`
+  covers, so the caller's own cost is compared against the cap before the statement runs.
+- **A reservation that was never settled stands.** A dispatch that threw may still have put
+  a message on the wire, so the day is left overstated rather than released. `settle` takes
+  what was reserved *and* what was charged, because a ledger holds the day's total and not
+  this send's share of it.
+- **`ProviderRouter` never retries.** The failed send already reserved the spend and already
+  spent the number's velocity, and a gateway timeout is the case where the message usually
+  went out. Failover is on the next request. Same reasoning as never retrying a refresh.
+- **The allowlist is ISO country and the geography reads libphonenumber's `max` metadata.**
+  Twenty countries share +1, and a project allowing the United States must not thereby be
+  allowing every Caribbean range on the prefix. A number that cannot be placed is refused:
+  an allowlist that admits what it could not identify is not one.
+- **A project with no `sms_policies` row sends nothing**, which is the same answer as an
+  empty allowlist. "Nobody configured this" is not a reason to start spending.
+- **`UnconfiguredAttestation` answers false for everything.** A verifier that accepted what
+  it cannot check would make `attestation_required` read as protection while being none. It
+  does mean SMS is unusable on a project that requires attestation until a real provider is
+  wired, and that is the intended failure.
+- **An SMS is billed by segment.** `measure()` in `@idenzy/templating` is what prices a body,
+  and the two numbers do not move together: the 161st plain character costs a second segment,
+  and one curly apostrophe drops the whole message from 160 characters to 70. The built-in
+  copy is ASCII and a test holds it inside one segment, because the failure is silent and
+  arrives as a bill.
+- **Both OTP flows check the challenge's channel against their own.** `OtpVerification`
+  dispatches on the row rather than on anything the client said, and each flow checks again,
+  because a dispatch is a convenience and that check is a guarantee: an SMS challenge
+  resolved by the email flow looks a phone number up in the email column, misses, and creates
+  an account with a phone number stored as an address, on a code the caller had every right
+  to present.
 
 ## Working on `idenzy init` and the starter templates
 

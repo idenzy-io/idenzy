@@ -14,6 +14,10 @@ import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod, MfaFactorType } from "@idenzy/protocol/enums/auth";
 import { challengeOf, sessionOf } from "@idenzy/testing/auth-outcome";
+import {
+  MfaFactorConformanceSuite,
+  type MfaFactorHarness,
+} from "@idenzy/testing/mfa-factor-conformance";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
@@ -722,5 +726,66 @@ describe("stepping up inside a session", () => {
         code: nextCodeFor(secret),
       }),
     ).rejects.toMatchObject({ code: "challenge_invalid" });
+  });
+});
+
+/**
+ * The family suite, over the two factors that actually ship.
+ *
+ * Run against the real repositories rather than doubles, because half of what it asks is
+ * a database property: whether a proof stays spent when two requests race for it, and
+ * whether a user who holds nothing looks the same as one who typed the wrong thing.
+ */
+describe("the mfa factor conformance suite", () => {
+  const suite = new MfaFactorConformanceSuite();
+  let sequence = 0;
+
+  function harnessFor(
+    factor: TotpFactor | RecoveryCodeFactor,
+    enrol: () => Promise<{ userId: string; proof: string }>,
+  ): MfaFactorHarness {
+    return {
+      factor,
+      context,
+      enrol,
+      stranger: () => {
+        sequence += 1;
+        return newUser(`conformance-stranger-${sequence}@a.test`);
+      },
+    };
+  }
+
+  it("passes the authenticator factor", async () => {
+    const failures = await suite.run({
+      name: "totp",
+      subject: harnessFor(totpFactor, async () => {
+        sequence += 1;
+        const userId = await newUser(`conformance-totp-${sequence}@a.test`);
+        const started = await enrolment.startTotp(context, userId, null);
+        await enrolment.confirmTotp(context, userId, started.factorId, codeFor(started.secret));
+        // The confirmation spent the current step, so the proof on offer is the next one.
+        return { userId, proof: nextCodeFor(started.secret) };
+      }),
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it("passes the recovery code factor", async () => {
+    const failures = await suite.run({
+      name: "recovery",
+      subject: harnessFor(recoveryFactor, async () => {
+        sequence += 1;
+        const userId = await newUser(`conformance-recovery-${sequence}@a.test`);
+        const started = await enrolment.startTotp(context, userId, null);
+        const confirmed = await enrolment.confirmTotp(
+          context,
+          userId,
+          started.factorId,
+          codeFor(started.secret),
+        );
+        return { userId, proof: confirmed.recoveryCodes?.codes[0] ?? "" };
+      }),
+    });
+    expect(failures).toEqual([]);
   });
 });

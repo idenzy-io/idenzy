@@ -126,6 +126,22 @@ describe("the session signal", () => {
     state.destroy();
   });
 
+  /**
+   * The other half of a server render: a visitor the server could not place, which is what an
+   * expired access token over a live refresh cookie looks like. Null is a server saying it
+   * looked and could not tell, so the render holds `loading` and the browser settles it.
+   * Signed out here is a sign-in screen in the HTML for somebody who does not need one.
+   */
+  it("holds loading through a server render that could not place the visitor", () => {
+    const transport = new FakeTransport(() => answer(200, restored()));
+
+    const state = new IdenzySession(client(transport), { restore: false, initial: null });
+
+    expect(state.session().status).toBe("loading");
+    expect(transport.requests).toHaveLength(0);
+    state.destroy();
+  });
+
   it("follows a sign-in made through the client", async () => {
     const transport = new FakeTransport((request) =>
       request.url.endsWith("v1/auth/anonymous") ? answer(200, created()) : refused(),

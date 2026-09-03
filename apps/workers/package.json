@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@idenzy/cache": "workspace:*",
+    "@idenzy/compliance": "workspace:*",
     "@idenzy/config": "workspace:*",
     "@idenzy/core": "workspace:*",
     "@idenzy/observability": "workspace:*",

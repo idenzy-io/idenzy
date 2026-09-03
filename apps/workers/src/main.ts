@@ -5,18 +5,26 @@ import { AppConfig } from "@idenzy/config/app-config";
 import { SystemClock } from "@idenzy/core/time/clock";
 import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
+import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
+import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { AuditRelay } from "./audit-relay.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
 
 /**
  * Standalone consumers: email, sms, webhook, audit, analytics, dsr and retention
  * (PROJECT.md 9.1). No HTTP server.
  *
- * The revocation reconciler is the first of them and is not a queue consumer: it sweeps the
- * outbox on a timer and replays what it finds into the cache, which is what makes the
- * revocation set survive a Valkey restart (ADR-0009). The rest arrive with the flows that
- * produce their messages.
+ * Two of them are here. The revocation reconciler sweeps the outbox on a timer and replays
+ * what it finds into the cache, which is what makes the revocation set survive a Valkey
+ * restart (ADR-0009). The audit relay drains the audit topic into the hash-chained trail,
+ * and it is the only writer of that chain by design: two request handlers reading the same
+ * tip would both link to it and fork it (PROJECT.md 4.13.3).
+ *
+ * Neither is a queue consumer yet. Both read the outbox directly, each with its own
+ * watermark, because `published_at` belongs to the Pub/Sub relay that will replace this
+ * arrangement. The rest arrive with the flows that produce their messages.
  */
 
 /**
@@ -63,9 +71,18 @@ async function bootstrap(): Promise<void> {
     { retentionSeconds },
   );
 
-  // Awaited, so a worker that has just started has already put the window back before it
-  // reports itself up. A restart is exactly when the cache is most likely to be empty.
+  const auditRelay = new AuditRelay(
+    new AuditEventReader(db),
+    new RelayOffsetRepository(db),
+    clock,
+    logger,
+  );
+
+  // Both awaited, so a worker that has just started has already done a pass before it
+  // reports itself up. A restart is exactly when the cache is most likely to be empty, and
+  // it is also when the audit trail is furthest behind.
   await reconciler.start();
+  await auditRelay.start();
   logger.info("workers started", config.toSafeSummary());
 }
 

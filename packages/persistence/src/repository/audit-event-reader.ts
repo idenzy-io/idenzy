@@ -27,13 +27,18 @@ interface OutboxRow extends Record<string, unknown> {
  * The reads and the one write the audit relay needs, across every project.
  *
  * Not a `BaseRepository` and it cannot be one: those are tenant-scoped by construction and
- * a relay has no `app.project_id` to be scoped to. The outbox read goes through
- * `outbox_events_since`, a SECURITY DEFINER function narrowed to one topic and a bounded
- * window, for the same reason `revocation_events_since` is one.
+ * a relay has no `app.project_id` to be scoped to. Every call here therefore goes through a
+ * SECURITY DEFINER function, each narrowed to one job, which is the pattern migration 0002
+ * used for project resolution and 0015 for the revocation reader.
  *
- * The audit write is the interesting part. `audit_events` grants `idenzy_app` INSERT and
- * SELECT and nothing else (PROJECT.md 4.13.3), so this class can add to the trail and has
- * no privilege to rewrite it, which is the property the whole chain rests on.
+ * Reaching for the tables directly is what the first version of this did, and it failed in
+ * the quietest possible way: `audit_events` has FORCE RLS keyed on a variable a relay does
+ * not set, so every insert was refused and every read came back empty, with no error and an
+ * audit trail that recorded nothing.
+ *
+ * None of the three functions can UPDATE or DELETE, so the append-only privilege shape from
+ * migration 0001 still holds (PROJECT.md 4.13.3): a bug here can add a wrong entry and
+ * still cannot remove or alter a right one.
  */
 export class AuditEventReader {
   constructor(private readonly db: NodePgDatabase) {}
@@ -61,9 +66,7 @@ export class AuditEventReader {
    */
   async tip(projectId: string): Promise<AuditChainTip | null> {
     const rows = await this.db.execute<{ entry_hash: string; seq: string }>(
-      sql`select entry_hash, seq from audit_events
-          where project_id = ${projectId}::uuid
-          order by seq desc limit 1`,
+      sql`select * from audit_chain_tip(${projectId}::uuid)`,
     );
     const row = rows.rows[0];
     return row === undefined ? null : { entryHash: row.entry_hash, seq: Number(row.seq) };
@@ -72,11 +75,7 @@ export class AuditEventReader {
   /** The whole chain for a project, oldest first, for the verifier. */
   async chain(projectId: string): Promise<readonly AuditChainRow[]> {
     const rows = await this.db.execute<AuditChainSqlRow>(
-      sql`select project_id, actor_type, actor_id, action, target, metadata,
-                 prev_hash, entry_hash, created_at, seq
-          from audit_events
-          where project_id = ${projectId}::uuid
-          order by seq asc`,
+      sql`select * from audit_chain_for(${projectId}::uuid)`,
     );
     return rows.rows.map((row) => ({
       projectId: row.project_id,
@@ -95,13 +94,11 @@ export class AuditEventReader {
   /** Appends one entry. The sequence assigns the order; nothing here chooses it. */
   async append(entry: NewAuditEntry): Promise<void> {
     await this.db.execute(
-      sql`insert into audit_events
-            (project_id, actor_type, actor_id, action, target, ip, ua, metadata,
-             prev_hash, entry_hash, created_at)
-          values (${entry.projectId}::uuid, ${entry.actorType}, ${entry.actorId},
-                  ${entry.action}, ${entry.target}, ${entry.ip}, ${entry.ua},
-                  ${JSON.stringify(entry.metadata)}::jsonb,
-                  ${entry.prevHash}, ${entry.entryHash}, ${entry.createdAt.toISOString()})`,
+      sql`select append_audit_event(
+            ${entry.projectId}::uuid, ${entry.actorType}, ${entry.actorId},
+            ${entry.action}, ${entry.target}, ${entry.ip}, ${entry.ua},
+            ${JSON.stringify(entry.metadata)}::jsonb,
+            ${entry.prevHash}, ${entry.entryHash}, ${entry.createdAt.toISOString()}::timestamptz)`,
     );
   }
 }

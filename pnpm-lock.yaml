@@ -358,6 +358,9 @@ importers:
       '@idenzy/cache':
         specifier: workspace:*
         version: link:../../packages/cache
+      '@idenzy/compliance':
+        specifier: workspace:*
+        version: link:../../packages/compliance
       '@idenzy/config':
         specifier: workspace:*
         version: link:../../packages/config

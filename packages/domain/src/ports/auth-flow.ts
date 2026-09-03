@@ -105,12 +105,24 @@ export interface FlowHooks {
   beforeSignIn(context: FlowContext, userId: string): Promise<void>;
 }
 
+/**
+ * One entry in the audit trail, as the flow that caused it describes it.
+ *
+ * Structured rather than an action and a bag, because the trail's columns are the thing a
+ * reviewer reads and the relay that writes them should not have to guess which key of a
+ * loose object was the actor. `actorId` is null only where the flow genuinely has no
+ * subject yet, which is a challenge issued before anybody is signed in.
+ */
+export interface AuditRecord {
+  readonly action: string;
+  readonly actorId: string | null;
+  /** What the action was done to, when that is not the actor. Null for most sign-ins. */
+  readonly target?: string | null;
+  readonly meta: Readonly<Record<string, unknown>>;
+}
+
 export interface FlowAudit {
-  record(
-    context: FlowContext,
-    action: string,
-    meta: Readonly<Record<string, unknown>>,
-  ): Promise<void>;
+  record(context: FlowContext, entry: AuditRecord): Promise<void>;
 }
 
 /**
@@ -148,16 +160,22 @@ export abstract class AuthFlow {
     // valid session to someone who proved one factor of two.
     const challenge = await this.mfa.challengeFor(context, subject);
     if (challenge !== null) {
-      await this.audit.record(context, "mfa.challenged", {
-        method: this.method,
-        factors: [...challenge.factors],
+      await this.audit.record(context, {
+        action: "mfa.challenged",
+        actorId: subject.userId,
+        meta: { method: this.method, factors: [...challenge.factors] },
       });
       return { kind: "mfa", challenge };
     }
 
     await this.hooks.beforeSignIn(context, subject.userId);
     const session = await this.sessions.issueSession(context, subject);
-    await this.audit.record(context, "session.created", { method: this.method });
+    await this.audit.record(context, {
+      action: "session.created",
+      actorId: subject.userId,
+      target: session.sessionId,
+      meta: { method: this.method },
+    });
     return { kind: "session", session };
   }
 }

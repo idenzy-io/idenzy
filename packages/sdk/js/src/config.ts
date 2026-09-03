@@ -20,6 +20,14 @@ export interface IdenzyOptions {
    * Naming a mode explicitly disables that, in both directions (PROJECT.md 4.3).
    */
   readonly sessionTransport?: SessionTransportPreference;
+  /**
+   * What to call this device in the user's own session list, for a "your devices" screen.
+   *
+   * Sent only where a session is created, and nothing on the server reads it for anything but
+   * display. Leave it unset and the row is unnamed, which is honest: the alternative is
+   * guessing from a user agent string, and a wrong guess is worse than a blank.
+   */
+  readonly deviceName?: string;
   /** A substitute `fetch`, for a proxy, tracing, or a runtime without a global one. */
   readonly fetch?: FetchLike;
 }
@@ -38,6 +46,7 @@ export class IdenzyConfig {
     readonly publishableKey: string,
     readonly apiUrl: URL,
     readonly sessionTransport: SessionTransportPreference,
+    readonly deviceName: string | null,
   ) {}
 
   static parse(options: IdenzyOptions): IdenzyConfig {
@@ -45,6 +54,7 @@ export class IdenzyConfig {
       assertPublishable(options.publishableKey),
       assertSecureUrl(options.apiUrl),
       options.sessionTransport ?? "auto",
+      deviceName(options.deviceName),
     );
   }
 
@@ -52,6 +62,18 @@ export class IdenzyConfig {
   urlFor(path: string): string {
     return new URL(path, this.apiUrl).toString();
   }
+}
+
+/**
+ * A blank name is no name, and 200 is what the server stores.
+ *
+ * Truncating here rather than letting the server do it keeps a long name from riding on every
+ * sign-in request only to be cut on arrival. A name is never a reason to refuse a
+ * configuration, so nothing throws.
+ */
+function deviceName(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length === 0 ? null : trimmed.slice(0, 200);
 }
 
 function assertPublishable(key: string): string {

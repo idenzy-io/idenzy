@@ -29,6 +29,24 @@ describe("IdenzyConfig", () => {
     expect(config.urlFor("v1/auth/refresh")).toBe("http://localhost:3000/v1/auth/refresh");
   });
 
+  it("treats a blank device name as none, rather than storing an empty label", () => {
+    const config = IdenzyConfig.parse({
+      publishableKey: "pk_test_abc",
+      apiUrl: "https://auth.acme.test",
+      deviceName: "   ",
+    });
+    expect(config.deviceName).toBeNull();
+  });
+
+  it("truncates a device name to what the server stores, so nothing rides for nothing", () => {
+    const config = IdenzyConfig.parse({
+      publishableKey: "pk_test_abc",
+      apiUrl: "https://auth.acme.test",
+      deviceName: "d".repeat(500),
+    });
+    expect(config.deviceName).toHaveLength(200);
+  });
+
   it("keeps a path prefix on the base, which a missing slash would drop", () => {
     const config = IdenzyConfig.parse({
       publishableKey: "pk_live_abc",

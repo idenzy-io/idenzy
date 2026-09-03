@@ -1,11 +1,16 @@
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
+import { IdenzyHeader } from "@idenzy/protocol/http/headers";
 import { describe, expect, it } from "vitest";
 import { Idenzy } from "../src/idenzy.js";
 import { errorBody, FakeTransport, FixedClock, json, sessionCreated } from "./fixtures.js";
 
-function build(transport: FakeTransport): Idenzy {
+function build(transport: FakeTransport, deviceName?: string): Idenzy {
   return new Idenzy(
-    { publishableKey: "pk_test_abc", apiUrl: "https://auth.acme.test" },
+    {
+      publishableKey: "pk_test_abc",
+      apiUrl: "https://auth.acme.test",
+      ...(deviceName === undefined ? {} : { deviceName }),
+    },
     { transport, clock: new FixedClock() },
   );
 }
@@ -154,5 +159,45 @@ describe("acting on an account", () => {
       code: ErrorCode.ReauthenticationRequired,
       status: 403,
     });
+  });
+});
+
+/**
+ * The name is display text for a "your devices" screen, and it travels only on the request
+ * that writes a session row.
+ */
+describe("naming the device", () => {
+  it("sends the name percent-encoded, because a header cannot carry the raw text", async () => {
+    const transport = new FakeTransport(() => json(200, sessionCreated()));
+    const client = build(transport, "Hasan'ın MacBook'u");
+
+    await client.signIn.anonymously();
+
+    expect(transport.requests[0]?.headers[IdenzyHeader.DeviceName]).toBe(
+      encodeURIComponent("Hasan'ın MacBook'u"),
+    );
+  });
+
+  it("leaves it off every request that does not create a session", async () => {
+    const transport = new FakeTransport((request) =>
+      request.url.endsWith("v1/sessions")
+        ? json(200, { sessions: [] })
+        : json(200, sessionCreated()),
+    );
+    const client = build(transport, "Ada's laptop");
+    await client.signIn.anonymously();
+
+    await client.sessions.list();
+
+    expect(transport.to("v1/sessions")[0]?.headers[IdenzyHeader.DeviceName]).toBeUndefined();
+  });
+
+  it("sends nothing at all when the customer named no device", async () => {
+    const transport = new FakeTransport(() => json(200, sessionCreated()));
+    const client = build(transport);
+
+    await client.signIn.anonymously();
+
+    expect(transport.requests[0]?.headers[IdenzyHeader.DeviceName]).toBeUndefined();
   });
 });

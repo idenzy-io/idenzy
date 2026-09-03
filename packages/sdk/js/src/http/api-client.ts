@@ -17,6 +17,12 @@ export interface RequestSpec {
   readonly body?: unknown;
   /** The access token to present. Absent on the routes that establish a session. */
   readonly accessToken?: string | undefined;
+  /**
+   * Carries the configured device name. Set by `SessionFlow.establish` and nowhere else:
+   * the name is read only where a session row is written, so on any other route it would be
+   * bytes on every request that nothing ever looks at.
+   */
+  readonly namesDevice?: boolean;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -108,6 +114,11 @@ export class ApiClient {
       [IdenzyHeader.SessionTransport]: this.mode.current,
     };
     if (hasBody) headers["content-type"] = "application/json";
+    // Percent-encoded because a header value is bytes: a name in most languages throws in
+    // `fetch` before it reaches the network.
+    if (spec.namesDevice === true && this.config.deviceName !== null) {
+      headers[IdenzyHeader.DeviceName] = encodeURIComponent(this.config.deviceName);
+    }
     if (spec.accessToken !== undefined) headers["authorization"] = `Bearer ${spec.accessToken}`;
     const csrf = this.csrfFor(spec.method);
     if (csrf !== undefined) headers[IdenzyHeader.Csrf] = csrf;

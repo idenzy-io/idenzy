@@ -19,8 +19,14 @@ export abstract class SessionFlow {
     protected readonly sessions: SessionManager,
   ) {}
 
-  /** Template method: post, parse, adopt. Subclasses choose only the route and the body. */
+  /**
+   * Template method: post, parse, adopt. Subclasses choose only the route and the body.
+   *
+   * The device name rides here rather than at each call site, because this is the one call in
+   * the SDK that creates a session and therefore the one place the server reads it.
+   */
   protected async establish(spec: RequestSpec): Promise<Session> {
-    return this.sessions.adopt(await this.api.send(sessionCreatedSchema, spec));
+    const created = await this.api.send(sessionCreatedSchema, { ...spec, namesDevice: true });
+    return this.sessions.adopt(created);
   }
 }

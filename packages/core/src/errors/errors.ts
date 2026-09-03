@@ -241,6 +241,22 @@ export class OauthProviderError extends UpstreamError {
   }
 }
 
+/**
+ * A WebAuthn ceremony did not verify.
+ *
+ * One error for every way it can fail: an unknown credential, a bad signature, a stale
+ * challenge, an origin we do not serve, a sign counter that went backwards. The reason
+ * lives in `detail` and is never returned, because the differences are exactly what an
+ * attacker probing with forged assertions wants to learn, and none of them is something
+ * a legitimate user can act on differently.
+ */
+export class WebauthnAssertionInvalidError extends BadRequestError {
+  override readonly code = ErrorCode.WebauthnAssertionInvalid;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "That passkey could not be verified.", options);
+  }
+}
+
 /** Exact-match allowlist failure. Never echo the offending URI back (open-redirect bait). */
 export class RedirectUriNotAllowedError extends BadRequestError {
   override readonly code = ErrorCode.RedirectUriNotAllowed;

@@ -150,6 +150,17 @@ The client half of the edge above. It may import `protocol` and `core` and nothi
 Biome enforces per path, and its `tsconfig` sets `types: []` with the DOM lib so a Node global
 is a compile error rather than a runtime one in somebody's browser.
 
+- **A custom auth domain is an API host, never a page.** `auth.customer.com` is a CNAME at our
+  load balancer that a customer's own React page sends `fetch` calls to. Nobody navigates to it,
+  it serves no HTML, and the customer's sign-in page stays wherever they put it. Say it that way
+  when it comes up: "you need an auth domain" reads as "we host your sign-in screen", which is
+  the one thing this product does not do (ADR-0002).
+- **The transport is negotiated, not configured.** `auto` asks for cookie mode, and steps down
+  to header mode once if the server answers `session_transport_unavailable`. A client cannot
+  tell from its own URL whether it is on a custom domain, and only the server knows whether one
+  is verified. Naming a mode explicitly turns the negotiation off in both directions: an
+  explicit cookie mode that quietly became header mode is a customer believing their tokens are
+  `HttpOnly` when they are not.
 - **A flow that ends in a session extends `SessionFlow` and finishes through `establish`.**
   Posting the credentials and returning the body looks like it worked: the customer gets a user
   object, their form navigates, and the client is still signed out. Nobody finds that until a
@@ -161,10 +172,11 @@ is a compile error rather than a runtime one in somebody's browser.
   and re-sending converts it into a certain logout.
 - **Renewal is lazy, never timed.** A background timer keeps a session alive in a tab nobody is
   looking at, which turns an idle timeout into no timeout at all.
-- **The refresh token is not on `Session` and never goes to web storage** (ADR-0008). `Session`
+- **The refresh token is not on `Session`, and web storage is opt-in only** (ADR-0008). `Session`
   is the object handed to customer code, logged and serialised; the credential that mints tokens
-  for the life of the session stays out of it. The PKCE verifier in `sessionStorage` is the one
-  exception and the ADR says why it does not generalise.
+  for the life of the session stays out of it. `LocalStorageRefreshTokenStore` exists and is
+  never selected for anybody: a customer on the shared API host passes it themselves. The PKCE
+  verifier in `sessionStorage` is a different case and the ADR says why it does not generalise.
 - **Responses are parsed with the protocol's schemas, never cast.** A proxy, a captive portal or
   a mistyped API URL all answer 200 with something shaped nothing like us, and a cast turns that
   into a `TypeError` inside a customer's component with nothing pointing at the cause.

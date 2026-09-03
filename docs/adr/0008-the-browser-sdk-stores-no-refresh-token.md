@@ -76,8 +76,13 @@ store they wrote, ours is safer, and those are the only two options that were ev
 
 ## Consequences
 
-- On the shared API host in header mode, closing the tab signs the user out. That is documented
-  as the reason to configure an auth domain, not hidden as a limitation.
+- On the shared API host in header mode, closing the tab signs the user out unless the customer
+  opts into the store above. That is documented as the reason to configure an auth domain, not
+  hidden as a limitation.
+- A customer who *has* an auth domain no longer has to know any of this. The SDK negotiates its
+  transport, so cookie mode is what they get by default and this decision never comes up. That
+  is deliberately the ordering: the storage question only reaches a customer who is on the
+  shared host, which is exactly the population it is a real question for.
 - Mobile and desktop SDKs implement this interface over Keychain, Keystore and SecureStore
   (PROJECT.md 4.4). That is the case the seam exists for, and there the storage is genuinely
   protected by the platform rather than by a same-origin rule.

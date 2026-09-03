@@ -8,6 +8,7 @@ import { BaseRepository } from "./base-repository.js";
 export interface NewMagicLink {
   readonly tokenHash: string;
   readonly userId: string | null;
+  readonly targetEncrypted: string;
   readonly redirectUri: string;
   readonly expiresAt: Date;
 }
@@ -15,6 +16,7 @@ export interface NewMagicLink {
 export interface MagicLinkRow {
   readonly id: string;
   readonly userId: string | null;
+  readonly targetEncrypted: string;
   readonly redirectUri: string;
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
@@ -41,6 +43,7 @@ export class MagicLinkRepository extends BaseRepository<typeof magicLinkTokens> 
           projectId: this.context.projectId,
           tokenHash: input.tokenHash,
           userId: input.userId,
+          targetEncrypted: input.targetEncrypted,
           redirectUri: input.redirectUri,
           expiresAt: input.expiresAt,
         })
@@ -62,6 +65,7 @@ export class MagicLinkRepository extends BaseRepository<typeof magicLinkTokens> 
     return {
       id: row.id,
       userId: row.userId,
+      targetEncrypted: row.targetEncrypted,
       redirectUri: row.redirectUri,
       expiresAt: row.expiresAt,
       consumedAt: row.consumedAt,

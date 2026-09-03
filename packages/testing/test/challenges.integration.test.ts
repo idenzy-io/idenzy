@@ -149,6 +149,7 @@ describe("links and exchange codes", () => {
     await inTenant(PROJECT_A, ({ links }) =>
       links.issue({
         tokenHash: "link-1",
+        targetEncrypted: "enc",
         userId: aliceId,
         redirectUri: "https://app.test/cb",
         expiresAt: inTen(),
@@ -166,6 +167,7 @@ describe("links and exchange codes", () => {
     await inTenant(PROJECT_A, ({ links }) =>
       links.issue({
         tokenHash: "link-2",
+        targetEncrypted: "enc",
         userId: aliceId,
         redirectUri: "https://app.test/finish",
         expiresAt: inTen(),

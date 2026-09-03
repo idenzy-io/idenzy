@@ -43,6 +43,13 @@
       "when": 1788396611503,
       "tag": "0005_futuristic_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788397027328,
+      "tag": "0006_chemical_mystique",
+      "breakpoints": true
     }
   ]
 }

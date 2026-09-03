@@ -11,7 +11,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 25 |
+| pii | 26 |
 | phi | 0 |
 | secret | 16 |
 | pseudonymous | 22 |
@@ -191,6 +191,7 @@ Notes:
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `redirectUri` | operational | service_configuration | days_30 | no | not_applicable | no |
+| `targetEncrypted` | pii | authentication | days_30 | yes | row_deleted | yes |
 | `tokenHash` | secret | authentication | days_30 | no | row_deleted | no |
 | `userId` | pseudonymous | authentication | days_30 | no | row_deleted | no |
 
@@ -198,6 +199,7 @@ Notes:
 
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `redirectUri`: Validated against redirect_uris at issue time and pinned for the token's life.
+- `targetEncrypted`: The address the link was sent to, read back when it is clicked.
 
 ## `mfa_factors`
 

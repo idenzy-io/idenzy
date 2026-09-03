@@ -4,6 +4,7 @@ import { CryptoModule } from "./crypto/crypto.module.js";
 import { DeliveryModule } from "./delivery/delivery.module.js";
 import { FlowsModule } from "./flows/flows.module.js";
 import { HealthController } from "./health/health.controller.js";
+import { MagicLinkModule } from "./magic-link/magic-link.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 import { OtpModule } from "./otp/otp.module.js";
 import { PasswordModule } from "./password/password.module.js";
@@ -31,6 +32,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     SessionModule,
     PasswordModule,
     OtpModule,
+    MagicLinkModule,
   ],
   controllers: [HealthController, WellKnownController],
 })

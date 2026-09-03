@@ -82,6 +82,10 @@ export const otpChallenges = classifiedTable(
  * `redirectUri` is resolved against the project allowlist at issue time and stored, so
  * the redirect target cannot be changed between sending the mail and clicking it. The
  * link lands on the customer's own route, never a page of ours (PROJECT.md 4.7).
+ *
+ * `targetEncrypted` carries the address for the same reason `otp_challenges` does: the
+ * click has to be able to name who it belongs to, and a link for an address with no
+ * account yet has no `userId` to point at.
  */
 export const magicLinkTokens = classifiedTable(
   "magic_link_tokens",
@@ -94,6 +98,14 @@ export const magicLinkTokens = classifiedTable(
       erasure: Erasure.RowDeleted,
     }),
     userId: classified(uuid("user_id"), ephemeralChallenge),
+    targetEncrypted: encrypted(text("target_encrypted").notNull(), {
+      class: DataClass.Pii,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      subjectField: true,
+      erasure: Erasure.RowDeleted,
+      note: "The address the link was sent to, read back when it is clicked.",
+    }),
     redirectUri: classified(text("redirect_uri").notNull(), {
       ...config,
       retention: Retention.Days30,

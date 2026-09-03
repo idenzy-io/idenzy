@@ -39,6 +39,7 @@ const context: FlowContext = {
   requestId: "req_otp",
   ip: "203.0.113.7",
   userAgent: "vitest",
+  deviceName: null,
   locale: "en",
 };
 const tenant = new TenantContext(PROJECT, "req_otp", "user");

@@ -23,6 +23,10 @@ export const sessions = classifiedTable(
       { ...config, loggable: true },
     ),
     deviceId: classified(text("device_id"), securitySignal),
+    deviceName: classified(text("device_name"), {
+      ...securitySignal,
+      note: "Client-supplied label for the 'your devices' list. Free text a user often puts their own name in, so it is PII and never a security decision.",
+    }),
     ip: classified(text("ip"), {
       ...securitySignal,
       note: "Personal data under GDPR. Retained one year for abuse investigation.",

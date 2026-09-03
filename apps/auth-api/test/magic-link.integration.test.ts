@@ -38,6 +38,7 @@ const context: FlowContext = {
   requestId: "req_link",
   ip: "203.0.113.9",
   userAgent: "vitest",
+  deviceName: null,
   locale: "en",
 };
 const tenant = new TenantContext(PROJECT, "req_link", "user");

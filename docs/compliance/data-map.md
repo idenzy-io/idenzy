@@ -11,7 +11,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 26 |
+| pii | 27 |
 | phi | 0 |
 | secret | 17 |
 | pseudonymous | 25 |
@@ -447,6 +447,7 @@ Notes:
 | `amr` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `deviceId` | pii | security_and_abuse_prevention | years_1 | yes | tombstone | no |
+| `deviceName` | pii | security_and_abuse_prevention | years_1 | yes | tombstone | no |
 | `factorVerifiedAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `idleExpiresAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
@@ -461,6 +462,7 @@ Notes:
 Notes:
 
 - `amr`: Authentication methods used, mirrored into the access token amr claim.
+- `deviceName`: Client-supplied label for the 'your devices' list. Free text a user often puts their own name in, so it is PII and never a security decision.
 - `factorVerifiedAt`: Backs the fva claim, so step-up can require a recent second factor.
 - `ip`: Personal data under GDPR. Retained one year for abuse investigation.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.

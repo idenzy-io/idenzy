@@ -26,6 +26,7 @@ const context: FlowContext = {
   requestId: "req_sessions",
   ip: "203.0.113.20",
   userAgent: "vitest",
+  deviceName: null,
   locale: "en",
 };
 const tenant = new TenantContext(PROJECT, "req_sessions", "user");
@@ -116,6 +117,25 @@ describe("listing sessions", () => {
     expect(list.sessions).toHaveLength(1);
     expect(list.sessions[0]?.revokedAt).not.toBeNull();
     expect(list.sessions[0]?.revokeReason).toBe("signed_out");
+  });
+
+  it("shows the name the client gave the device it was created on", async () => {
+    const userId = await newUser("named@a.test");
+    const named = await sessions.issueSession(
+      { ...context, deviceName: "Hasan'ın MacBook'u" },
+      { userId, amr: [AuthMethod.Password], requiresMfa: false },
+    );
+
+    const list = await sessions.listSessions(context, principal(userId, named.sessionId));
+    expect(list.sessions[0]?.deviceName).toBe("Hasan'ın MacBook'u");
+  });
+
+  it("leaves the name null for a client that sent none, rather than guessing one", async () => {
+    const userId = await newUser("unnamed@a.test");
+    const only = await signIn(userId);
+
+    const list = await sessions.listSessions(context, principal(userId, only.sessionId));
+    expect(list.sessions[0]?.deviceName).toBeNull();
   });
 
   it("never shows another user's sessions", async () => {

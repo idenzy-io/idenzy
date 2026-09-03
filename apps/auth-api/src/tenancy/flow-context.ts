@@ -1,6 +1,7 @@
 import { MissingCredentialsError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
+import { IdenzyHeader } from "@idenzy/protocol/http/headers";
 import type { FastifyRequest } from "fastify";
 
 /**
@@ -19,12 +20,44 @@ export function flowContextFrom(request: FastifyRequest): FlowContext {
     requestId: tenant.requestId,
     ip: request.ip ?? null,
     userAgent: request.headers["user-agent"] ?? null,
+    deviceName: deviceName(request.headers[IdenzyHeader.DeviceName]),
     locale: preferredLocale(request.headers["accept-language"]),
   };
 }
 
 export function tenantContextFrom(context: FlowContext): TenantContext {
   return new TenantContext(context.projectId, context.requestId, "user");
+}
+
+/**
+ * The device label a client sent, or null, and never an error.
+ *
+ * Three things are deliberate. It is percent-decoded, because a header carries bytes and the
+ * name is text in whatever language its owner speaks. A malformed escape falls back to the
+ * raw value instead of throwing: a label is decoration on a list, and no sign-in may fail
+ * over one. And control characters become whitespace, which is then collapsed, because this
+ * string is written straight into a page the customer builds and a stray newline there is at
+ * best a broken row.
+ *
+ * The 200 is `sessionSummarySchema`'s. Truncating here means the wire schema cannot reject a
+ * row we already stored.
+ */
+function deviceName(header: string | string[] | undefined): string | null {
+  if (typeof header !== "string") return null;
+  const decoded = decode(header)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+    .replaceAll(/[\u0000-\u001F\u007F-\u009F]/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+  return decoded.length === 0 ? null : decoded.slice(0, 200);
+}
+
+function decode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**

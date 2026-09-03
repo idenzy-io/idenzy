@@ -103,5 +103,6 @@ certification; see PROJECT.md 4.13.10.
 - **Categories of personal data:**
 
   - pii: deviceId
+  - pii: deviceName
   - pii: ip
   - pii: userAgent

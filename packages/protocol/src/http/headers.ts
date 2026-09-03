@@ -19,6 +19,18 @@ export const IdenzyHeader = {
   SessionTransport: "x-idenzy-session-transport",
   /** Echoes the CSRF cookie. Only meaningful in cookie mode (PROJECT.md 4.3). */
   Csrf: "x-idenzy-csrf",
+  /**
+   * What to call this device in the user's own session list, percent-encoded.
+   *
+   * A header rather than a body field because every way of signing in creates a session, and
+   * a field on each request schema is a field one flow would be added without. Read once,
+   * where the rest of the request context is read, and inherited by every flow.
+   *
+   * Percent-encoded because a header value is bytes and a device name is not: "Hasan'ın
+   * MacBook'u" throws in `fetch` before it reaches the network. Display text only. Nothing
+   * decides anything from it.
+   */
+  DeviceName: "x-idenzy-device-name",
 } as const;
 export type IdenzyHeader = (typeof IdenzyHeader)[keyof typeof IdenzyHeader];
 

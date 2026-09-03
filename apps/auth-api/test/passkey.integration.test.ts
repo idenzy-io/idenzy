@@ -39,6 +39,7 @@ const context: FlowContext = {
   requestId: "req_passkey",
   ip: "203.0.113.9",
   userAgent: "vitest",
+  deviceName: null,
   locale: "en",
 };
 const otherContext: FlowContext = { ...context, projectId: OTHER_PROJECT };

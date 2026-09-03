@@ -63,6 +63,7 @@ export class SessionService implements SessionIssuer {
         ip: context.ip,
         userAgent: context.userAgent,
         deviceId: null,
+        deviceName: context.deviceName,
         factorVerifiedAt: null,
         idleExpiresAt: this.clock.inSeconds(this.config.get("SESSION_IDLE_TTL_SECONDS")),
         absoluteExpiresAt: this.clock.inSeconds(this.config.get("SESSION_ABSOLUTE_TTL_SECONDS")),
@@ -152,9 +153,7 @@ export class SessionService implements SessionIssuer {
     return {
       sessions: rows.map((row) => ({
         id: PublicId.encode(IdPrefix.Session, row.id).value,
-        // Naming a device means parsing a user agent, which rots. Until there is
-        // something better than guesswork, the raw string is what we can honestly show.
-        deviceName: null,
+        deviceName: row.deviceName,
         ip: row.ip,
         userAgent: row.userAgent,
         amr: [...row.amr],

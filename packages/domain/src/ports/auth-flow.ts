@@ -14,6 +14,14 @@ export interface FlowContext {
   readonly ip: string | null;
   readonly userAgent: string | null;
   /**
+   * What the client asked this device to be called in the user's session list. Null when it
+   * said nothing, which is most callers: a server SDK has no device to name.
+   *
+   * Display text and nothing else. It is chosen by whoever holds the client, so it is not
+   * evidence of anything and no check may read it.
+   */
+  readonly deviceName: string | null;
+  /**
    * The caller's preferred language, for anything we send them. Null when the request
    * did not say, which is not the same as English: the renderer decides the fallback,
    * because the fallback chain is a template concern and not a request one.

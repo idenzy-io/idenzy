@@ -15,6 +15,7 @@ export interface NewSession {
   readonly ip: string | null;
   readonly userAgent: string | null;
   readonly deviceId: string | null;
+  readonly deviceName: string | null;
   readonly factorVerifiedAt: Date | null;
   readonly idleExpiresAt: Date;
   readonly absoluteExpiresAt: Date;
@@ -23,6 +24,7 @@ export interface NewSession {
 /** A session row as the "your devices" list needs it, before it is shaped for the wire. */
 export interface SessionListItem {
   readonly id: string;
+  readonly deviceName: string | null;
   readonly ip: string | null;
   readonly userAgent: string | null;
   readonly amr: readonly AuthMethod[];
@@ -55,6 +57,7 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
           ip: input.ip,
           userAgent: input.userAgent,
           deviceId: input.deviceId,
+          deviceName: input.deviceName,
           factorVerifiedAt: input.factorVerifiedAt,
           idleExpiresAt: input.idleExpiresAt,
           absoluteExpiresAt: input.absoluteExpiresAt,
@@ -86,6 +89,7 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
       .limit(limit);
     return rows.map((row) => ({
       id: row.id,
+      deviceName: row.deviceName,
       ip: row.ip,
       userAgent: row.userAgent,
       amr: this.toAmr(row.amr),

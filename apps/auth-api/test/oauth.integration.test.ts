@@ -106,6 +106,7 @@ const context: FlowContext = {
   requestId: "req_oauth",
   ip: "203.0.113.20",
   userAgent: "vitest",
+  deviceName: null,
   locale: "en",
 };
 const tenant = new TenantContext(PROJECT, "req_oauth", "user");

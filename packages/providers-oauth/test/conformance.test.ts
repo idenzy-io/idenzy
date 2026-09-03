@@ -9,7 +9,9 @@ import { DiscordProvider } from "../src/providers/discord-provider.js";
 import { FacebookProvider } from "../src/providers/facebook-provider.js";
 import { GithubProvider } from "../src/providers/github-provider.js";
 import { GoogleProvider } from "../src/providers/google-provider.js";
+import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
+import { TwitchProvider } from "../src/providers/twitch-provider.js";
 
 const providers = {
   google: (d: OAuthProviderDependencies) =>
@@ -23,6 +25,10 @@ const providers = {
     new FacebookProvider(d.http, d.clock, d.flows, d.allowlist),
   discord: (d: OAuthProviderDependencies) =>
     new DiscordProvider(d.http, d.clock, d.flows, d.allowlist),
+  twitch: (d: OAuthProviderDependencies) =>
+    new TwitchProvider(d.http, d.clock, d.flows, d.allowlist),
+  linkedin: (d: OAuthProviderDependencies) =>
+    new LinkedinProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -99,6 +105,18 @@ describe("provider specifics", () => {
   it("asks Discord for the address and the flag that says whether it is confirmed", () => {
     const url = new URL(providers.discord(deps()).authorizationUrl(credentials, request));
     expect(url.searchParams.get("scope")).toBe("identify email");
+  });
+
+  it("asks Twitch for the scope its address lives behind", () => {
+    const url = new URL(providers.twitch(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.get("scope")).toBe("user:read:email");
+  });
+
+  /** OIDC, so the profile is in the id_token and there is no userinfo call to make. */
+  it("asks LinkedIn for an id_token", () => {
+    const url = new URL(providers.linkedin(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.get("scope")).toBe("openid profile email");
+    expect(url.searchParams.get("nonce")).toBe("n");
   });
 
   it("sends Microsoft to the directory the project configured", () => {
@@ -213,6 +231,30 @@ describe("profile mapping", () => {
     );
 
     expect(profile.providerUserId).toBe("9001");
+    expect(profile.emailVerified).toBe(false);
+  });
+
+  /** Helix answers with a one-element array, and wants the client id in a header of its own. */
+  it("reads the Twitch profile out of the array Helix answers with", async () => {
+    const script = completing([
+      GRANT,
+      {
+        status: 200,
+        data: {
+          data: [{ id: "77", login: "ada", display_name: "Ada", email: "ada@example.test" }],
+        },
+      },
+    ]);
+    const provider = providers.twitch(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(profile.providerUserId).toBe("77");
+    expect(profile.displayName).toBe("Ada");
     expect(profile.emailVerified).toBe(false);
   });
 

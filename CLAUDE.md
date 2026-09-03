@@ -195,7 +195,7 @@ is a compile error rather than a runtime one in somebody's browser.
 
 ## Working on a framework binding
 
-There are six of them (React, Vue, Svelte, Angular, Next, Nuxt) and they are all small,
+There are seven of them (React, Vue, Svelte, Solid, Angular, Next, Nuxt) and they are all small,
 because the part worth getting right is `SessionStore` in `@idenzy/js`. Do not
 reimplement any of it per framework: each binding wraps that store in whatever its
 framework calls external state, and that is all it is allowed to be. The server halves are
@@ -219,6 +219,22 @@ Four rules the store owns, and every binding inherits.
   token names the user and the session and does not contain the user object, so a seeded
   snapshot has `userId` and a null `user`. Anything rendering a name on the first paint has
   to be given one separately.
+
+Two of them carry something the others do not, and both are easy to undo by accident.
+
+- **`@idenzy/solid` contains no JSX and cannot.** Solid's JSX is compiled by its own Babel
+  plugin and not by `tsc`, so the only thing `tsc` could emit is a `.js` file still full of
+  JSX, which a customer's bundler does not compile inside `node_modules`. The provider is
+  built with `createComponent`, which is what that plugin emits anyway, and `children` stays
+  behind a getter because the `Provider`'s own owner is what has to resolve them: evaluate
+  them at the call site and every primitive below runs outside the context.
+- **Solid's test config picks the browser build on purpose.** Node resolves `solid-js` to its
+  SSR build, where `createEffect` does nothing and `createMemo` computes once, so a suite that
+  took it reports a pass on a binding whose reactivity never ran. `resolve.conditions` in
+  `vitest.config.ts` is what stops that, and three tests fail without it.
+- **React and Solid both refuse a client swapped underneath them.** They are the two whose
+  props are re-read, and in Solid the body runs once so the swap is otherwise invisible. The
+  quiet version leaves every hook or primitive reporting a session nobody is calling any more.
 
 ## Working on an SSR helper
 

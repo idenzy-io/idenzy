@@ -777,7 +777,7 @@ idenzy/
 │       │                         #   Also where an SSR seed lives: it needs @idenzy/js for the
 │       │                         #   snapshot shape, and only `server/` is forbidden that (§8.3).
 │       │   ├── js/               # @idenzy/js         (public), the one the rest are built on
-│       │   ├── react/  vue/  angular/                (public), bindings over js
+│       │   ├── react/  vue/  angular/  solid/        (public), bindings over js
 │       │   ├── svelte/                               (public), plus /server, the SvelteKit handle
 │       │   ├── next/  nuxt/                          (public), bindings that also render on a server
 │       │   └── astro/  remix/                        (public), the SSR seed alone, no browser half

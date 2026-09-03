@@ -7,15 +7,21 @@
  * this package adds is knowing which claims are ours and refusing the ones that are not.
  *
  * Offline is a trade and it is stated plainly: a revoked session stays verifiable until its
- * access token expires, which is why the default lifetime is short. Anything that must see a
- * revocation the instant it happens has to ask, and that is the revocation set (PROJECT.md
- * 4.2), which this package does not consume yet.
+ * access token expires, which is why the default lifetime is short. `RevocationCache` closes
+ * most of that gap without giving the property up, by polling the published set and answering
+ * from memory rather than asking us per request (PROJECT.md 4.2, ADR-0009). It is opt-in:
+ * without one this package still makes no network call of its own beyond the key set.
  */
-import { AccessTokenInvalidError, MissingCredentialsError } from "@idenzy/core/errors";
+import {
+  AccessTokenInvalidError,
+  MissingCredentialsError,
+  SessionRevokedError,
+} from "@idenzy/core/errors";
 import { projectIdSchema } from "@idenzy/protocol/schemas/common";
 import { errors as joseErrors, jwtVerify } from "jose";
 import { type JwksSource, RemoteJwks } from "./jwks.js";
 import { accessTokenFrom, type RequestHeaders } from "./request.js";
+import type { RevocationCache } from "./revocations.js";
 
 /** Public ids, exactly as they appear in the token. Decoding them is the caller's job. */
 export interface VerifiedAccessToken {
@@ -47,6 +53,14 @@ export interface AccessTokenVerifierOptions {
   readonly projectId: string;
   /** Seconds of clock skew tolerated on `exp` and `iat`. Small on purpose. */
   readonly clockToleranceSeconds?: number;
+  /**
+   * An in-process copy of the project's revocation set, if the customer built one.
+   *
+   * With it, a session revoked in the last few minutes is refused here instead of staying
+   * valid until its token expires. Without it, verification is exactly what it was: signature,
+   * issuer, audience and lifetime, and nothing that costs a network call.
+   */
+  readonly revocations?: RevocationCache;
 }
 
 /**
@@ -60,12 +74,14 @@ export class AccessTokenVerifier {
   private readonly projectId: string;
   private readonly tolerance: number;
   private readonly keys: JwksSource;
+  private readonly revocations: RevocationCache | null;
 
   constructor(options: AccessTokenVerifierOptions, keys?: JwksSource) {
     this.issuerUrl = options.issuerUrl;
     this.projectId = assertProjectId(options.projectId);
     this.tolerance = options.clockToleranceSeconds ?? 5;
     this.keys = keys ?? new RemoteJwks(options.issuerUrl);
+    this.revocations = options.revocations ?? null;
   }
 
   /**
@@ -76,6 +92,16 @@ export class AccessTokenVerifier {
    * is the same either way.
    */
   async verify(token: string): Promise<VerifiedAccessToken> {
+    const verified = await this.readToken(token);
+    // Outside the signature check on purpose. A revoked session is a different answer from an
+    // unreadable token, and putting it inside would have the catch below rewrite it into one.
+    // It runs second because a token that was never ours should be refused as invalid rather
+    // than looked up in somebody's revocation set.
+    if (this.revocations?.isRevoked(verified) === true) throw new SessionRevokedError();
+    return verified;
+  }
+
+  private async readToken(token: string): Promise<VerifiedAccessToken> {
     try {
       const { payload } = await jwtVerify(token, this.keys.resolver(), {
         issuer: this.issuerUrl,

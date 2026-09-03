@@ -1,4 +1,4 @@
-import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
+import { type CryptoKey, exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 
 export const ISSUER = "https://auth.acme.test";
 export const PROJECT = "prj_00000000000000000001";
@@ -7,6 +7,8 @@ export const OTHER_PROJECT = "prj_00000000000000000002";
 export interface TestIssuer {
   readonly jwks: JSONWebKeySet;
   mint(claims?: MintOptions): Promise<string>;
+  /** For signing something that is not an access token, which is what a snapshot is. */
+  privateKey(): Promise<CryptoKey>;
 }
 
 export interface MintOptions {
@@ -32,6 +34,8 @@ export async function testIssuer(kid = "test-key"): Promise<TestIssuer> {
 
   return {
     jwks: { keys: [{ ...jwk, kid, alg: "ES256", use: "sig" }] },
+    /** For signing something that is not an access token, which is what a snapshot is. */
+    privateKey: () => Promise.resolve(privateKey),
     mint(options: MintOptions = {}): Promise<string> {
       const now = Math.floor(Date.now() / 1000);
       const expiry = now + (options.expiresInSeconds ?? 300);

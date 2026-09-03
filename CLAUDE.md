@@ -357,11 +357,51 @@ The server half, and the smallest package we ship. It verifies; it never holds a
   length of an outage. An unknown `kid` is the opposite case: `jose` has already refetched by
   then, so the key really is not ours and the token really is invalid.
 - **Verification is offline and that is a trade, not a free win.** A revoked session stays
-  verifiable until its access token expires, which is why the default lifetime is short and
-  why anything needing instant revocation has to consume the revocation set (PROJECT.md 4.2),
-  which this package does not do yet.
+  verifiable until its access token expires, which is why the default lifetime is short.
+  `RevocationCache` closes most of that gap without giving the property up: it polls the
+  published set and answers from memory, so a check costs a hash lookup and no I/O. It is
+  opt-in, it needs the project's secret key, and it fails open when it cannot reach us. See
+  the revocation section below before changing any of that.
 - It may import `protocol` and `core` and nothing else of ours, and Biome refuses `@idenzy/js`
   here by path: a client SDK holds a session and speaks to the DOM.
+
+## Working on the revocation set
+
+The thing that lets a five-minute access token behave like a sixty-second one without a
+refresh storm (PROJECT.md 4.2, ADR-0009). Read the ADR first: three of these are decisions
+that look arbitrary until you know what they are avoiding.
+
+- **It is published, never queried.** A customer's verifier is offline on purpose, so it polls
+  a snapshot and checks an in-process copy. A lookup on their request path would put our
+  latency and our availability inside their request, which is the property offline
+  verification exists to sell. Our own API does not read the set at all: `SessionGuard` reads
+  the session row, so revocation is already immediate there.
+- **Publish after the commit, never inside it.** The failure directions are not symmetric. A
+  missed revocation degrades to the token expiring, which is where we were before the set
+  existed. A false one is unrecoverable: the set is keyed by session id, refreshing mints a
+  new access token for the same session, so nothing the client does clears the entry. Reuse
+  detection is the sharp case, because it revokes and then throws; there is a test that fails
+  when the publish moves after the throw.
+- **`RevocationPublisher` never throws.** The revocation has already happened and the outbox
+  event is already written in the same transaction, so failing the call would report an error
+  for work that succeeded. The outbox is the durable path; the direct write is the fast one.
+- **A bulk revoke publishes a watermark, not a list.** Signing out everywhere and a password
+  reset end every session a user holds, and one entry per session does not bound. The
+  watermark is compared strictly against `iat` and floored to the second, so a token minted in
+  the revocation's own second survives it: `iat` is second-accurate, and under-revoking by
+  under a second beats revoking a token issued after the event.
+- **The endpoint takes a secret key.** PROJECT.md 4.2 sketched it as cacheable, which reads as
+  public, and it cannot be: the payload names users and times their security events, and a
+  project id is the `aud` of every token we sign, so it reaches every browser. The ETag is
+  what keeps polling cheap instead of a CDN.
+- **One key signs both kinds of statement.** A snapshot carries a `typ` that is not `JWT`,
+  both access-token verifiers require `JWT`, and `TokenIssuer.issueStatement` refuses to put
+  `sub` or `sid` in a statement at all. Any one of those alone would be a single point of
+  failure for token confusion (RFC 8725 section 3.11).
+- **Retention is one access token lifetime plus skew.** A token minted immediately before a
+  revocation expires one lifetime later, so nothing older can still be presented. That bound
+  is the only reason the set is small enough to publish whole, and pruning runs on write as
+  well as on read, because pruning only on read let a deployment with no poller grow forever.
 
 ## Adding an authentication flow
 

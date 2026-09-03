@@ -76,6 +76,24 @@ export const configSchema = z.object({
    */
   WEBAUTHN_CHALLENGE_TTL_SECONDS: durationSeconds.max(900).default(300),
 
+  /**
+   * How long a proved first factor waits for a second (PROJECT.md 4.5).
+   *
+   * Five minutes, because the user is already at the keyboard and the phone is already
+   * in their hand. It is longer than a single TOTP step on purpose: a code typed just as
+   * the step rolls over has to be able to be retyped.
+   */
+  MFA_CHALLENGE_TTL_SECONDS: durationSeconds.max(900).default(300),
+
+  /**
+   * How recently a factor must have been proved for a sensitive action to go ahead.
+   *
+   * This is the window the `fva` claim is compared against. Fifteen minutes is long
+   * enough that changing an address and then changing a password does not ask twice, and
+   * short enough that a session left open on a shared machine has stopped counting.
+   */
+  STEP_UP_MAX_AGE_SECONDS: durationSeconds.max(3600).default(900),
+
   PASSWORD_RESET_TTL_SECONDS: durationSeconds.max(3600).default(900),
 
   /**

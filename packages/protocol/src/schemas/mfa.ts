@@ -2,6 +2,7 @@ import { z } from "zod";
 import { MfaChallengePurpose, MfaFactorType } from "../enums/auth.js";
 import { challengeIdSchema, factorIdSchema, isoDateTimeSchema } from "./common.js";
 import { sessionCreatedSchema } from "./session.js";
+import { authenticationResponseSchema, passkeyAuthenticationOptionsSchema } from "./webauthn.js";
 
 const factorTypeValues = Object.values(MfaFactorType) as [MfaFactorType, ...MfaFactorType[]];
 const purposeValues = Object.values(MfaChallengePurpose) as [
@@ -20,6 +21,9 @@ const purposeValues = Object.values(MfaChallengePurpose) as [
  * `factors` is what the customer's UI prompts with, so it has to be here. It is not an
  * enumeration oracle: nothing reaches this response without a proved first factor.
  */
+/** The same shape the sign-in ceremony returns, so a client reuses its own ceremony code. */
+export const mfaPasskeyOptionsSchema = passkeyAuthenticationOptionsSchema;
+
 export const mfaChallengeSchema = z.object({
   challengeId: challengeIdSchema,
   purpose: z.enum(purposeValues),
@@ -40,18 +44,69 @@ export const authOutcomeSchema = z.discriminatedUnion("status", [
   mfaChallengeSchema.extend({ status: z.literal("mfa_required") }),
 ]);
 
-/**
- * Answers a challenge.
- *
- * `factor` names which kind of proof this is rather than letting the server guess from
- * the shape of the string. A guess would have to be revised every time a factor type is
- * added, and revising it would silently change what an existing code is checked against.
- */
-export const submitMfaSchema = z.object({
-  challengeId: challengeIdSchema,
-  factor: z.enum(factorTypeValues),
-  /** Wide enough for a recovery code with its separators, which a TOTP code never is. */
+const totpProofSchema = z.object({
+  factor: z.literal(MfaFactorType.Totp),
+  code: z.string().regex(/^\d{6}$/),
+});
+
+const recoveryProofSchema = z.object({
+  factor: z.literal(MfaFactorType.RecoveryCode),
+  /** Wide enough for the separators the codes are displayed with. */
   code: z.string().min(6).max(64),
+});
+
+const passkeyProofSchema = z.object({
+  factor: z.literal(MfaFactorType.Passkey),
+  /**
+   * The WebAuthn ceremony this assertion was produced for, from the options call.
+   *
+   * A second id, and a second concept: the challenge id in the submission is the second
+   * factor being owed, and this is the nonce the authenticator signed over. Collapsing
+   * them would mean a factor reading the challenge it is being checked against, which is
+   * one level up from where a factor's business ends.
+   */
+  ceremonyId: challengeIdSchema,
+  response: authenticationResponseSchema,
+});
+
+/**
+ * What proves a factor, without the challenge it is proved against.
+ *
+ * Discriminated on `factor` rather than carrying one loose `code`, because a proof is not
+ * one shape: a TOTP code is six digits, a recovery code is four groups of five, and a
+ * passkey assertion is a signed object several hundred bytes long. One field wide enough
+ * for all three would validate none of them. `factor` is what the server dispatches on in
+ * any case, and guessing it from the shape of the value would have to be revised every
+ * time a factor is added, which changes what an existing proof is checked against.
+ *
+ * Split from the submission below because a factor never reads the challenge id: it is
+ * the challenge's business, and handing it to the thing that checks a code would let a
+ * factor start making decisions that belong one level up.
+ */
+export const mfaProofSchema = z.discriminatedUnion("factor", [
+  totpProofSchema,
+  recoveryProofSchema,
+  passkeyProofSchema,
+]);
+
+/** A proof, and the challenge it answers. */
+export const submitMfaSchema = z.discriminatedUnion("factor", [
+  totpProofSchema.extend({ challengeId: challengeIdSchema }),
+  recoveryProofSchema.extend({ challengeId: challengeIdSchema }),
+  passkeyProofSchema.extend({ challengeId: challengeIdSchema }),
+]);
+
+/**
+ * Options for answering a challenge with a passkey.
+ *
+ * Asked for separately rather than returned with the challenge, because generating them
+ * writes a WebAuthn nonce and most challenges are answered with a code. Unlike the
+ * options at the door these do name credentials: the caller has already proved a first
+ * factor for this account, so `allowCredentials` tells them nothing they did not know,
+ * and without it a browser holding keys for several accounts cannot pick the right one.
+ */
+export const mfaPasskeyOptionsRequestSchema = z.object({
+  challengeId: challengeIdSchema,
 });
 
 /**
@@ -140,7 +195,10 @@ export const stepUpCompletedSchema = z.object({
 
 export type MfaChallenge = z.infer<typeof mfaChallengeSchema>;
 export type AuthOutcome = z.infer<typeof authOutcomeSchema>;
+export type MfaProof = z.infer<typeof mfaProofSchema>;
 export type SubmitMfa = z.infer<typeof submitMfaSchema>;
+export type MfaPasskeyOptionsRequest = z.infer<typeof mfaPasskeyOptionsRequestSchema>;
+export type MfaPasskeyOptions = z.infer<typeof mfaPasskeyOptionsSchema>;
 export type StartTotpEnrolment = z.infer<typeof startTotpEnrolmentSchema>;
 export type TotpEnrolment = z.infer<typeof totpEnrolmentSchema>;
 export type ConfirmTotpEnrolment = z.infer<typeof confirmTotpEnrolmentSchema>;

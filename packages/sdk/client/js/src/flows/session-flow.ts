@@ -2,6 +2,7 @@ import { authOutcomeSchema } from "@idenzy/protocol/schemas/mfa";
 import { IdenzyTransportError } from "../errors.js";
 import type { ApiClient, RequestSpec } from "../http/api-client.js";
 import { type AuthResult, MfaChallenge, type MfaSubmission } from "../mfa/auth-result.js";
+import { proveWithPasskey } from "../mfa/passkey-ceremony.js";
 import type { Session } from "../session/session.js";
 import type { SessionManager } from "../session/session-manager.js";
 
@@ -44,6 +45,7 @@ export abstract class SessionFlow {
         outcome.factors,
         new Date(outcome.expiresAt),
         (submission) => this.completeMfa(outcome.challengeId, submission),
+        (challengeId) => proveWithPasskey(this.api, challengeId),
       ),
     };
   }
@@ -59,7 +61,7 @@ export abstract class SessionFlow {
     const outcome = await this.api.send(authOutcomeSchema, {
       method: "POST",
       path: "v1/auth/mfa/verify",
-      body: { challengeId, factor: submission.factor, code: submission.code },
+      body: { challengeId, ...submission },
       namesDevice: true,
     });
     if (outcome.status !== "authenticated") {

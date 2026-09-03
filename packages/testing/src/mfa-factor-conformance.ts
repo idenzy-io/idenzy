@@ -1,7 +1,9 @@
 import { strict as assert } from "node:assert";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import type { MfaFactor } from "@idenzy/domain/ports/mfa-factor";
+import { MfaFactorType } from "@idenzy/protocol/enums/auth";
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
+import type { MfaProof } from "@idenzy/protocol/schemas/mfa";
 import { ConformanceSuite } from "./conformance-suite.js";
 
 /**
@@ -14,9 +16,18 @@ import { ConformanceSuite } from "./conformance-suite.js";
 export interface MfaFactorHarness {
   readonly factor: MfaFactor;
   readonly context: FlowContext;
-  enrol(): Promise<{ userId: string; proof: string }>;
+  enrol(): Promise<{ userId: string; proof: MfaProof }>;
   /** A user of the same project holding nothing of this kind. */
   stranger(): Promise<string>;
+  /**
+   * A proof of this factor's kind that will not verify.
+   *
+   * Supplied rather than derived, because "wrong" is different per factor: a wrong TOTP
+   * code is six other digits and a wrong assertion is one signed by another key. Deriving
+   * it here would mean the suite knowing each factor's format, which is what it exists
+   * not to do.
+   */
+  wrongProof(): Promise<MfaProof>;
 }
 
 /**
@@ -45,7 +56,11 @@ export class MfaFactorConformanceSuite extends ConformanceSuite<MfaFactorHarness
           const stranger = await subject.stranger();
 
           const absent = await refusal(subject, stranger, proof);
-          const wrong = await refusal(subject, (await subject.enrol()).userId, "not-a-proof");
+          const wrong = await refusal(
+            subject,
+            (await subject.enrol()).userId,
+            await subject.wrongProof(),
+          );
           assert.equal(absent, ErrorCode.MfaFactorInvalid);
           assert.equal(wrong, ErrorCode.MfaFactorInvalid);
         },
@@ -84,18 +99,45 @@ export class MfaFactorConformanceSuite extends ConformanceSuite<MfaFactorHarness
         },
       },
       {
-        name: "refuses an empty proof without consulting anything",
+        /**
+         * The registry dispatches by factor, so this should be unreachable. It is a case
+         * because a factor that read its own field off whatever it was handed would accept
+         * a proof meant for another one the day the dispatch is wrong.
+         */
+        name: "refuses a proof meant for a different factor",
         run: async ({ subject }: { subject: MfaFactorHarness }) => {
-          const { userId } = await subject.enrol();
-          assert.equal(await refusal(subject, userId, ""), ErrorCode.MfaFactorInvalid);
+          const { userId, proof } = await subject.enrol();
+          // The valid proof under the wrong label, which is the only version of this that
+          // catches anything: a factor reading its own field off whatever it is handed
+          // would accept it, and one that refuses on the label first cannot.
+          const foreign = relabelled(proof);
+
+          assert.equal(await refusal(subject, userId, foreign), ErrorCode.MfaFactorInvalid);
         },
       },
     ];
   }
 }
 
+/**
+ * The same proof under a different factor's name.
+ *
+ * A passkey assertion has nothing to relabel it as, so it gets a code proof, which any
+ * correct factor refuses on the label alone.
+ */
+function relabelled(proof: MfaProof): MfaProof {
+  if (!("code" in proof)) return { factor: MfaFactorType.Totp, code: "000000" };
+  return proof.factor === MfaFactorType.Totp
+    ? { factor: MfaFactorType.RecoveryCode, code: proof.code }
+    : { factor: MfaFactorType.Totp, code: proof.code };
+}
+
 /** The code a refusal carried, or a marker that it did not refuse at all. */
-async function refusal(subject: MfaFactorHarness, userId: string, proof: string): Promise<string> {
+async function refusal(
+  subject: MfaFactorHarness,
+  userId: string,
+  proof: MfaProof,
+): Promise<string> {
   try {
     await subject.factor.prove(subject.context, userId, proof);
     return "accepted";

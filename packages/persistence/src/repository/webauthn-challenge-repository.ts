@@ -16,6 +16,16 @@ import { BaseRepository } from "./base-repository.js";
 export const WebauthnCeremony = {
   Registration: "registration",
   Authentication: "authentication",
+  /**
+   * A passkey answering a second-factor challenge.
+   *
+   * Its own ceremony rather than an authentication with a user attached, because the two
+   * differ in what they may do. An authentication challenge names no credential and can
+   * resolve to any user, which is what makes sign-in usernameless; this one is pinned to
+   * the account that already proved a first factor, and a nonce minted for one must never
+   * be spendable as the other.
+   */
+  SecondFactor: "second_factor",
 } as const;
 export type WebauthnCeremony = (typeof WebauthnCeremony)[keyof typeof WebauthnCeremony];
 

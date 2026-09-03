@@ -2,6 +2,7 @@ import { MfaFactorAlreadyEnrolledError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { MfaFactor } from "@idenzy/domain/ports/mfa-factor";
 import { AuthMethod, MfaFactorType } from "@idenzy/protocol/enums/auth";
+import type { MfaProof } from "@idenzy/protocol/schemas/mfa";
 import { describe, expect, it } from "vitest";
 import { MfaFactorConformanceSuite, type MfaFactorHarness } from "../src/mfa-factor-conformance.js";
 
@@ -25,18 +26,24 @@ const context: FlowContext = {
 class ReferenceFactor extends MfaFactor {
   override readonly type = MfaFactorType.Totp;
   override readonly method = AuthMethod.Totp;
+  override readonly demandsChallenge = true;
   protected readonly proofs = new Map<string, string>();
 
-  enrolUser(userId: string, proof: string): void {
-    this.proofs.set(userId, proof);
+  enrolUser(userId: string, code: string): void {
+    this.proofs.set(userId, code);
   }
 
   override enrolled(_context: FlowContext, userId: string): Promise<boolean> {
     return Promise.resolve(this.proofs.has(userId));
   }
 
-  protected override check(_context: FlowContext, userId: string, proof: string): Promise<boolean> {
-    if (proof.length === 0 || this.proofs.get(userId) !== proof) return Promise.resolve(false);
+  protected override check(
+    _context: FlowContext,
+    userId: string,
+    proof: MfaProof,
+  ): Promise<boolean> {
+    if (proof.factor !== this.type) return Promise.resolve(false);
+    if (this.proofs.get(userId) !== proof.code) return Promise.resolve(false);
     this.proofs.delete(userId);
     return Promise.resolve(true);
   }
@@ -44,7 +51,7 @@ class ReferenceFactor extends MfaFactor {
 
 /** Says "you have not enrolled that" out loud, which is the enumeration oracle. */
 class TellsYouWhatYouHold extends ReferenceFactor {
-  override async prove(context: FlowContext, userId: string, proof: string): Promise<AuthMethod> {
+  override async prove(context: FlowContext, userId: string, proof: MfaProof): Promise<AuthMethod> {
     if (!(await this.enrolled(context, userId))) {
       // Any code but the family's own is the bug: the caller can now tell the two apart.
       throw new MfaFactorAlreadyEnrolledError();
@@ -55,14 +62,18 @@ class TellsYouWhatYouHold extends ReferenceFactor {
 
 /** Checks without consuming, so the same code works for as long as it is displayed. */
 class LeavesTheProofStanding extends ReferenceFactor {
-  protected override check(_context: FlowContext, userId: string, proof: string): Promise<boolean> {
-    return Promise.resolve(proof.length > 0 && this.proofs.get(userId) === proof);
+  protected override check(
+    _context: FlowContext,
+    userId: string,
+    proof: MfaProof,
+  ): Promise<boolean> {
+    return Promise.resolve(proof.factor === this.type && this.proofs.get(userId) === proof.code);
   }
 }
 
 /** Reports a method it did not run, so the session claims a factor that never happened. */
 class ClaimsSomethingElse extends ReferenceFactor {
-  override async prove(context: FlowContext, userId: string, proof: string): Promise<AuthMethod> {
+  override async prove(context: FlowContext, userId: string, proof: MfaProof): Promise<AuthMethod> {
     await super.prove(context, userId, proof);
     return AuthMethod.Password;
   }
@@ -75,6 +86,20 @@ class AlwaysEnrolled extends ReferenceFactor {
   }
 }
 
+/** Reads its own field off whatever it is handed, so another factor's proof gets through. */
+class TakesAnybodysProof extends ReferenceFactor {
+  protected override check(
+    _context: FlowContext,
+    userId: string,
+    proof: MfaProof,
+  ): Promise<boolean> {
+    const code = "code" in proof ? proof.code : "";
+    if (this.proofs.get(userId) !== code) return Promise.resolve(false);
+    this.proofs.delete(userId);
+    return Promise.resolve(true);
+  }
+}
+
 function harnessFor(factor: ReferenceFactor): MfaFactorHarness {
   let next = 0;
   return {
@@ -83,10 +108,11 @@ function harnessFor(factor: ReferenceFactor): MfaFactorHarness {
     enrol: () => {
       next += 1;
       const userId = `user-${next}`;
-      const proof = `proof-${next}`;
-      factor.enrolUser(userId, proof);
-      return Promise.resolve({ userId, proof });
+      const code = `${100000 + next}`;
+      factor.enrolUser(userId, code);
+      return Promise.resolve({ userId, proof: { factor: MfaFactorType.Totp, code } });
     },
+    wrongProof: () => Promise.resolve({ factor: MfaFactorType.Totp, code: "999999" }),
     stranger: () => {
       next += 1;
       return Promise.resolve(`stranger-${next}`);
@@ -108,6 +134,7 @@ describe("the mfa factor conformance suite", () => {
     ["leaves a spent proof standing", new LeavesTheProofStanding()],
     ["claims a method it did not run", new ClaimsSomethingElse()],
     ["reports enrolment it does not have", new AlwaysEnrolled()],
+    ["takes a proof meant for another factor", new TakesAnybodysProof()],
   ])("fails a factor that %s", async (name, factor) => {
     const failures = await suite.run({ subject: harnessFor(factor), name });
     expect(failures.length).toBeGreaterThan(0);

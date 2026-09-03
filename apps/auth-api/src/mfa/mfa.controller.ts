@@ -1,4 +1,5 @@
 import { MissingCredentialsError } from "@idenzy/core/errors";
+import { MfaChallengePurpose } from "@idenzy/protocol/enums/auth";
 import {
   type AuthOutcome as AuthOutcomeBody,
   type ConfirmTotpEnrolment,
@@ -6,6 +7,9 @@ import {
   type MfaChallenge,
   type MfaEnrolmentConfirmed,
   type MfaFactorList,
+  type MfaPasskeyOptions,
+  type MfaPasskeyOptionsRequest,
+  mfaPasskeyOptionsRequestSchema,
   type RecoveryCodes,
   type StartTotpEnrolment,
   type StepUpCompleted,
@@ -20,6 +24,8 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { MfaFactorRegistry } from "./factor-registry.js";
+import { MfaChallengeVerifier } from "./mfa-challenge-verifier.js";
 import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
 import { MfaVerificationFlow } from "./mfa-verification.flow.js";
 import { StepUpService } from "./step-up-service.js";
@@ -42,7 +48,33 @@ export class MfaController {
     private readonly enrolment: MfaEnrolmentService,
     private readonly verification: MfaVerificationFlow,
     private readonly stepUp: StepUpService,
+    private readonly challenges: MfaChallengeVerifier,
+    private readonly factors: MfaFactorRegistry,
   ) {}
+
+  /**
+   * The WebAuthn options for answering a challenge with a passkey.
+   *
+   * Takes no session, like the verify route beside it, and for the same reason: the
+   * challenge id is what stands in for one. It reads the challenge without spending it,
+   * because asking for options is not an attempt and must not cost the user one of five.
+   *
+   * Accepts either purpose. All this call reads is which user the challenge names, and
+   * both a sign-in and a step-up can legitimately be answered with a passkey.
+   */
+  @Post("passkey/options")
+  @HttpCode(200)
+  async passkeyOptions(
+    @Req() request: FastifyRequest,
+    @Body(new ZodValidationPipe(mfaPasskeyOptionsRequestSchema)) body: MfaPasskeyOptionsRequest,
+  ): Promise<MfaPasskeyOptions> {
+    const context = flowContextFrom(request);
+    const challenge = await this.challenges.load(context, body.challengeId, [
+      MfaChallengePurpose.SignIn,
+      MfaChallengePurpose.StepUp,
+    ]);
+    return this.factors.passkeys.options(context, challenge.userId);
+  }
 
   /**
    * Answers the challenge a sign-in stopped at.

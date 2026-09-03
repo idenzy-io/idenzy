@@ -141,12 +141,27 @@ export function SignIn(): ReactNode {
     if (result.status === "mfa_required") setChallenge(result.challenge);
   }
 
+  /** The offered factor that takes a typed code. A passkey has its own button below. */
+  const codeFactor = challenge?.factors.includes("totp") ? "totp" : "recovery";
+
   async function submitSecondFactor(event: FormEvent): Promise<void> {
     event.preventDefault();
     setError(null);
     if (challenge === null) return;
     try {
-      await challenge.submit({ factor: challenge.factors[0], code: factorCode });
+      await challenge.submit({ factor: codeFactor, code: factorCode });
+      setChallenge(null);
+    } catch (failure) {
+      setError(describeAuthError(failure));
+    }
+  }
+
+  /** Runs the WebAuthn ceremony for you. A cancelled prompt is the browser's own error. */
+  async function submitPasskey(): Promise<void> {
+    setError(null);
+    if (challenge === null) return;
+    try {
+      await challenge.submitPasskey();
       setChallenge(null);
     } catch (failure) {
       setError(describeAuthError(failure));
@@ -199,23 +214,30 @@ export function SignIn(): ReactNode {
       {error === null ? null : <p role="alert">{error}</p>}
 
       {challenge === null ? null : (
-        <form onSubmit={submitSecondFactor}>
+        <section>
           <h2>One more step</h2>
-          <label htmlFor="factorCode">
-            {challenge.factors[0] === "recovery"
-              ? "A recovery code"
-              : "The code from your authenticator app"}
-          </label>
-          <input
-            id="factorCode"
-            name="factorCode"
-            inputMode={challenge.factors[0] === "recovery" ? "text" : "numeric"}
-            autoComplete="one-time-code"
-            value={factorCode}
-            onChange={(event) => setFactorCode(event.target.value)}
-          />
-          <button type="submit">Continue</button>
-        </form>
+          {challenge.factors.includes("passkey") ? (
+            <button type="button" onClick={submitPasskey}>
+              Use your passkey
+            </button>
+          ) : null}
+          <form onSubmit={submitSecondFactor}>
+            <label htmlFor="factorCode">
+              {codeFactor === "recovery"
+                ? "A recovery code"
+                : "The code from your authenticator app"}
+            </label>
+            <input
+              id="factorCode"
+              name="factorCode"
+              inputMode={codeFactor === "recovery" ? "text" : "numeric"}
+              autoComplete="one-time-code"
+              value={factorCode}
+              onChange={(event) => setFactorCode(event.target.value)}
+            />
+            <button type="submit">Continue</button>
+          </form>
+        </section>
       )}
 
       {codeSent ? (

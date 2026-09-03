@@ -1,11 +1,16 @@
 import type { MfaChallengePurpose, MfaFactorType } from "@idenzy/protocol/enums/auth";
+import type { MfaProof } from "@idenzy/protocol/schemas/mfa";
 import type { Session } from "../session/session.js";
 
-/** What a caller submits against a challenge. The factor names which kind of proof it is. */
-export interface MfaSubmission {
-  readonly factor: MfaFactorType;
-  readonly code: string;
-}
+/**
+ * What a caller submits against a challenge.
+ *
+ * The protocol's own union rather than a local shape, because a proof is not one thing: a
+ * code for an authenticator or a recovery sheet, a signed assertion for a passkey. The
+ * passkey variant is not hand-assembled in practice, since `submitPasskey` runs the
+ * ceremony and builds it.
+ */
+export type MfaSubmission = MfaProof;
 
 /**
  * A sign-in that stopped at a second factor.
@@ -23,10 +28,23 @@ export class MfaChallenge {
     readonly factors: readonly MfaFactorType[],
     readonly expiresAt: Date,
     private readonly complete: (submission: MfaSubmission) => Promise<Session>,
+    private readonly ceremony: (challengeId: string) => Promise<MfaSubmission>,
   ) {}
 
   submit(submission: MfaSubmission): Promise<Session> {
     return this.complete(submission);
+  }
+
+  /**
+   * Answers with a passkey, running the ceremony first.
+   *
+   * Its own method because a passkey proof is not something a customer types: it is two
+   * round trips and a `navigator.credentials.get` between them, and asking every caller to
+   * assemble it would be asking them to reimplement `PasskeyFlow`. A cancelled prompt
+   * arrives as the browser's own `DOMException`, untranslated, as everywhere else here.
+   */
+  async submitPasskey(): Promise<Session> {
+    return this.complete(await this.ceremony(this.challengeId));
   }
 }
 

@@ -151,7 +151,10 @@ export class PasskeyFlow extends AuthFlow {
         });
       }
       user.assertCanSignIn(this.clock);
-      return { userId, amr: [this.method], factorVerifiedAt: null };
+      // User verification is required on this ceremony, so one assertion proved possession
+      // and verification together. Reporting the factor age is what stops the gate asking
+      // for a code on top of it, and it is what a later step-up is measured against.
+      return { userId, amr: [this.method], factorVerifiedAt: this.clock.now() };
     });
   }
 }

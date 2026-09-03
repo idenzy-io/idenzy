@@ -22,12 +22,13 @@ import { MfaFactorRegistry } from "./factor-registry.js";
 /**
  * Whether a proved first factor is enough (PROJECT.md 4.5).
  *
- * Two things decide it, and both are here rather than in any flow. A subject that
- * already proved a factor age owes nothing, which is what keeps a passkey sign-in from
- * asking for a code on top of a ceremony that was already two factors. And a user with
- * nothing enrolled owes nothing, because there is no such thing as a challenge nobody
- * can answer: issuing one would be a sign-in that cannot be completed rather than a
- * sign-in that is refused.
+ * Three things decide it, and all of them are here rather than in any flow. A subject
+ * that already proved a factor age owes nothing, which is what keeps a passkey sign-in
+ * from asking for a code on top of a ceremony that was already two factors. A user with
+ * nothing enrolled owes nothing, because there is no such thing as a challenge nobody can
+ * answer: issuing one would be a sign-in that cannot be completed rather than one that is
+ * refused. And a user holding only factors that answer without demanding owes nothing
+ * either, which is the difference between a passkey and an authenticator.
  */
 @Injectable()
 export class MfaChallengeGate implements MfaGate {
@@ -62,10 +63,16 @@ export class MfaChallengeGate implements MfaGate {
     amr: readonly AuthMethod[],
   ): Promise<IssuedChallenge | null> {
     const available: MfaFactorType[] = [];
+    let demanded = false;
     for (const factor of this.factors.forPurpose(purpose)) {
-      if (await factor.enrolled(context, userId)) available.push(factor.type);
+      if (!(await factor.enrolled(context, userId))) continue;
+      available.push(factor.type);
+      demanded ||= factor.demandsChallenge;
     }
-    if (available.length === 0) return null;
+    // Something has to demand the challenge, not merely be able to answer one. A passkey
+    // is the case this exists for: enrolling one to sign in with must not quietly turn
+    // MFA on for the password the account also has.
+    if (!demanded || available.length === 0) return null;
 
     const tenant = tenantContextFrom(context);
     const expiresAt = this.clock.inSeconds(this.config.get("MFA_CHALLENGE_TTL_SECONDS"));

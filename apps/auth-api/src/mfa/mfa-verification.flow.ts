@@ -58,12 +58,12 @@ export class MfaVerificationFlow extends AuthFlow {
     const input = parseOrThrow(submitMfaSchema, credentials);
     const purpose = MfaChallengePurpose.SignIn;
 
-    const challenge = await this.challenges.load(context, input.challengeId, purpose);
+    const challenge = await this.challenges.load(context, input.challengeId, [purpose]);
     const proved = await this.challenges.prove(
       context,
       challenge,
       this.factors.byType(purpose, input.factor),
-      input.code,
+      input,
     );
     return this.establish(context, challenge, proved);
   }

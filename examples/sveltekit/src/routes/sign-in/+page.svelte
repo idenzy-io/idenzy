@@ -31,13 +31,29 @@
     await goto("/");
   }
 
+  /** The offered factor that takes a typed code. A passkey has its own button below. */
+  const codeFactor = $derived(challenge?.factors.includes("totp") ? "totp" : "recovery");
+
   async function submitSecondFactor(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     error = null;
     const pending = challenge;
     if (pending === null) return;
     try {
-      await pending.submit({ factor: pending.factors[0], code: factorCode });
+      await pending.submit({ factor: codeFactor, code: factorCode });
+      await goto("/");
+    } catch (failure) {
+      error = describeAuthError(failure);
+    }
+  }
+
+  /** Runs the WebAuthn ceremony for you. A cancelled prompt is the browser's own error. */
+  async function submitPasskey(): Promise<void> {
+    error = null;
+    const pending = challenge;
+    if (pending === null) return;
+    try {
+      await pending.submitPasskey();
       await goto("/");
     } catch (failure) {
       error = describeAuthError(failure);
@@ -90,16 +106,21 @@
   {#if error}<p role="alert">{error}</p>{/if}
 
   {#if challenge}
-    <form onsubmit={submitSecondFactor}>
+    <section>
       <h2>One more step</h2>
-      <label for="factorCode">
-        {challenge.factors[0] === "recovery"
-          ? "A recovery code"
-          : "The code from your authenticator app"}
-      </label>
-      <input id="factorCode" bind:value={factorCode} autocomplete="one-time-code" />
-      <button type="submit">Continue</button>
-    </form>
+      {#if challenge.factors.includes("passkey")}
+        <button type="button" onclick={submitPasskey}>Use your passkey</button>
+      {/if}
+      <form onsubmit={submitSecondFactor}>
+        <label for="factorCode">
+          {codeFactor === "recovery"
+            ? "A recovery code"
+            : "The code from your authenticator app"}
+        </label>
+        <input id="factorCode" bind:value={factorCode} autocomplete="one-time-code" />
+        <button type="submit">Continue</button>
+      </form>
+    </section>
   {/if}
 
   {#if codeSent}

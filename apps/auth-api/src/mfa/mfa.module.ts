@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { MFA_GATE } from "../flows/flow-tokens.js";
+import { PasskeyModule } from "../passkey/passkey.module.js";
 import { SessionModule } from "../session/session.module.js";
 import { MfaFactorRegistry } from "./factor-registry.js";
 import { MfaController } from "./mfa.controller.js";
@@ -7,6 +8,7 @@ import { MfaChallengeGate } from "./mfa-challenge-gate.js";
 import { MfaChallengeVerifier } from "./mfa-challenge-verifier.js";
 import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
 import { MfaVerificationFlow } from "./mfa-verification.flow.js";
+import { PasskeyFactor } from "./passkey.factor.js";
 import { RecoveryCodeFactor } from "./recovery-code.factor.js";
 import { StepUpService } from "./step-up-service.js";
 import { TotpFactor } from "./totp.factor.js";
@@ -25,9 +27,10 @@ import { TotpFactor } from "./totp.factor.js";
  */
 @Global()
 @Module({
-  imports: [SessionModule],
+  imports: [SessionModule, PasskeyModule],
   controllers: [MfaController],
   providers: [
+    PasskeyFactor,
     TotpFactor,
     RecoveryCodeFactor,
     MfaFactorRegistry,

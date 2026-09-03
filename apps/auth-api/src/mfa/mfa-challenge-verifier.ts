@@ -16,6 +16,7 @@ import {
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import type { AuthMethod, MfaChallengePurpose } from "@idenzy/protocol/enums/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
+import type { MfaProof } from "@idenzy/protocol/schemas/mfa";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -41,12 +42,13 @@ export class MfaChallengeVerifier {
    * Unknown, spent and minted-for-something-else are one answer, so a challenge id
    * cannot be probed to learn whether it was ever real. The purpose check is what stops
    * a step-up challenge, which is minted inside a session the caller already holds, from
-   * being spent to create a new one.
+   * being spent to create a new one. It takes a list because one caller legitimately
+   * accepts both: the passkey options route only reads which user the challenge names.
    */
   async load(
     context: FlowContext,
     publicId: string,
-    purpose: MfaChallengePurpose,
+    purposes: readonly MfaChallengePurpose[],
   ): Promise<MfaChallengeRow> {
     const tenant = tenantContextFrom(context);
     const id = PublicId.parse(IdPrefix.Challenge, publicId).uuid;
@@ -55,7 +57,9 @@ export class MfaChallengeVerifier {
     );
 
     if (challenge === null || challenge.consumedAt !== null) throw new ChallengeInvalidError();
-    if (challenge.purpose !== purpose) throw new ChallengeInvalidError();
+    if (!purposes.some((purpose) => purpose === challenge.purpose)) {
+      throw new ChallengeInvalidError();
+    }
     if (challenge.expiresAt <= this.clock.now()) throw new ChallengeExpiredError();
     if (challenge.attempts >= MAX_MFA_ATTEMPTS) throw new ChallengeAttemptsExhaustedError();
     return challenge;
@@ -76,11 +80,11 @@ export class MfaChallengeVerifier {
     context: FlowContext,
     challenge: MfaChallengeRow,
     factor: MfaFactor | null,
-    code: string,
+    proof: MfaProof,
   ): Promise<AuthMethod> {
     if (factor === null) return this.countFailure(context, challenge.id);
     try {
-      return await factor.prove(context, challenge.userId, code);
+      return await factor.prove(context, challenge.userId, proof);
     } catch (error: unknown) {
       if (error instanceof MfaFactorInvalidError) await this.countFailure(context, challenge.id);
       throw error;

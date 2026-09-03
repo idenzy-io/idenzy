@@ -6,6 +6,7 @@ import { MfaFactor } from "@idenzy/domain/ports/mfa-factor";
 import { MfaFactorRepository } from "@idenzy/persistence/repository/mfa-factor-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod, MfaFactorType } from "@idenzy/protocol/enums/auth";
+import type { MfaProof } from "@idenzy/protocol/schemas/mfa";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -25,6 +26,8 @@ import { tenantContextFrom } from "../tenancy/flow-context.js";
 export class TotpFactor extends MfaFactor {
   override readonly type = MfaFactorType.Totp;
   override readonly method = AuthMethod.Totp;
+  /** An authenticator is enrolled to be a second factor. Holding one is what turns MFA on. */
+  override readonly demandsChallenge = true;
 
   private readonly totp: Totp;
 
@@ -45,7 +48,12 @@ export class TotpFactor extends MfaFactor {
     return factors.some((factor) => factor.type === this.type);
   }
 
-  protected override check(context: FlowContext, userId: string, proof: string): Promise<boolean> {
+  protected override check(
+    context: FlowContext,
+    userId: string,
+    proof: MfaProof,
+  ): Promise<boolean> {
+    if (proof.factor !== this.type) return Promise.resolve(false);
     const tenant = tenantContextFrom(context);
     return this.uow.run(tenant, async (tx) => {
       const factors = new MfaFactorRepository(tx, tenant);
@@ -55,7 +63,7 @@ export class TotpFactor extends MfaFactor {
       if (enrolled === undefined || enrolled.secretEncrypted === null) return false;
 
       const secret = this.encryptor.decrypt(enrolled.secretEncrypted, context.projectId);
-      const step = this.totp.verify(secret, proof.trim(), enrolled.counter);
+      const step = this.totp.verify(secret, proof.code.trim(), enrolled.counter);
       if (step === null) return false;
 
       await factors.recordUse(enrolled.id, this.clock.now(), step);

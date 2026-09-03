@@ -5,6 +5,7 @@ import { MfaFactor } from "@idenzy/domain/ports/mfa-factor";
 import { MfaRecoveryCodeRepository } from "@idenzy/persistence/repository/mfa-recovery-code-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod, MfaFactorType } from "@idenzy/protocol/enums/auth";
+import type { MfaProof } from "@idenzy/protocol/schemas/mfa";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -24,6 +25,11 @@ import { tenantContextFrom } from "../tenancy/flow-context.js";
 export class RecoveryCodeFactor extends MfaFactor {
   override readonly type = MfaFactorType.RecoveryCode;
   override readonly method = AuthMethod.RecoveryCode;
+  /**
+   * A sheet on its own is not a reason to be challenged: it is what a second factor falls
+   * back to, and it only exists because one was enrolled.
+   */
+  override readonly demandsChallenge = false;
 
   constructor(
     private readonly uow: UnitOfWork,
@@ -40,12 +46,17 @@ export class RecoveryCodeFactor extends MfaFactor {
     return remaining > 0;
   }
 
-  protected override check(context: FlowContext, userId: string, proof: string): Promise<boolean> {
+  protected override check(
+    context: FlowContext,
+    userId: string,
+    proof: MfaProof,
+  ): Promise<boolean> {
+    if (proof.factor !== this.type) return Promise.resolve(false);
     const tenant = tenantContextFrom(context);
     return this.uow.run(tenant, (tx) =>
       new MfaRecoveryCodeRepository(tx, tenant).consume(
         userId,
-        hashRecoveryCode(proof),
+        hashRecoveryCode(proof.code),
         this.clock.now(),
       ),
     );

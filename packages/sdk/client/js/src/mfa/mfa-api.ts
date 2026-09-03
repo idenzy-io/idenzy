@@ -15,6 +15,7 @@ import {
 import type { ApiClient } from "../http/api-client.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { MfaChallenge, type MfaSubmission } from "./auth-result.js";
+import { proveWithPasskey } from "./passkey-ceremony.js";
 
 /**
  * Enrolling second factors, and proving one again inside a session (PROJECT.md 4.5).
@@ -114,11 +115,7 @@ export class MfaApi {
         const completed = await this.api.send(stepUpCompletedSchema, {
           method: "POST",
           path: "v1/auth/mfa/step-up/verify",
-          body: {
-            challengeId: response.challengeId,
-            factor: submission.factor,
-            code: submission.code,
-          },
+          body: { challengeId: response.challengeId, ...submission },
           accessToken: await this.sessions.requireToken(),
         });
         return this.sessions.replaceToken(
@@ -126,6 +123,7 @@ export class MfaApi {
           new Date(completed.accessTokenExpiresAt),
         );
       },
+      (challengeId) => proveWithPasskey(this.api, challengeId),
     );
   }
 }

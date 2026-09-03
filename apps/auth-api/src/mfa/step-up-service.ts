@@ -96,7 +96,7 @@ export class StepUpService {
     input: SubmitMfa,
   ): Promise<StepUpCompleted> {
     const purpose = MfaChallengePurpose.StepUp;
-    const challenge = await this.challenges.load(context, input.challengeId, purpose);
+    const challenge = await this.challenges.load(context, input.challengeId, [purpose]);
     if (challenge.userId !== principal.userId || challenge.sessionId !== principal.sessionId) {
       throw new ChallengeInvalidError();
     }
@@ -105,7 +105,7 @@ export class StepUpService {
       context,
       challenge,
       this.factors.byType(purpose, input.factor),
-      input.code,
+      input,
     );
     await this.challenges.consume(context, challenge.id);
 

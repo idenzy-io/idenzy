@@ -112,12 +112,30 @@ function finish(result: AuthResult): void {
   if (result.status === "mfa_required") challenge.value = result.challenge;
 }
 
+/** The offered factor that takes a typed code. A passkey has its own button below. */
+const codeFactor = computed(() =>
+  challenge.value?.factors.includes("totp") ? ("totp" as const) : ("recovery" as const),
+);
+
 async function submitSecondFactor(): Promise<void> {
   error.value = null;
   const pending = challenge.value;
   if (pending === null) return;
   try {
-    await pending.submit({ factor: pending.factors[0], code: factorCode.value });
+    await pending.submit({ factor: codeFactor.value, code: factorCode.value });
+    challenge.value = null;
+  } catch (failure) {
+    error.value = describeAuthError(failure);
+  }
+}
+
+/** Runs the WebAuthn ceremony for you. A cancelled prompt is the browser's own error. */
+async function submitPasskey(): Promise<void> {
+  error.value = null;
+  const pending = challenge.value;
+  if (pending === null) return;
+  try {
+    await pending.submitPasskey();
     challenge.value = null;
   } catch (failure) {
     error.value = describeAuthError(failure);
@@ -171,16 +189,21 @@ async function continueWithGoogle(): Promise<void> {
     <h1>Sign in</h1>
     <p v-if="error" role="alert">{{ error }}</p>
 
-    <form v-if="challenge" @submit.prevent="submitSecondFactor">
+    <section v-if="challenge">
       <h2>One more step</h2>
-      <label for="factorCode">
-        {{ challenge.factors[0] === "recovery"
-          ? "A recovery code"
-          : "The code from your authenticator app" }}
-      </label>
-      <input id="factorCode" v-model="factorCode" autocomplete="one-time-code" />
-      <button type="submit">Continue</button>
-    </form>
+      <button v-if="challenge.factors.includes('passkey')" type="button" @click="submitPasskey">
+        Use your passkey
+      </button>
+      <form @submit.prevent="submitSecondFactor">
+        <label for="factorCode">
+          {{ codeFactor === "recovery"
+            ? "A recovery code"
+            : "The code from your authenticator app" }}
+        </label>
+        <input id="factorCode" v-model="factorCode" autocomplete="one-time-code" />
+        <button type="submit">Continue</button>
+      </form>
+    </section>
 
     <form v-if="codeSent" @submit.prevent="verifyCode">
       <label for="code">The code we emailed you</label>

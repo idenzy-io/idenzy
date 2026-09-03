@@ -1,5 +1,6 @@
-import { InvalidCredentialsError } from "@idenzy/core/errors/errors";
-import { Controller, Get } from "@nestjs/common";
+import { InvalidCredentialsError, MissingCredentialsError } from "@idenzy/core/errors/errors";
+import { Controller, Get, Req } from "@nestjs/common";
+import type { FastifyRequest } from "fastify";
 
 /** Not an Error at all, which is a real failure mode: libraries throw plain values. */
 class UnrecognizedFailure {
@@ -17,6 +18,20 @@ export class FailingController {
   @Get("boom")
   boom(): never {
     throw new InvalidCredentialsError({ detail: { userId: "usr_secret", note: "internal" } });
+  }
+
+  /**
+   * Echoes whichever tenant the guard resolved.
+   *
+   * Needed because "the request was refused" and "the request ran against the wrong project"
+   * are different failures, and only the second one is silent. A test that could see just the
+   * status code could not tell them apart.
+   */
+  @Get("tenant")
+  tenant(@Req() request: FastifyRequest): { projectId: string; actor: string } {
+    const tenant = request.tenant;
+    if (tenant === undefined) throw new MissingCredentialsError();
+    return { projectId: tenant.projectId, actor: tenant.actorType };
   }
 
   @Get("unhandled")

@@ -1,5 +1,6 @@
-import { UnknownProjectError } from "@idenzy/core/errors/errors";
+import { SecretKeyNotPermittedError, UnknownProjectError } from "@idenzy/core/errors/errors";
 import { hashToken } from "@idenzy/crypto/tokens/random";
+import { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
 import { Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -9,6 +10,9 @@ export interface ResolvedProject {
   readonly cellId: string;
   readonly complianceTier: string;
   readonly plan: string;
+  /** Null when the project was resolved by Host, which presents no key. */
+  readonly keyKind: string | null;
+  readonly scopes: readonly string[];
 }
 
 /**
@@ -41,6 +45,24 @@ export class ProjectResolver {
     return this.first(rows.rows, { keyPrefix: key.slice(0, 8) });
   }
 
+  /**
+   * Resolves a key that arrived on the browser-facing header.
+   *
+   * The stored kind is checked as well as the presented prefix, and the two are deliberately
+   * independent: the prefix is what the caller typed, the kind is what we provisioned. A row
+   * whose kind is `secret` but whose value was issued with a `pk_` prefix is a provisioning
+   * mistake, and it must not become a secret key that works from a browser.
+   */
+  async byPublishableKey(key: string): Promise<ResolvedProject> {
+    const resolved = await this.byApiKey(key);
+    if (resolved.keyKind !== ApiKeyKind.Publishable) {
+      throw new SecretKeyNotPermittedError({
+        detail: { keyPrefix: key.slice(0, 8), keyKind: resolved.keyKind },
+      });
+    }
+    return resolved;
+  }
+
   private first(
     rows: readonly ResolvedProjectRow[],
     detail: Readonly<Record<string, unknown>>,
@@ -52,6 +74,8 @@ export class ProjectResolver {
       cellId: row.cell_id,
       complianceTier: row.compliance_tier,
       plan: row.plan,
+      keyKind: row.key_kind ?? null,
+      scopes: row.scopes ?? [],
     };
   }
 }
@@ -62,4 +86,7 @@ interface ResolvedProjectRow extends Record<string, unknown> {
   readonly cell_id: string;
   readonly compliance_tier: string;
   readonly plan: string;
+  /** Absent from resolve_project_by_host, which has no key to describe. */
+  readonly key_kind?: string;
+  readonly scopes?: string[];
 }

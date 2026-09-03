@@ -213,6 +213,34 @@ export class LinkingRequiresVerificationError extends ForbiddenError {
   }
 }
 
+/**
+ * The callback carried a `state` we did not issue, or one already spent.
+ *
+ * Both are the same answer on purpose. A forged callback and a replayed one are the same
+ * attack from our side, and telling them apart would confirm that a state was once real
+ * (PROJECT.md 4.6).
+ */
+export class OauthStateInvalidError extends BadRequestError {
+  override readonly code = ErrorCode.OauthStateInvalid;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This sign-in attempt is no longer valid.", options);
+  }
+}
+
+/**
+ * The provider refused, or answered with something we cannot use.
+ *
+ * Its own error code stays in `detail` and never reaches the response: a prober who can
+ * read `invalid_client` back from us has been told something about our configuration
+ * that they could not otherwise find out.
+ */
+export class OauthProviderError extends UpstreamError {
+  override readonly code = ErrorCode.OauthProviderError;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "The identity provider could not complete this sign-in.", options);
+  }
+}
+
 /** Exact-match allowlist failure. Never echo the offending URI back (open-redirect bait). */
 export class RedirectUriNotAllowedError extends BadRequestError {
   override readonly code = ErrorCode.RedirectUriNotAllowed;

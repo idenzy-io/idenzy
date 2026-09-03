@@ -150,8 +150,13 @@ export class CorsPolicy {
       .header("access-control-expose-headers", "retry-after");
   }
 
-  /** Exact match, with one environment-gated exception for loopback development. */
-  private originAllowed(origin: string, allowed: readonly string[]): boolean {
+  /**
+   * Exact match, with one environment-gated exception for loopback development.
+   *
+   * Public because the cross-site checks ask the same question about the same list, and two
+   * copies of an allowlist rule is one copy too many.
+   */
+  originAllowed(origin: string, allowed: readonly string[]): boolean {
     if (allowed.includes(origin)) return true;
     return !this.config.isProduction && LOCALHOST.test(origin);
   }

@@ -13,6 +13,7 @@ import type { SessionCreated } from "@idenzy/protocol/schemas/session";
 import { Body, Controller, Get, HttpCode, Post, Query, Redirect, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { MagicLinkFlow } from "./magic-link.flow.js";
 import { MagicLinkService } from "./magic-link-service.js";
@@ -47,6 +48,7 @@ export class MagicLinkController {
    * that rendered a page would be the thing PROJECT.md 4.3 has a test against.
    */
   @Get("callback")
+  @BrowserNavigation()
   @Redirect(undefined, 302)
   async callback(
     @Req() request: FastifyRequest,

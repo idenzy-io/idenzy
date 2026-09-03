@@ -15,6 +15,7 @@ import type { SessionCreated } from "@idenzy/protocol/schemas/session";
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Redirect, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { OAuthCodeFlow } from "./oauth-code.flow.js";
@@ -49,6 +50,7 @@ export class OAuthController {
    * with a redirect. Nothing here needs a session: this is the sign-in path.
    */
   @Get(":provider/start")
+  @BrowserNavigation()
   @Redirect(undefined, 302)
   async start(
     @Req() request: FastifyRequest,
@@ -91,6 +93,7 @@ export class OAuthController {
   }
 
   @Get(":provider/callback")
+  @BrowserNavigation()
   @Redirect(undefined, 302)
   callback(
     @Req() request: FastifyRequest,
@@ -102,6 +105,7 @@ export class OAuthController {
 
   /** Apple, and anything else using `response_mode=form_post`. */
   @Post(":provider/callback")
+  @BrowserNavigation()
   @Redirect(undefined, 302)
   callbackPosted(
     @Req() request: FastifyRequest,

@@ -1,9 +1,21 @@
 import { AppConfig } from "@idenzy/config/app-config";
-import { InternalError, SessionTransportUnavailableError } from "@idenzy/core/errors";
+import {
+  CsrfCheckFailedError,
+  InternalError,
+  OriginNotAllowedError,
+  SessionTransportUnavailableError,
+} from "@idenzy/core/errors";
+import { hashToken, safeCompareHex } from "@idenzy/crypto/tokens/random";
 import { IdenzyCookie, IdenzyHeader, SessionTransport } from "@idenzy/protocol/http/headers";
 import { type CanActivate, type ExecutionContext, Injectable } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
+import { BROWSER_NAVIGATION } from "../http/browser-navigation.decorator.js";
+import { CorsPolicy } from "../http/cors-policy.js";
 import { SessionCookies } from "./session-cookies.js";
+
+/** Methods that change something. GET and HEAD carry no ambient risk worth this cost. */
+const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -37,6 +49,8 @@ export class SessionTransportGuard implements CanActivate {
   constructor(
     private readonly config: AppConfig,
     private readonly cookies: SessionCookies,
+    private readonly cors: CorsPolicy,
+    private readonly reflector: Reflector,
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -55,9 +69,91 @@ export class SessionTransportGuard implements CanActivate {
       });
     }
     this.assertEligible(request);
+    // Checked before the credential is stashed, not after: nothing downstream should be able
+    // to reach a token on a request that was going to be refused anyway.
     const presented = this.cookies.read(request, IdenzyCookie.Refresh);
+    this.assertNotCrossSite(context, request, presented);
     if (presented !== undefined) request.refreshCookie = presented;
     return true;
+  }
+
+  /**
+   * The cross-site checks, and they run before anything is consumed.
+   *
+   * That ordering is the point. A forged request that burned the victim's refresh token
+   * would trip reuse detection, which means an attacker could sign someone out of every
+   * device by making their browser send one request. Refusing first costs the attacker
+   * nothing and the victim nothing.
+   *
+   * Header mode is skipped rather than passed. Nothing is ambient there, and a mobile client
+   * sends no `Origin` at all, so applying these would break the transport that does not need
+   * them.
+   *
+   * Coverage is wider than refresh and sign-out. Every route that *writes* the cookie is a
+   * login-CSRF target: an attacker who makes a victim's browser complete a sign-in as the
+   * attacker plants their own session, and everything the victim does afterwards happens in
+   * the attacker's account. Those routes have no CSRF cookie yet, so `Origin` carries them,
+   * which is sufficient because script cannot forge it.
+   */
+  private assertNotCrossSite(
+    context: ExecutionContext,
+    request: FastifyRequest,
+    presented: string | undefined,
+  ): void {
+    if (!UNSAFE.has(request.method)) return;
+    // A top-level navigation or a provider's form post. Apple posts its callback with
+    // `Origin: https://appleid.apple.com`, so an Origin check here would break Sign in with
+    // Apple. These are defended by a one-shot state and a single-use code instead.
+    if (this.isBrowserNavigation(context)) return;
+
+    const origin = request.headers.origin;
+    const allowed = request.project?.allowedOrigins ?? [];
+    if (typeof origin !== "string" || !this.cors.originAllowed(origin, allowed)) {
+      throw new OriginNotAllowedError({ detail: { origin: origin ?? null } });
+    }
+
+    // Fail closed when present, silent when absent: Fetch Metadata is a second signal and
+    // never the only one, so an older browser that omits it is not refused.
+    const site = request.headers["sec-fetch-site"];
+    if (typeof site === "string" && (site === "cross-site" || site === "none")) {
+      throw new CsrfCheckFailedError({ detail: { secFetchSite: site } });
+    }
+
+    // Only once a session is actually being presented. The sign-in routes have no CSRF
+    // cookie to echo yet, and demanding one there would make sign-in impossible.
+    if (presented === undefined) return;
+    this.assertDoubleSubmit(request);
+  }
+
+  /**
+   * Double-submit, made sound by the `__Host-` prefix.
+   *
+   * Plain double-submit is defeated by cookie tossing, where a sibling subdomain writes a
+   * cookie the target host will read. `__Host-` forbids `Domain` and pins the cookie to the
+   * exact host that set it, so there is no sibling that can write this one. That is why the
+   * prefix is load-bearing rather than decorative.
+   *
+   * Compared as digests so the comparison is constant time over a fixed length, whatever the
+   * two values turn out to be.
+   */
+  private assertDoubleSubmit(request: FastifyRequest): void {
+    const cookie = this.cookies.read(request, IdenzyCookie.Csrf);
+    const header = request.headers[IdenzyHeader.Csrf];
+    if (cookie === undefined || typeof header !== "string" || header.length === 0) {
+      throw new CsrfCheckFailedError({ detail: { reason: "missing" } });
+    }
+    if (!safeCompareHex(hashToken(cookie), hashToken(header))) {
+      throw new CsrfCheckFailedError({ detail: { reason: "mismatch" } });
+    }
+  }
+
+  private isBrowserNavigation(context: ExecutionContext): boolean {
+    return (
+      this.reflector.getAllAndOverride<boolean>(BROWSER_NAVIGATION, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
 
   private declared(request: FastifyRequest): SessionTransport {

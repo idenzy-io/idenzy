@@ -1,11 +1,15 @@
 import "reflect-metadata";
 import { InternalError, RefreshTokenReusedError, ValidationFailedError } from "@idenzy/core/errors";
 import { IdenzyCookie, IdenzyHeader, SessionTransport } from "@idenzy/protocol/http/headers";
+import { Reflector } from "@nestjs/core";
 import { firstValueFrom, type Observable, of, throwError } from "rxjs";
 import { describe, expect, it } from "vitest";
+import { BROWSER_NAVIGATION } from "../dist/http/browser-navigation.decorator.js";
+import { CorsPolicy } from "../dist/http/cors-policy.js";
 import { SessionCookieInterceptor } from "../dist/session/session-cookie.interceptor.js";
 import { SessionCookies } from "../dist/session/session-cookies.js";
 import { SessionTransportGuard } from "../dist/session/session-transport.guard.js";
+import { ProjectResolver } from "../dist/tenancy/project-resolver.js";
 import { testConfig } from "./fixtures.js";
 
 /**
@@ -13,6 +17,10 @@ import { testConfig } from "./fixtures.js";
  * classes are shaped for: none of them touches a database, and the properties worth asserting
  * are about headers and about what never appears in a body.
  */
+const ALLOWED_ORIGIN = "https://app.acme.test";
+const EVIL_ORIGIN = "https://evil.test";
+const CSRF = "csrf-token-value";
+
 class FakeReply {
   readonly cookies: string[] = [];
 
@@ -23,6 +31,10 @@ class FakeReply {
 }
 
 interface FakeRequestInit {
+  readonly method?: string;
+  readonly origin?: string;
+  readonly secFetchSite?: string;
+  readonly csrfHeader?: string;
   /** The declared header, which is what the guard reads. */
   readonly transport?: string;
   /** The decision the guard already made, which is what the interceptor reads. */
@@ -38,30 +50,54 @@ function request(init: FakeRequestInit = {}): Record<string, unknown> {
   const headers: Record<string, string> = {};
   if (init.transport !== undefined) headers[IdenzyHeader.SessionTransport] = init.transport;
   if (init.cookie !== undefined) headers["cookie"] = init.cookie;
+  if (init.origin !== undefined) headers["origin"] = init.origin;
+  if (init.secFetchSite !== undefined) headers["sec-fetch-site"] = init.secFetchSite;
+  if (init.csrfHeader !== undefined) headers[IdenzyHeader.Csrf] = init.csrfHeader;
   const resolved = init.resolved ?? true;
   return {
     headers,
+    method: init.method ?? "GET",
     ...(init.carried === undefined ? {} : { transport: init.carried }),
     protocol: init.protocol ?? "https",
     publicRoute: init.publicRoute ?? false,
     tenant: resolved ? { projectId: "p" } : undefined,
-    project: resolved ? { hasAuthDomain: init.hasAuthDomain ?? true } : undefined,
+    project: resolved
+      ? { hasAuthDomain: init.hasAuthDomain ?? true, allowedOrigins: [ALLOWED_ORIGIN] }
+      : undefined,
   };
 }
 
-/** Nest's ExecutionContext, reduced to the two accessors these classes actually use. */
-function executionContext(req: unknown, reply?: unknown): never {
+/** Nest's ExecutionContext, reduced to the accessors these classes actually use. */
+function executionContext(req: unknown, reply?: unknown, handler: unknown = noop): never {
   return {
     switchToHttp: () => ({ getRequest: () => req, getResponse: () => reply }),
-    // The guards under test never reach these, and a test that did should fail loudly.
-    getHandler: () => undefined,
-    getClass: () => undefined,
+    getHandler: () => handler,
+    getClass: () => NotDecorated,
   } as never;
 }
 
+function noop(): void {}
+class NotDecorated {}
+
+/** A handler carrying the @BrowserNavigation marker, without needing a compiled controller. */
+function navigationHandler(): unknown {
+  const handler = (): void => {};
+  Reflect.defineMetadata(BROWSER_NAVIGATION, true, handler);
+  return handler;
+}
+
 describe("choosing how a session is carried", () => {
+  /**
+   * The real CorsPolicy and a real Reflector rather than stand-ins: the cross-site checks ask
+   * it about the allowlist, and a fake would let the two disagree about what "allowed" means.
+   */
   const guard = (config = testConfig()) =>
-    new SessionTransportGuard(config, new SessionCookies(config));
+    new SessionTransportGuard(
+      config,
+      new SessionCookies(config),
+      new CorsPolicy(config, new ProjectResolver(null as never)),
+      new Reflector(),
+    );
 
   it("defaults to header mode, so nothing that worked before changes", () => {
     const req = request();
@@ -237,5 +273,114 @@ describe("the cookies themselves", () => {
         accessTokenTtlSeconds: 300,
       }),
     ).toThrow(InternalError);
+  });
+});
+
+describe("refusing a cross-site request before anything is consumed", () => {
+  const config = testConfig();
+  const guard = new SessionTransportGuard(
+    config,
+    new SessionCookies(config),
+    new CorsPolicy(config, new ProjectResolver(null as never)),
+    new Reflector(),
+  );
+
+  const session = {
+    carried: SessionTransport.Cookie,
+    transport: SessionTransport.Cookie,
+    cookie: `${IdenzyCookie.Refresh}=live-token; ${IdenzyCookie.Csrf}=${CSRF}`,
+  };
+
+  it("refuses an unregistered origin, and leaves the refresh token alone", () => {
+    const req = request({ ...session, method: "POST", origin: EVIL_ORIGIN, csrfHeader: CSRF });
+    expect(() => guard.canActivate(executionContext(req))).toThrow(
+      expect.objectContaining({ code: "origin_not_allowed" }),
+    );
+    // The assertion that matters. If this ran after consumption, an attacker could sign a
+    // victim out of every device by making their browser send one forged request.
+    expect(req["refreshCookie"]).toBeUndefined();
+  });
+
+  it("refuses an allowlisted origin that cannot echo the csrf cookie", () => {
+    const req = request({ ...session, method: "POST", origin: ALLOWED_ORIGIN });
+    expect(() => guard.canActivate(executionContext(req))).toThrow(
+      expect.objectContaining({ code: "csrf_check_failed" }),
+    );
+  });
+
+  it("refuses a mismatched csrf value", () => {
+    const req = request({
+      ...session,
+      method: "POST",
+      origin: ALLOWED_ORIGIN,
+      csrfHeader: "not-the-cookie",
+    });
+    expect(() => guard.canActivate(executionContext(req))).toThrow(
+      expect.objectContaining({ code: "csrf_check_failed" }),
+    );
+  });
+
+  it("still refuses a cross-site fetch that happens to carry a correct csrf header", () => {
+    // Proves the checks are ANDed rather than alternatives. An attacker who somehow read the
+    // token still does not get past Fetch Metadata.
+    const req = request({
+      ...session,
+      method: "POST",
+      origin: ALLOWED_ORIGIN,
+      csrfHeader: CSRF,
+      secFetchSite: "cross-site",
+    });
+    expect(() => guard.canActivate(executionContext(req))).toThrow(
+      expect.objectContaining({ code: "csrf_check_failed" }),
+    );
+  });
+
+  it("accepts the real thing", () => {
+    const req = request({
+      ...session,
+      method: "POST",
+      origin: ALLOWED_ORIGIN,
+      csrfHeader: CSRF,
+      secFetchSite: "same-site",
+    });
+    expect(guard.canActivate(executionContext(req))).toBe(true);
+    expect(req["refreshCookie"]).toBe("live-token");
+  });
+
+  it("refuses login CSRF, where there is no session cookie to echo yet", () => {
+    // An attacker who makes a victim's browser complete a sign-in as the attacker plants
+    // their own session, and everything the victim does next happens in that account.
+    // Origin carries this on its own, because script cannot forge it.
+    const req = request({
+      carried: SessionTransport.Cookie,
+      transport: SessionTransport.Cookie,
+      method: "POST",
+      origin: EVIL_ORIGIN,
+    });
+    expect(() => guard.canActivate(executionContext(req))).toThrow(
+      expect.objectContaining({ code: "origin_not_allowed" }),
+    );
+  });
+
+  it("exempts a route the browser reaches by navigating", () => {
+    // Apple form-posts its callback with Origin: https://appleid.apple.com. A blanket origin
+    // check would break Sign in with Apple; the one-shot state defends these instead.
+    const req = request({
+      carried: SessionTransport.Cookie,
+      transport: SessionTransport.Cookie,
+      method: "POST",
+      origin: "https://appleid.apple.com",
+    });
+    expect(guard.canActivate(executionContext(req, undefined, navigationHandler()))).toBe(true);
+  });
+
+  it("leaves header mode alone, so a mobile client with no Origin still works", () => {
+    const req = request({ method: "POST" });
+    expect(guard.canActivate(executionContext(req))).toBe(true);
+  });
+
+  it("does not demand an origin for a read", () => {
+    const req = request({ ...session, method: "GET" });
+    expect(guard.canActivate(executionContext(req))).toBe(true);
   });
 });

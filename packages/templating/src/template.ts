@@ -15,6 +15,18 @@ export interface EmailTemplate {
   readonly text: string;
 }
 
+/**
+ * An SMS template as authored (PROJECT.md 11.4).
+ *
+ * One field, because an SMS has one. No subject, no alternative part, and no place to
+ * put a link that a carrier will not rewrite: the copy is the message.
+ */
+export interface SmsTemplate {
+  readonly type: TemplateType;
+  readonly locale: string;
+  readonly body: string;
+}
+
 /** A leaf a template may substitute. Anything else is a structural error, not a value. */
 export type TemplateValue = string | number;
 

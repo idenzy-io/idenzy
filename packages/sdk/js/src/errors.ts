@@ -53,6 +53,22 @@ interface TransportErrorOptions {
   readonly cause?: unknown;
 }
 
+/**
+ * The client was constructed wrong, and it says so before a request is ever made.
+ *
+ * It carries `validation_failed` because that is what it is, and status 0 because nothing
+ * left the process. Failing at construction is the point: every mistake this catches is one
+ * that otherwise surfaces as a working request with a consequence nobody sees.
+ */
+export class IdenzyConfigurationError extends IdenzyError {
+  override readonly code = ErrorCode.ValidationFailed;
+  override readonly status = 0;
+
+  constructor(message: string, options: { readonly cause?: unknown } = {}) {
+    super(message, { ...(options.cause === undefined ? {} : { cause: options.cause }) });
+  }
+}
+
 type ErrorPayload = ReturnType<typeof errorBodySchema.parse>["error"];
 
 /**

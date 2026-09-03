@@ -184,8 +184,9 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
 **Status.** 1.1 is done, and 1.2 is done but for the long tail of providers. Social
-sign-in works end to end for Google, Apple, GitHub and Microsoft, and account linking is
-closed along with it.
+sign-in works end to end for Google, Apple, GitHub, Microsoft, Facebook, Discord, Twitch,
+LinkedIn and X, and account linking is closed along with it. Nine names in the provider
+enum have no adapter yet, and they are listed in 1.2 rather than quietly dropped.
 
 Passkeys (1.3) are done on both sides now. Both ceremonies verify, credentials carry
 their sign counter and both backup flags, and the sign-in is usernameless because
@@ -265,11 +266,19 @@ client have no server halves to talk to yet.
       matches, and the allowlist is re-checked at the callback and not only at start
 - [x] Instant dev mode restricted to localhost and `*.idenzy.dev`
 - [x] Provider token storage with envelope encryption, opt-in only via `storeTokens`
-- [ ] The provider tail from §4.6: Facebook, Discord, X, Twitch, LinkedIn and the rest.
-      Each is an endpoint pair and a profile mapping now that the base exists
-- [ ] Linking a provider to a signed-in account is `POST /link` returning JSON, because a
-      browser navigation cannot carry an access token. It becomes a plain redirect once
-      web cookie mode lands (1.6)
+- [~] The provider tail from §4.6. Facebook, Discord, Twitch, LinkedIn and X are in, each
+      an endpoint pair and a profile mapping, and each says in its docstring what it does
+      and does not assert about an address: Discord and LinkedIn state it, Facebook and
+      Twitch do not, and X releases no address at all. X is the one that changed the base,
+      which now has a `tokenHeaders` hook because its token endpoint takes HTTP Basic and
+      RFC 6749 forbids presenting credentials two ways at once. Still to write: GitLab,
+      Bitbucket, Slack, Spotify, Notion, Figma, Kakao, Line and Zoom. Notion is the one
+      that needs more than an endpoint pair, because its profile arrives inside the token
+      response rather than from a call of its own
+- [x] Linking a provider to a signed-in account is `POST /link` returning JSON, because a
+      browser navigation cannot carry an access token. The user id comes from the session
+      guard and is pinned to the flow, so the callback links to the caller rather than to
+      whoever the provider turns out to be
 
 ### 1.3 Passkeys
 

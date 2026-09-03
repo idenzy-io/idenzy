@@ -11,6 +11,7 @@ import {
   hashToken,
   safeCompareHex,
 } from "../src/tokens/random.js";
+import { IssuerTokenVerifier } from "../src/tokens/token-verifier.js";
 
 describe("token issuance", () => {
   it("issues a verifiable ES256 token with the required claims", async () => {
@@ -39,6 +40,101 @@ describe("token issuance", () => {
     const seconds = (issued.expiresAt.getTime() - Date.now()) / 1000;
     expect(seconds).toBeGreaterThan(50);
     expect(seconds).toBeLessThanOrEqual(61);
+  });
+});
+
+describe("token verification", () => {
+  const ISSUER = "https://auth.test";
+
+  async function issuerAndVerifier(ttlSeconds = 300) {
+    const issuer = await LocalEs256Issuer.create(new SystemClock(), ISSUER, ttlSeconds);
+    return { issuer, verifier: new IssuerTokenVerifier(issuer, ISSUER) };
+  }
+
+  it("reads back the claims it was given", async () => {
+    const { issuer, verifier } = await issuerAndVerifier();
+    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: ["pwd"] });
+
+    const verified = await verifier.verify(issued.token);
+    expect(verified.subject).toBe("usr_1");
+    expect(verified.sessionId).toBe("ses_1");
+    expect(verified.audience).toBe("prj_1");
+    expect(verified.amr).toEqual(["pwd"]);
+  });
+
+  it("rejects a token signed by a different issuer's key", async () => {
+    const { verifier } = await issuerAndVerifier();
+    const impostor = await LocalEs256Issuer.create(new SystemClock(), ISSUER, 300);
+    const forged = await impostor.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: [] });
+
+    await expect(verifier.verify(forged.token)).rejects.toMatchObject({
+      code: "access_token_invalid",
+    });
+  });
+
+  it("rejects a token whose payload was edited", async () => {
+    const { issuer, verifier } = await issuerAndVerifier();
+    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: [] });
+    const [header, payload, signature] = issued.token.split(".");
+    const decoded = JSON.parse(Buffer.from(payload ?? "", "base64url").toString()) as {
+      sub: string;
+    };
+    decoded.sub = "usr_someone_else";
+    const tampered = [
+      header,
+      Buffer.from(JSON.stringify(decoded)).toString("base64url"),
+      signature,
+    ].join(".");
+
+    await expect(verifier.verify(tampered)).rejects.toMatchObject({
+      code: "access_token_invalid",
+    });
+  });
+
+  it("rejects a token minted for another issuer url", async () => {
+    const issuer = await LocalEs256Issuer.create(new SystemClock(), "https://elsewhere.test", 300);
+    const verifier = new IssuerTokenVerifier(issuer, ISSUER);
+    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: [] });
+
+    await expect(verifier.verify(issued.token)).rejects.toMatchObject({
+      code: "access_token_invalid",
+    });
+  });
+
+  // Expiry is its own error, because the client's response differs: refresh, rather
+  // than start again.
+  it("reports expiry separately from invalidity", async () => {
+    const clock = new SystemClock();
+    const issuer = await LocalEs256Issuer.create(clock, ISSUER, 60);
+    const verifier = new IssuerTokenVerifier(issuer, ISSUER);
+    const stale = await issuer.issue({
+      sub: "usr_1",
+      sid: "ses_1",
+      aud: "prj_1",
+      amr: [],
+      custom: {
+        exp: Math.floor(Date.now() / 1000) - 120,
+        iat: Math.floor(Date.now() / 1000) - 180,
+      },
+    });
+
+    await expect(verifier.verify(stale.token)).rejects.toMatchObject({
+      code: "session_expired",
+    });
+  });
+
+  it("refuses a well-signed token that is missing our claims", async () => {
+    const { issuer, verifier } = await issuerAndVerifier();
+    const issued = await issuer.issue({
+      sub: "usr_1",
+      sid: "ses_1",
+      aud: "prj_1",
+      amr: [],
+      custom: { sid: undefined },
+    });
+    await expect(verifier.verify(issued.token)).rejects.toMatchObject({
+      code: "access_token_invalid",
+    });
   });
 });
 

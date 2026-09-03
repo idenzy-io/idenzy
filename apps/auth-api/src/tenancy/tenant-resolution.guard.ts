@@ -1,5 +1,6 @@
 import { MissingCredentialsError } from "@idenzy/core/errors/errors";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
+import { isApiKey } from "@idenzy/protocol/schemas/common";
 import { type CanActivate, type ExecutionContext, Injectable, SetMetadata } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
@@ -39,7 +40,10 @@ export class TenantResolutionGuard implements CanActivate {
     if (isPublic === true) return true;
 
     const request = context.switchToHttp().getRequest<FastifyRequest>();
-    const apiKey = this.bearerToken(request);
+    // The Authorization header carries either an API key or an end user's access token.
+    // Only a key resolves the project; a user token is resolved by Host and authenticated
+    // later by SessionGuard, which is why this checks the prefix rather than trying both.
+    const apiKey = this.apiKey(request);
     const host = request.headers.host;
 
     const resolved =
@@ -61,10 +65,10 @@ export class TenantResolutionGuard implements CanActivate {
     return true;
   }
 
-  private bearerToken(request: FastifyRequest): string | null {
+  private apiKey(request: FastifyRequest): string | null {
     const header = request.headers.authorization;
     if (header === undefined || !header.startsWith("Bearer ")) return null;
     const token = header.slice("Bearer ".length).trim();
-    return token.length === 0 ? null : token;
+    return isApiKey(token) ? token : null;
   }
 }

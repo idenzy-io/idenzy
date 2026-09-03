@@ -31,6 +31,7 @@ export const ErrorCode = {
   LinkingRequiresVerification: "linking_requires_verification",
 
   // Sessions and tokens
+  AccessTokenInvalid: "access_token_invalid",
   SessionExpired: "session_expired",
   SessionRevoked: "session_revoked",
   RefreshTokenInvalid: "refresh_token_invalid",

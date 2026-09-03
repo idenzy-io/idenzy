@@ -4,6 +4,7 @@ import { Clock } from "@idenzy/core/time/clock";
 import { Argon2idHasher, PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
+import { IssuerTokenVerifier, TokenVerifier } from "@idenzy/crypto/tokens/token-verifier";
 import { Global, Module } from "@nestjs/common";
 
 /**
@@ -44,7 +45,13 @@ import { Global, Module } from "@nestjs/common";
     // check a hash made without it. That is what passwordAlgoVersion is for: peppered
     // hashes get a new version, and the verifier picks the hasher by the stored version.
     { provide: PasswordHasher, useFactory: () => new Argon2idHasher() },
+    {
+      provide: TokenVerifier,
+      inject: [TokenIssuer, AppConfig],
+      useFactory: (issuer: TokenIssuer, config: AppConfig) =>
+        new IssuerTokenVerifier(issuer, config.get("ISSUER_BASE_URL")),
+    },
   ],
-  exports: [TokenIssuer, PasswordHasher],
+  exports: [TokenIssuer, TokenVerifier, PasswordHasher],
 })
 export class CryptoModule {}

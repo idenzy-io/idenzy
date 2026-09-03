@@ -104,6 +104,19 @@ export class PasswordBreachedError extends BadRequestError {
   }
 }
 
+/**
+ * The bearer token is malformed, unsigned by us, or for another issuer or audience.
+ *
+ * Separate from SessionExpired because the client's response differs: an expired token
+ * is refreshed, an invalid one means start again. Never says which check failed.
+ */
+export class AccessTokenInvalidError extends UnauthorizedError {
+  override readonly code = ErrorCode.AccessTokenInvalid;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "The access token is not valid.", options);
+  }
+}
+
 export class SessionExpiredError extends UnauthorizedError {
   override readonly code = ErrorCode.SessionExpired;
   constructor(options: ErrorOptions = {}) {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AppConfig } from "@idenzy/config/app-config";
-import { InternalError } from "@idenzy/core/errors/errors";
+import { InternalError, ResourceNotFoundError } from "@idenzy/core/errors/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
@@ -19,8 +19,10 @@ import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
+import type { SessionList } from "@idenzy/protocol/schemas/session";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
+import type { SessionPrincipal } from "./session.guard.js";
 
 export type SignOutScope = "current" | "all";
 
@@ -131,6 +133,67 @@ export class SessionService implements SessionIssuer {
         userId: session.userId,
         sessionIds: [...ended],
         scope,
+        at: now.toISOString(),
+      });
+    });
+  }
+
+  /**
+   * "Your devices", including sessions that have already ended.
+   *
+   * The history is deliberate: a user investigating a compromise needs to see the
+   * session that was revoked and why, not a list that quietly forgets it.
+   */
+  async listSessions(context: FlowContext, principal: SessionPrincipal): Promise<SessionList> {
+    const tenant = tenantContextFrom(context);
+    const rows = await this.uow.run(tenant, (tx) =>
+      new SessionRepository(tx, tenant).listForUser(principal.userId),
+    );
+    return {
+      sessions: rows.map((row) => ({
+        id: PublicId.encode(IdPrefix.Session, row.id).value,
+        // Naming a device means parsing a user agent, which rots. Until there is
+        // something better than guesswork, the raw string is what we can honestly show.
+        deviceName: null,
+        ip: row.ip,
+        userAgent: row.userAgent,
+        amr: [...row.amr],
+        createdAt: row.createdAt.toISOString(),
+        lastActiveAt: row.lastActiveAt.toISOString(),
+        absoluteExpiresAt: row.absoluteExpiresAt.toISOString(),
+        revokedAt: row.revokedAt?.toISOString() ?? null,
+        revokeReason: row.revokeReason,
+        current: row.id === principal.sessionId,
+      })),
+    };
+  }
+
+  /**
+   * Ends one of the caller's own sessions.
+   *
+   * Scoped to the principal's user id rather than trusting the path parameter, so a
+   * valid session cannot be used to revoke a stranger's. A session belonging to someone
+   * else answers 404, because 403 would confirm that it exists.
+   */
+  async revokeSession(
+    context: FlowContext,
+    principal: SessionPrincipal,
+    sessionId: string,
+  ): Promise<void> {
+    const tenant = tenantContextFrom(context);
+    await this.uow.run(tenant, async (tx) => {
+      const sessions = new SessionRepository(tx, tenant);
+      const target = await sessions.findById(sessionId);
+      if (target === null || target.userId !== principal.userId) {
+        throw new ResourceNotFoundError({ detail: { entity: "session" } });
+      }
+      const now = this.clock.now();
+      await sessions.revoke(sessionId, SessionRevokeReason.SignedOut, now);
+      await new RefreshTokenRepository(tx, tenant).revokeForSessions([sessionId], now);
+      await new OutboxRepository(tx, tenant).enqueue("session.revoked", {
+        userId: principal.userId,
+        sessionIds: [sessionId],
+        scope: "current",
         at: now.toISOString(),
       });
     });

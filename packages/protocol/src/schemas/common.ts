@@ -12,6 +12,23 @@ export const IdPrefix = {
 } as const;
 export type IdPrefix = (typeof IdPrefix)[keyof typeof IdPrefix];
 
+/**
+ * API key prefixes, and the reason they are part of the contract.
+ *
+ * The Authorization header carries either an API key or an end user's access token, and
+ * the two are told apart by this prefix rather than by trying one and falling back. A
+ * guess-and-retry would make a malformed key look like a missing project.
+ */
+export const ApiKeyPrefix = {
+  Publishable: "pk_",
+  Secret: "sk_",
+} as const;
+export type ApiKeyPrefix = (typeof ApiKeyPrefix)[keyof typeof ApiKeyPrefix];
+
+export function isApiKey(token: string): boolean {
+  return Object.values(ApiKeyPrefix).some((prefix) => token.startsWith(prefix));
+}
+
 /** Opaque, prefixed identifiers. Prefixes make a leaked id self-describing in a bug report. */
 export const projectIdSchema = z.string().regex(/^prj_[0-9a-zA-Z]{20,}$/);
 export const userIdSchema = z.string().regex(/^usr_[0-9a-zA-Z]{20,}$/);

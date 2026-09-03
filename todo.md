@@ -212,11 +212,14 @@ framework binding on top of it, and it is a provider and three hooks with no UI 
 rendered on a server verifies a token rather than holding a session, and `@idenzy/next`
 needs that half to exist.
 
-The framework bindings are now in: React, Vue, Svelte, Angular, Next and Nuxt. They are
-small because the part worth getting right lives in `SessionStore` in `@idenzy/js`, which
-each of them wraps in whatever its framework calls external state. Angular came forward
-from phase 3 for the same reason. What is left in 1.5 is the conformance suite that holds
-them to the same behaviour, `idenzy init`, and the starter templates.
+The framework bindings are now in: React, Vue, Svelte, Angular, Next, Nuxt and SvelteKit.
+They are small because the part worth getting right lives in `SessionStore` in
+`@idenzy/js`, which each of them wraps in whatever its framework calls external state.
+Angular came forward from phase 3 for the same reason, and SvelteKit came forward from
+phase 2 because the Next and Nuxt server halves had already worked out what an SSR seed
+is. That closes every Tier-1 web target in §3.3 and the SvelteKit row of the Edge/SSR
+table with it. What is left in 1.5 is the conformance suite that holds the bindings to the
+same behaviour, `idenzy init`, and the starter templates.
 
 ### 1.1 Core auth flows
 
@@ -324,7 +327,11 @@ them to the same behaviour, `idenzy init`, and the starter templates.
       cookie itself and seeds the payload, so the browser hydrates from the snapshot the
       HTML was rendered from. One client per request, never a module singleton
 - [x] `@idenzy/vue` plugin and composables
-- [x] `@idenzy/svelte` context and stores
+- [x] `@idenzy/svelte` context and stores, and `@idenzy/svelte/server` for SvelteKit: a
+      `handle` that verifies the session cookie and seeds `event.locals.idenzy`, which a
+      layout load hands the browser. `@sveltejs/kit` is not a dependency, because its types
+      arrive with vite and a Svelte plugin behind them; the handle is generic in its event
+      instead, which is what keeps it assignable to Kit's own `Handle`
 - [x] `@idenzy/angular` provider and signals. Pulled forward from phase 3, because the
       shared session store made it an afternoon rather than a project
 - [~] `@idenzy/node` server SDK. Access-token verification is done: remote JWKS with the
@@ -380,7 +387,7 @@ them to the same behaviour, `idenzy init`, and the starter templates.
       required fails token issue rather than emitting the token without it; mapping from
       `metadata_private` is a publication and needs an explicit acknowledgement; and the total
       claim bytes are capped at template-save time, because tokens travel in a header
-- [ ] Vue, SvelteKit, Flutter, iOS, Android and React Native SDKs
+- [ ] Flutter, iOS, Android and React Native SDKs. Vue and SvelteKit landed in phase 1
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
 - [ ] Billing on Stripe, metered against usage

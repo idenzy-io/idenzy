@@ -219,15 +219,39 @@ Four rules the store owns, and every binding inherits.
   snapshot has `userId` and a null `user`. Anything rendering a name on the first paint has
   to be given one separately.
 
-Server rendering is `@idenzy/node` on the server side of `@idenzy/next` and `@idenzy/nuxt`.
-In Nuxt it is imported dynamically inside the server branch, so neither it nor the JWKS
-machinery reaches a browser bundle. A cookie the server cannot read seeds nothing rather
-than seeding signed-out: the access token is the short-lived half, and a user whose token
-expired an hour ago still holds a refresh cookie and is still signed in.
+Server rendering is `@idenzy/node` on the server side of `@idenzy/next`, `@idenzy/nuxt` and
+`@idenzy/svelte`. In Nuxt it is imported dynamically inside the server branch and in Svelte
+it sits behind its own entry point, so in neither does it or the JWKS machinery reach a
+browser bundle. A cookie the server cannot read seeds nothing rather than seeding
+signed-out: the access token is the short-lived half, and a user whose token expired an hour
+ago still holds a refresh cookie and is still signed in.
 
 `@idenzy/next` sets `moduleResolution: bundler` in its own `tsconfig`, unlike every other
 package. `next/server` and `next/headers` have no exports map and are not resolvable as
 ESM subpaths at all, and the consumer is a bundler in any case.
+
+### The SvelteKit half, `@idenzy/svelte/server`
+
+`export const handle = createIdenzyHandle({ projectId, issuerUrl })` in `hooks.server.ts`,
+and every route below it reads `event.locals.idenzy`.
+
+- **`@sveltejs/kit` is not a dependency, deliberately.** Its types arrive with `vite` and a
+  Svelte plugin behind them, and this needs `request.headers` and `locals` off one object. So
+  those are declared here and the returned handle is *generic in its event*, which is the
+  only reason it stays assignable to SvelteKit's own `Handle`: a non-generic parameter type
+  fails contravariantly on the `resolve` callback. `test/server.test.ts` transcribes `Handle`
+  and assigns to it, so a change that breaks the shape breaks a typechecked test rather than
+  a customer's build.
+- **The handle never throws.** A JWKS outage would otherwise be a 500 on every page of a
+  customer's site, and the site does not need us in order to render. Null seeds `loading`.
+- **`restore: browser` in the root layout is not optional.** A layout renders on the server
+  too, and a restore there rotates a cookie the server does not hold: one request to the auth
+  API per render, answered signed-out, for nothing. Nuxt gets this right because we own the
+  plugin; in SvelteKit the layout is the customer's, so `setIdenzy` says so in its docstring.
+- **No route guard**, which is the Angular decision rather than a gap. Where an
+  unauthenticated visitor lands is a product choice, and here it is two lines a customer owns
+  around `redirect()`. It also keeps `@sveltejs/kit` out, since `redirect` throws a class
+  only Kit can construct.
 
 ## Working on `@idenzy/react`
 

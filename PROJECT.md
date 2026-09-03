@@ -775,7 +775,8 @@ idenzy/
 │   └── sdk/
 │       ├── client/               # runs in a browser or on a device. DOM lib, no Node globals.
 │       │   ├── js/               # @idenzy/js         (public), the one the rest are built on
-│       │   ├── react/  vue/  svelte/  angular/       (public), bindings over js
+│       │   ├── react/  vue/  angular/                (public), bindings over js
+│       │   ├── svelte/                               (public), plus /server, the SvelteKit handle
 │       │   └── next/  nuxt/                          (public), bindings that also render on a server
 │       └── server/               # runs on a server. Verifies tokens, never holds a session.
 │           ├── node/             # @idenzy/node       (public, server SDK)

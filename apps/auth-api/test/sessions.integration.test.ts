@@ -26,6 +26,7 @@ const context: FlowContext = {
   requestId: "req_sessions",
   ip: "203.0.113.20",
   userAgent: "vitest",
+  locale: "en",
 };
 const tenant = new TenantContext(PROJECT, "req_sessions", "user");
 

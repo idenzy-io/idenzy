@@ -59,12 +59,12 @@ describe("classifiedTable", () => {
     buildSampleTable();
     const columns = classificationRegistry().get("sample_users");
     expect(Object.keys(columns ?? {})).toHaveLength(4);
-    expect(columns?.email?.class).toBe(DataClass.Pii);
+    expect(columns?.["email"]?.class).toBe(DataClass.Pii);
   });
 
   it("marks encrypted() columns as encrypted", () => {
     buildSampleTable();
-    expect(classificationRegistry().get("sample_users")?.totpSecret?.encrypted).toBe(true);
+    expect(classificationRegistry().get("sample_users")?.["totpSecret"]?.encrypted).toBe(true);
   });
 });
 

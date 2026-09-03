@@ -155,7 +155,9 @@ describe("FieldEncryptor", () => {
   it("refuses tampered ciphertext", () => {
     const enc = new FieldEncryptor(key);
     const raw = Buffer.from(enc.encrypt("secret", "prj_1"), "base64");
-    raw[raw.length - 1] ^= 0xff;
+    // writeUInt8 rather than an indexed read-modify-write, which the strict index rules
+    // treat as possibly undefined.
+    raw.writeUInt8(raw.readUInt8(raw.length - 1) ^ 0xff, raw.length - 1);
     expect(() => enc.decrypt(raw.toString("base64"), "prj_1")).toThrow();
   });
 

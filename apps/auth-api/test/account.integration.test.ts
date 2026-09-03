@@ -15,6 +15,7 @@ import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EmailChangeService } from "../dist/account/email-change-service.js";
 import { EmailVerificationService } from "../dist/account/email-verification-service.js";
+import { ProfileService } from "../dist/account/profile-service.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { RedirectKind, RedirectTargets } from "../dist/delivery/redirect-targets.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
@@ -38,6 +39,7 @@ let uow: UnitOfWork;
 let reset: PasswordResetService;
 let verification: EmailVerificationService;
 let changes: EmailChangeService;
+let profile: ProfileService;
 let signUp: PasswordSignUpFlow;
 let signIn: PasswordSignInFlow;
 let mail: CapturingEmailProvider;
@@ -76,6 +78,7 @@ beforeAll(async () => {
 
   reset = new PasswordResetService(uow, clock, hasher, new NoBreaches(), mailer, targets, config);
   verification = new EmailVerificationService(uow, clock, mailer, targets, config);
+  profile = new ProfileService(uow);
   changes = new EmailChangeService(uow, clock, mailer, targets, config);
 
   const hooks = new NullFlowHooks();
@@ -315,6 +318,49 @@ describe("changing an address", () => {
 
     await expect(changes.confirm(context, staleOld)).rejects.toMatchObject({
       code: "challenge_expired",
+    });
+  });
+});
+
+describe("reading your own profile", () => {
+  it("returns the signed-in user, and nothing private", async () => {
+    const issued = await signUp.authenticate(context, {
+      email: "profile@a.test",
+      password: "profile-password",
+    });
+
+    const me = await profile.me(context, issued.userId);
+    expect(me.email).toBe("profile@a.test");
+    expect(me.id).toBe(issued.user.publicId);
+    // The projection is the same one every other endpoint hands back, so a field that is
+    // private in one place cannot be public here.
+    expect(Object.keys(me)).not.toContain("metadataPrivate");
+  });
+
+  it("answers session_revoked, not 404, when the user behind a live session is gone", async () => {
+    const issued = await signUp.authenticate(context, {
+      email: "vanished@a.test",
+      password: "vanished-password",
+    });
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+    await harness.owner.query(`DELETE FROM users WHERE id = $1`, [issued.userId]);
+
+    // Not-found would invite the client to retry. The session proved valid a moment ago, so
+    // a missing user means the session should already have died.
+    await expect(profile.me(context, issued.userId)).rejects.toMatchObject({
+      code: "session_revoked",
+    });
+  });
+
+  it("does not resolve a user belonging to another project", async () => {
+    const issued = await signUp.authenticate(context, {
+      email: "elsewhere@a.test",
+      password: "elsewhere-password",
+    });
+    const other: FlowContext = { ...context, projectId: "99999999-9999-9999-9999-999999999999" };
+
+    await expect(profile.me(other, issued.userId)).rejects.toMatchObject({
+      code: "session_revoked",
     });
   });
 });

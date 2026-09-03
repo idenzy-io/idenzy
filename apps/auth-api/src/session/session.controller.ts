@@ -39,7 +39,7 @@ export class SessionController {
   ): Promise<SessionRefreshed> {
     const context = flowContextFrom(request);
     const issued = await this.refresh.rotate(context, presentedToken(body.refreshToken));
-    return toRefreshed(issued);
+    return toRefreshed(issued, body.includeUser);
   }
 
   @Post("sign-out")
@@ -60,11 +60,16 @@ function presentedToken(token: string | undefined): string {
   return token;
 }
 
-function toRefreshed(issued: IssuedSession): SessionRefreshed {
+/**
+ * The key is omitted rather than set to undefined when it was not asked for, so a client
+ * cannot tell "you did not ask" from "there is no user" by looking at the shape.
+ */
+function toRefreshed(issued: IssuedSession, includeUser: boolean): SessionRefreshed {
   return {
     sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
     accessToken: issued.accessToken,
     accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
     refreshToken: issued.refreshToken,
+    ...(includeUser ? { user: issued.user.toPublic() } : {}),
   };
 }

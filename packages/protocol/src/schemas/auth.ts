@@ -69,6 +69,12 @@ export const challengeStartedSchema = z.object({
  */
 export const refreshSessionSchema = z.object({
   refreshToken: z.string().min(20).optional(),
+  /**
+   * Ask for the profile alongside the tokens. A client that is starting up wants it and
+   * would otherwise need a second request; a client refreshing every five minutes does not,
+   * and the default keeps that path lean.
+   */
+  includeUser: z.boolean().default(false),
 });
 
 /** "all" revokes every session the user holds, not only the one presenting the request. */

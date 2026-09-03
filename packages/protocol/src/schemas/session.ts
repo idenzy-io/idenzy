@@ -42,15 +42,22 @@ export const sessionCreatedSchema = z.object({
 /**
  * What a refresh returns.
  *
- * There is no `user` here on purpose: a refresh is a token operation, and re-sending the
- * profile on every rotation would make the most frequent endpoint in the system also the
- * one that leaks the most if a token is misdirected.
+ * `user` is absent unless the caller asked for it, and the default is the original reason it
+ * was absent entirely: a refresh is a token operation, and re-sending the profile on every
+ * rotation would make the most frequent endpoint in the system also the one that leaks the
+ * most if a token is misdirected.
+ *
+ * The exception is the one refresh that is not routine. A browser SDK starting up has a
+ * cookie and nothing else, so without this it would rotate and then immediately fetch the
+ * profile, paying two round trips on every page load. The rotation already loads the user to
+ * check the account may sign in, so asking for it there costs nothing but the bytes.
  */
 export const sessionRefreshedSchema = z.object({
   sessionId: sessionIdSchema,
   accessToken: z.string(),
   accessTokenExpiresAt: isoDateTimeSchema,
   refreshToken: z.string().optional(),
+  user: publicUserSchema.optional(),
 });
 
 /** "Your devices". Ordered most recently active first, with the caller's own marked. */

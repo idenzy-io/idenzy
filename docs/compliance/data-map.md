@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 18 |
 | pseudonymous | 29 |
-| operational | 251 |
+| operational | 256 |
 
 ## `api_keys`
 
@@ -82,6 +82,22 @@ Notes:
 - `codeChallenge`: S256 only, and null for magic links, which are clicked in a different browser.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `redirectUri`: The allowlisted target this code was minted for. Kept for the audit trail.
+
+## `claim_templates`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `claims` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `privateMetadataAcknowledgedAt` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+
+Notes:
+
+- `claims`: The mappings. Names and source paths only: no user data is stored here.
+- `privateMetadataAcknowledgedAt`: When the customer accepted that mapping metadata_private publishes it into every token. Kept as evidence rather than as a flag, because the question is when somebody agreed and not whether a box is ticked.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `data_subject_requests`
 

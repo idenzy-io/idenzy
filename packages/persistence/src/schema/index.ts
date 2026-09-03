@@ -3,6 +3,7 @@
 // for the migration generator, which is why the barrel-file rule is waived here.
 
 export * from "./challenges.js";
+export * from "./claims.js";
 export * from "./compliance.js";
 export * from "./control-plane.js";
 export * from "./identity.js";

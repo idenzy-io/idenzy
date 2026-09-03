@@ -11,6 +11,7 @@ export const MAX_OTP_ATTEMPTS = 5;
 export interface NewOtpChallenge {
   readonly channel: string;
   readonly targetHash: string;
+  readonly targetEncrypted: string;
   readonly codeHash: string;
   readonly flowId: string;
   readonly expiresAt: Date;
@@ -20,6 +21,7 @@ export interface OtpChallengeRow {
   readonly id: string;
   readonly channel: string;
   readonly targetHash: string;
+  readonly targetEncrypted: string;
   readonly codeHash: string;
   readonly attempts: number;
   readonly expiresAt: Date;
@@ -51,6 +53,7 @@ export class OtpChallengeRepository extends BaseRepository<typeof otpChallenges>
           projectId: this.context.projectId,
           channel: input.channel,
           targetHash: input.targetHash,
+          targetEncrypted: input.targetEncrypted,
           codeHash: input.codeHash,
           flowId: input.flowId,
           expiresAt: input.expiresAt,
@@ -74,6 +77,7 @@ export class OtpChallengeRepository extends BaseRepository<typeof otpChallenges>
       id: row.id,
       channel: row.channel,
       targetHash: row.targetHash,
+      targetEncrypted: row.targetEncrypted,
       codeHash: row.codeHash,
       attempts: row.attempts,
       expiresAt: row.expiresAt,

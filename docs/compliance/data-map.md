@@ -11,7 +11,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 24 |
+| pii | 25 |
 | phi | 0 |
 | secret | 16 |
 | pseudonymous | 22 |
@@ -284,12 +284,14 @@ Notes:
 | `flowId` | pseudonymous | authentication | days_30 | no | row_deleted | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `targetEncrypted` | pii | authentication | days_30 | yes | row_deleted | yes |
 | `targetHash` | pseudonymous | authentication | days_30 | no | row_deleted | no |
 
 Notes:
 
 - `attempts`: Capped at 5. Exhaustion invalidates the challenge (PROJECT.md 4.7).
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `targetEncrypted`: The address itself, read back at verification to establish the subject.
 
 ## `outbox`
 

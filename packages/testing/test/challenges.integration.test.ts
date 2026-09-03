@@ -94,6 +94,7 @@ describe("one-time codes", () => {
       otp.create({
         channel: "email",
         targetHash: "t-parallel",
+        targetEncrypted: "enc",
         codeHash: "h",
         flowId: "req_1",
         expiresAt: inTen(),
@@ -112,6 +113,7 @@ describe("one-time codes", () => {
       otp.create({
         channel: "email",
         targetHash: "t-once",
+        targetEncrypted: "enc",
         codeHash: "h",
         flowId: "req_2",
         expiresAt: inTen(),
@@ -130,6 +132,7 @@ describe("one-time codes", () => {
         await otp.create({
           channel: "email",
           targetHash: "t-resend",
+          targetEncrypted: "enc",
           codeHash: "h",
           flowId,
           expiresAt: inTen(),

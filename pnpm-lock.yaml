@@ -162,6 +162,12 @@ importers:
       '@idenzy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@idenzy/providers-email':
+        specifier: workspace:*
+        version: link:../../packages/providers-email
+      '@idenzy/templating':
+        specifier: workspace:*
+        version: link:../../packages/templating
       '@nestjs/common':
         specifier: 'catalog:'
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)

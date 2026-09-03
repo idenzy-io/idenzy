@@ -1,6 +1,8 @@
 import { AppConfig } from "@idenzy/config/app-config";
 import { InternalError } from "@idenzy/core/errors/errors";
 import { Clock } from "@idenzy/core/time/clock";
+import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
+import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { Argon2idHasher, PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
@@ -40,6 +42,30 @@ import { Global, Module } from "@nestjs/common";
         );
       },
     },
+    /**
+     * Field-level encryption, on the same terms as the issuer above.
+     *
+     * The real data key is per project and wrapped by the cell KMS key. Until that
+     * exists there is one derived from the cell code, which is not a secret, so this
+     * refuses to build outside development for the same reason the issuer does: a
+     * deployment that quietly encrypted PII under a key printed in the source would be
+     * worse than one that would not start.
+     */
+    {
+      provide: FieldEncryptor,
+      inject: [AppConfig],
+      useFactory: (config: AppConfig): FieldEncryptor => {
+        if (config.get("IDENZY_ENV") !== "development") {
+          throw new InternalError({
+            detail: {
+              reason: "the per-project KMS-wrapped data key is not implemented",
+              rule: "field encryption under a derived key is development only (PROJECT.md 4.13.4)",
+            },
+          });
+        }
+        return new FieldEncryptor(developmentDataKey(config.get("CELL_CODE")));
+      },
+    },
     // No pepper yet: it lives in KMS (PROJECT.md 4.5) and arrives with the KMS work.
     // Introducing one is not transparent, because argon2.verify with a secret cannot
     // check a hash made without it. That is what passwordAlgoVersion is for: peppered
@@ -52,6 +78,6 @@ import { Global, Module } from "@nestjs/common";
         new IssuerTokenVerifier(issuer, config.get("ISSUER_BASE_URL")),
     },
   ],
-  exports: [TokenIssuer, TokenVerifier, PasswordHasher],
+  exports: [TokenIssuer, TokenVerifier, PasswordHasher, FieldEncryptor],
 })
 export class CryptoModule {}

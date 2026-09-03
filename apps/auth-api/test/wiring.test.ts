@@ -1,10 +1,13 @@
 import "reflect-metadata";
 import { AppConfig } from "@idenzy/config/app-config";
 import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
+import { EmailProvider } from "@idenzy/domain/ports/email-provider";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { Test } from "@nestjs/testing";
 import { describe, expect, it } from "vitest";
 import { AppModule } from "../dist/app.module.js";
+import { Mailer } from "../dist/delivery/mailer.js";
+import { EmailOtpFlow } from "../dist/otp/email-otp.flow.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { RefreshService } from "../dist/session/refresh-service.js";
@@ -39,6 +42,11 @@ describe("the composition root", () => {
     // FlowAudit are interfaces and cannot be resolved by type.
     expect(moduleRef.get(PasswordSignUpFlow)).toBeInstanceOf(PasswordSignUpFlow);
     expect(moduleRef.get(PasswordSignInFlow)).toBeInstanceOf(PasswordSignInFlow);
+    expect(moduleRef.get(EmailOtpFlow)).toBeInstanceOf(EmailOtpFlow);
+    // The delivery stack, whose transport refuses to construct outside development, so
+    // this also pins that the test environment is the one it will accept.
+    expect(moduleRef.get(Mailer)).toBeInstanceOf(Mailer);
+    expect(moduleRef.get(EmailProvider)).toBeInstanceOf(EmailProvider);
 
     await moduleRef.close();
   });

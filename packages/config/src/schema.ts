@@ -48,6 +48,36 @@ export const configSchema = z.object({
   SESSION_IDLE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 30),
   SESSION_ABSOLUTE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 90),
 
+  /**
+   * How long a one-time code and a magic link stay usable (PROJECT.md 4.7). Ten minutes
+   * is short enough that a code in a mailbox someone else can read is usually already
+   * dead, and long enough to survive a slow mail hop.
+   */
+  OTP_TTL_SECONDS: durationSeconds.max(3600).default(600),
+  MAGIC_LINK_TTL_SECONDS: durationSeconds.max(3600).default(600),
+
+  /**
+   * The exchange code lives only between our redirect and the SDK's POST, which is one
+   * page load. It is generous at two minutes and should never need raising.
+   */
+  AUTH_CODE_TTL_SECONDS: durationSeconds.max(600).default(120),
+
+  PASSWORD_RESET_TTL_SECONDS: durationSeconds.max(3600).default(900),
+
+  /**
+   * Longer than the others because two people have to act: the address is not moved
+   * until the old and the new address have both confirmed (PROJECT.md 4.5).
+   */
+  EMAIL_CHANGE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24),
+  EMAIL_VERIFICATION_TTL_SECONDS: durationSeconds.default(60 * 60 * 24),
+
+  /**
+   * The envelope sender for transactional mail. Custom per-project domains are phase 2;
+   * until then everything leaves on the shared domain, whose reputation is the reason
+   * the suppression list is enforced in the provider base rather than per caller.
+   */
+  EMAIL_FROM_ADDRESS: z.email().default("no-reply@auth.idenzy.dev"),
+
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
 });
 

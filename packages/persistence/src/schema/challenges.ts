@@ -1,4 +1,8 @@
-import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
+import {
+  classified,
+  classifiedTable,
+  encrypted,
+} from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
@@ -13,8 +17,16 @@ import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./share
 /**
  * OTP challenges, the default passwordless path (PROJECT.md 4.7).
  *
- * The target is stored hashed, not in clear: an OTP table is a list of who is signing in
- * right now, and hashing it means a read of this table alone yields no addresses.
+ * The target is stored twice and never in clear. `target_hash` is what "is there already
+ * a live code for this address" is asked against, and it is a plain digest because that
+ * lookup has to be an index seek. `target_encrypted` is what verification reads back to
+ * learn which address proved control, and it is envelope encrypted under the project's
+ * own data key (PROJECT.md 4.13.4).
+ *
+ * Both are needed. A hash alone cannot be reversed, and a flow that cannot name the
+ * address cannot create the account behind it, which is what OTP sign-up is. Encryption
+ * alone cannot be searched. Together, a read of this table yields no addresses, which is
+ * the property worth having: an OTP table is a list of who is signing in right now.
  */
 export const otpChallenges = classifiedTable(
   "otp_challenges",
@@ -23,6 +35,14 @@ export const otpChallenges = classifiedTable(
     projectId: projectIdColumn(),
     channel: classified(text("channel").notNull(), { ...config, loggable: true }),
     targetHash: classified(text("target_hash").notNull(), ephemeralChallenge),
+    targetEncrypted: encrypted(text("target_encrypted").notNull(), {
+      class: DataClass.Pii,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      subjectField: true,
+      erasure: Erasure.RowDeleted,
+      note: "The address itself, read back at verification to establish the subject.",
+    }),
     codeHash: classified(text("code_hash").notNull(), {
       ...credential,
       retention: Retention.Days30,

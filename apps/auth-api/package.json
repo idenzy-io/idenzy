@@ -22,6 +22,8 @@
     "@idenzy/observability": "workspace:*",
     "@idenzy/persistence": "workspace:*",
     "@idenzy/protocol": "workspace:*",
+    "@idenzy/providers-email": "workspace:*",
+    "@idenzy/templating": "workspace:*",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",

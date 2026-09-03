@@ -13,6 +13,12 @@ export interface FlowContext {
   readonly requestId: string;
   readonly ip: string | null;
   readonly userAgent: string | null;
+  /**
+   * The caller's preferred language, for anything we send them. Null when the request
+   * did not say, which is not the same as English: the renderer decides the fallback,
+   * because the fallback chain is a template concern and not a request one.
+   */
+  readonly locale: string | null;
 }
 
 /**

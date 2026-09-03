@@ -60,6 +60,7 @@ certification; see PROJECT.md 4.13.10.
   - pii: phone
   - pii: providerData
   - pii: providerUserId
+  - pii: targetEncrypted
   - pseudonymous: flowId
   - pseudonymous: id
   - pseudonymous: key

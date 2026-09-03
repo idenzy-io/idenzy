@@ -14,8 +14,8 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | pii | 28 |
 | phi | 0 |
 | secret | 18 |
-| pseudonymous | 29 |
-| operational | 256 |
+| pseudonymous | 30 |
+| operational | 259 |
 
 ## `api_keys`
 
@@ -50,6 +50,7 @@ Notes:
 | `metadata` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `prevHash` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `seq` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `target` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `ua` | pii | audit_and_compliance | years_1 | yes | retain_pseudonymous | no |
 
@@ -60,6 +61,7 @@ Notes:
 - `ip`: Retained under legal obligation, so erasure does not clear it (Art.17(3)(b)).
 - `prevHash`: Hash of the preceding entry for this project. Genesis is 64 zeroes.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `seq`: Total order across every partition, from one cluster sequence. The chain needs it: created_at ties at millisecond precision, and two entries in the same millisecond would leave the project's tip ambiguous and fork the chain (PROJECT.md 4.13.3).
 
 ## `auth_codes`
 
@@ -480,6 +482,19 @@ Notes:
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `jurisdiction` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `kmsKeyRing` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+## `relay_offsets`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `consumer` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `position` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `updatedAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `position`: Exclusive lower bound on outbox created_at. A window rather than an id, so a restart re-reads a little rather than skipping anything.
+- `updatedAt`: How stale the consumer is, which is the only signal that a relay has stopped.
 
 ## `retention_policies`
 

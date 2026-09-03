@@ -41,6 +41,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: id
   - pseudonymous: metadata
   - pseudonymous: prevHash
+  - pseudonymous: seq
   - pseudonymous: subjectUserId
   - pseudonymous: target
 

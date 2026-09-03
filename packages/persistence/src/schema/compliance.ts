@@ -6,7 +6,7 @@ import {
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgPolicy, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, jsonb, pgPolicy, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { auditRecord, config } from "./presets.js";
 import { appRole } from "./roles.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
@@ -55,6 +55,14 @@ export const auditEvents = classifiedTable(
       erasure: Erasure.RetainPseudonymous,
     }),
     metadata: classified(jsonb("metadata").notNull().default({}), auditRecord),
+    seq: classified(
+      bigint("seq", { mode: "number" }).notNull().default(sql`nextval('audit_events_seq')`),
+      {
+        ...auditRecord,
+        loggable: true,
+        note: "Total order across every partition, from one cluster sequence. The chain needs it: created_at ties at millisecond precision, and two entries in the same millisecond would leave the project's tip ambiguous and fork the chain (PROJECT.md 4.13.3).",
+      },
+    ),
     prevHash: classified(text("prev_hash").notNull(), {
       ...auditRecord,
       note: "Hash of the preceding entry for this project. Genesis is 64 zeroes.",
@@ -67,6 +75,7 @@ export const auditEvents = classifiedTable(
   },
   (t) => [
     index("audit_events_project_created_idx").on(t.projectId, t.createdAt),
+    index("audit_events_project_seq_idx").on(t.projectId, t.seq),
     index("audit_events_project_actor_idx").on(t.projectId, t.actorId),
     // Read is tenant-scoped; write permission is controlled by grants, not by policy.
     pgPolicy("audit_events_tenant_isolation", {
@@ -186,4 +195,30 @@ export const staffAccessGrants = classifiedTable("staff_access_grants", {
     retention: Retention.Years6,
   }),
   createdAt: createdAtColumn(),
+});
+
+/**
+ * Where each background consumer of the outbox has read up to.
+ *
+ * Not tenant-scoped and deliberately so: a relay serves every project at once, which is
+ * the same reason `revocation_events_since` is SECURITY DEFINER. It is ours rather than a
+ * customer's, so no RLS policy and no `project_id`.
+ *
+ * One row per consumer, and that is the point. The outbox already has `published_at`, and
+ * it belongs to the relay that will drain this table to Pub/Sub; a second consumer sharing
+ * that column would advance a watermark the first one is still using. This is that second
+ * consumer, arriving exactly as the note in CLAUDE.md said it would.
+ */
+export const relayOffsets = classifiedTable("relay_offsets", {
+  consumer: classified(text("consumer").primaryKey(), { ...config, loggable: true }),
+  position: classified(timestamp("position", { withTimezone: true }).notNull(), {
+    ...config,
+    loggable: true,
+    note: "Exclusive lower bound on outbox created_at. A window rather than an id, so a restart re-reads a little rather than skipping anything.",
+  }),
+  updatedAt: classified(timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(), {
+    ...config,
+    loggable: true,
+    note: "How stale the consumer is, which is the only signal that a relay has stopped.",
+  }),
 });

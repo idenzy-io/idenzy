@@ -442,7 +442,18 @@ client have no server halves to talk to yet.
 
 ## Phase 2: Public launch (8 weeks)
 
-**Status.** MFA is the second thing to land here, and it changed the shape of every way in: an authentication now answers with a session or with the second factor
+**Status.** Claim templates are in on the server side, which is what finally makes an access token
+carry something a customer's own authorisation code can branch on. It is configuration
+rather than a hook and that is the reason it is affordable: the user row is already loaded
+and the template is one primary-key read, where the synchronous `customize-claims` hook in
+phase 3 puts a customer's own HTTP round trip inside every sign-in.
+
+The rule worth repeating is the one about direction. The user fields a claim may read are
+an allowlist and it is exactly what the profile endpoint already returns, so a column added
+to `users` tomorrow is not publishable until somebody adds it to the list. A denylist would
+have made a password hash claimable the day it was forgotten.
+
+MFA is the second thing to land here, and it changed the shape of every way in: an authentication now answers with a session or with the second factor
 it still owes, which is a discriminated union on the wire and in every SDK rather than an
 error (ADR-0010). A first factor that verified is not a failure, and a page that had to catch
 one would put the normal path of every MFA sign-in in the same handler as a wrong password.
@@ -521,16 +532,18 @@ template pipeline of its own rather than a branch in the OTP flow.
       for ever. Re-authenticating with a password instead is the honest fix and is not built
 - [ ] A project-level "require a second factor of everybody". Today MFA is owed because the
       user enrolled something, which is per user rather than per project
-- [ ] Customer-defined claim templates: a dashboard-configured mapping from user columns and
-      `metadata_public`/`metadata_private` into the access token, applied by the token issuer.
-      Costs nothing at issue time, because the project config is already cached and the user
-      row is already loaded, unlike the synchronous `customize-claims` hook in phase 3. Four
-      rules it must carry: reserved claims (`iss`, `sub`, `aud`, `exp`, `iat`, `nbf`, `jti`,
-      `sid`, `amr`, `acr`, `fva`) cannot be targeted, and the denylist lives in
-      `@idenzy/protocol` so the server and the dashboard cannot disagree; a claim marked
-      required fails token issue rather than emitting the token without it; mapping from
-      `metadata_private` is a publication and needs an explicit acknowledgement; and the total
-      claim bytes are capped at template-save time, because tokens travel in a header
+- [~] Customer-defined claim templates. The server half is in and all four rules with it:
+      the reserved names live in `@idenzy/protocol` so a dashboard and the issuer cannot
+      disagree, a required claim that resolves to nothing fails the issue rather than
+      emitting a token without it, `metadata_private` needs an acknowledgement and what is
+      stored is when it was given, and the bytes are capped twice because a save sees only
+      names and a render is the first thing that sees a value. A fifth rule the plan did not
+      name: the claimable user fields are an allowlist and it is exactly `publicUserSchema`,
+      so a column added tomorrow is not publishable until somebody adds it there. What is
+      left is the dashboard screen, which is the `client` panel
+- [ ] The project-config cache PROJECT.md 4.2 assumes. Applying a template is one
+      primary-key read per token today, which is honest but is not nothing on the refresh
+      path. Nothing else wants a cache yet, so it waits until something does
 - [ ] Flutter, iOS, Android and React Native SDKs. Vue and SvelteKit landed in phase 1
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito

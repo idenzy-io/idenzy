@@ -594,6 +594,37 @@ would have to run after `SessionGuard`, and getting that order wrong is a silent
 than a loud failure. It lets a user with nothing enrolled past, which is the honest shape of the
 guarantee: the check is worth exactly as much as the second factor behind it.
 
+## Working on claim templates
+
+What a project's access tokens carry beyond the claims we assemble ourselves. Five rules.
+
+- **The claimable user fields are an allowlist, and it is `publicUserSchema`.** A column
+  added to `users` tomorrow is not publishable until somebody adds it to
+  `CLAIMABLE_USER_FIELDS`, and `satisfies readonly (keyof PublicUser)[]` is what stops that
+  list drifting from the profile endpoint. A denylist would have made a password hash
+  claimable the day it was forgotten.
+- **The reserved names live in `@idenzy/protocol`.** A dashboard validating a template and
+  the issuer applying it check the same list, because the alternative is a template somebody
+  can save and never use.
+- **A required claim that resolves to nothing fails the issue.** A claim an authorisation
+  check branches on is one where absent and false read the same, so emitting the token
+  without it would let a sign-in through a check that never ran. Absent, never `null`: a
+  verifier reading `null` has to decide what it means and every one of them decides
+  differently.
+- **The bytes are capped twice.** A save sees only names, and a render is the first thing
+  that sees a value: a template of three short names can still render a profile blob. A
+  token silently trimmed of the claim an authorisation check reads is worse than a sign-in
+  that says it could not be completed.
+- **Mapping `metadata_private` needs an acknowledgement, and what is stored is when it was
+  given.** That column is the one place a customer keeps what they did not want a browser to
+  see, and a token is read by everything the device sends it to. The question a reviewer asks
+  is when somebody agreed, not whether a box is ticked.
+
+`SessionService.mintAccessToken` takes the `User` and reads the template itself, so a new way
+of minting a token cannot leave a project's claims out. That read is a primary-key lookup on
+a tiny table; the project-config cache PROJECT.md 4.2 assumes is what removes it, and nothing
+else wants one yet.
+
 ## Adding a provider, factor or channel
 
 Extend the family's abstract base in `@idenzy/domain/ports` and implement only what

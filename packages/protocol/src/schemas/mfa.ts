@@ -104,6 +104,19 @@ export const mfaFactorSummarySchema = z.object({
 });
 
 /**
+ * A confirmed enrolment, and the sheet that came with it.
+ *
+ * `recoveryCodes` is present the first time a user gets a second factor and null after
+ * that, because reissuing on every enrolment would invalidate a sheet somebody already
+ * printed. Returning them here rather than leaving them to a second call is deliberate:
+ * a customer who forgets that call ships a product where a lost phone is a lost account.
+ */
+export const mfaEnrolmentConfirmedSchema = z.object({
+  factor: mfaFactorSummarySchema,
+  recoveryCodes: recoveryCodesSchema.nullable(),
+});
+
+/**
  * Everything the user holds. Recovery codes are a count rather than a list, because the
  * list exists only in the reply that generated it.
  */
@@ -133,5 +146,6 @@ export type TotpEnrolment = z.infer<typeof totpEnrolmentSchema>;
 export type ConfirmTotpEnrolment = z.infer<typeof confirmTotpEnrolmentSchema>;
 export type RecoveryCodes = z.infer<typeof recoveryCodesSchema>;
 export type MfaFactorSummary = z.infer<typeof mfaFactorSummarySchema>;
+export type MfaEnrolmentConfirmed = z.infer<typeof mfaEnrolmentConfirmedSchema>;
 export type MfaFactorList = z.infer<typeof mfaFactorListSchema>;
 export type StepUpCompleted = z.infer<typeof stepUpCompletedSchema>;

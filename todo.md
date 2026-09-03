@@ -212,14 +212,19 @@ framework binding on top of it, and it is a provider and three hooks with no UI 
 rendered on a server verifies a token rather than holding a session, and `@idenzy/next`
 needs that half to exist.
 
-The framework bindings are now in: React, Vue, Svelte, Angular, Next, Nuxt and SvelteKit.
-They are small because the part worth getting right lives in `SessionStore` in
-`@idenzy/js`, which each of them wraps in whatever its framework calls external state.
-Angular came forward from phase 3 for the same reason, and SvelteKit came forward from
-phase 2 because the Next and Nuxt server halves had already worked out what an SSR seed
-is. That closes every Tier-1 web target in §3.3 and the SvelteKit row of the Edge/SSR
-table with it. What is left in 1.5 is the conformance suite that holds the bindings to the
-same behaviour, `idenzy init`, and the starter templates.
+The framework bindings are now in: React, Vue, Svelte, Angular, Next and Nuxt. They are
+small because the part worth getting right lives in `SessionStore` in `@idenzy/js`, which
+each of them wraps in whatever its framework calls external state. Angular came forward
+from phase 3 for the same reason.
+
+The SSR helpers are five: Next, Nuxt, SvelteKit, Astro and Remix. SvelteKit came forward
+from phase 2 and Astro and Remix from phase 3, because once Next and Nuxt had worked out
+what an SSR seed is, each of the other three was fifteen lines around
+`AccessTokenVerifier` and a framework's own request object. That closes every Tier-1 web
+target in §3.3 and the whole Edge/SSR row with it.
+
+What is left in 1.5 is the conformance suite that holds the bindings to the same
+behaviour, `idenzy init`, and the starter templates.
 
 ### 1.1 Core auth flows
 
@@ -323,6 +328,12 @@ same behaviour, `idenzy init`, and the starter templates.
       `@idenzy/react` re-exported; what Next adds is `IdenzyServer`, which verifies the
       session cookie in a Server Component, Route Handler or middleware with no network
       call, and `protectRoutes`, which redirects to a page in the customer's own app
+- [ ] `@idenzy/next` is the one SSR helper that still propagates a JWKS outage. `verify`
+      rethrows anything that is not a credential problem, `sessionFor` is built on it, and
+      `protectRoutes` therefore turns an outage into a 500 on every protected page. A
+      Server Component can catch that and middleware cannot, so `protectRoutes` should
+      treat an unreadable key set the way the other four helpers do. Found while writing
+      them
 - [x] `@idenzy/nuxt` module and composables. Given a project id the server verifies the
       cookie itself and seeds the payload, so the browser hydrates from the snapshot the
       HTML was rendered from. One client per request, never a module singleton
@@ -334,6 +345,12 @@ same behaviour, `idenzy init`, and the starter templates.
       instead, which is what keeps it assignable to Kit's own `Handle`
 - [x] `@idenzy/angular` provider and signals. Pulled forward from phase 3, because the
       shared session store made it an afternoon rather than a project
+- [x] `@idenzy/astro` middleware and `@idenzy/remix/server`, both pulled forward from
+      phase 3, and both the SSR seed alone. Astro gets no browser half because an island
+      is React, Vue, Svelte or Solid and the customer already picked one; Remix gets no
+      `.` export because a loader shares a file with its component. Remix memoises its
+      answer weakly per request, so a page's parallel loaders cannot straddle the token's
+      `exp` and render from two answers
 - [~] `@idenzy/node` server SDK. Access-token verification is done: remote JWKS with the
       cache and the one refetch a rotation needs, `aud` required because one issuer serves
       every project and the audience is the only thing separating tenants, and reading the
@@ -401,7 +418,8 @@ same behaviour, `idenzy init`, and the starter templates.
 
 ## Phase 3: Breadth (12 weeks)
 
-- [ ] Solid, Astro, Remix, Electron, Tauri and Capacitor SDKs. Angular landed in phase 1
+- [ ] Solid, Electron, Tauri and Capacitor SDKs. Angular, Astro and Remix landed in
+      phase 1
 - [ ] Unity and Godot SDKs
 - [ ] Kotlin Multiplatform SDK
 - [ ] Python (Both async and sync), PHP, Ruby, Java, .NET, Go and Rust server SDKs

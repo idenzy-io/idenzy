@@ -198,7 +198,8 @@ is a compile error rather than a runtime one in somebody's browser.
 There are six of them (React, Vue, Svelte, Angular, Next, Nuxt) and they are all small,
 because the part worth getting right is `SessionStore` in `@idenzy/js`. Do not
 reimplement any of it per framework: each binding wraps that store in whatever its
-framework calls external state, and that is all it is allowed to be.
+framework calls external state, and that is all it is allowed to be. The server halves are
+their own section, below, and `@idenzy/astro` and `@idenzy/remix` are only that.
 
 Four rules the store owns, and every binding inherits.
 
@@ -219,39 +220,72 @@ Four rules the store owns, and every binding inherits.
   snapshot has `userId` and a null `user`. Anything rendering a name on the first paint has
   to be given one separately.
 
-Server rendering is `@idenzy/node` on the server side of `@idenzy/next`, `@idenzy/nuxt` and
-`@idenzy/svelte`. In Nuxt it is imported dynamically inside the server branch and in Svelte
-it sits behind its own entry point, so in neither does it or the JWKS machinery reach a
-browser bundle. A cookie the server cannot read seeds nothing rather than seeding
-signed-out: the access token is the short-lived half, and a user whose token expired an hour
-ago still holds a refresh cookie and is still signed in.
+## Working on an SSR helper
 
-`@idenzy/next` sets `moduleResolution: bundler` in its own `tsconfig`, unlike every other
-package. `next/server` and `next/headers` have no exports map and are not resolvable as
-ESM subpaths at all, and the consumer is a bundler in any case.
+There are five (`@idenzy/next`, `@idenzy/nuxt`, `@idenzy/svelte/server`, `@idenzy/astro` and
+`@idenzy/remix/server`) and they all do the same thing: verify the access token in the
+`__Host-idenzy-session` cookie against a cached JWKS and hand the answer on as a seed, so a
+page rendered for a signed-in user costs no round trip (PROJECT.md 4.3).
 
-### The SvelteKit half, `@idenzy/svelte/server`
+They deliberately do not share an implementation. The shared piece would need `seededSession`
+from `@idenzy/js` and `AccessTokenVerifier` from `@idenzy/node`, and Biome forbids the first
+inside `packages/sdk/server/**` on purpose. Fifteen lines per package, each with a docstring
+saying what that framework's policy is, beats a package that exists to hold them. Revisit if
+the policies converge rather than because the count grew.
 
-`export const handle = createIdenzyHandle({ projectId, issuerUrl })` in `hooks.server.ts`,
-and every route below it reads `event.locals.idenzy`.
+Four rules every one of them keeps.
 
-- **`@sveltejs/kit` is not a dependency, deliberately.** Its types arrive with `vite` and a
-  Svelte plugin behind them, and this needs `request.headers` and `locals` off one object. So
-  those are declared here and the returned handle is *generic in its event*, which is the
-  only reason it stays assignable to SvelteKit's own `Handle`: a non-generic parameter type
-  fails contravariantly on the `resolve` callback. `test/server.test.ts` transcribes `Handle`
-  and assigns to it, so a change that breaks the shape breaks a typechecked test rather than
-  a customer's build.
-- **The handle never throws.** A JWKS outage would otherwise be a 500 on every page of a
-  customer's site, and the site does not need us in order to render. Null seeds `loading`.
-- **`restore: browser` in the root layout is not optional.** A layout renders on the server
-  too, and a restore there rotates a cookie the server does not hold: one request to the auth
-  API per render, answered signed-out, for nothing. Nuxt gets this right because we own the
-  plugin; in SvelteKit the layout is the customer's, so `setIdenzy` says so in its docstring.
-- **No route guard**, which is the Angular decision rather than a gap. Where an
-  unauthenticated visitor lands is a product choice, and here it is two lines a customer owns
-  around `redirect()`. It also keeps `@sveltejs/kit` out, since `redirect` throws a class
-  only Kit can construct.
+- **Null is not signed out, and never renders as signed out.** The access token is the
+  short-lived half, so a visitor whose token expired an hour ago still holds a refresh cookie
+  and is still signed in. Null seeds `loading` and the browser settles it. Seeding signed-out
+  puts a sign-in form in the HTML for somebody who does not need one.
+- **The helper never throws for a credential it could not read, an outage included.** A
+  handle, a middleware or a root loader that threw is a 500 or an error boundary on every
+  page of a customer's site for the length of a JWKS outage, and the site does not need us in
+  order to render. `@idenzy/next` is the exception and it is a known gap rather than a
+  decision: `verify` rethrows anything that is not a credential problem, `sessionFor` is
+  built on it, and `protectRoutes` therefore propagates a JWKS outage into middleware. A
+  Server Component can catch that. Middleware answering 500 for a whole site cannot.
+- **The verifier is built once, at module scope.** The key set is cached inside it, and one
+  per request fetches the key set per request. There is a test in each package that asserts
+  one fetch across two requests.
+- **No route guard anywhere but Next**, where `protectRoutes` exists because middleware has
+  nothing else to be. Elsewhere it is two lines a customer owns, and where an unauthenticated
+  visitor lands is a product decision in any case (ADR-0002).
+
+What differs, where the difference is not obvious:
+
+- **Nuxt** imports its server half dynamically inside the server branch. Svelte and Remix use
+  a subpath for the same purpose. Astro needs neither: middleware never reaches a client
+  bundle. In Remix the subpath is load-bearing rather than tidy, because a loader lives in the
+  same file as the component it feeds, so `@idenzy/remix` publishes no `.` export at all.
+- **`@idenzy/astro` has no client half and will not get one.** An island is React, Vue,
+  Svelte, Solid or none of them, so the browser binding is whichever one the customer chose.
+- **`@idenzy/remix` memoises its answer weakly per request**, and that is correctness before
+  it is cost. Remix runs a page's loaders in parallel and may run an action before them;
+  verifying per call lets two of them straddle the token's `exp` and render one page from two
+  answers, which is a header that says signed in above a body that does not.
+- **SvelteKit's `restore: browser` is the customer's to remember.** A layout renders on the
+  server too, and a restore there rotates a cookie the server does not hold: one request to
+  the auth API per render, answered signed-out, for nothing. Nuxt gets this right because we
+  own the plugin; in SvelteKit the layout is theirs, so `setIdenzy` says so in its docstring.
+- **`@idenzy/next` sets `moduleResolution: bundler`** in its own `tsconfig`, unlike every
+  other package. `next/server` and `next/headers` have no exports map and are not resolvable
+  as ESM subpaths at all, and the consumer is a bundler in any case.
+
+### Declaring a framework's types rather than depending on it
+
+SvelteKit, Astro and Remix are all absent from the lockfile, and that is a decision rather
+than an oversight. Each helper needs `request.headers` and `locals` off one object; the
+packages that would supply those types are build tools, and `@sveltejs/kit` drags in `vite`
+and a Svelte plugin as strict peers for it. So the shape is declared in our own source.
+
+The part that is not obvious: **the returned function has to be generic in its event or
+context.** A non-generic parameter type fails contravariantly against the framework's own
+`Handle` or `MiddlewareHandler`, because the `resolve` or `next` callback takes the framework's
+full event and our narrow one is not assignable to it. Each package's test transcribes the
+framework type and assigns to it, so a change that breaks the shape breaks a typechecked test
+here rather than a customer's build.
 
 ## Working on `@idenzy/react`
 

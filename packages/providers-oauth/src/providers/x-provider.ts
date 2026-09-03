@@ -2,13 +2,11 @@ import { OauthProviderError } from "@idenzy/core/errors";
 import type { HttpClient } from "@idenzy/core/http/http-client";
 import type { Clock } from "@idenzy/core/time/clock";
 import {
-  type OAuthCallback,
   type OAuthFlowStore,
   OAuthProvider,
   type ProviderCredentials,
   type ProviderProfile,
   type RedirectAllowlist,
-  type StoredFlow,
   type TokenGrant,
 } from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
@@ -23,14 +21,13 @@ interface XUser {
 /**
  * X (PROJECT.md 4.6).
  *
- * Two things make this the odd one. The token endpoint takes HTTP Basic client
- * authentication rather than credentials in the body, and RFC 6749 forbids presenting both,
- * so the secret moves to the header and out of the form.
+ * Basic client authentication at the token endpoint, which is one line here because the
+ * base owns both halves of that choice.
  *
- * And there is no address. X releases one only to applications with elevated access, so a
- * user who arrives this way has no email at all: the account is created on the provider
- * subject alone, nothing can be linked on an address, and a customer's UI collects one
- * afterwards if their product needs it.
+ * What is X's alone is the address: it releases one only to applications with elevated
+ * access, so a user who arrives this way has no email at all. The account is created on
+ * the provider subject, nothing can be linked on an address, and a customer's UI collects
+ * one afterwards if their product needs it.
  */
 export class XProvider extends OAuthProvider {
   override readonly id = ProviderId.X;
@@ -56,26 +53,8 @@ export class XProvider extends OAuthProvider {
     return ["tweet.read", "users.read"];
   }
 
-  protected override tokenHeaders(credentials: ProviderCredentials): Record<string, string> {
-    const basic = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString(
-      "base64",
-    );
-    return { authorization: `Basic ${basic}` };
-  }
-
-  /** The secret rides in the header instead. Presenting it twice is refused by the spec. */
-  protected override tokenRequest(
-    credentials: ProviderCredentials,
-    callback: OAuthCallback,
-    flow: StoredFlow,
-  ): Promise<Record<string, string>> {
-    return Promise.resolve({
-      grant_type: "authorization_code",
-      code: callback.code,
-      redirect_uri: callback.callbackUri,
-      client_id: credentials.clientId,
-      code_verifier: flow.codeVerifier,
-    });
+  protected override clientAuthentication(): "basic" {
+    return "basic";
   }
 
   protected override async fetchProfile(

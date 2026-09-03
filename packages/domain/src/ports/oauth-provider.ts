@@ -229,14 +229,25 @@ export abstract class OAuthProvider {
   }
 
   /**
-   * Headers on the token request, and empty for almost every provider.
+   * How the client authenticates at the token endpoint (RFC 6749 section 2.3.1).
    *
-   * The exception is a provider that requires HTTP Basic client authentication rather than
-   * credentials in the body: X does, and RFC 6749 forbids presenting both, so such an adapter
-   * fills this in and drops `client_secret` from `tokenRequest`.
+   * One hook rather than two overrides, because it is one decision: the spec forbids
+   * presenting client credentials in the header and the body at once, so choosing `basic`
+   * has to move the secret into `Authorization` *and* drop `client_secret` from the form,
+   * and an adapter that did only half of that would be refused by some providers and
+   * silently accepted by others. X, Bitbucket, Spotify, Figma, Zoom and Notion require it.
    */
-  protected tokenHeaders(_credentials: ProviderCredentials): Record<string, string> {
-    return {};
+  protected clientAuthentication(): "body" | "basic" {
+    return "body";
+  }
+
+  /** Headers on the token request. Empty unless the client authenticates in the header. */
+  protected tokenHeaders(credentials: ProviderCredentials): Record<string, string> {
+    if (this.clientAuthentication() !== "basic") return {};
+    const basic = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString(
+      "base64",
+    );
+    return { authorization: `Basic ${basic}` };
   }
 
   protected tokenRequest(
@@ -249,8 +260,11 @@ export abstract class OAuthProvider {
       code: callback.code,
       redirect_uri: callback.callbackUri,
       client_id: credentials.clientId,
-      client_secret: credentials.clientSecret,
       code_verifier: flow.codeVerifier,
+      // Absent under basic authentication, where it is in the header instead.
+      ...(this.clientAuthentication() === "basic"
+        ? {}
+        : { client_secret: credentials.clientSecret }),
     });
   }
 

@@ -37,6 +37,7 @@
     "jose": "catalog:",
     "nuxt": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vue": "catalog:"
   }
 }

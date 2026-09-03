@@ -47,6 +47,14 @@ export class User {
     return this.state.emailVerified;
   }
 
+  get phone(): string | null {
+    return this.state.phone;
+  }
+
+  get phoneVerified(): boolean {
+    return this.state.phoneVerified;
+  }
+
   get passwordHash(): string | null {
     return this.state.passwordHash;
   }

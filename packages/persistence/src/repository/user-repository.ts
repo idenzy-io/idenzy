@@ -13,6 +13,7 @@ export interface NewUser {
   readonly email: string | null;
   readonly emailVerified: boolean;
   readonly phone: string | null;
+  readonly phoneVerified?: boolean;
   readonly passwordHash: string | null;
   readonly passwordAlgoVersion: number | null;
   readonly displayName: string | null;
@@ -55,6 +56,22 @@ export class UserRepository extends BaseRepository<typeof users> {
     return this.toEntity(rows[0]);
   }
 
+  /**
+   * Exact match on E.164, which is what the unique index enforces.
+   *
+   * There is no normalising here on purpose: the value object parses at the boundary, so
+   * a number that reached this far is already in the one form we store. Normalising in
+   * two places is how a lookup and an index stop agreeing.
+   */
+  async findByPhone(phone: string): Promise<User | null> {
+    const rows = await this.tx
+      .select()
+      .from(users)
+      .where(and(this.tenantScope(), eq(users.phone, phone)))
+      .limit(1);
+    return this.toEntity(rows[0]);
+  }
+
   async create(input: NewUser): Promise<User> {
     const rows = await this.guard(() =>
       this.tx
@@ -64,6 +81,7 @@ export class UserRepository extends BaseRepository<typeof users> {
           email: input.email,
           emailVerified: input.emailVerified,
           phone: input.phone,
+          phoneVerified: input.phoneVerified ?? false,
           passwordHash: input.passwordHash,
           passwordAlgoVersion: input.passwordAlgoVersion,
           displayName: input.displayName,
@@ -98,6 +116,13 @@ export class UserRepository extends BaseRepository<typeof users> {
     await this.tx
       .update(users)
       .set({ emailVerified: verified, updatedAt: new Date() })
+      .where(and(this.tenantScope(), eq(users.id, userId)));
+  }
+
+  async setPhoneVerified(userId: string, verified: boolean): Promise<void> {
+    await this.tx
+      .update(users)
+      .set({ phoneVerified: verified, updatedAt: new Date() })
       .where(and(this.tenantScope(), eq(users.id, userId)));
   }
 

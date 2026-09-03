@@ -1,5 +1,7 @@
 import { createValkeyClient, type ValkeyClient } from "@idenzy/cache/connection/client";
+import { RateLimitStrategy } from "@idenzy/cache/rate-limit-strategy";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
+import { SlidingWindowStrategy } from "@idenzy/cache/sliding-window-strategy";
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
@@ -70,8 +72,17 @@ export class ValkeyLifecycle implements OnApplicationShutdown {
           config.get("ACCESS_TOKEN_TTL_SECONDS") + REVOCATION_SKEW_SECONDS,
         ),
     },
+    {
+      // The one rate limiter, shared. Two strategies over one Valkey would be two key
+      // namespaces for the same job, and the base class fixes that namespace precisely
+      // so a second one cannot appear by accident.
+      provide: RateLimitStrategy,
+      inject: [VALKEY, Clock],
+      useFactory: (valkey: ValkeyClient, clock: Clock): RateLimitStrategy =>
+        new SlidingWindowStrategy(valkey, clock),
+    },
     ValkeyLifecycle,
   ],
-  exports: [VALKEY, RevocationSet],
+  exports: [VALKEY, RevocationSet, RateLimitStrategy],
 })
 export class CacheModule {}

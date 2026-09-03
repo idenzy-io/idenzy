@@ -65,6 +65,22 @@ export class OtpChallengeRepository extends BaseRepository<typeof otpChallenges>
     return row.id;
   }
 
+  /**
+   * Which channel carried a challenge, and nothing else.
+   *
+   * Its own read because the caller that needs it is choosing which flow to hand the
+   * challenge to, and it has no business holding the code hash or the encrypted target
+   * to make that choice.
+   */
+  async channelOf(id: string): Promise<string | null> {
+    const rows = await this.tx
+      .select({ channel: otpChallenges.channel })
+      .from(otpChallenges)
+      .where(and(this.tenantScope(), eq(otpChallenges.id, id)))
+      .limit(1);
+    return rows[0]?.channel ?? null;
+  }
+
   async findById(id: string): Promise<OtpChallengeRow | null> {
     const rows = await this.tx
       .select()

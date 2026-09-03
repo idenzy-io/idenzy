@@ -1,0 +1,42 @@
+{
+  "name": "@idenzy/nuxt",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/module.d.ts",
+      "default": "./dist/module.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "nuxt": ">=4.0.0"
+  },
+  "dependencies": {
+    "@idenzy/js": "workspace:*",
+    "@idenzy/node": "workspace:*",
+    "@idenzy/protocol": "workspace:*",
+    "@idenzy/vue": "workspace:*",
+    "@nuxt/kit": "catalog:"
+  },
+  "devDependencies": {
+    "@nuxt/schema": "catalog:",
+    "jose": "catalog:",
+    "nuxt": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

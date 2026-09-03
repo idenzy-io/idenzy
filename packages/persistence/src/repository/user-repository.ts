@@ -173,6 +173,7 @@ export class UserRepository extends BaseRepository<typeof users> {
       displayName: row.displayName,
       avatarUrl: row.avatarUrl,
       metadataPublic: asRecord(row.metadataPublic),
+      metadataPrivate: asRecord(row.metadataPrivate),
       bannedUntil: row.bannedUntil,
       lastSignInAt: row.lastSignInAt,
       createdAt: row.createdAt,

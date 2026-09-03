@@ -16,6 +16,14 @@ export interface UserState {
   readonly displayName: string | null;
   readonly avatarUrl: string | null;
   readonly metadataPublic: Readonly<Record<string, unknown>>;
+  /**
+   * Customer-owned data no client has ever seen.
+   *
+   * Carried on the entity because a claim template can be configured to publish it, and
+   * nothing else here may touch it. `toPublic` is the boundary that keeps it server-side:
+   * a field added there by accident would put this in every client SDK at once.
+   */
+  readonly metadataPrivate: Readonly<Record<string, unknown>>;
   readonly bannedUntil: Date | null;
   readonly lastSignInAt: Date | null;
   readonly createdAt: Date;
@@ -41,6 +49,15 @@ export class User {
 
   get email(): string | null {
     return this.state.email;
+  }
+
+  get metadataPublic(): Readonly<Record<string, unknown>> {
+    return this.state.metadataPublic;
+  }
+
+  /** Server-side only. Reachable from a claim template and from the management API. */
+  get metadataPrivate(): Readonly<Record<string, unknown>> {
+    return this.state.metadataPrivate;
   }
 
   get emailVerified(): boolean {

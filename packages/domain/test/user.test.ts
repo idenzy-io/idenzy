@@ -28,6 +28,7 @@ function user(overrides: Partial<UserState> = {}): User {
     displayName: null,
     avatarUrl: null,
     metadataPublic: {},
+    metadataPrivate: {},
     bannedUntil: null,
     lastSignInAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),

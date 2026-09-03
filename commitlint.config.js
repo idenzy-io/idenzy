@@ -29,6 +29,7 @@ export default {
         "client",
         "admin",
         "sdk",
+        "cli",
         "infra",
         "ci",
         "docs",

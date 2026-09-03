@@ -92,6 +92,24 @@ describe("a session the server already worked out", () => {
     // rotation that follows brings one back.
     expect(result.current.user).toBeNull();
   });
+
+  /**
+   * What `idenzy.session()` answers for a visitor the server could not place, handed over as
+   * it arrives. It is a server saying it looked and could not tell, so it renders `loading`
+   * and never signed out, and taking null here is what saves a customer from coercing it.
+   */
+  it("renders loading for the null a server could not place a visitor with", () => {
+    const transport = new FakeTransport(() => json(200, sessionRefreshed()));
+    const { result } = renderHook(() => useSession(), {
+      wrapper: ({ children }) => (
+        <IdenzyProvider client={client(transport)} initialSession={null}>
+          {children}
+        </IdenzyProvider>
+      ),
+    });
+
+    expect(result.current.status).toBe("loading");
+  });
 });
 
 describe("useUser", () => {

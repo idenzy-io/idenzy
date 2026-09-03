@@ -34,7 +34,7 @@ export interface IdenzyContext {
   readonly user: Readable<PublicUser | null>;
 }
 
-export interface IdenzyOptions extends Omit<SessionStoreOptions, "initial"> {
+export interface IdenzyOptions extends SessionStoreOptions {
   /**
    * The client, built once and outside the component tree.
    *
@@ -45,19 +45,6 @@ export interface IdenzyOptions extends Omit<SessionStoreOptions, "initial"> {
    * between people.
    */
   readonly client: Idenzy;
-  /**
-   * What a server already worked out, handed straight from a load function.
-   *
-   * Null as well as absent, because null is what `+layout.server.ts` returns for a visitor
-   * the handle could not place, and under `exactOptionalPropertyTypes` the alternative is a
-   * customer spreading the key conditionally to pass on a value they were given. It means the
-   * same thing as absent: nobody knows yet, so the first paint is `loading`.
-   *
-   * A seed carries no profile. The access token names the user and the session and does not
-   * contain the user object, so anything rendering a name on the first paint has to be given
-   * one separately.
-   */
-  readonly initial?: SessionSnapshot | null;
 }
 
 const IDENZY = Symbol.for("idenzy");
@@ -70,10 +57,12 @@ const IDENZY = Symbol.for("idenzy");
  * mounts a second late should not take a second to find out who is looking at it.
  */
 export function createIdenzy(options: IdenzyOptions): IdenzyContext {
-  const seed = options.initial ?? undefined;
   const store = new SessionStore(options.client, {
     ...(options.restore === undefined ? {} : { restore: options.restore }),
-    ...(seed === undefined ? {} : { initial: seed }),
+    // Passed on as it arrives, null included. A null seed is a server saying it looked and
+    // could not tell, which holds `loading`; dropping the key would say nobody looked, and on
+    // a server render with `restore: false` that is the signed-out tree in the HTML.
+    ...(options.initial === undefined ? {} : { initial: options.initial }),
   });
   const session = readable(store.snapshot(), (set) => {
     const stop = store.subscribe(() => set(store.snapshot()));
@@ -99,10 +88,13 @@ export function createIdenzy(options: IdenzyOptions): IdenzyContext {
  * have.
  *
  * In SvelteKit the whole call is `setIdenzy({ client, restore: browser, initial: data.session })`,
- * and `restore: browser` is the part that is easy to leave out and expensive to leave out. A
- * layout renders on the server too, and restoring there rotates a cookie the server does not
- * hold: a request to the auth API per render, answered signed-out, for nothing. The seed is
- * where a server's answer comes from, and `@idenzy/svelte/server` is what works it out.
+ * and both halves are load-bearing. `restore: browser` is what keeps a layout that also renders
+ * on the server from rotating a cookie the server does not hold: a request to the auth API per
+ * render, answered signed-out, for nothing. `initial` is what makes that safe, and it goes in
+ * even when the load function returned null, because null is a server reporting that it looked
+ * and could not tell. Leave it out and the server render has nothing to hold and nothing coming
+ * to correct it, so it paints the signed-out tree at a visitor who is about to turn out to be
+ * signed in. `@idenzy/svelte/server` is what works the seed out.
  */
 export function setIdenzy(options: IdenzyOptions): IdenzyContext {
   const context = createIdenzy(options);

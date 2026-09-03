@@ -131,16 +131,37 @@ describe("the session store", () => {
   });
 
   /**
-   * What a load function returns for a visitor the server could not place. It means the same
-   * as no seed at all, so the first paint is `loading` and the browser settles it.
+   * What a load function returns for a visitor the server could not place. It is a server
+   * reporting that it looked and could not tell, so the first paint is `loading` and the
+   * browser settles it.
    */
-  it("takes the null a load function returns as no seed at all", () => {
+  it("takes the null a load function returns as a server that could not tell", () => {
     const context = createIdenzy({
       client: client(new FakeTransport(() => answer(200, restored()))),
       initial: null,
     });
 
     expect(get(context.session).status).toBe("loading");
+  });
+
+  /**
+   * The documented SvelteKit call on the server half of a render: `restore: browser` is false
+   * there and the load function could not place the visitor. Signed out here is the sign-in
+   * tree in the HTML for somebody the browser is about to find a session for, which is the
+   * flash the seed exists to prevent. `$session` subscribes while rendering, so the subscribe
+   * is part of the case.
+   */
+  it("holds loading through a server render that could not place the visitor", () => {
+    const context = createIdenzy({
+      client: client(new FakeTransport(() => answer(200, restored()))),
+      restore: false,
+      initial: null,
+    });
+    const watcher = watch(context.session);
+
+    expect(get(context.session).status).toBe("loading");
+    expect(watcher.seen.every((seen) => seen.status === "loading")).toBe(true);
+    watcher.stop();
   });
 
   it("follows a sign-in made through the client", async () => {

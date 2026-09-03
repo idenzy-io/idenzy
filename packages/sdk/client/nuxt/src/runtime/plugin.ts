@@ -37,11 +37,10 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     ...(options.deviceName === undefined ? {} : { deviceName: options.deviceName }),
   });
 
-  nuxtApp.vueApp.use(
-    createIdenzy({
-      client,
-      restore: !onServer,
-      ...(seed.value === null ? {} : { initial: seed.value }),
-    }),
-  );
+  // The seed goes in as it is, null included. Null is this server saying it looked and could
+  // not place the visitor, which holds `loading` until the browser settles it. Dropping the
+  // key would say nobody looked, and with `restore: false` on the server that renders the
+  // signed-out tree at every visitor the cookie did not name, which is most of them and all of
+  // them where `projectId` is not configured.
+  nuxtApp.vueApp.use(createIdenzy({ client, restore: !onServer, initial: seed.value }));
 });

@@ -45,7 +45,7 @@ interface IdenzyContextValue {
 
 const IdenzyContext = createContext<IdenzyContextValue>();
 
-export interface IdenzyProviderProps extends Omit<SessionStoreOptions, "initial"> {
+export interface IdenzyProviderProps extends SessionStoreOptions {
   /**
    * The client, built once and outside the tree.
    *
@@ -56,19 +56,6 @@ export interface IdenzyProviderProps extends Omit<SessionStoreOptions, "initial"
    * shared between people.
    */
   readonly client: Idenzy;
-  /**
-   * What a server already worked out, so the first paint is not a guess.
-   *
-   * Null as well as absent, because null is what a server that could not place the visitor
-   * has to return, and under `exactOptionalPropertyTypes` the alternative is a customer
-   * spreading the key conditionally to pass on a value they were given. It means the same as
-   * absent: nobody knows yet, so the first paint is `loading`.
-   *
-   * A seed carries no profile. The access token names the user and the session and does not
-   * contain the user object, so anything rendering a name on the first paint has to be given
-   * one separately.
-   */
-  readonly initial?: SessionSnapshot | null;
   readonly children: JSX.Element;
 }
 
@@ -81,18 +68,18 @@ export interface IdenzyProviderProps extends Omit<SessionStoreOptions, "initial"
  * ignored, because the quiet version leaves every primitive reporting a session nobody is
  * calling any more.
  *
- * Under SolidStart this renders on the server too. Pass `restore={!isServer}` there together
- * with the seed that render worked out: restoring on the server rotates a refresh cookie the
- * server does not hold, which is one request to the auth API per render, answered signed-out,
- * for nothing. A server render given neither a seed nor a restore starts signed out, which is
- * the flash a seed exists to prevent.
+ * Under SolidStart this renders on the server too, so pass `restore={!isServer}` together with
+ * the seed that render worked out, null included. Restoring on the server rotates a refresh
+ * cookie the server does not hold, which is one request to the auth API per render, answered
+ * signed-out, for nothing; and a null seed is a server reporting that it looked and could not
+ * tell, which holds `loading`. A server render given neither has nothing to hold and nothing
+ * coming to correct it, so it paints the signed-out tree.
  */
 export function IdenzyProvider(props: IdenzyProviderProps): JSX.Element {
   const client = props.client;
-  const seed = props.initial ?? undefined;
   const store = new SessionStore(client, {
     ...(props.restore === undefined ? {} : { restore: props.restore }),
-    ...(seed === undefined ? {} : { initial: seed }),
+    ...(props.initial === undefined ? {} : { initial: props.initial }),
   });
   const [session, setSession] = createSignal(store.snapshot());
 

@@ -219,6 +219,12 @@ Four rules the store owns, and every binding inherits.
   token names the user and the session and does not contain the user object, so a seeded
   snapshot has `userId` and a null `user`. Anything rendering a name on the first paint has
   to be given one separately.
+- **A null `initial` is an answer and a missing one is not.** Null is a server saying it
+  looked and could not place the visitor, which holds `loading`; absent says nobody looked,
+  and with `restore: false` the store then lets the client's own position stand, which for a
+  client holding nothing is signed out. So a binding hands the seed on exactly as it arrives,
+  null included. Dropping the key on null is what put the signed-out tree in the HTML of every
+  Nuxt page in the module's default configuration, and in SvelteKit's documented call.
 
 Two of them carry something the others do not, and both are easy to undo by accident.
 
@@ -254,7 +260,9 @@ Four rules every one of them keeps.
 - **Null is not signed out, and never renders as signed out.** The access token is the
   short-lived half, so a visitor whose token expired an hour ago still holds a refresh cookie
   and is still signed in. Null seeds `loading` and the browser settles it. Seeding signed-out
-  puts a sign-in form in the HTML for somebody who does not need one.
+  puts a sign-in form in the HTML for somebody who does not need one. The null has to reach
+  the binding to do that, so hand it over rather than dropping the key: see the `initial` rule
+  above for what a missing seed means instead.
 - **A seed never throws, an outage included.** A handle, a middleware or a root loader that
   threw is a 500 or an error boundary on every page of a customer's site for the length of a
   JWKS outage, and the site does not need us in order to render. Null renders `loading`.

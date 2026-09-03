@@ -32,8 +32,14 @@ export interface SessionStoreOptions {
    * A framework that renders on a server verifies the session cookie there and passes the
    * answer here. Both sides then start from the same snapshot, which is what stops hydration
    * from swapping a signed-out tree for a signed-in one in front of the user.
+   *
+   * Null is an answer and absent is not, and every SSR helper we ship returns the first. Null
+   * says a server looked and could not place the visitor, which is the ordinary case for an
+   * expired access token over a live refresh cookie: the store holds `loading` and the browser
+   * settles it. Absent says nobody consulted a server, so `restore: false` leaves the client's
+   * own position standing, and a client holding nothing says signed out.
    */
-  readonly initial?: SessionSnapshot;
+  readonly initial?: SessionSnapshot | null;
 }
 
 export const LOADING_SESSION: SessionSnapshot = Object.freeze({
@@ -89,7 +95,10 @@ export class SessionStore {
     this.initial = options.initial ?? LOADING_SESSION;
     this.restored = !restores;
     this.looked = !restores && options.initial === undefined;
-    this.current = options.initial ?? (restores ? LOADING_SESSION : snapshotOf(client));
+    // The client's own position stands only where `looked` says it is an answer, which is
+    // where nothing is going to restore and no server offered one. A null seed is a server
+    // that looked and could not tell, so it lands here as `loading` rather than as nothing.
+    this.current = options.initial ?? (this.looked ? snapshotOf(client) : LOADING_SESSION);
   }
 
   readonly subscribe = (onChange: () => void): (() => void) => {

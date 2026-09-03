@@ -121,6 +121,20 @@ describe("useSession", () => {
     expect(transport.requests).toHaveLength(0);
   });
 
+  /**
+   * What `@idenzy/nuxt` installs on the server half of a render, and the case its default
+   * configuration always takes: no `projectId`, so the seed is null for everybody. Signed out
+   * here is a sign-in screen in the HTML of every page, replaced once the browser rotates.
+   */
+  it("holds loading through a server render that could not place the visitor", () => {
+    const transport = new FakeTransport(() => json(200, sessionRefreshed()));
+
+    const wrapper = mountWith(client(transport), { restore: false, initial: null });
+
+    expect(wrapper.text()).toBe("loading");
+    expect(transport.requests).toHaveLength(0);
+  });
+
   it("follows a sign-in made through the client", async () => {
     const transport = new FakeTransport((request) =>
       request.url.endsWith("v1/auth/anonymous") ? json(200, sessionCreated()) : refused(),

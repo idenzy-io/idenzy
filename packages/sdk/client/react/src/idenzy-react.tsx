@@ -65,8 +65,12 @@ export interface IdenzyProviderProps {
    * Both sides then start from the same snapshot, which is what stops hydration swapping a
    * signed-out tree for a signed-in one in front of the user. `@idenzy/next` passes this;
    * an application rendering only in the browser has nothing to put here.
+   *
+   * Null as well as a snapshot, because null is what `idenzy.session()` answers for a visitor
+   * the server could not place, and it means `loading` rather than signed out. Taking it here
+   * is what lets a customer hand that result straight over instead of coercing it.
    */
-  readonly initialSession?: SessionSnapshot;
+  readonly initialSession?: SessionSnapshot | null;
   readonly children: ReactNode;
 }
 

@@ -65,6 +65,34 @@ describe("before the first rotation answers", () => {
     expect(store.snapshot()).toEqual(seed);
   });
 
+  /**
+   * The other half of a server render, and the common one: a visitor whose access token
+   * expired an hour ago and who still holds a refresh cookie. The server cannot place them
+   * and says so with null, which is not the same as nobody having looked. Signed out here is
+   * a sign-in form in the HTML for somebody the next request proves is signed in.
+   */
+  it("holds loading where a server looked and could not tell", () => {
+    const store = new SessionStore(build(new FakeTransport(refused)), {
+      restore: false,
+      initial: null,
+    });
+
+    expect(store.snapshot().status).toBe("loading");
+    expect(store.serverSnapshot().status).toBe("loading");
+  });
+
+  /** Svelte's `$session` and Vue's SSR both subscribe while rendering, so this is that path. */
+  it("keeps holding it when a subscriber arrives during that render", () => {
+    const store = new SessionStore(build(new FakeTransport(refused)), {
+      restore: false,
+      initial: null,
+    });
+
+    store.subscribe(() => undefined);
+
+    expect(store.snapshot().status).toBe("loading");
+  });
+
   it("follows the client the moment it does have an opinion", async () => {
     const seed = seededSession("usr_00000000000000000001", "ses_00000000000000000009");
     const transport = new FakeTransport((request) =>

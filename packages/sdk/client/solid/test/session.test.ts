@@ -173,16 +173,31 @@ describe("the session accessor", () => {
   });
 
   /**
-   * What a server returns for a visitor it could not place. It means the same as no seed at
-   * all, so the first paint is `loading` and the browser settles it.
+   * What a server returns for a visitor it could not place. It is a server reporting that it
+   * looked and could not tell, so the first paint is `loading` and the browser settles it.
    */
-  it("takes the null a server could not answer with as no seed at all", () => {
+  it("takes the null a server could not answer with as a server that could not tell", () => {
     const mounted = mount({
       client: client(new FakeTransport(() => answer(200, restored()))),
       initial: null,
     });
 
     expect(mounted.session().status).toBe("loading");
+    mounted.dispose();
+  });
+
+  /**
+   * The SolidStart server half: `restore={!isServer}` is false there and the seed is null.
+   * Signed out here is the sign-in tree in the HTML for somebody the browser is about to find
+   * a session for.
+   */
+  it("holds loading through a server render that could not place the visitor", () => {
+    const transport = new FakeTransport(() => answer(200, restored()));
+
+    const mounted = mount({ client: client(transport), restore: false, initial: null });
+
+    expect(mounted.session().status).toBe("loading");
+    expect(transport.requests).toHaveLength(0);
     mounted.dispose();
   });
 

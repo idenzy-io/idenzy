@@ -210,8 +210,13 @@ device name that keeps it from being a list of blanks. `@idenzy/react` is the fi
 framework binding on top of it, and it is a provider and three hooks with no UI in it.
 `@idenzy/node` came before the framework packages rather than after, because a page
 rendered on a server verifies a token rather than holding a session, and `@idenzy/next`
-needs that half to exist. `@idenzy/next` is next, and it is the one the exit criterion
-actually names.
+needs that half to exist.
+
+The framework bindings are now in: React, Vue, Svelte, Angular, Next and Nuxt. They are
+small because the part worth getting right lives in `SessionStore` in `@idenzy/js`, which
+each of them wraps in whatever its framework calls external state. Angular came forward
+from phase 3 for the same reason. What is left in 1.5 is the conformance suite that holds
+them to the same behaviour, `idenzy init`, and the starter templates.
 
 ### 1.1 Core auth flows
 
@@ -311,8 +316,17 @@ actually names.
       rotate the same token and the second rotation revokes the family (ADR-0007). The
       session gains a third status, `loading`, which is what keeps an application from
       flashing its sign-in screen at someone who is already signed in
-- [ ] `@idenzy/next` with App Router support and middleware
-- [ ] `@idenzy/nuxt` module and composables
+- [x] `@idenzy/next` with App Router support and middleware. The browser half is
+      `@idenzy/react` re-exported; what Next adds is `IdenzyServer`, which verifies the
+      session cookie in a Server Component, Route Handler or middleware with no network
+      call, and `protectRoutes`, which redirects to a page in the customer's own app
+- [x] `@idenzy/nuxt` module and composables. Given a project id the server verifies the
+      cookie itself and seeds the payload, so the browser hydrates from the snapshot the
+      HTML was rendered from. One client per request, never a module singleton
+- [x] `@idenzy/vue` plugin and composables
+- [x] `@idenzy/svelte` context and stores
+- [x] `@idenzy/angular` provider and signals. Pulled forward from phase 3, because the
+      shared session store made it an afternoon rather than a project
 - [~] `@idenzy/node` server SDK. Access-token verification is done: remote JWKS with the
       cache and the one refetch a rotation needs, `aud` required because one issuer serves
       every project and the audience is the only thing separating tenants, and reading the
@@ -380,7 +394,7 @@ actually names.
 
 ## Phase 3: Breadth (12 weeks)
 
-- [ ] Angular, Solid, Astro, Remix, Electron, Tauri and Capacitor SDKs
+- [ ] Solid, Astro, Remix, Electron, Tauri and Capacitor SDKs. Angular landed in phase 1
 - [ ] Unity and Godot SDKs
 - [ ] Kotlin Multiplatform SDK
 - [ ] Python (Both async and sync), PHP, Ruby, Java, .NET, Go and Rust server SDKs

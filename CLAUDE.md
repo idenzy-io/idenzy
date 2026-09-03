@@ -193,6 +193,42 @@ is a compile error rather than a runtime one in somebody's browser.
   `InvalidStateError` are a web platform contract older than ours.
 - The package is `private` until Changesets exists. Publishing is its own change.
 
+## Working on a framework binding
+
+There are six of them (React, Vue, Svelte, Angular, Next, Nuxt) and they are all small,
+because the part worth getting right is `SessionStore` in `@idenzy/js`. Do not
+reimplement any of it per framework: each binding wraps that store in whatever its
+framework calls external state, and that is all it is allowed to be.
+
+Four rules the store owns, and every binding inherits.
+
+- **The client is passed in, never built by the binding.** An `Idenzy` owns the session,
+  the refresh token and the single-flight promise. Two clients on one page rotating the
+  same token means the second rotation revokes the family (ADR-0007). On a server it is
+  stronger than that: one client per request, never a module singleton, because a client
+  shared between requests is a session shared between people.
+- **`SessionSnapshot.status` has three values, not two.** `loading` is the answer until the
+  first rotation comes back. A binding that collapses it into signed-out shows a sign-in
+  screen to somebody who is already signed in, once per page load.
+- **The store skips the first emission from `Idenzy.subscribe`.** That call reports the
+  client's opening position, and a client that has not rotated says signed-out because it
+  has nothing rather than because nobody is signed in. Published over a server's seed it
+  turned a signed-in page into a sign-in screen the moment a component subscribed.
+- **`initial` is what a server already worked out, and it carries no profile.** The access
+  token names the user and the session and does not contain the user object, so a seeded
+  snapshot has `userId` and a null `user`. Anything rendering a name on the first paint has
+  to be given one separately.
+
+Server rendering is `@idenzy/node` on the server side of `@idenzy/next` and `@idenzy/nuxt`.
+In Nuxt it is imported dynamically inside the server branch, so neither it nor the JWKS
+machinery reaches a browser bundle. A cookie the server cannot read seeds nothing rather
+than seeding signed-out: the access token is the short-lived half, and a user whose token
+expired an hour ago still holds a refresh cookie and is still signed in.
+
+`@idenzy/next` sets `moduleResolution: bundler` in its own `tsconfig`, unlike every other
+package. `next/server` and `next/headers` have no exports map and are not resolvable as
+ESM subpaths at all, and the consumer is a bundler in any case.
+
 ## Working on `@idenzy/react`
 
 Small on purpose: a provider, three hooks, and a store that adapts one to the other. Four

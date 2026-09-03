@@ -17,19 +17,16 @@ export class FetchHttpClient extends HttpClient {
   }
 
   protected override async exchange(request: HttpRequest): Promise<HttpResponse> {
+    const encoded = encode(request);
     try {
       const response = await fetch(request.url, {
         method: request.method,
         headers: {
           accept: "application/json",
-          ...(request.form === undefined
-            ? {}
-            : { "content-type": "application/x-www-form-urlencoded" }),
+          ...(encoded === null ? {} : { "content-type": encoded.contentType }),
           ...request.headers,
         },
-        ...(request.form === undefined
-          ? {}
-          : { body: new URLSearchParams({ ...request.form }).toString() }),
+        ...(encoded === null ? {} : { body: encoded.body }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       return { status: response.status, body: await response.text() };
@@ -40,4 +37,18 @@ export class FetchHttpClient extends HttpClient {
       });
     }
   }
+}
+
+/** The body and the content type it announces, which are one decision and never two. */
+function encode(request: HttpRequest): { contentType: string; body: string } | null {
+  if (request.json !== undefined) {
+    return { contentType: "application/json", body: JSON.stringify(request.json) };
+  }
+  if (request.form !== undefined) {
+    return {
+      contentType: "application/x-www-form-urlencoded",
+      body: new URLSearchParams({ ...request.form }).toString(),
+    };
+  }
+  return null;
 }

@@ -4,8 +4,15 @@ export interface HttpRequest {
   readonly url: string;
   readonly method: "GET" | "POST";
   readonly headers?: Readonly<Record<string, string>>;
-  /** `application/x-www-form-urlencoded`, which is what every OAuth token endpoint takes. */
+  /** `application/x-www-form-urlencoded`, which is what almost every OAuth token endpoint takes. */
   readonly form?: Readonly<Record<string, string>>;
+  /**
+   * `application/json`, for the endpoint that refuses a form.
+   *
+   * RFC 6749 requires the form encoding and Notion's token endpoint takes JSON only, so a
+   * request carries one or the other and never both.
+   */
+  readonly json?: Readonly<Record<string, string>>;
 }
 
 export interface HttpResponse {

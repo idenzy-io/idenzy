@@ -15,6 +15,7 @@ import { KakaoProvider } from "@idenzy/providers-oauth/providers/kakao-provider"
 import { LineProvider } from "@idenzy/providers-oauth/providers/line-provider";
 import { LinkedinProvider } from "@idenzy/providers-oauth/providers/linkedin-provider";
 import { MicrosoftProvider } from "@idenzy/providers-oauth/providers/microsoft-provider";
+import { NotionProvider } from "@idenzy/providers-oauth/providers/notion-provider";
 import { SlackProvider } from "@idenzy/providers-oauth/providers/slack-provider";
 import { SpotifyProvider } from "@idenzy/providers-oauth/providers/spotify-provider";
 import { TwitchProvider } from "@idenzy/providers-oauth/providers/twitch-provider";
@@ -73,6 +74,7 @@ import { ProviderRegistry } from "./provider-registry.js";
           [ProviderId.Zoom, new ZoomProvider(http, clock, flows, allowlist)],
           [ProviderId.Kakao, new KakaoProvider(http, clock, flows, allowlist)],
           [ProviderId.Line, new LineProvider(http, clock, flows, allowlist)],
+          [ProviderId.Notion, new NotionProvider(http, clock, flows, allowlist)],
         ]);
       },
     },

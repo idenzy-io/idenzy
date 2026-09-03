@@ -212,11 +212,12 @@ export abstract class OAuthProvider {
     callback: OAuthCallback,
     flow: StoredFlow,
   ): Promise<TokenGrant> {
+    const body = await this.tokenRequest(credentials, callback, flow);
     const response = await this.http.json<Readonly<Record<string, unknown>>>({
       url: this.tokenEndpoint(credentials),
       method: "POST",
       headers: this.tokenHeaders(credentials),
-      form: await this.tokenRequest(credentials, callback, flow),
+      ...(this.tokenEncoding() === "json" ? { json: body } : { form: body }),
     });
     if (response.status >= 400) {
       // The provider's own error code is kept internal. Echoing it would hand a prober a
@@ -226,6 +227,17 @@ export abstract class OAuthProvider {
       });
     }
     return this.mapGrant(response.data);
+  }
+
+  /**
+   * How the token request is encoded.
+   *
+   * RFC 6749 requires the form encoding and every provider here follows it but one:
+   * Notion's API takes JSON and nothing else, and answers a form with an error about the
+   * grant type that says nothing about the encoding.
+   */
+  protected tokenEncoding(): "form" | "json" {
+    return "form";
   }
 
   /**

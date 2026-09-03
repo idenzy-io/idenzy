@@ -17,6 +17,7 @@ import { KakaoProvider } from "../src/providers/kakao-provider.js";
 import { LineProvider } from "../src/providers/line-provider.js";
 import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
+import { NotionProvider } from "../src/providers/notion-provider.js";
 import { SlackProvider } from "../src/providers/slack-provider.js";
 import { SpotifyProvider } from "../src/providers/spotify-provider.js";
 import { TwitchProvider } from "../src/providers/twitch-provider.js";
@@ -51,6 +52,8 @@ const providers = {
   zoom: (d: OAuthProviderDependencies) => new ZoomProvider(d.http, d.clock, d.flows, d.allowlist),
   kakao: (d: OAuthProviderDependencies) => new KakaoProvider(d.http, d.clock, d.flows, d.allowlist),
   line: (d: OAuthProviderDependencies) => new LineProvider(d.http, d.clock, d.flows, d.allowlist),
+  notion: (d: OAuthProviderDependencies) =>
+    new NotionProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -214,6 +217,18 @@ describe("provider specifics", () => {
     expect(url.searchParams.get("scope")).toBe("openid profile email");
   });
 
+  /**
+   * Notion has no scopes: capabilities belong to the integration. An empty `scope` reads as
+   * a request for none rather than as the absence of the parameter, so it is dropped, and
+   * `owner=user` is what asks a person to authorize rather than a workspace.
+   */
+  it("asks Notion for a person's authorization, and sends it no scope at all", () => {
+    const url = new URL(providers.notion(deps()).authorizationUrl(credentials, request));
+    expect(url.searchParams.has("scope")).toBe(false);
+    expect(url.searchParams.get("owner")).toBe("user");
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+
   /** Signing somebody in should not ask them for their files. */
   it("asks Figma only for the scope its profile call needs", () => {
     const url = new URL(providers.figma(deps()).authorizationUrl(credentials, request));
@@ -235,6 +250,7 @@ function completing(answers: readonly { status: number; data: unknown }[]): {
     url: string;
     headers?: Record<string, string>;
     form?: Record<string, string>;
+    json?: Record<string, string>;
   }[];
   callbackFor: (provider: string) => {
     provider: string;
@@ -248,6 +264,7 @@ function completing(answers: readonly { status: number; data: unknown }[]): {
     url: string;
     headers?: Record<string, string>;
     form?: Record<string, string>;
+    json?: Record<string, string>;
   }[] = [];
   const flow = {
     id: "flow-1",
@@ -578,6 +595,65 @@ describe("profile mapping", () => {
     expect(profile.providerUserId).toBe("7");
     expect(profile.email).toBeNull();
     expect(profile.emailVerified).toBe(false);
+  });
+
+  /**
+   * Notion's token endpoint takes JSON, and the profile arrives in its answer. `/v1/users/me`
+   * would describe the integration's bot instead, which would key every user of one
+   * integration on one subject and hand them all the same account.
+   */
+  it("reads the Notion profile out of the token response, which is posted as json", async () => {
+    const script = completing([
+      {
+        status: 200,
+        data: {
+          access_token: "provider-access-token",
+          workspace_id: "w-1",
+          owner: {
+            type: "user",
+            user: {
+              id: "u-9001",
+              name: "Ada",
+              avatar_url: "https://avatars.test/ada",
+              person: { email: "ada@example.test" },
+            },
+          },
+        },
+      },
+    ]);
+    const provider = providers.notion(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(script.requests).toHaveLength(1);
+    expect(script.requests[0]?.form).toBeUndefined();
+    expect(script.requests[0]?.json?.["code_verifier"]).toBe("v".repeat(64));
+    expect(script.requests[0]?.headers?.["authorization"]).toBe(
+      `Basic ${Buffer.from("client-id:secret").toString("base64")}`,
+    );
+    expect(profile.providerUserId).toBe("u-9001");
+    expect(profile.email).toBe("ada@example.test");
+    expect(profile.emailVerified).toBe(false);
+    expect(profile.displayName).toBe("Ada");
+  });
+
+  /** A workspace-owned grant names a bot, and there is nobody in it to sign in. */
+  it("refuses a Notion grant whose owner is not a person", async () => {
+    const script = completing([
+      {
+        status: 200,
+        data: { access_token: "t", owner: { type: "workspace", workspace: true } },
+      },
+    ]);
+    const provider = providers.notion(script.deps);
+
+    await expect(
+      provider.completeFlow("project", credentials, script.callbackFor(provider.id)),
+    ).rejects.toMatchObject({ code: "oauth_provider_error" });
   });
 
   /** An unconfirmed address is the same as no address: nothing may be linked on one. */

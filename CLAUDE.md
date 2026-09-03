@@ -565,6 +565,13 @@ Five rules, and the first one is the shape everything else hangs off.
   throws, so a wrong code, a spent step, a crossed-off recovery code and a factor the user never
   enrolled are indistinguishable. Everyone who reaches a challenge has already got past a first
   factor, which is exactly where a stolen password puts an attacker.
+- **A proof is not a string, and holding a factor is not owing one.** `check` takes the
+  protocol's discriminated union, because a passkey assertion is not a code; every factor
+  refuses a proof meant for another in its first line, which is both the guard and the
+  narrowing. And `demandsChallenge` is separate from `enrolled`: an authenticator turns MFA on
+  for the account, a passkey and a recovery sheet only answer a challenge something else
+  demanded. Collapsing the two would make enrolling a passkey a change to every password
+  sign-in on that account.
 - **A TOTP code is spent by writing its step back.** `Totp.verify` returns the step rather than a
   boolean for that reason: a code is valid for its whole thirty seconds, so the only defence
   against one read over a shoulder is refusing a step already used. The counter moves with a

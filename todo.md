@@ -314,10 +314,13 @@ client have no server halves to talk to yet.
       for `mediation: "conditional"`, which is only possible because the server half names no
       credential: authentication options take no identifier, so autofill has something
       discoverable to offer whoever is at the keyboard
-- [ ] Passkey as a second factor and for step-up. The rest of MFA landed without it: the
-      gating it was waiting for exists, `MfaFactor` is the base it would extend, and
-      `MfaFactorConformanceSuite` is what it would have to pass. What is left is a factor whose
-      proof is a ceremony rather than a code, which is the one shape the family has not had
+- [x] Passkey as a second factor and for step-up. It is the one factor whose proof is a
+      ceremony rather than a code, which is what widened `MfaFactor` from a string to the
+      protocol's proof union. It never demands a challenge: a credential enrolled to sign in
+      with must not silently start being demanded on top of the account's password, so
+      `demandsChallenge` separates what turns MFA on from what may answer it. Its nonce is
+      its own ceremony kind, pinned to the user the challenge already named, because one
+      minted here must not be spendable at the door where naming no user is the point
 
 ### 1.4 Delivery
 
@@ -451,6 +454,15 @@ is what stops a passkey ceremony being followed by a demand for a code, and a us
 nothing enrolled owes nothing, because a challenge nobody can answer is a sign-in that cannot
 be completed rather than one that is refused.
 
+Three factors are wired and they are not the same kind of thing, which the family had to
+learn. A proof is not a string: TOTP and recovery codes take one, a passkey takes a signed
+assertion, so `MfaFactor` takes the protocol's discriminated union and every factor refuses
+one meant for another in its first line. And holding a factor is not the same as owing one:
+`demandsChallenge` is what separates an authenticator, which turns MFA on for the account,
+from a passkey, which answers a challenge something else demanded. Without that split,
+enrolling a passkey to sign in with would silently change what every password sign-in on
+that account does.
+
 `factorVerifiedAt` replaced `requiresMfa` on the subject and the direction is reversed on
 purpose: a flow no longer says whether a factor is owed, which is the gate's business, and
 instead says whether it proved one itself. That is what feeds the `fva` claim, which had been
@@ -492,9 +504,9 @@ template pipeline of its own rather than a branch in the OTP flow.
       is three signals: a per-number ceiling, a per-address ceiling, a thousand-block counter
       for the consecutive numbers that dodge both, and the send-to-verify ratio for a run that
       has defeated everything else and still cannot make anybody type the code in
-- [~] TOTP MFA, recovery codes, step-up authentication and the `fva` claim. TOTP and recovery
-      codes are done and pass `MfaFactorConformanceSuite`; passkey and SMS as second factors
-      are the two names in the enum that are not wired. TOTP is RFC 6238 with the document's
+- [~] TOTP MFA, recovery codes, step-up authentication and the `fva` claim. TOTP, recovery
+      codes and passkeys are done and pass `MfaFactorConformanceSuite`; SMS is the one name in
+      the enum that is not wired, and it waits on a vendor adapter like the OTP channel does. TOTP is RFC 6238 with the document's
       own vectors in the tests, and `verify` returns the step a code came from rather than a
       boolean, because a code is valid for its whole step and the only defence against a
       shoulder-surfed one is refusing a step already spent. Recovery codes are 100 bits, which

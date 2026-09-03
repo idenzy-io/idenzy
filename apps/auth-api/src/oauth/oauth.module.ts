@@ -11,6 +11,8 @@ import { FigmaProvider } from "@idenzy/providers-oauth/providers/figma-provider"
 import { GithubProvider } from "@idenzy/providers-oauth/providers/github-provider";
 import { GitlabProvider } from "@idenzy/providers-oauth/providers/gitlab-provider";
 import { GoogleProvider } from "@idenzy/providers-oauth/providers/google-provider";
+import { KakaoProvider } from "@idenzy/providers-oauth/providers/kakao-provider";
+import { LineProvider } from "@idenzy/providers-oauth/providers/line-provider";
 import { LinkedinProvider } from "@idenzy/providers-oauth/providers/linkedin-provider";
 import { MicrosoftProvider } from "@idenzy/providers-oauth/providers/microsoft-provider";
 import { SlackProvider } from "@idenzy/providers-oauth/providers/slack-provider";
@@ -69,6 +71,8 @@ import { ProviderRegistry } from "./provider-registry.js";
           [ProviderId.Spotify, new SpotifyProvider(http, clock, flows, allowlist)],
           [ProviderId.Figma, new FigmaProvider(http, clock, flows, allowlist)],
           [ProviderId.Zoom, new ZoomProvider(http, clock, flows, allowlist)],
+          [ProviderId.Kakao, new KakaoProvider(http, clock, flows, allowlist)],
+          [ProviderId.Line, new LineProvider(http, clock, flows, allowlist)],
         ]);
       },
     },

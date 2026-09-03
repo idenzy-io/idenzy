@@ -13,6 +13,8 @@ import { FigmaProvider } from "../src/providers/figma-provider.js";
 import { GithubProvider } from "../src/providers/github-provider.js";
 import { GitlabProvider } from "../src/providers/gitlab-provider.js";
 import { GoogleProvider } from "../src/providers/google-provider.js";
+import { KakaoProvider } from "../src/providers/kakao-provider.js";
+import { LineProvider } from "../src/providers/line-provider.js";
 import { LinkedinProvider } from "../src/providers/linkedin-provider.js";
 import { MicrosoftProvider } from "../src/providers/microsoft-provider.js";
 import { SlackProvider } from "../src/providers/slack-provider.js";
@@ -47,6 +49,8 @@ const providers = {
     new SpotifyProvider(d.http, d.clock, d.flows, d.allowlist),
   figma: (d: OAuthProviderDependencies) => new FigmaProvider(d.http, d.clock, d.flows, d.allowlist),
   zoom: (d: OAuthProviderDependencies) => new ZoomProvider(d.http, d.clock, d.flows, d.allowlist),
+  kakao: (d: OAuthProviderDependencies) => new KakaoProvider(d.http, d.clock, d.flows, d.allowlist),
+  line: (d: OAuthProviderDependencies) => new LineProvider(d.http, d.clock, d.flows, d.allowlist),
 } as const;
 
 const credentials: ProviderCredentials = {
@@ -198,6 +202,16 @@ describe("provider specifics", () => {
     const url = new URL(providers.slack(deps()).authorizationUrl(credentials, request));
     expect(url.searchParams.get("scope")).toBe("openid profile email");
     expect(url.searchParams.get("nonce")).toBe("n");
+  });
+
+  /**
+   * LINE sends the browser to one host and issues the token from another, so the issuer is
+   * not the host we call. Getting that backwards rejects every real sign-in.
+   */
+  it("sends LINE's browser to the host that issues its assertions", () => {
+    const url = new URL(providers.line(deps()).authorizationUrl(credentials, request));
+    expect(url.origin).toBe("https://access.line.me");
+    expect(url.searchParams.get("scope")).toBe("openid profile email");
   });
 
   /** Signing somebody in should not ask them for their files. */
@@ -507,6 +521,63 @@ describe("profile mapping", () => {
       expect(profile.emailVerified).toBe(expected);
       expect(profile.displayName).toBe("Ada");
     }
+  });
+
+  /**
+   * Kakao states verification in two fields, and `is_email_valid` is the one that goes
+   * false when the address has moved to another Kakao account. Reading only the other
+   * would link an existing account on an address that now belongs to somebody else.
+   */
+  it("takes a Kakao address as confirmed only when both of its flags say so", async () => {
+    for (const [valid, verified, expected] of [
+      [true, true, true],
+      [false, true, false],
+      [true, false, false],
+      [undefined, undefined, false],
+    ] as const) {
+      const script = completing([
+        GRANT,
+        {
+          status: 200,
+          data: {
+            id: 4815162342,
+            kakao_account: {
+              email: "ada@example.test",
+              is_email_valid: valid,
+              is_email_verified: verified,
+              profile: { nickname: "Ada" },
+            },
+          },
+        },
+      ]);
+      const provider = providers.kakao(script.deps);
+
+      const { profile } = await provider.completeFlow(
+        "project",
+        credentials,
+        script.callbackFor(provider.id),
+      );
+
+      expect(profile.emailVerified).toBe(expected);
+      expect(profile.providerUserId).toBe("4815162342");
+      expect(profile.displayName).toBe("Ada");
+    }
+  });
+
+  /** Every Kakao field is behind consent the user can decline. */
+  it("signs a Kakao user in who consented to nothing but the sign-in", async () => {
+    const script = completing([GRANT, { status: 200, data: { id: 7 } }]);
+    const provider = providers.kakao(script.deps);
+
+    const { profile } = await provider.completeFlow(
+      "project",
+      credentials,
+      script.callbackFor(provider.id),
+    );
+
+    expect(profile.providerUserId).toBe("7");
+    expect(profile.email).toBeNull();
+    expect(profile.emailVerified).toBe(false);
   });
 
   /** An unconfirmed address is the same as no address: nothing may be linked on one. */

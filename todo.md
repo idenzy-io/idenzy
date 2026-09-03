@@ -43,7 +43,9 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [x] husky, lint-staged and commitlint; document that `ignoreScripts` means running
       `pnpm run prepare` once after clone
 - [x] `docker-compose.yml` with Postgres 17 and Valkey
-- [ ] `pnpm dev` boots containers, migrates, and starts every app through Turbo
+- [~] `pnpm dev` boots containers, migrates, and starts every app through Turbo. The apps
+      now read `.env` through `--env-file-if-exists` and `.env.example` lists what they
+      need; `pnpm bootstrap` still does the container and migration half separately
 
 ### 0.2 Architecture decision records
 
@@ -178,17 +180,25 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 **Exit criteria.** A developer can sign up, create a project, install `@idenzy/next`, and have working
 email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
+**Status.** The session core is in: sign-up, sign-in, sign-out, refresh rotation with
+reuse detection, the session list and session revocation, all with integration tests that
+assert the attack fails. Everything still unchecked in 1.1 needs email delivery (1.4)
+before it can be finished, which is the next thing to build.
+
 ### 1.1 Core auth flows
 
-- [ ] Abstract `AuthFlow` with the inherited `issueSession()` path (§9.5)
-- [ ] `PasswordFlow`: Argon2id, HIBP k-anonymity check, timing-equalized failures
-- [ ] Sign-up, sign-in, sign-out, session listing, session revocation
-- [ ] Refresh token rotation with family-based reuse detection, and the attack test
+- [x] Abstract `AuthFlow` with the inherited `issueSession()` path (§9.5). The base also
+      owns MFA gating, which phase 2 turns from a throw into a challenge
+- [x] `PasswordFlow`: Argon2id, HIBP k-anonymity check, timing-equalized failures. Split
+      into `PasswordSignUpFlow` and `PasswordSignInFlow`, both `AuthFlow` subclasses
+- [x] Sign-up, sign-in, sign-out, session listing, session revocation
+- [x] Refresh token rotation with family-based reuse detection, and the attack test
 - [ ] `EmailOtpFlow`, the default passwordless path
 - [ ] `MagicLinkFlow` redirecting to a registered customer URL with a single-use code (§4.7)
 - [ ] Password reset and email change, both requiring confirmation on old and new addresses
 - [ ] `AnonymousFlow` with upgrade to a full account
-- [ ] Account linking rules driven by `email_verified` (§4.6)
+- [~] Account linking rules driven by `email_verified` (§4.6). `AccountLinkingPolicy` and
+      its tests exist in `@idenzy/domain`; nothing calls it until OAuth lands
 
 ### 1.2 OAuth
 
@@ -227,6 +237,10 @@ email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
 ### 1.6 Platform
 
+- [ ] Web first-party cookie mode: `__Host-` cookie, CSRF double-submit, Origin and
+      Fetch-Metadata checks (§4.3). Applies to every endpoint that returns a session, so
+      it lands once and centrally rather than per route. Until then the refresh token
+      travels in the request body, which is the documented header mode
 - [ ] Project creation, API keys, custom auth domain provisioning
 - [ ] Webhooks with HMAC signing, retries and replay safety
 - [ ] Usage metering and the MAU HyperLogLog sketch
@@ -323,6 +337,17 @@ email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
 ## Parked and deferred
 
+- [ ] **The audit hash chain needs a total order before the outbox relay can build it.**
+      Appending means linking to the project's current tip, and `audit_events` is ordered
+      only by `created_at`, which ties at millisecond precision. Two entries in the same
+      millisecond would fork the chain. The fix is a monotonic sequence column, which is a
+      schema change to a partitioned append-only table, so it is done deliberately with
+      the relay rather than in passing (§4.13.3).
+- [ ] KMS token issuer. `auth-api` refuses to boot outside development rather than sign
+      with an ephemeral in-process key, so this blocks any deploy (§4.2).
+- [ ] Valkey revocation set is not wired into `SessionGuard`, which reads the session row
+      instead. Affordable while every authenticated route queries anyway; not affordable
+      once one does not (§4.2).
 - [ ] TypeScript 7. Released, but `@nestjs/cli` 12 depends on `typescript@~6.0.2` and Nest DI needs
       `emitDecoratorMetadata`. Pinned to 6.0.x; revisit when the Nest toolchain moves.
 - [ ] Node version policy: pin to the active LTS line, or track Current for the performance work

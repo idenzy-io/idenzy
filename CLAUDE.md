@@ -76,6 +76,11 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
   asks whether the pair is a rename, and there is no flag to answer. Piping input fails
   outright. Split the change into an additive migration and a drop, which is why
   `code_verifier_hash` took migrations 0007 and 0008 to become `code_verifier_encrypted`.
+- **`exactOptionalPropertyTypes` means you cannot pass `undefined` for an optional
+  property.** `{ transports: maybeUndefined }` does not satisfy `transports?: string[]`,
+  which bites hardest when handing our own parsed types to a third-party function.
+  Conditionally spread the key instead of conditionally setting the value:
+  `...(x === undefined ? {} : { transports: x })`.
 - **argon2 encodes its parameters as `m,p,t`, not `m,t,p`.** `needsRehash` used to
   prefix-match the wrong order, so it never recognised a hash it had just produced and
   every sign-in rehashed the password again. Parse the PHC string; do not match it.
@@ -122,6 +127,42 @@ The address a challenge belongs to cannot be hashed at all, because verification
 name it in order to create the account behind it. Those columns are `encrypted()` under
 the project's data key, and `otp_challenges` carries both: the hash for the "is there
 already a live code" seek, the ciphertext for the read-back.
+
+A WebAuthn challenge is the easy case and is SHA-256: 256 bits of random with nothing to
+sweep, and the browser hands it back inside `clientDataJSON` so we only ever compare it.
+The OAuth PKCE verifier is the one exception in the schema, encrypted rather than hashed,
+because we are the client there and have to present the value itself.
+
+## Touching the passkey ceremonies
+
+Five rules, each of which is load-bearing somewhere it is not written.
+
+- **Authentication options take no identifier and name no credential.** An endpoint that
+  accepted an email would answer differently for an address with passkeys and one without,
+  which is an enumeration oracle in front of the flow we promote as the default.
+- **`residentKey: required` at registration is what pays for that**, and the coupling
+  crosses two endpoints. Relax it and sign-in has nothing discoverable to offer, so the
+  usernameless flow quietly stops working for credentials enrolled after the change.
+- **The challenge is claimed before anything is verified, not after.** `claim` reads and
+  consumes in one statement and returns the row. A nonce burnt only on success is one an
+  attacker can keep signing against.
+- **Do not re-implement the sign-counter check.** It lives inside
+  `verifyAuthenticationResponse`, throws rather than returns, and fires before we would see
+  the new value. What is ours is writing the counter back: a value never stored leaves a
+  comparison that always passes and a replayed assertion that works forever.
+- **`pubKeyCredParams` and `supportedAlgorithmIDs` are the same list**, passed explicitly
+  in both directions. Advertising an algorithm the verifier rejects enrols an authenticator
+  that can never sign in, and it fails on the user's next visit rather than at enrolment.
+
+The relying party is per project and read from `webauthn_relying_parties`, never derived
+from the request Host: the RP ID decides which credentials an assertion may address. One
+row per project, enforced by a unique index, because a credential is bound to the RP ID it
+was created under and two would split a customer's passkeys into disjoint sets.
+
+Tests use `TestAuthenticator` from `@idenzy/testing`, which is a real software
+authenticator: a real P-256 key, real CBOR, a real signature. That is deliberate. Every
+attack worth testing here (replayed challenge, cloned counter, wrong origin, another
+tenant's credential) is one a fake verifier would happily accept.
 
 ## Adding a provider, factor or channel
 

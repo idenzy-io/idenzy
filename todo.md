@@ -184,6 +184,11 @@ email-password and Google sign-in in their own UI in under 15 minutes, measured.
 sign-in works end to end for Google, Apple, GitHub and Microsoft, and account linking is
 closed along with it.
 
+Passkeys (1.3) are done on the server. Both ceremonies verify, credentials carry their
+sign counter and both backup flags, and the sign-in is usernameless because registration
+demands a resident key. The one part still open is conditional UI, which is a browser
+call and belongs to the SDK in 1.5; the endpoints it needs are the ones that exist.
+
 Delivery (1.4) is built as far as it can go without a third-party sender: the
 `EmailProvider` base, its conformance suite, the suppression list, the usage counter, the
 template binding sandbox with its locale fallback, and the English default templates. The
@@ -196,8 +201,8 @@ outside development without KMS, and `FieldEncryptor` now does the same: OTP tar
 magic-link targets, OAuth PKCE verifiers and provider client secrets are all envelope
 encrypted, and the per-project data key is KMS-wrapped. Both are the same piece of work.
 
-Next is passkeys (1.3), then the SDKs (1.5), which is what the fifteen-minute exit
-criterion is actually measured against.
+Next are the SDKs (1.5), which is what the fifteen-minute exit criterion is actually
+measured against.
 
 ### 1.1 Core auth flows
 
@@ -239,9 +244,26 @@ criterion is actually measured against.
 
 ### 1.3 Passkeys
 
-- [ ] WebAuthn registration and authentication ceremonies
-- [ ] Credential storage, sign count, backup eligibility
-- [ ] Conditional UI support in the JS SDK
+- [x] WebAuthn registration and authentication ceremonies. Options are ours, because they
+      are a JSON literal around a nonce and generating them keeps the published shape and
+      the sent shape the same. Verification is `@simplewebauthn/server` (§6.2), which is
+      the CBOR and signature half. `PasskeyFlow` extends `AuthFlow` like every other way in
+- [x] Credential storage, sign count, backup eligibility. BE and BS are separate columns
+      because only one of them moves, and both come from signed authenticator data rather
+      than from anything the browser reported
+- [x] The relying party is per project and configured, never derived from the request Host.
+      One RP ID per project, enforced by a unique index: a second one would split a
+      customer's passkeys into two sets that cannot substitute for each other
+- [x] Attack tests against a real software authenticator in `@idenzy/testing`: a replayed
+      challenge, a counter that did not advance, an unregistered origin, a credential from
+      another project, a forged user handle, and a registration challenge minted for
+      someone else. A fake verifier would have accepted every one of them
+- [ ] Conditional UI support in the JS SDK. The server half is done and is what makes it
+      possible: authentication options take no identifier and name no credential, so the
+      browser can offer a passkey from autofill. The remaining work is the SDK call (1.5)
+- [ ] Passkey as a second factor and for step-up. Phase 2, with the rest of MFA: the
+      ceremony is the same one, what changes is `AuthFlow` gating a challenge rather than
+      throwing
 
 ### 1.4 Delivery
 

@@ -1,5 +1,12 @@
+"use client";
+
 /**
  * The React binding for `@idenzy/js`: one provider and three hooks.
+ *
+ * The directive at the top is for React Server Components, and it is the truth about this
+ * module rather than a concession to a framework: it holds a session, subscribes to a client
+ * and uses context, none of which a server component can do. Bundlers that have never heard
+ * of it ignore it.
  *
  * Everything a customer renders is theirs. This package holds the session in React's own
  * store and hands back state; it ships no screen, no form and no button, because the sign-in

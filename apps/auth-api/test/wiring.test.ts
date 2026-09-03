@@ -7,6 +7,8 @@ import { Test } from "@nestjs/testing";
 import { describe, expect, it } from "vitest";
 import { EmailChangeService } from "../dist/account/email-change-service.js";
 import { EmailVerificationService } from "../dist/account/email-verification-service.js";
+import { AnonymousFlow } from "../dist/anonymous/anonymous.flow.js";
+import { AnonymousUpgradeFlow } from "../dist/anonymous/anonymous-upgrade.flow.js";
 import { AppModule } from "../dist/app.module.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
@@ -48,6 +50,8 @@ describe("the composition root", () => {
     expect(moduleRef.get(PasswordSignInFlow)).toBeInstanceOf(PasswordSignInFlow);
     expect(moduleRef.get(EmailOtpFlow)).toBeInstanceOf(EmailOtpFlow);
     expect(moduleRef.get(MagicLinkFlow)).toBeInstanceOf(MagicLinkFlow);
+    expect(moduleRef.get(AnonymousFlow)).toBeInstanceOf(AnonymousFlow);
+    expect(moduleRef.get(AnonymousUpgradeFlow)).toBeInstanceOf(AnonymousUpgradeFlow);
     expect(moduleRef.get(PasswordResetService)).toBeInstanceOf(PasswordResetService);
     expect(moduleRef.get(EmailVerificationService)).toBeInstanceOf(EmailVerificationService);
     expect(moduleRef.get(EmailChangeService)).toBeInstanceOf(EmailChangeService);

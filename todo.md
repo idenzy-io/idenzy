@@ -180,20 +180,24 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 **Exit criteria.** A developer can sign up, create a project, install `@idenzy/next`, and have working
 email-password and Google sign-in in their own UI in under 15 minutes, measured.
 
-**Status.** 1.1 is done except account linking, which waits on OAuth. Delivery (1.4) is
-built as far as it can go without a third-party sender: the `EmailProvider` base, its
-conformance suite, the suppression list, the usage counter, the template binding sandbox
-with its locale fallback, and the English default templates. The only transport is
-`LoggingEmailProvider`, which prints the message and refuses to construct outside
-development, so the first real adapter is a change to `DeliveryModule` and nothing else.
+**Status.** 1.1 is done, and 1.2 is done but for the long tail of providers. Social
+sign-in works end to end for Google, Apple, GitHub and Microsoft, and account linking is
+closed along with it.
+
+Delivery (1.4) is built as far as it can go without a third-party sender: the
+`EmailProvider` base, its conformance suite, the suppression list, the usage counter, the
+template binding sandbox with its locale fallback, and the English default templates. The
+only transport is `LoggingEmailProvider`, which prints the message and refuses to
+construct outside development, so the first real adapter is a change to `DeliveryModule`
+and nothing else.
 
 Two things now block a deploy rather than one. `TokenIssuer` already refused to start
-outside development without KMS; `FieldEncryptor` now does the same, because OTP and
-magic-link targets are envelope encrypted and the per-project data key is KMS-wrapped.
-Both are the same piece of work.
+outside development without KMS, and `FieldEncryptor` now does the same: OTP targets,
+magic-link targets, OAuth PKCE verifiers and provider client secrets are all envelope
+encrypted, and the per-project data key is KMS-wrapped. Both are the same piece of work.
 
-Next is OAuth (1.2), which closes account linking and gives `auth_codes` its second
-consumer.
+Next is passkeys (1.3), then the SDKs (1.5), which is what the fifteen-minute exit
+criterion is actually measured against.
 
 ### 1.1 Core auth flows
 
@@ -210,17 +214,28 @@ consumer.
       Email change has no step-up in front of it yet: §4.5 asks for a recent factor
       verification and that arrives with MFA in phase 2, so it takes a session and says so
 - [x] `AnonymousFlow` with upgrade to a full account, keeping the user id
-- [~] Account linking rules driven by `email_verified` (§4.6). `AccountLinkingPolicy` and
-      its tests exist in `@idenzy/domain`; nothing calls it until OAuth lands
+- [x] Account linking rules driven by `email_verified` (§4.6). Wired into the OAuth
+      callback, with the test that matters: an unverified provider address matching an
+      existing account links nothing and returns `linking_requires_verification`
 
 ### 1.2 OAuth
 
-- [ ] `OAuthProvider` base with the template method of §7.2, plus its conformance suite
-- [ ] `OidcProvider` intermediate
-- [ ] Google, Apple, GitHub and Microsoft
-- [ ] Flow store, PKCE, state binding, nonce, exact-match redirect allowlist
-- [ ] Instant dev mode restricted to localhost and `*.idenzy.dev`
-- [ ] Provider token storage with envelope encryption, opt-in only
+- [x] `OAuthProvider` base with the template method of §7.2, plus its conformance suite.
+      The suite's strongest cases assert that no HTTP request happened at all: a forged
+      state that still reached the token endpoint has already handed the provider an
+      attacker-supplied code, and refusing afterwards does not undo it
+- [x] `OidcProvider` intermediate, owning id_token verification and the mix-up defence
+- [x] Google, Apple, GitHub and Microsoft
+- [x] Flow store, PKCE, state binding, nonce, exact-match redirect allowlist. State is
+      consumed in one statement so it is a one-shot token rather than a value that merely
+      matches, and the allowlist is re-checked at the callback and not only at start
+- [x] Instant dev mode restricted to localhost and `*.idenzy.dev`
+- [x] Provider token storage with envelope encryption, opt-in only via `storeTokens`
+- [ ] The provider tail from §4.6: Facebook, Discord, X, Twitch, LinkedIn and the rest.
+      Each is an endpoint pair and a profile mapping now that the base exists
+- [ ] Linking a provider to a signed-in account is `POST /link` returning JSON, because a
+      browser navigation cannot carry an access token. It becomes a plain redirect once
+      web cookie mode lands (1.6)
 
 ### 1.3 Passkeys
 
@@ -263,6 +278,8 @@ consumer.
 
 ### 1.6 Platform
 
+- [ ] PKCE on our own exchange codes. `exchangeCodeSchema` already accepts an optional
+      `codeVerifier` and nothing checks it, which is a wire promise we do not keep yet
 - [ ] Web first-party cookie mode: `__Host-` cookie, CSRF double-submit, Origin and
       Fetch-Metadata checks (§4.3). Applies to every endpoint that returns a session, so
       it lands once and centrally rather than per route. Until then the refresh token

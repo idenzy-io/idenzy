@@ -72,6 +72,10 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
 - **`.enableRLS()` changes the table's type** to `Omit<PgTableWithColumns<T>,
   "enableRLS">`, so a generic constrained to `PgTableWithColumns` rejects every table in
   our schema. `BaseRepository` is constrained to `PgTable`.
+- **`drizzle-kit generate` needs a TTY when a column is dropped and another added.** It
+  asks whether the pair is a rename, and there is no flag to answer. Piping input fails
+  outright. Split the change into an additive migration and a drop, which is why
+  `code_verifier_hash` took migrations 0007 and 0008 to become `code_verifier_encrypted`.
 - **argon2 encodes its parameters as `m,p,t`, not `m,t,p`.** `needsRehash` used to
   prefix-match the wrong order, so it never recognised a hash it had just produced and
   every sign-in rehashed the password again. Parse the PHC string; do not match it.
@@ -125,6 +129,24 @@ Extend the family's abstract base in `@idenzy/domain/ports` and implement only w
 varies. The base owns what must never be skipped: the state check for OAuth, the
 suppression check for email, the spend reservation for SMS. Do not re-implement those in
 a subclass, and do not add an abstraction until there are two real implementations.
+
+For an OAuth provider that means an endpoint pair and a profile mapping, plus running
+`OAuthProviderConformanceSuite` from `@idenzy/testing`. Two rules the suite cannot check
+for you. `emailVerified` must be false whenever the provider does not explicitly assert
+otherwise, because that field alone decides whether an account can be linked on an
+address. And the subject must be the provider's immutable id, never a username or an
+address: GitHub logins can be renamed and handed to someone else.
+
+A concrete provider needs an explicit constructor that only calls `super`. It is not
+useless: it widens the abstract base's `protected` constructor to `public`, which is what
+lets the registry build one. Biome flags it, so the suppression carries that reason.
+
+## Tests are typechecked, and were not always
+
+Every package with a `test/` directory has a `tsconfig.test.json`, and `typecheck` runs it
+after the build config. Before that existed no test file in the repository was ever
+typechecked, because `vitest` transpiles without checking and `tsconfig.json` includes
+only `src`. A conformance suite that could not have compiled reported a pass.
 
 ## Tests that must never become optional
 

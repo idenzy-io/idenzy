@@ -26,12 +26,27 @@ export const configSchema = z.object({
   KMS_KEY_RING: z.string().min(1),
 
   /**
+   * The `iss` claim and the base of the discovery document. Required rather than
+   * defaulted: a wrong issuer is accepted by every verifier that was told to expect it
+   * and rejected by every verifier that was not, which is a confusing outage at best.
+   */
+  ISSUER_BASE_URL: z.url(),
+
+  /**
    * Default access-token lifetime. Bounded at both ends on purpose: below 60 s the
    * refresh traffic stops paying for itself, above an hour revocation latency stops
    * being defensible (PROJECT.md 4.2).
    */
   ACCESS_TOKEN_TTL_SECONDS: durationSeconds.min(60).max(3600).default(300),
   REFRESH_TOKEN_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 30),
+
+  /**
+   * The two ways a session ends on its own (PROJECT.md 4.2). Idle slides on every
+   * refresh; absolute never moves, which is what bounds the damage from a session an
+   * attacker keeps warm.
+   */
+  SESSION_IDLE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 30),
+  SESSION_ABSOLUTE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 90),
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
 });

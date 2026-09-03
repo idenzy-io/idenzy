@@ -117,13 +117,16 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
    * Sign out everywhere. `exceptId` keeps the session doing the signing out alive, which
    * is what a password change wants: end every other session without logging the user
    * out of the device they are holding.
+   *
+   * Returns the ids rather than a count, because the caller has to revoke the refresh
+   * tokens behind them and cannot ask for them again once they are no longer active.
    */
   async revokeAllForUser(
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
     exceptId: string | null = null,
-  ): Promise<number> {
+  ): Promise<readonly string[]> {
     const rows = await this.tx
       .update(sessions)
       .set({ revokedAt: at, revokeReason: reason })
@@ -136,7 +139,7 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
         ),
       )
       .returning({ id: sessions.id });
-    return rows.length;
+    return rows.map((row) => row.id);
   }
 
   private toEntity(row: SessionRow): Session {

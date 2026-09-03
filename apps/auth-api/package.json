@@ -6,10 +6,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "node --watch src/main.ts",
+    "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
     "start": "node dist/main.js",
     "test": "tsc -p tsconfig.json && vitest run --passWithNoTests",
-    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "test:integration": "tsc -p tsconfig.json && vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@idenzy/cache": "workspace:*",
@@ -28,9 +29,11 @@
     "fastify": "catalog:",
     "pg": "catalog:",
     "reflect-metadata": "catalog:",
-    "rxjs": "catalog:"
+    "rxjs": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
+    "@idenzy/testing": "workspace:*",
     "@nestjs/testing": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",

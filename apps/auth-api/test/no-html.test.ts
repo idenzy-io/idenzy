@@ -1,5 +1,8 @@
 import "reflect-metadata";
-import { Logger } from "@idenzy/core/logging/logger";
+import { AppConfig } from "@idenzy/config/app-config";
+import { SystemClock } from "@idenzy/core/time/clock";
+import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
+import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,23 +10,23 @@ import { IdenzyExceptionFilter } from "../dist/common/exception.filter.js";
 import { HealthController } from "../dist/health/health.controller.js";
 import { FailingController } from "../dist/testing/failing.controller.js";
 import { WellKnownController } from "../dist/well-known/well-known.controller.js";
-
-class SilentLogger extends Logger {
-  override debug(): void {}
-  override info(): void {}
-  override warn(): void {}
-  override error(): void {}
-  override child(): Logger {
-    return this;
-  }
-}
+import { SilentLogger, testConfig } from "./fixtures.js";
 
 let app: NestFastifyApplication;
 let base: string;
 
 beforeAll(async () => {
+  const config = testConfig();
   const moduleRef = await Test.createTestingModule({
     controllers: [HealthController, WellKnownController, FailingController],
+    providers: [
+      { provide: AppConfig, useValue: config },
+      {
+        provide: TokenIssuer,
+        useFactory: () =>
+          LocalEs256Issuer.create(new SystemClock(), config.get("ISSUER_BASE_URL"), 300),
+      },
+    ],
   }).compile();
 
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());

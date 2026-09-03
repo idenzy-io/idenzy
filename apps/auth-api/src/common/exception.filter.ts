@@ -1,6 +1,6 @@
 import { InternalError } from "@idenzy/core/errors/errors";
 import { isIdenzyError } from "@idenzy/core/errors/idenzy-error";
-import type { Logger } from "@idenzy/core/logging/logger";
+import { Logger } from "@idenzy/core/logging/logger";
 import { type ArgumentsHost, Catch, type ExceptionFilter } from "@nestjs/common";
 import type { FastifyReply, FastifyRequest } from "fastify";
 

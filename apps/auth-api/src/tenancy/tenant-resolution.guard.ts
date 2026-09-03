@@ -1,9 +1,9 @@
 import { MissingCredentialsError } from "@idenzy/core/errors/errors";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { type CanActivate, type ExecutionContext, Injectable, SetMetadata } from "@nestjs/common";
-import type { Reflector } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
-import type { ProjectResolver } from "./project-resolver.js";
+import { ProjectResolver } from "./project-resolver.js";
 
 export const PUBLIC_ROUTE = "idenzy:public-route";
 

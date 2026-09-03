@@ -1,3 +1,4 @@
+import { MfaRequiredError } from "@idenzy/core/errors/errors";
 import type { AuthMethod } from "@idenzy/protocol/enums/auth";
 
 export interface AuthenticatedSubject {
@@ -13,8 +14,22 @@ export interface FlowContext {
   readonly userAgent: string | null;
 }
 
+/**
+ * What every successful authentication produces.
+ *
+ * Returned by the issuer rather than assembled per flow, so no flow can hand back an
+ * access token without the session row and refresh token that make it revocable.
+ */
+export interface IssuedSession {
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly accessToken: string;
+  readonly accessTokenExpiresAt: Date;
+  readonly refreshToken: string;
+}
+
 export interface SessionIssuer {
-  issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<string>;
+  issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<IssuedSession>;
 }
 
 export interface FlowHooks {
@@ -55,14 +70,28 @@ export abstract class AuthFlow {
     credentials: unknown,
   ): Promise<AuthenticatedSubject>;
 
-  async authenticate(context: FlowContext, credentials: unknown): Promise<string> {
+  async authenticate(context: FlowContext, credentials: unknown): Promise<IssuedSession> {
     const subject = await this.verify(context, credentials);
+    this.assertMfaSatisfied(subject);
     await this.hooks.beforeSignIn(context, subject.userId);
-    const sessionId = await this.sessions.issueSession(context, subject);
+    const session = await this.sessions.issueSession(context, subject);
     await this.audit.record(context, "session.created", {
       method: this.method,
       requiresMfa: subject.requiresMfa,
     });
-    return sessionId;
+    return session;
+  }
+
+  /**
+   * A subject that still owes a second factor never reaches session creation.
+   *
+   * Inherited rather than checked per flow, because a flow that forgets this issues a
+   * fully valid session to someone who proved one factor. Phase 2 replaces the throw
+   * with an MFA challenge; the position in the ordering does not move.
+   */
+  protected assertMfaSatisfied(subject: AuthenticatedSubject): void {
+    if (subject.requiresMfa) {
+      throw new MfaRequiredError({ detail: { userId: subject.userId, method: this.method } });
+    }
   }
 }

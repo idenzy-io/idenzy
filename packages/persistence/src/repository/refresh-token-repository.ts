@@ -3,7 +3,7 @@ import {
   RefreshTokenFamily,
   type RefreshTokenState,
 } from "@idenzy/domain/entities/refresh-token-family";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { refreshTokens } from "../schema/sessions.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -97,6 +97,23 @@ export class RefreshTokenRepository extends BaseRepository<typeof refreshTokens>
         and(
           this.tenantScope(),
           eq(refreshTokens.familyId, familyId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      )
+      .returning({ id: refreshTokens.id });
+    return rows.length;
+  }
+
+  /** Defence in depth on sign-out-everywhere: the sessions are already revoked. */
+  async revokeForSessions(sessionIds: readonly string[], at: Date): Promise<number> {
+    if (sessionIds.length === 0) return 0;
+    const rows = await this.tx
+      .update(refreshTokens)
+      .set({ revokedAt: at })
+      .where(
+        and(
+          this.tenantScope(),
+          inArray(refreshTokens.sessionId, [...sessionIds]),
           isNull(refreshTokens.revokedAt),
         ),
       )

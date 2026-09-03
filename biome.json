@@ -26,6 +26,9 @@
     "lineEnding": "lf"
   },
   "javascript": {
+    "parser": {
+      "unsafeParameterDecoratorsEnabled": true
+    },
     "formatter": {
       "quoteStyle": "double",
       "trailingCommas": "all",
@@ -204,6 +207,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/auth-api/src/**", "apps/management-api/src/**", "apps/workers/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off"
           }
         }
       }

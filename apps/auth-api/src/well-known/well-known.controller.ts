@@ -1,3 +1,5 @@
+import { AppConfig } from "@idenzy/config/app-config";
+import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
 import type { Jwks, OpenidConfiguration } from "@idenzy/protocol/schemas/discovery";
 import { Controller, Get, Header } from "@nestjs/common";
 import { NoTenant } from "../tenancy/tenant-resolution.guard.js";
@@ -13,11 +15,16 @@ import { NoTenant } from "../tenancy/tenant-resolution.guard.js";
  */
 @Controller(".well-known")
 export class WellKnownController {
+  constructor(
+    private readonly config: AppConfig,
+    private readonly tokens: TokenIssuer,
+  ) {}
+
   @Get("openid-configuration")
   @NoTenant()
   @Header("cache-control", "public, max-age=3600")
   configuration(): OpenidConfiguration {
-    const issuer = "https://auth.example.test";
+    const issuer = this.config.get("ISSUER_BASE_URL");
     return {
       issuer,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
@@ -33,10 +40,14 @@ export class WellKnownController {
     };
   }
 
+  /**
+   * Two keys appear here during a rotation overlap, which is why the response is a list
+   * and why the cache window is short relative to the rotation period.
+   */
   @Get("jwks.json")
   @NoTenant()
   @Header("cache-control", "public, max-age=600")
-  jwks(): Jwks {
-    return { keys: [] };
+  async jwks(): Promise<Jwks> {
+    return { keys: [...(await this.tokens.publicKeys())] };
   }
 }

@@ -197,7 +197,7 @@ describe("SessionRepository", () => {
         new Date(),
         sessionId,
       );
-      expect(revoked).toBe(1);
+      expect(revoked).toHaveLength(1);
       return repos.sessions.findById(sessionId);
     });
     expect(surviving?.isRevoked()).toBe(false);

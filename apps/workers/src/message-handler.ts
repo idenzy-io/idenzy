@@ -1,4 +1,4 @@
-import type { Logger } from "@idenzy/core/logging/logger";
+import { Logger } from "@idenzy/core/logging/logger";
 
 export interface QueueMessage {
   readonly id: string;

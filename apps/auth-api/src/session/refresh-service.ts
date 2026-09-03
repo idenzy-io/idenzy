@@ -1,0 +1,202 @@
+import { AppConfig } from "@idenzy/config/app-config";
+import {
+  RefreshTokenInvalidError,
+  RefreshTokenReusedError,
+  SessionExpiredError,
+  SessionRevokedError,
+} from "@idenzy/core/errors/errors";
+import { Logger } from "@idenzy/core/logging/logger";
+import { Clock } from "@idenzy/core/time/clock";
+import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
+import { RefreshOutcome } from "@idenzy/domain/entities/refresh-token-family";
+import type { FlowContext, IssuedSession } from "@idenzy/domain/ports/auth-flow";
+import { OutboxRepository } from "@idenzy/persistence/repository/outbox-repository";
+import { RefreshTokenRepository } from "@idenzy/persistence/repository/refresh-token-repository";
+import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
+import { UserRepository } from "@idenzy/persistence/repository/user-repository";
+import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
+import { type Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { SessionRevokeReason } from "@idenzy/protocol/enums/auth";
+import { Injectable } from "@nestjs/common";
+import { tenantContextFrom } from "../tenancy/flow-context.js";
+import { SessionService } from "./session-service.js";
+
+interface Repositories {
+  readonly refresh: RefreshTokenRepository;
+  readonly sessions: SessionRepository;
+  readonly users: UserRepository;
+  readonly outbox: OutboxRepository;
+}
+
+/**
+ * The outcome of one rotation attempt, decided inside the transaction and acted on
+ * outside it. Throwing from inside would roll back the very revocations that reuse
+ * detection exists to perform, which is the subtle part of this file.
+ */
+type Rotation =
+  | { readonly kind: "rotated"; readonly session: IssuedSession }
+  | { readonly kind: "reused" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "session_revoked" }
+  | { readonly kind: "session_expired" };
+
+/**
+ * Rotating refresh tokens with family-based reuse detection (PROJECT.md 4.2).
+ *
+ * Presenting a token that was already rotated means either the legitimate client or an
+ * attacker holds a copy, and we cannot tell which. The only safe answer is to revoke the
+ * whole family and the session behind it, and to make the user authenticate again.
+ */
+@Injectable()
+export class RefreshService {
+  constructor(
+    private readonly uow: UnitOfWork,
+    private readonly clock: Clock,
+    private readonly sessions: SessionService,
+    private readonly config: AppConfig,
+    private readonly logger: Logger,
+  ) {}
+
+  async rotate(context: FlowContext, presented: string): Promise<IssuedSession> {
+    const tenant = tenantContextFrom(context);
+    const rotation = await this.uow.run(tenant, (tx) =>
+      this.attempt(tx, tenant, context, hashToken(presented)),
+    );
+    return this.resolve(rotation, context);
+  }
+
+  /** Everything that must be atomic. Returns a decision; never throws for reuse. */
+  private async attempt(
+    tx: Transaction,
+    tenant: TenantContext,
+    context: FlowContext,
+    tokenHash: string,
+  ): Promise<Rotation> {
+    const repos = this.repositories(tx, tenant);
+    const state = await repos.refresh.findByHash(tokenHash);
+    if (state === null) return { kind: "invalid" };
+
+    const outcome = repos.refresh.family(state).evaluate(this.clock);
+    if (outcome === RefreshOutcome.Reuse) {
+      return this.compromise(repos, state.familyId, state.sessionId, context);
+    }
+    if (outcome === RefreshOutcome.Revoked || outcome === RefreshOutcome.Expired) {
+      return { kind: "invalid" };
+    }
+
+    // The race: two presentations of the same token can both reach here. Only one UPDATE
+    // matches `used_at is null`, and the loser is reuse by definition.
+    const won = await repos.refresh.consume(state.id, this.clock.now());
+    if (!won) return this.compromise(repos, state.familyId, state.sessionId, context);
+
+    return this.reissue(repos, tenant, state.id, state.familyId, state.sessionId);
+  }
+
+  private async reissue(
+    repos: Repositories,
+    tenant: TenantContext,
+    parentId: string,
+    familyId: string,
+    sessionId: string,
+  ): Promise<Rotation> {
+    const session = await repos.sessions.findById(sessionId);
+    if (session === null) return { kind: "invalid" };
+    if (session.isRevoked()) return { kind: "session_revoked" };
+    if (session.isExpired(this.clock)) return { kind: "session_expired" };
+
+    const user = await repos.users.findById(session.userId);
+    if (user === null) return { kind: "invalid" };
+    // Bans and deletions take effect at the next rotation, which bounds how long a
+    // suspended account keeps working to one access-token lifetime. Throwing here rolls
+    // the rotation back, which is what we want: a refused refresh should consume nothing.
+    user.assertCanSignIn(this.clock);
+
+    const now = this.clock.now();
+    const refreshToken = generateOpaqueToken();
+    await repos.refresh.issue({
+      sessionId,
+      familyId,
+      tokenHash: hashToken(refreshToken),
+      parentId,
+      expiresAt: this.clock.inSeconds(this.config.get("REFRESH_TOKEN_TTL_SECONDS")),
+    });
+    await repos.sessions.touch(
+      sessionId,
+      now,
+      this.clock.inSeconds(this.config.get("SESSION_IDLE_TTL_SECONDS")),
+    );
+
+    const access = await this.sessions.mintAccessToken(
+      tenant,
+      session.userId,
+      sessionId,
+      session.amr,
+      null,
+    );
+    return {
+      kind: "rotated",
+      session: {
+        sessionId,
+        userId: session.userId,
+        accessToken: access.token,
+        accessTokenExpiresAt: access.expiresAt,
+        refreshToken,
+      },
+    };
+  }
+
+  /**
+   * A replayed token. Revoke the family and the session it belongs to, and record it as
+   * a security event rather than a failed request: this is the signal that a refresh
+   * token leaked.
+   */
+  private async compromise(
+    repos: Repositories,
+    familyId: string,
+    sessionId: string,
+    context: FlowContext,
+  ): Promise<Rotation> {
+    const now = this.clock.now();
+    const revoked = await repos.refresh.revokeFamily(familyId, now);
+    await repos.sessions.revoke(sessionId, SessionRevokeReason.RefreshTokenReuse, now);
+    await repos.outbox.enqueue("security.refresh_token_reused", {
+      sessionId,
+      familyId,
+      revokedTokens: revoked,
+      ip: context.ip,
+      userAgent: context.userAgent,
+      at: now.toISOString(),
+    });
+    return { kind: "reused" };
+  }
+
+  /** Throws after the transaction has committed, so the revocations survive the error. */
+  private resolve(rotation: Rotation, context: FlowContext): IssuedSession {
+    switch (rotation.kind) {
+      case "rotated":
+        return rotation.session;
+      case "reused":
+        this.logger.warn("refresh token reuse detected", {
+          requestId: context.requestId,
+          projectId: context.projectId,
+          outcome: "session_revoked",
+        });
+        throw new RefreshTokenReusedError();
+      case "session_revoked":
+        throw new SessionRevokedError();
+      case "session_expired":
+        throw new SessionExpiredError();
+      case "invalid":
+        throw new RefreshTokenInvalidError();
+    }
+  }
+
+  private repositories(tx: Transaction, tenant: TenantContext): Repositories {
+    return {
+      refresh: new RefreshTokenRepository(tx, tenant),
+      sessions: new SessionRepository(tx, tenant),
+      users: new UserRepository(tx, tenant),
+      outbox: new OutboxRepository(tx, tenant),
+    };
+  }
+}

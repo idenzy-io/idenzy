@@ -165,6 +165,9 @@ importers:
       '@idenzy/providers-email':
         specifier: workspace:*
         version: link:../../packages/providers-email
+      '@idenzy/providers-oauth':
+        specifier: workspace:*
+        version: link:../../packages/providers-oauth
       '@idenzy/templating':
         specifier: workspace:*
         version: link:../../packages/templating

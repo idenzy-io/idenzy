@@ -7,6 +7,7 @@ import { DeliveryModule } from "./delivery/delivery.module.js";
 import { FlowsModule } from "./flows/flows.module.js";
 import { HealthController } from "./health/health.controller.js";
 import { MagicLinkModule } from "./magic-link/magic-link.module.js";
+import { OAuthModule } from "./oauth/oauth.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 import { OtpModule } from "./otp/otp.module.js";
 import { PasswordModule } from "./password/password.module.js";
@@ -35,6 +36,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     PasswordModule,
     OtpModule,
     MagicLinkModule,
+    OAuthModule,
     AccountModule,
     AnonymousModule,
   ],

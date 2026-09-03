@@ -121,6 +121,27 @@ export const confirmEmailVerificationSchema = z.object({
 });
 
 /**
+ * Begins a social sign-in. `redirectUri` must already be registered for the project
+ * under the `oauth` kind: it is where we send the browser afterwards, not where the
+ * provider sends it (PROJECT.md 4.6).
+ */
+export const startOauthSchema = z.object({
+  redirectUri: z.url(),
+});
+
+/** The query a provider hands back. `error` is present when the user declined. */
+export const oauthCallbackSchema = z.object({
+  code: z.string().min(1).optional(),
+  state: z.string().min(20),
+  error: z.string().max(200).optional(),
+});
+
+/** Where to send the browser next. Returned by the link route, which needs a session. */
+export const authorizationStartedSchema = z.object({
+  authorizationUrl: z.url(),
+});
+
+/**
  * Magic link. `redirectUri` must already be registered for the project: it is pinned to
  * the token at issue time, so the destination cannot change between sending the mail
  * and clicking it (PROJECT.md 4.7).
@@ -156,6 +177,9 @@ export type RequestEmailChange = z.infer<typeof requestEmailChangeSchema>;
 export type ConfirmEmailChange = z.infer<typeof confirmEmailChangeSchema>;
 export type ConfirmEmailVerification = z.infer<typeof confirmEmailVerificationSchema>;
 export type EmailChangeConfirmed = z.infer<typeof emailChangeConfirmedSchema>;
+export type StartOauth = z.infer<typeof startOauthSchema>;
+export type OauthCallback = z.infer<typeof oauthCallbackSchema>;
+export type AuthorizationStarted = z.infer<typeof authorizationStartedSchema>;
 export type StartMagicLink = z.infer<typeof startMagicLinkSchema>;
 export type MagicLinkCallback = z.infer<typeof magicLinkCallbackSchema>;
 export type UpgradeAnonymous = z.infer<typeof upgradeAnonymousSchema>;

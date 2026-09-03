@@ -62,6 +62,13 @@ export const configSchema = z.object({
    */
   AUTH_CODE_TTL_SECONDS: durationSeconds.max(600).default(120),
 
+  /**
+   * How long a user has between leaving for a provider and coming back. Long enough for
+   * a consent screen, a password manager and a second factor; short enough that an
+   * abandoned flow is not a live `state` value sitting in a table for an hour.
+   */
+  OAUTH_FLOW_TTL_SECONDS: durationSeconds.max(1800).default(600),
+
   PASSWORD_RESET_TTL_SECONDS: durationSeconds.max(3600).default(900),
 
   /**

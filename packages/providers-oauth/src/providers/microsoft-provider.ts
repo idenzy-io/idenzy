@@ -1,4 +1,11 @@
-import type { ProviderCredentials, ProviderProfile } from "@idenzy/domain/ports/oauth-provider";
+import type { HttpClient } from "@idenzy/core/http/http-client";
+import type { Clock } from "@idenzy/core/time/clock";
+import type {
+  OAuthFlowStore,
+  ProviderCredentials,
+  ProviderProfile,
+  RedirectAllowlist,
+} from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
 import type { JWTPayload } from "jose";
 import { assertExactIssuer, OidcProvider, stringClaim, subjectOf } from "../oidc-provider.js";
@@ -25,6 +32,11 @@ function tenant(credentials: ProviderCredentials): string {
  */
 export class MicrosoftProvider extends OidcProvider {
   override readonly id = ProviderId.Microsoft;
+
+  // biome-ignore lint/complexity/noUselessConstructor: it widens the abstract base's protected constructor to public, which is what lets the registry build one.
+  constructor(http: HttpClient, clock: Clock, flows: OAuthFlowStore, allowlist: RedirectAllowlist) {
+    super(http, clock, flows, allowlist);
+  }
 
   protected override authorizeEndpoint(credentials: ProviderCredentials): string {
     return `https://login.microsoftonline.com/${tenant(credentials)}/oauth2/v2.0/authorize`;

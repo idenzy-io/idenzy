@@ -1,7 +1,11 @@
 import { OauthProviderError } from "@idenzy/core/errors/errors";
+import type { HttpClient } from "@idenzy/core/http/http-client";
+import type { Clock } from "@idenzy/core/time/clock";
 import type {
+  OAuthFlowStore,
   ProviderCredentials,
   ProviderProfile,
+  RedirectAllowlist,
   TokenGrant,
 } from "@idenzy/domain/ports/oauth-provider";
 import { OAuthProvider } from "@idenzy/domain/ports/oauth-provider";
@@ -37,6 +41,11 @@ interface GithubEmail {
  */
 export class GithubProvider extends OAuthProvider {
   override readonly id = ProviderId.Github;
+
+  // biome-ignore lint/complexity/noUselessConstructor: it widens the abstract base's protected constructor to public, which is what lets the registry build one.
+  constructor(http: HttpClient, clock: Clock, flows: OAuthFlowStore, allowlist: RedirectAllowlist) {
+    super(http, clock, flows, allowlist);
+  }
 
   protected override authorizeEndpoint(): string {
     return "https://github.com/login/oauth/authorize";

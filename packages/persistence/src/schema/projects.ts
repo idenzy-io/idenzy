@@ -158,6 +158,10 @@ export const oauthProviders = classifiedTable(
       erasure: Erasure.NullOut,
     }),
     scopes: classified(text("scopes").array().notNull().default([]), config),
+    settings: classified(jsonb("settings").notNull().default({}), {
+      ...config,
+      note: "Non-secret provider extras: Apple's team and key ids, a Microsoft directory.",
+    }),
     enabled: classified(boolean("enabled").notNull().default(false), config),
     mode: classified(text("mode").notNull().default("custom"), {
       ...config,

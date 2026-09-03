@@ -1,4 +1,10 @@
-import type { ProviderProfile } from "@idenzy/domain/ports/oauth-provider";
+import type { HttpClient } from "@idenzy/core/http/http-client";
+import type { Clock } from "@idenzy/core/time/clock";
+import type {
+  OAuthFlowStore,
+  ProviderProfile,
+  RedirectAllowlist,
+} from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
 import type { JWTPayload } from "jose";
 import {
@@ -21,6 +27,11 @@ import {
  */
 export class GoogleProvider extends OidcProvider {
   override readonly id = ProviderId.Google;
+
+  // biome-ignore lint/complexity/noUselessConstructor: it widens the abstract base's protected constructor to public, which is what lets the registry build one.
+  constructor(http: HttpClient, clock: Clock, flows: OAuthFlowStore, allowlist: RedirectAllowlist) {
+    super(http, clock, flows, allowlist);
+  }
 
   protected override authorizeEndpoint(): string {
     return "https://accounts.google.com/o/oauth2/v2/auth";

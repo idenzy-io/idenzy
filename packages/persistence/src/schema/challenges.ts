@@ -131,17 +131,30 @@ export const magicLinkTokens = classifiedTable(
   ],
 ).enableRLS();
 
-/** In-flight OAuth authorization codes. Holds the PKCE verifier hash, state and nonce. */
+/**
+ * In-flight OAuth authorizations: the PKCE verifier, state and nonce (PROJECT.md 4.6).
+ *
+ * The verifier is **encrypted, not hashed**, and that is a correction rather than a
+ * preference. We are the OAuth client here, so we have to present the verifier itself at
+ * the token endpoint; a digest is a value nobody can present. Every other single-use
+ * secret in this schema is hashed because we only ever compare it, and this one is the
+ * exception because we have to reproduce it.
+ *
+ * `consumedAt` is what makes `state` a one-shot CSRF token rather than a value that
+ * merely has to match, and it is decided by the database so two callbacks racing on one
+ * state cannot both proceed.
+ */
 export const oauthFlows = classifiedTable(
   "oauth_flows",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
     projectId: projectIdColumn(),
     provider: classified(text("provider").notNull(), { ...config, loggable: true }),
-    codeVerifierHash: classified(text("code_verifier_hash").notNull(), {
+    codeVerifierEncrypted: encrypted(text("code_verifier_encrypted").notNull(), {
       ...credential,
       retention: Retention.Days30,
       erasure: Erasure.RowDeleted,
+      note: "Presented to the provider at the token exchange, so it cannot be a digest.",
     }),
     state: classified(text("state").notNull(), {
       ...ephemeralChallenge,
@@ -151,6 +164,19 @@ export const oauthFlows = classifiedTable(
     redirectUri: classified(text("redirect_uri").notNull(), {
       ...config,
       retention: Retention.Days30,
+      note: "The customer route this flow returns to. Re-checked against the allowlist.",
+    }),
+    linkUserId: classified(uuid("link_user_id"), {
+      ...config,
+      retention: Retention.Days30,
+      loggable: true,
+      note: "Set when a signed-in user is attaching a provider rather than signing in.",
+    }),
+    consumedAt: classified(timestamp("consumed_at", { withTimezone: true }), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
     }),
     expiresAt: classified(timestamp("expires_at", { withTimezone: true }).notNull(), {
       class: DataClass.Operational,

@@ -1,8 +1,12 @@
 import { OauthProviderError } from "@idenzy/core/errors/errors";
+import type { HttpClient } from "@idenzy/core/http/http-client";
+import type { Clock } from "@idenzy/core/time/clock";
 import type {
   OAuthCallback,
+  OAuthFlowStore,
   ProviderCredentials,
   ProviderProfile,
+  RedirectAllowlist,
   StoredFlow,
 } from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
@@ -52,6 +56,11 @@ function requireConfig(credentials: ProviderCredentials, key: string): string {
  */
 export class AppleProvider extends OidcProvider {
   override readonly id = ProviderId.Apple;
+
+  // biome-ignore lint/complexity/noUselessConstructor: it widens the abstract base's protected constructor to public, which is what lets the registry build one.
+  constructor(http: HttpClient, clock: Clock, flows: OAuthFlowStore, allowlist: RedirectAllowlist) {
+    super(http, clock, flows, allowlist);
+  }
 
   protected override authorizeEndpoint(): string {
     return `${ISSUER}/auth/authorize`;

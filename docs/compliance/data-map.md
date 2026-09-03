@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 16 |
 | pseudonymous | 22 |
-| operational | 206 |
+| operational | 209 |
 
 ## `api_keys`
 
@@ -223,10 +223,12 @@ Notes:
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
-| `codeVerifierHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `codeVerifierEncrypted` | secret | authentication | days_30 | no | row_deleted | yes |
+| `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `linkUserId` | operational | service_configuration | days_30 | no | not_applicable | no |
 | `nonce` | pseudonymous | authentication | days_30 | no | row_deleted | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `provider` | operational | service_configuration | project_lifetime | no | not_applicable | no |
@@ -235,7 +237,10 @@ Notes:
 
 Notes:
 
+- `codeVerifierEncrypted`: Presented to the provider at the token exchange, so it cannot be a digest.
+- `linkUserId`: Set when a signed-in user is attaching a provider rather than signing in.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `redirectUri`: The customer route this flow returns to. Re-checked against the allowlist.
 - `state`: Bound to the client session. Mismatch is the CSRF signal (PROJECT.md 4.6).
 
 ## `oauth_providers`
@@ -251,11 +256,13 @@ Notes:
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `provider` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `scopes` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `settings` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 
 Notes:
 
 - `mode`: instant mode uses our shared app and is blocked on production domains (4.6).
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `settings`: Non-secret provider extras: Apple's team and key ids, a Microsoft directory.
 
 ## `orgs`
 

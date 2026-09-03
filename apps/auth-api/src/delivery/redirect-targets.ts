@@ -8,6 +8,7 @@ import { tenantContextFrom } from "../tenancy/flow-context.js";
 /** Allowlist kinds. A URI registered for one purpose never serves another. */
 export const RedirectKind = {
   MagicLink: "magic_link",
+  Oauth: "oauth",
   PasswordReset: "password_reset",
   EmailVerification: "email_verification",
   EmailChange: "email_change",

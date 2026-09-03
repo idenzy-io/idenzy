@@ -12,6 +12,9 @@ import { AnonymousUpgradeFlow } from "../dist/anonymous/anonymous-upgrade.flow.j
 import { AppModule } from "../dist/app.module.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
+import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
+import { OAuthService } from "../dist/oauth/oauth-service.js";
+import { ProviderRegistry } from "../dist/oauth/provider-registry.js";
 import { EmailOtpFlow } from "../dist/otp/email-otp.flow.js";
 import { PasswordResetService } from "../dist/password/password-reset-service.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
@@ -50,6 +53,11 @@ describe("the composition root", () => {
     expect(moduleRef.get(PasswordSignInFlow)).toBeInstanceOf(PasswordSignInFlow);
     expect(moduleRef.get(EmailOtpFlow)).toBeInstanceOf(EmailOtpFlow);
     expect(moduleRef.get(MagicLinkFlow)).toBeInstanceOf(MagicLinkFlow);
+    expect(moduleRef.get(OAuthCodeFlow)).toBeInstanceOf(OAuthCodeFlow);
+    expect(moduleRef.get(OAuthService)).toBeInstanceOf(OAuthService);
+    // The provider map is bound by a symbol token, which is the shape most likely to be
+    // wired wrong and least likely to fail loudly if it is.
+    expect(moduleRef.get(ProviderRegistry).provider("google")).toBeDefined();
     expect(moduleRef.get(AnonymousFlow)).toBeInstanceOf(AnonymousFlow);
     expect(moduleRef.get(AnonymousUpgradeFlow)).toBeInstanceOf(AnonymousUpgradeFlow);
     expect(moduleRef.get(PasswordResetService)).toBeInstanceOf(PasswordResetService);

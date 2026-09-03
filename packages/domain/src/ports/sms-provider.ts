@@ -39,20 +39,31 @@ export interface SpendCap {
   settle(projectId: string, reserved: Money, actual: Money): Promise<void>;
 }
 
+export interface PhonePlacement {
+  /** ISO 3166-1 alpha-2, or null when the number cannot be placed. */
+  readonly country: string | null;
+  /**
+   * A premium-rate or shared-cost range, where the recipient's carrier is paid per
+   * message. Refused whatever the allowlist says: a number nobody can receive a sign-in
+   * code on has no honest reason to be in a sign-in form.
+   */
+  readonly premiumRate: boolean;
+}
+
 /**
- * Which country a number belongs to.
+ * Where a number is, and whether delivering to it pays somebody.
  *
  * Its own port rather than a method on the number, because the answer needs a metadata
  * set that changes on somebody else's schedule, and `@idenzy/core` is in the browser
  * SDK's dependency graph. A value object that dragged a phone-number database into a
  * customer's bundle would be paid for by every page that imports the client.
  *
- * Null means the number is valid E.164 and we cannot place it. A guard treats that as
- * not allowed: an allowlist that admits what it could not identify is not one.
+ * Both facts come back together because they are read together and a second lookup
+ * would parse the same number twice. A null country is not allowed by any allowlist: one
+ * that admits what it could not identify is not an allowlist.
  */
 export interface PhoneGeography {
-  /** ISO 3166-1 alpha-2, or null when the number cannot be placed. */
-  countryOf(to: E164PhoneNumber): string | null;
+  place(to: E164PhoneNumber): PhonePlacement;
 }
 
 export interface SmsDispatchResult {

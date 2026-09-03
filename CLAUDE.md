@@ -747,6 +747,31 @@ that an attack or a mistake fails, which is the only thing that proves tenant is
 holds when application code is wrong. A test that only exercises correct usage proves
 nothing here.
 
+## Working on the audit trail
+
+The one control the whole compliance story rests on, and until recently it recorded
+nothing: the table, the partitions, the append-only grants and the chain helper all
+existed and no code had ever written a row. Five rules.
+
+- **The chain has exactly one writer, and it is the relay in `apps/workers`.** Each entry
+  links to its project's current tip, so two request handlers reading the same tip would
+  both claim it and fork. Serialising that on the request path would queue every sign-in
+  for a busy project behind the one before it, so a flow enqueues to the outbox and the
+  relay drains it. Seconds of lag, and a chain that cannot fork.
+- **`seq` is what makes "the tip" a question with one answer.** `created_at` ties at
+  millisecond precision. Order by `seq`, never by time.
+- **Everything the relay touches goes through a SECURITY DEFINER function.** A relay serves
+  every project and sets no `app.project_id`, so `audit_events`'s FORCE RLS refuses its
+  inserts and hides its reads. That failed silently once: no error, and a trail that stayed
+  empty. None of the functions can UPDATE or DELETE, so the append-only grant from migration
+  0001 still holds.
+- **`ip` and `ua` are outside the digest.** They are the two fields a lawful erasure may
+  pseudonymise, and a chain that hashed them would read a compliant erasure as tampering.
+  What the chain protects is who did what to whom and when.
+- **The watermark is the relay's own row in `relay_offsets`.** `outbox.published_at` belongs
+  to the Pub/Sub relay, and two consumers sharing one watermark means whichever runs first
+  decides what the other never sees.
+
 ## Compliance claims
 
 The architecture is built for SOC 2, ISO 27001, GDPR and HIPAA. **No certification is

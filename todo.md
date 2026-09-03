@@ -19,8 +19,11 @@ are approached.
 **Status.** The exit criteria below are met. What remains unchecked in this phase is
 listed honestly rather than quietly closed: the KMS token issuer (only the local one
 exists), JWKS caching and key rotation, the OpenTelemetry bootstrap, the Postgres
-rate-limit fallback, the audit interceptor, Secret Manager loading, OpenAPI generation,
-distroless images and Binary Authorization. None of them blocks Phase 1 starting.
+rate-limit fallback, Secret Manager loading, OpenAPI generation, distroless images and
+Binary Authorization. The audit trail is no longer among them: flows write to the outbox
+and the relay in `apps/workers` drains it into the hash-chained table, so `audit_events`
+has rows in it for the first time. An interceptor that audits every mutating route rather
+than every flow is still owed. None of them blocks Phase 1 starting.
 
 **Exit criteria.** `pnpm turbo run typecheck lint build` is green across every package. Migrations
 apply to a clean Postgres 17 and create the roles, grants and RLS policies. The RLS negative test
@@ -600,7 +603,10 @@ template pipeline of its own rather than a branch in the OTP flow.
 - [ ] Keep §4.13.10 accurate. Nothing in sales material may claim a certification we do not hold
 - [ ] Evidence artifacts produced per release into `compliance/evidence/` (§4.13.9)
 - [ ] Quarterly access review from `staff_access_grants`
-- [ ] Audit hash-chain verifier running on a schedule
+- [~] Audit hash-chain verifier running on a schedule. `verifyAuditChain` and
+      `audit_chain_for` exist and the relay's tests use them to catch an altered entry and a
+      removed one; what is missing is the job that runs it without being asked. The value of
+      a hash chain is entirely in somebody checking it
 - [ ] DSR due-date alerting, so an overdue request pages someone
 - [ ] Retention jobs actually enforcing `retention_policies`
 - [ ] Subprocessor register kept current
@@ -636,12 +642,12 @@ template pipeline of its own rather than a branch in the OTP flow.
 
 ## Parked and deferred
 
-- [ ] **The audit hash chain needs a total order before the outbox relay can build it.**
-      Appending means linking to the project's current tip, and `audit_events` is ordered
-      only by `created_at`, which ties at millisecond precision. Two entries in the same
-      millisecond would fork the chain. The fix is a monotonic sequence column, which is a
-      schema change to a partitioned append-only table, so it is done deliberately with
-      the relay rather than in passing (§4.13.3).
+- [x] **The audit hash chain has its total order, and the relay that builds it.** `seq`
+      comes from one cluster sequence, so "the newest entry for this project" is a question
+      with one answer where `created_at` tied at millisecond precision. The relay in
+      `apps/workers` is the chain's single writer, which is what the fork problem actually
+      needed: serialising on the request path would have queued every sign-in for a busy
+      project behind the one before it. What is left is the scheduled verifier, below.
 - [ ] KMS token issuer, and the per-project data encryption key alongside it. `auth-api`
       refuses to boot outside development rather than sign with an ephemeral in-process
       key (§4.2), and `FieldEncryptor` now refuses on the same terms rather than encrypt

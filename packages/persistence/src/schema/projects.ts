@@ -119,6 +119,43 @@ export const redirectUris = classifiedTable(
 ).enableRLS();
 
 /**
+ * Browser origins allowed to call the API with credentials (PROJECT.md 4.3).
+ *
+ * Its own table rather than something derived from `redirect_uris`, and the distinction is
+ * worth defending. Redirect targets include schemes that are not origins at all
+ * (`myapp://callback`); the two sets legitimately differ, since an SPA served from
+ * `www.example.com` may post to auth while the OAuth return lands on `app.example.com`; and
+ * deriving one from the other would mean registering a redirect URI silently granted CORS,
+ * which is an invisible privilege change.
+ *
+ * `webauthn_relying_parties.origins` is not reused either, despite looking identical.
+ * WebAuthn forbids origins outside the RP's own registrable domain and CORS does not, so the
+ * two allowlists have different legal shapes and merging them would narrow one or widen the
+ * other.
+ *
+ * Exact match, no wildcards, for the same reason `redirect_uris` has none. The one exception
+ * is a localhost rule that lives in application code and is gated on the environment, so it
+ * cannot be switched on by data.
+ */
+export const projectOrigins = classifiedTable(
+  "project_origins",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(),
+    origin: classified(text("origin").notNull(), {
+      ...config,
+      loggable: true,
+      note: "Scheme, host and port only. Logged, because a refused origin is the whole diagnosis.",
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("project_origins_project_origin_key").on(t.projectId, t.origin),
+    tenantIsolationPolicy("project_origins"),
+  ],
+).enableRLS();
+
+/**
  * The WebAuthn relying party a project's passkeys belong to (PROJECT.md 4.7).
  *
  * One row per project, and the unique index is what makes that structural. A credential

@@ -114,6 +114,45 @@ describe("tenant isolation holds at the database", () => {
     expect(rows).toEqual([]);
   });
 
+  /**
+   * Migration 0012 had to DROP and re-CREATE both resolution functions, because Postgres
+   * refuses to let CREATE OR REPLACE change a return type. Privileges do not survive a DROP,
+   * so the REVOKE and GRANT had to be repeated — and forgetting them fails in exactly one
+   * way: idenzy_app loses the only lookup that turns a Host header into a project, and every
+   * request 404s with `unknown_project` while the function itself looks perfectly healthy.
+   */
+  it("still lets the app role execute the resolution functions after the rebuild", async () => {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT_A]);
+    await harness.owner.query(
+      `INSERT INTO project_domains (project_id, domain, type, status)
+       VALUES ($1, 'auth.acme.test', 'auth', 'verified')
+       ON CONFLICT DO NOTHING`,
+      [PROJECT_A],
+    );
+    await harness.owner.query(
+      `INSERT INTO project_origins (project_id, origin) VALUES ($1, 'https://app.acme.test')
+       ON CONFLICT DO NOTHING`,
+      [PROJECT_A],
+    );
+
+    const resolved = await harness.db.execute<{
+      project_id: string;
+      allowed_origins: string[];
+      has_auth_domain: boolean;
+    }>(sql`select * from resolve_project_by_host('auth.acme.test')`);
+
+    expect(resolved.rows[0]?.project_id).toBe(PROJECT_A);
+    expect(resolved.rows[0]?.allowed_origins).toEqual(["https://app.acme.test"]);
+    expect(resolved.rows[0]?.has_auth_domain).toBe(true);
+  });
+
+  it("resolves origins per project, so one tenant's allowlist is not another's", async () => {
+    const other = await harness.db.execute<{ project_id: string }>(
+      sql`select * from resolve_project_by_host('nobody.test')`,
+    );
+    expect(other.rows).toHaveLength(0);
+  });
+
   it("forces RLS on every protected table, so ownership is not an escape hatch", async () => {
     const { rows } = await harness.owner.query<{ count: string }>(
       `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

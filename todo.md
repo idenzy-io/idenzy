@@ -337,7 +337,7 @@ measured against.
 - [ ] Angular, Solid, Astro, Remix, Electron, Tauri and Capacitor SDKs
 - [ ] Unity and Godot SDKs
 - [ ] Kotlin Multiplatform SDK
-- [ ] Python, PHP, Ruby, Java, .NET and Rust server SDKs
+- [ ] Python (Both async and sync), PHP, Ruby, Java, .NET, Go and Rust server SDKs
 - [ ] Second region cell and the residency routing rules (§4.13.5)
 - [ ] App attestation: App Attest and Play Integrity
 - [ ] Device-bound refresh tokens with proof-of-possession

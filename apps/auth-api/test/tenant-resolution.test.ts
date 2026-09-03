@@ -53,6 +53,8 @@ function project(projectId: string, keyKind: string | null): ResolvedProject {
     plan: "free",
     keyKind,
     scopes: [],
+    allowedOrigins: ["https://app.acme.test"],
+    hasAuthDomain: true,
   };
 }
 

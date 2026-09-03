@@ -78,6 +78,20 @@
       "when": 1788419384917,
       "tag": "0010_webauthn_rls_and_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788423077192,
+      "tag": "0011_rich_exodus",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788423084259,
+      "tag": "0012_origins_rls_and_resolution",
+      "breakpoints": true
     }
   ]
 }

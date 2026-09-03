@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 17 |
 | pseudonymous | 23 |
-| operational | 223 |
+| operational | 227 |
 
 ## `api_keys`
 
@@ -332,6 +332,20 @@ Notes:
 
 Notes:
 
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `project_origins`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `origin` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `origin`: Scheme, host and port only. Logged, because a refused origin is the whole diagnosis.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `projects`

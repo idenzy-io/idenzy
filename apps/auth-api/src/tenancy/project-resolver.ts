@@ -13,6 +13,14 @@ export interface ResolvedProject {
   /** Null when the project was resolved by Host, which presents no key. */
   readonly keyKind: string | null;
   readonly scopes: readonly string[];
+  /** Exact-match browser origins allowed to call with credentials (PROJECT.md 4.3). */
+  readonly allowedOrigins: readonly string[];
+  /**
+   * Whether a verified auth domain exists, which is what decides if cookie mode can work:
+   * a `__Host-` cookie goes only to the host that set it, so it is useless unless the auth
+   * API is same-site with the customer's app.
+   */
+  readonly hasAuthDomain: boolean;
 }
 
 /**
@@ -76,6 +84,8 @@ export class ProjectResolver {
       plan: row.plan,
       keyKind: row.key_kind ?? null,
       scopes: row.scopes ?? [],
+      allowedOrigins: row.allowed_origins ?? [],
+      hasAuthDomain: row.has_auth_domain ?? false,
     };
   }
 }
@@ -89,4 +99,6 @@ interface ResolvedProjectRow extends Record<string, unknown> {
   /** Absent from resolve_project_by_host, which has no key to describe. */
   readonly key_kind?: string;
   readonly scopes?: string[];
+  readonly allowed_origins?: string[];
+  readonly has_auth_domain?: boolean;
 }

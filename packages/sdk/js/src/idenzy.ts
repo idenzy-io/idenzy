@@ -14,6 +14,7 @@ import { FetchTransport, type Transport } from "./http/transport.js";
 import { OAuthFlow } from "./oauth/oauth-flow.js";
 import { type PkceStore, SessionStoragePkceStore } from "./oauth/pkce-store.js";
 import { PasskeyFlow } from "./passkey/passkey-flow.js";
+import { type RefreshLock, WebLocksRefreshLock } from "./session/refresh-lock.js";
 import { MemoryRefreshTokenStore, type RefreshTokenStore } from "./session/refresh-token-store.js";
 import type { Session } from "./session/session.js";
 import {
@@ -38,6 +39,7 @@ export interface IdenzyInternals {
   readonly clock?: Clock;
   readonly cookies?: CookieJar;
   readonly refreshTokens?: RefreshTokenStore;
+  readonly refreshLock?: RefreshLock;
   readonly pkce?: PkceStore;
   readonly navigation?: Navigation;
 }
@@ -78,6 +80,7 @@ export class Idenzy {
       config,
       internals.refreshTokens ?? new MemoryRefreshTokenStore(),
       internals.clock ?? new SystemClock(),
+      internals.refreshLock ?? new WebLocksRefreshLock(config.publishableKey),
     );
 
     this.password = new PasswordFlow(api, this.manager);

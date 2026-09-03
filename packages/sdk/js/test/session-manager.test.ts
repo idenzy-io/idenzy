@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { IdenzyConfig } from "../src/config.js";
 import { ApiClient } from "../src/http/api-client.js";
 import type { CookieJar } from "../src/http/cookie-jar.js";
+import { type RefreshLock, WebLocksRefreshLock } from "../src/session/refresh-lock.js";
 import { MemoryRefreshTokenStore } from "../src/session/refresh-token-store.js";
 import { SessionManager, type SessionState } from "../src/session/session-manager.js";
 import {
@@ -17,7 +18,11 @@ import {
 
 const NO_COOKIES: CookieJar = { read: () => undefined };
 
-function build(transport: FakeTransport, mode: SessionTransport = SessionTransport.Header) {
+function build(
+  transport: FakeTransport,
+  mode: SessionTransport = SessionTransport.Header,
+  lock?: RefreshLock,
+) {
   const config = IdenzyConfig.parse({
     publishableKey: "pk_test_abc",
     apiUrl: "https://auth.acme.test",
@@ -26,7 +31,8 @@ function build(transport: FakeTransport, mode: SessionTransport = SessionTranspo
   const clock = new FixedClock();
   const tokens = new MemoryRefreshTokenStore();
   const api = new ApiClient(config, transport, NO_COOKIES);
-  return { clock, tokens, sessions: new SessionManager(api, config, tokens, clock) };
+  const held = lock ?? new WebLocksRefreshLock(config.publishableKey);
+  return { clock, tokens, sessions: new SessionManager(api, config, tokens, clock, held) };
 }
 
 let transport: FakeTransport;
@@ -98,6 +104,34 @@ describe("refreshing", () => {
     release();
 
     expect(await waiting).toEqual(["access.two", "access.two", "access.two", "access.two"]);
+    expect(transport.to("v1/auth/refresh")).toHaveLength(1);
+  });
+
+  /**
+   * The half a per-tab promise cannot see. Three tabs waking together share one refresh
+   * cookie, and two rotations of the same token revoke the family (ADR-0007).
+   */
+  it("rotates inside the cross-tab lock rather than beside it", async () => {
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lock: RefreshLock = {
+      run: async (work) => {
+        await gate;
+        return work();
+      },
+    };
+    const { sessions, clock } = build(transport, SessionTransport.Header, lock);
+    sessions.adopt(sessionCreated());
+    clock.advance(600);
+
+    const pending = sessions.getToken();
+    await Promise.resolve();
+    expect(transport.to("v1/auth/refresh")).toHaveLength(0);
+
+    release();
+    expect(await pending).toBe("access.two");
     expect(transport.to("v1/auth/refresh")).toHaveLength(1);
   });
 

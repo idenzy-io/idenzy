@@ -6,6 +6,7 @@ import type { PublicUser } from "@idenzy/protocol/schemas/user";
 import type { IdenzyConfig } from "../config.js";
 import { IdenzyApiError, IdenzyTransportError } from "../errors.js";
 import type { ApiClient } from "../http/api-client.js";
+import type { RefreshLock } from "./refresh-lock.js";
 import type { RefreshTokenStore } from "./refresh-token-store.js";
 import { Session } from "./session.js";
 
@@ -29,7 +30,8 @@ export type SessionListener = (state: SessionState) => void;
  * Two decisions here are worth more than the code. Refresh is single-flight, because a page
  * that mounts six components on load would otherwise fire six rotations, and rotation is
  * exactly the operation where using a token twice means reuse detection revokes the whole
- * family. The first caller rotates and the rest await the same promise.
+ * family. The first caller rotates, the rest await the same promise, and the other tabs wait
+ * on a lock.
  *
  * And renewal is lazy rather than timed. A background timer keeps a session alive in a tab
  * nobody is looking at, which quietly converts an idle timeout into no timeout at all; asking
@@ -46,6 +48,7 @@ export class SessionManager {
     private readonly config: IdenzyConfig,
     private readonly tokens: RefreshTokenStore,
     private readonly clock: Clock,
+    private readonly lock: RefreshLock,
   ) {}
 
   get session(): Session | null {
@@ -106,11 +109,19 @@ export class SessionManager {
     return this.tryRefresh();
   }
 
-  /** Rotates the refresh token. Concurrent callers share one rotation, never two. */
+  /**
+   * Rotates the refresh token, once for this tab and once across all of them.
+   *
+   * Two layers, because they solve different halves of the same problem. The promise covers
+   * components sharing a tab; the lock covers tabs sharing a cookie, which is the case a
+   * promise cannot see and the one that signs a user out of every device (ADR-0007).
+   */
   refresh(): Promise<Session> {
-    this.pending ??= this.rotate().finally(() => {
-      this.pending = null;
-    });
+    this.pending ??= this.lock
+      .run(() => this.rotate())
+      .finally(() => {
+        this.pending = null;
+      });
     return this.pending;
   }
 

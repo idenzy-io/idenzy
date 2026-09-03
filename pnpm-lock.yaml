@@ -96,6 +96,9 @@ catalogs:
     rxjs:
       specifier: 7.8.2
       version: 7.8.2
+    solid-js:
+      specifier: 1.9.15
+      version: 1.9.15
     svelte:
       specifier: 5.57.0
       version: 5.57.0
@@ -794,6 +797,28 @@ importers:
       jose:
         specifier: 'catalog:'
         version: 6.2.10
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
+
+  packages/sdk/client/solid:
+    dependencies:
+      '@idenzy/js':
+        specifier: workspace:*
+        version: link:../js
+      '@idenzy/protocol':
+        specifier: workspace:*
+        version: link:../../../protocol
+    devDependencies:
+      jsdom:
+        specifier: 'catalog:'
+        version: 30.0.1
+      solid-js:
+        specifier: 'catalog:'
+        version: 1.9.15
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -5240,6 +5265,16 @@ packages:
     resolution: {integrity: sha512-k3CMsaIvvdSwm8oLB4MXSl0wH2/cwlH7xGcnRd2DaeRmBkbzYmyT8j0tsX60DwD1eRwHTpNpH8ljKu9oUT1MeQ==}
     engines: {node: '>=20.0.0'}
 
+  seroval-plugins@1.5.6:
+    resolution: {integrity: sha512-HXuLAX2pu/UByPpaeo/TaMfvMIi+1QqIoPJYCcAtU8QkVNwgR6MPlGuCQTErV1JwraaMbYaWVIBX7mppzGLATQ==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      seroval: ^1.0
+
+  seroval@1.5.6:
+    resolution: {integrity: sha512-rVQVWjjSvlINzaQPZH5JFqsqEsIWdTxY3iJZCnTL/5gQbXIRooVZKI60tVCkOVfzcRPejboxO2t0P89dg5mQaA==}
+    engines: {node: '>=10'}
+
   seroval@1.6.4:
     resolution: {integrity: sha512-LErWMNS2RRFdu2RMA5u/PA59/IWs0XsikyEXGQ2/36iEWFrdG0ABmg17E17cikrv76891kOAMq3TkTFXpwAHXw==}
     engines: {node: '>=10'}
@@ -5305,6 +5340,9 @@ packages:
   smob@1.6.2:
     resolution: {integrity: sha512-RQsvleCbF8cVHEv+xuDGaA4pOizFqJ0GgjtMSRo6oP8pnN7WsigHgVGey6aILRBKv4W2YOMHLqbKdnB6hpB9fw==}
     engines: {node: '>=20.0.0'}
+
+  solid-js@1.9.15:
+    resolution: {integrity: sha512-EeiY2xfpZJqPLjXspVEKjAII4yv8NyG//NxZ3IpOFHdUNnnTyL0uJOeS9LWGvA7cFCz5y94cjFwYlmw5Luncsg==}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -10830,6 +10868,12 @@ snapshots:
 
   serialize-javascript@7.1.1: {}
 
+  seroval-plugins@1.5.6(seroval@1.5.6):
+    dependencies:
+      seroval: 1.5.6
+
+  seroval@1.5.6: {}
+
   seroval@1.6.4: {}
 
   serve-placeholder@2.0.2:
@@ -10918,6 +10962,12 @@ snapshots:
   slash@5.1.0: {}
 
   smob@1.6.2: {}
+
+  solid-js@1.9.15:
+    dependencies:
+      csstype: 3.2.3
+      seroval: 1.5.6
+      seroval-plugins: 1.5.6(seroval@1.5.6)
 
   sonic-boom@4.2.1:
     dependencies:

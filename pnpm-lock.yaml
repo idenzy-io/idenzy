@@ -647,6 +647,34 @@ importers:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
 
+  packages/providers-sms:
+    dependencies:
+      '@idenzy/core':
+        specifier: workspace:*
+        version: link:../core
+      '@idenzy/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@idenzy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      libphonenumber-js:
+        specifier: 1.13.12
+        version: 1.13.12
+    devDependencies:
+      '@idenzy/testing':
+        specifier: workspace:*
+        version: link:../testing
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.4.1
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/sdk/client/angular:
     dependencies:
       '@idenzy/js':
@@ -4373,6 +4401,9 @@ packages:
   lazystream@1.0.1:
     resolution: {integrity: sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==}
     engines: {node: '>= 0.6.3'}
+
+  libphonenumber-js@1.13.12:
+    resolution: {integrity: sha512-uLVeV1c9OTk6qkdqnj+mpMD+ZdnZ0szVyWu58HwMmpwkHA1gCEkyjd3veZQXDnuw9KEwSRjcc9B1pS9XKIN1fA==}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -9652,6 +9683,8 @@ snapshots:
   lazystream@1.0.1:
     dependencies:
       readable-stream: 2.3.8
+
+  libphonenumber-js@1.13.12: {}
 
   light-my-request@6.6.0:
     dependencies:

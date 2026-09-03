@@ -13,6 +13,7 @@ import {
   type FlowAudit,
   type FlowContext,
   type FlowHooks,
+  type MfaGate,
 } from "@idenzy/domain/ports/auth-flow";
 import {
   MAX_OTP_ATTEMPTS,
@@ -44,12 +45,13 @@ export abstract class OtpFlow extends AuthFlow {
     sessions: SessionService,
     hooks: FlowHooks,
     audit: FlowAudit,
+    mfa: MfaGate,
     protected readonly uow: UnitOfWork,
     protected readonly clock: Clock,
     private readonly hasher: PasswordHasher,
     private readonly encryptor: FieldEncryptor,
   ) {
-    super(sessions, hooks, audit);
+    super(sessions, hooks, audit, mfa);
   }
 
   /**

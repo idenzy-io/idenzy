@@ -76,7 +76,7 @@ async function signIn(
   const issued = await sessions.issueSession(context, {
     userId,
     amr: [AuthMethod.Password],
-    requiresMfa: false,
+    factorVerifiedAt: null,
   });
   return {
     sessionId: issued.sessionId,
@@ -133,7 +133,7 @@ describe("listing sessions", () => {
     const userId = await newUser("named@a.test");
     const named = await sessions.issueSession(
       { ...context, deviceName: "Hasan'ın MacBook'u" },
-      { userId, amr: [AuthMethod.Password], requiresMfa: false },
+      { userId, amr: [AuthMethod.Password], factorVerifiedAt: null },
     );
 
     const list = await sessions.listSessions(context, principal(userId, named.sessionId));

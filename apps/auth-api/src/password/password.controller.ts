@@ -1,5 +1,3 @@
-import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import {
   type ConfirmPasswordReset,
   confirmPasswordResetSchema,
@@ -10,11 +8,11 @@ import {
   signInWithPasswordSchema,
   signUpWithPasswordSchema,
 } from "@idenzy/protocol/schemas/auth";
-import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { SessionCreated } from "@idenzy/protocol/schemas/session";
+import type { AuthOutcome as AuthOutcomeBody } from "@idenzy/protocol/schemas/mfa";
 import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { PasswordResetService } from "./password-reset-service.js";
 import { PasswordSignInFlow } from "./password-sign-in.flow.js";
@@ -40,9 +38,9 @@ export class PasswordController {
   async signUp(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(signUpWithPasswordSchema)) body: SignUpWithPassword,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     const context = flowContextFrom(request);
-    return present(await this.signUpFlow.authenticate(context, body));
+    return presentOutcome(await this.signUpFlow.authenticate(context, body));
   }
 
   @Post("sign-in/password")
@@ -50,9 +48,9 @@ export class PasswordController {
   async signIn(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(signInWithPasswordSchema)) body: SignInWithPassword,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     const context = flowContextFrom(request);
-    return present(await this.signInFlow.authenticate(context, body));
+    return presentOutcome(await this.signInFlow.authenticate(context, body));
   }
 
   /**
@@ -79,12 +77,3 @@ export class PasswordController {
 }
 
 /** Pure mapping. The user comes from the same transaction that created the session. */
-function present(issued: IssuedSession): SessionCreated {
-  return {
-    user: issued.user.toPublic(),
-    sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
-    accessToken: issued.accessToken,
-    accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
-    refreshToken: issued.refreshToken,
-  };
-}

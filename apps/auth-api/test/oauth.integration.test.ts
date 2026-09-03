@@ -23,6 +23,7 @@ import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
 import { startOauthSchema } from "@idenzy/protocol/schemas/auth";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { RedirectKind } from "../dist/delivery/redirect-targets.js";
@@ -34,7 +35,7 @@ import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
 import { OAuthService } from "../dist/oauth/oauth-service.js";
 import { ProviderRegistry } from "../dist/oauth/provider-registry.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -137,6 +138,7 @@ async function configureProvider(settings: Record<string, unknown> = {}): Promis
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
@@ -157,6 +159,7 @@ beforeAll(async () => {
     sessions,
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
+    gate,
     uow,
     clock,
   );
@@ -392,9 +395,11 @@ describe("completing a flow", () => {
 describe("exchanging the code", () => {
   it("returns a session whose amr says oauth", async () => {
     const destination = await signInThrough({ providerUserId: "exchanges", email: "ex@a.test" });
-    const issued = await flow.authenticate(context, {
-      code: destination.searchParams.get("code") ?? "",
-    });
+    const issued = sessionOf(
+      await flow.authenticate(context, {
+        code: destination.searchParams.get("code") ?? "",
+      }),
+    );
 
     expect(issued.user.email).toBe("ex@a.test");
     const claims = JSON.parse(
@@ -406,7 +411,7 @@ describe("exchanging the code", () => {
   it("spends the code once", async () => {
     const destination = await signInThrough({ providerUserId: "spends", email: "sp@a.test" });
     const code = destination.searchParams.get("code") ?? "";
-    await flow.authenticate(context, { code });
+    sessionOf(await flow.authenticate(context, { code }));
     await expect(flow.authenticate(context, { code })).rejects.toMatchObject({
       code: "challenge_invalid",
     });
@@ -509,7 +514,7 @@ describe("PKCE on our own exchange code", () => {
 
   it("completes when the verifier matches the challenge that started the flow", async () => {
     const code = await signInWithPkce("pkce-ok@a.test");
-    const issued = await flow.authenticate(context, { code, codeVerifier: VERIFIER });
+    const issued = sessionOf(await flow.authenticate(context, { code, codeVerifier: VERIFIER }));
     expect(issued.user.email).toBe("pkce-ok@a.test");
   });
 
@@ -554,7 +559,7 @@ describe("PKCE on our own exchange code", () => {
     // challenge accepts one and ignores it rather than refusing.
     const url = await signInThrough({ email: "pkce-none@a.test", providerUserId: "pkce-none" });
     const code = url.searchParams.get("code") ?? "";
-    const issued = await flow.authenticate(context, { code, codeVerifier: VERIFIER });
+    const issued = sessionOf(await flow.authenticate(context, { code, codeVerifier: VERIFIER }));
     expect(issued.user.email).toBe("pkce-none@a.test");
   });
 });

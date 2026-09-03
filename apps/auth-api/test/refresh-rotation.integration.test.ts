@@ -81,7 +81,7 @@ async function signIn(
   const issued = await sessions.issueSession(context, {
     userId,
     amr: [AuthMethod.Password],
-    requiresMfa: false,
+    factorVerifiedAt: null,
   });
   return { userId, refreshToken: issued.refreshToken, sessionId: issued.sessionId };
 }
@@ -121,7 +121,7 @@ describe("issuing a session", () => {
     const issued = await sessions.issueSession(context, {
       userId,
       amr: [AuthMethod.Password],
-      requiresMfa: false,
+      factorVerifiedAt: null,
     });
     const claims = JSON.parse(
       Buffer.from(issued.accessToken.split(".")[1] ?? "", "base64url").toString(),
@@ -269,7 +269,7 @@ describe("reuse detection", () => {
     await sessions.issueSession(context, {
       userId,
       amr: [AuthMethod.Password],
-      requiresMfa: false,
+      factorVerifiedAt: null,
     });
 
     await sessions.signOut(context, refreshToken, "all");

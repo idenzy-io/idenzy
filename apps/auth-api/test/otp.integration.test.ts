@@ -11,6 +11,7 @@ import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { TemplateType } from "@idenzy/protocol/enums/delivery";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { NoStoredTemplates, TemplateRenderer } from "@idenzy/templating/renderer";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { CapturingEmailProvider } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -20,7 +21,7 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { EmailOtpFlow } from "../dist/otp/email-otp.flow.js";
 import { EmailOtpService } from "../dist/otp/email-otp-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -60,6 +61,7 @@ async function start(email: string): Promise<string> {
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
@@ -70,6 +72,7 @@ beforeAll(async () => {
     sessions,
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
+    gate,
     uow,
     clock,
     hasher,
@@ -136,10 +139,12 @@ describe("starting a challenge", () => {
     await expect(
       flow.authenticate(context, { challengeId: first, code: firstCode }),
     ).rejects.toMatchObject({ code: "challenge_invalid" });
-    const issued = await flow.authenticate(context, {
-      challengeId: second,
-      code: codeIn("resend@a.test"),
-    });
+    const issued = sessionOf(
+      await flow.authenticate(context, {
+        challengeId: second,
+        code: codeIn("resend@a.test"),
+      }),
+    );
     expect(issued.user.email).toBe("resend@a.test");
   });
 });
@@ -147,10 +152,12 @@ describe("starting a challenge", () => {
 describe("verifying a challenge", () => {
   it("creates a verified account for an address that had none", async () => {
     const challengeId = await start("fresh@a.test");
-    const issued = await flow.authenticate(context, {
-      challengeId,
-      code: codeIn("fresh@a.test"),
-    });
+    const issued = sessionOf(
+      await flow.authenticate(context, {
+        challengeId,
+        code: codeIn("fresh@a.test"),
+      }),
+    );
 
     expect(issued.user.email).toBe("fresh@a.test");
     // Stronger than password sign-up produces: they read a message we sent there.
@@ -171,10 +178,12 @@ describe("verifying a challenge", () => {
       }),
     );
     const challengeId = await start("existing@a.test");
-    const issued = await flow.authenticate(context, {
-      challengeId,
-      code: codeIn("existing@a.test"),
-    });
+    const issued = sessionOf(
+      await flow.authenticate(context, {
+        challengeId,
+        code: codeIn("existing@a.test"),
+      }),
+    );
     expect(issued.user.emailVerified).toBe(true);
   });
 
@@ -248,7 +257,7 @@ describe("what the code lands in", () => {
 
   it("burns the challenge row itself, not only the session path", async () => {
     const challengeId = await start("cleanup@a.test");
-    await flow.authenticate(context, { challengeId, code: codeIn("cleanup@a.test") });
+    sessionOf(await flow.authenticate(context, { challengeId, code: codeIn("cleanup@a.test") }));
 
     const { rows } = await harness.owner.query<{ consumed_at: Date | null }>(
       `SELECT consumed_at FROM otp_challenges WHERE id = $1`,

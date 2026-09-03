@@ -1,6 +1,4 @@
 import { MissingCredentialsError, ValidationFailedError } from "@idenzy/core/errors";
-import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import {
   type AuthorizationStarted,
   type ExchangeCode,
@@ -10,11 +8,11 @@ import {
   type StartOauth,
   startOauthSchema,
 } from "@idenzy/protocol/schemas/auth";
-import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { SessionCreated } from "@idenzy/protocol/schemas/session";
+import type { AuthOutcome as AuthOutcomeBody } from "@idenzy/protocol/schemas/mfa";
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Redirect, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
@@ -153,9 +151,9 @@ export class OAuthController {
   async exchange(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(exchangeCodeSchema)) body: ExchangeCode,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     const issued = await this.flow.authenticate(flowContextFrom(request), body);
-    return present(issued);
+    return presentOutcome(issued);
   }
 
   private async complete(
@@ -186,14 +184,4 @@ function principalOf(request: FastifyRequest): SessionPrincipal {
   const principal = request.principal;
   if (principal === undefined) throw new MissingCredentialsError();
   return principal;
-}
-
-function present(issued: IssuedSession): SessionCreated {
-  return {
-    user: issued.user.toPublic(),
-    sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
-    accessToken: issued.accessToken,
-    accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
-    refreshToken: issued.refreshToken,
-  };
 }

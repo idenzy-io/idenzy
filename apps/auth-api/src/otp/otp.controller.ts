@@ -1,7 +1,5 @@
 import { ValidationFailedError } from "@idenzy/core/errors";
 import { E164PhoneNumber } from "@idenzy/core/value-objects/e164-phone-number";
-import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import { Channel } from "@idenzy/protocol/enums/delivery";
 import {
   type ChallengeStarted,
@@ -10,11 +8,11 @@ import {
   type VerifyOtp,
   verifyOtpSchema,
 } from "@idenzy/protocol/schemas/auth";
-import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { SessionCreated } from "@idenzy/protocol/schemas/session";
+import type { AuthOutcome as AuthOutcomeBody } from "@idenzy/protocol/schemas/mfa";
 import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { EmailOtpService } from "./email-otp-service.js";
 import { OtpVerification } from "./otp-verification.js";
@@ -72,18 +70,8 @@ export class OtpController {
   async verify(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(verifyOtpSchema)) body: VerifyOtp,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     const issued = await this.verification.authenticate(flowContextFrom(request), body);
-    return present(issued);
+    return presentOutcome(issued);
   }
-}
-
-function present(issued: IssuedSession): SessionCreated {
-  return {
-    user: issued.user.toPublic(),
-    sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
-    accessToken: issued.accessToken,
-    accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
-    refreshToken: issued.refreshToken,
-  };
 }

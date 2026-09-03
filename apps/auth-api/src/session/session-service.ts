@@ -66,7 +66,7 @@ export class SessionService implements SessionIssuer {
         userAgent: context.userAgent,
         deviceId: null,
         deviceName: context.deviceName,
-        factorVerifiedAt: null,
+        factorVerifiedAt: subject.factorVerifiedAt,
         idleExpiresAt: this.clock.inSeconds(this.config.get("SESSION_IDLE_TTL_SECONDS")),
         absoluteExpiresAt: this.clock.inSeconds(this.config.get("SESSION_ABSOLUTE_TTL_SECONDS")),
       });
@@ -92,7 +92,13 @@ export class SessionService implements SessionIssuer {
       return { sessionId: session.id, user: found };
     });
 
-    const access = await this.mintAccessToken(tenant, subject.userId, sessionId, subject.amr, null);
+    const access = await this.mintAccessToken(
+      tenant,
+      subject.userId,
+      sessionId,
+      subject.amr,
+      subject.factorVerifiedAt,
+    );
     return {
       sessionId,
       userId: subject.userId,

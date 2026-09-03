@@ -1,5 +1,3 @@
-import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import {
   type ChallengeStarted,
   type ExchangeCode,
@@ -8,11 +6,11 @@ import {
   type StartMagicLink,
   startMagicLinkSchema,
 } from "@idenzy/protocol/schemas/auth";
-import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { SessionCreated } from "@idenzy/protocol/schemas/session";
+import type { AuthOutcome as AuthOutcomeBody } from "@idenzy/protocol/schemas/mfa";
 import { Body, Controller, Get, HttpCode, Post, Query, Redirect, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { MagicLinkFlow } from "./magic-link.flow.js";
@@ -63,18 +61,8 @@ export class MagicLinkController {
   async exchange(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(exchangeCodeSchema)) body: ExchangeCode,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     const issued = await this.flow.authenticate(flowContextFrom(request), body);
-    return present(issued);
+    return presentOutcome(issued);
   }
-}
-
-function present(issued: IssuedSession): SessionCreated {
-  return {
-    user: issued.user.toPublic(),
-    sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
-    accessToken: issued.accessToken,
-    accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
-    refreshToken: issued.refreshToken,
-  };
 }

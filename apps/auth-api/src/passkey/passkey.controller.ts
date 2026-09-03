@@ -1,8 +1,5 @@
 import { MissingCredentialsError } from "@idenzy/core/errors";
-import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
-import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { SessionCreated } from "@idenzy/protocol/schemas/session";
+import type { AuthOutcome as AuthOutcomeBody } from "@idenzy/protocol/schemas/mfa";
 import {
   type FinishPasskeyAuthentication,
   type FinishPasskeyRegistration,
@@ -15,6 +12,7 @@ import {
 import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { PasskeyFlow } from "./passkey.flow.js";
@@ -77,20 +75,10 @@ export class PasskeyController {
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(finishPasskeyAuthenticationSchema))
     body: FinishPasskeyAuthentication,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     const issued = await this.flow.authenticate(flowContextFrom(request), body);
-    return present(issued);
+    return presentOutcome(issued);
   }
-}
-
-function present(issued: IssuedSession): SessionCreated {
-  return {
-    user: issued.user.toPublic(),
-    sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
-    accessToken: issued.accessToken,
-    accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
-    refreshToken: issued.refreshToken,
-  };
 }
 
 /** The guard populates this. Its absence means the route was mounted without it. */

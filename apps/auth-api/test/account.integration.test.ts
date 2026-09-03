@@ -10,6 +10,7 @@ import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { NoStoredTemplates, TemplateRenderer } from "@idenzy/templating/renderer";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { CapturingEmailProvider } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -24,7 +25,7 @@ import { PasswordResetService } from "../dist/password/password-reset-service.js
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -72,6 +73,7 @@ function tokenIn(to: string): string {
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
@@ -95,8 +97,8 @@ beforeAll(async () => {
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
-  signUp = new PasswordSignUpFlow(sessions, hooks, audit, uow, hasher, new NoBreaches());
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, uow, hasher, clock);
+  signUp = new PasswordSignUpFlow(sessions, hooks, audit, gate, uow, hasher, new NoBreaches());
+  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, uow, hasher, clock);
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -129,7 +131,7 @@ describe("resetting a password", () => {
   const original = "the-original-password";
 
   beforeAll(async () => {
-    await signUp.authenticate(context, { email, password: original });
+    sessionOf(await signUp.authenticate(context, { email, password: original }));
   });
 
   it("mails a link to the project's own reset page", async () => {
@@ -148,7 +150,7 @@ describe("resetting a password", () => {
   });
 
   it("changes the password and ends every session the account held", async () => {
-    const before = await signIn.authenticate(context, { email, password: original });
+    const before = sessionOf(await signIn.authenticate(context, { email, password: original }));
     await reset.request(context, email);
     await reset.confirm(context, {
       token: tokenIn(email),
@@ -163,10 +165,12 @@ describe("resetting a password", () => {
     await expect(signIn.authenticate(context, { email, password: original })).rejects.toMatchObject(
       { code: "invalid_credentials" },
     );
-    const after = await signIn.authenticate(context, {
-      email,
-      password: "a-brand-new-password",
-    });
+    const after = sessionOf(
+      await signIn.authenticate(context, {
+        email,
+        password: "a-brand-new-password",
+      }),
+    );
     expect(after.user.email).toBe(email);
   });
 
@@ -232,10 +236,12 @@ describe("verifying an address", () => {
   let userId = "";
 
   beforeAll(async () => {
-    const issued = await signUp.authenticate(context, {
-      email: "verifyme@a.test",
-      password: "verify-me-password",
-    });
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "verifyme@a.test",
+        password: "verify-me-password",
+      }),
+    );
     userId = issued.userId;
   });
 
@@ -258,10 +264,12 @@ describe("verifying an address", () => {
    * they do not own have it marked verified.
    */
   it("will not accept a password reset token", async () => {
-    const issued = await signUp.authenticate(context, {
-      email: "crossed@a.test",
-      password: "crossed-wires-password",
-    });
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "crossed@a.test",
+        password: "crossed-wires-password",
+      }),
+    );
     await reset.request(context, "crossed@a.test");
 
     await expect(verification.confirm(context, tokenIn("crossed@a.test"))).rejects.toMatchObject({
@@ -280,7 +288,9 @@ describe("changing an address", () => {
   const to = "movingto@a.test";
 
   beforeAll(async () => {
-    const issued = await signUp.authenticate(context, { email: from, password: "moving-password" });
+    const issued = sessionOf(
+      await signUp.authenticate(context, { email: from, password: "moving-password" }),
+    );
     userId = issued.userId;
   });
 
@@ -317,7 +327,9 @@ describe("changing an address", () => {
   });
 
   it("refuses an address that already belongs to someone else", async () => {
-    await signUp.authenticate(context, { email: "taken@a.test", password: "taken-password" });
+    sessionOf(
+      await signUp.authenticate(context, { email: "taken@a.test", password: "taken-password" }),
+    );
     await expect(changes.request(context, userId, "taken@a.test")).rejects.toMatchObject({
       status: 409,
     });
@@ -336,10 +348,12 @@ describe("changing an address", () => {
 
 describe("reading your own profile", () => {
   it("returns the signed-in user, and nothing private", async () => {
-    const issued = await signUp.authenticate(context, {
-      email: "profile@a.test",
-      password: "profile-password",
-    });
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "profile@a.test",
+        password: "profile-password",
+      }),
+    );
 
     const me = await profile.me(context, issued.userId);
     expect(me.email).toBe("profile@a.test");
@@ -350,10 +364,12 @@ describe("reading your own profile", () => {
   });
 
   it("answers session_revoked, not 404, when the user behind a live session is gone", async () => {
-    const issued = await signUp.authenticate(context, {
-      email: "vanished@a.test",
-      password: "vanished-password",
-    });
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "vanished@a.test",
+        password: "vanished-password",
+      }),
+    );
     await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(`DELETE FROM users WHERE id = $1`, [issued.userId]);
 
@@ -365,10 +381,12 @@ describe("reading your own profile", () => {
   });
 
   it("does not resolve a user belonging to another project", async () => {
-    const issued = await signUp.authenticate(context, {
-      email: "elsewhere@a.test",
-      password: "elsewhere-password",
-    });
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "elsewhere@a.test",
+        password: "elsewhere-password",
+      }),
+    );
     const other: FlowContext = { ...context, projectId: "99999999-9999-9999-9999-999999999999" };
 
     await expect(profile.me(other, issued.userId)).rejects.toMatchObject({

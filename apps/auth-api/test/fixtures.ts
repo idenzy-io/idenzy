@@ -2,6 +2,13 @@ import { type RevocationCommands, RevocationSet } from "@idenzy/cache/revocation
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
 import type { Clock } from "@idenzy/core/time/clock";
+import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
+import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
+import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { MfaFactorRegistry } from "../dist/mfa/factor-registry.js";
+import { MfaChallengeGate } from "../dist/mfa/mfa-challenge-gate.js";
+import { RecoveryCodeFactor } from "../dist/mfa/recovery-code.factor.js";
+import { TotpFactor } from "../dist/mfa/totp.factor.js";
 // From `dist`, like every other app test: Vitest transforms with Rolldown, which does not
 // apply the decorator semantics NestJS needs, and a class imported from `src` here would be
 // a different identity from the one the tests construct.
@@ -106,4 +113,24 @@ export class TestValkey extends InMemoryRevocationCommands {
   quit(): Promise<string> {
     return Promise.resolve("OK");
   }
+}
+
+/**
+ * The real gate over the real factors, which is what every flow now takes.
+ *
+ * Real rather than a stub that always answers null, because the property worth holding
+ * is that a user who has enrolled nothing is not challenged, and a stub would assert
+ * only that we called our own method. It costs one extra read per sign-in in a test.
+ */
+export function testMfaGate(uow: UnitOfWork, clock: Clock, config: AppConfig): MfaChallengeGate {
+  const encryptor = new FieldEncryptor(developmentDataKey(config.get("CELL_CODE")));
+  return new MfaChallengeGate(
+    uow,
+    clock,
+    config,
+    new MfaFactorRegistry(
+      new TotpFactor(uow, encryptor, clock),
+      new RecoveryCodeFactor(uow, clock),
+    ),
+  );
 }

@@ -8,6 +8,7 @@ import {
   type FlowAudit,
   type FlowContext,
   type FlowHooks,
+  type MfaGate,
   type SessionIssuer,
 } from "@idenzy/domain/ports/auth-flow";
 import { AuthCodeRepository } from "@idenzy/persistence/repository/auth-code-repository";
@@ -36,10 +37,11 @@ export abstract class AuthCodeExchangeFlow extends AuthFlow {
     sessions: SessionIssuer,
     hooks: FlowHooks,
     audit: FlowAudit,
+    mfa: MfaGate,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
   ) {
-    super(sessions, hooks, audit);
+    super(sessions, hooks, audit, mfa);
   }
 
   protected override async verify(
@@ -68,7 +70,7 @@ export abstract class AuthCodeExchangeFlow extends AuthFlow {
       // method we recognise must not reach the amr claim of an access token.
       return {
         challenge: code.codeChallenge,
-        subject: { userId: user.id, amr: code.amr.filter(isAuthMethod), requiresMfa: false },
+        subject: { userId: user.id, amr: code.amr.filter(isAuthMethod), factorVerifiedAt: null },
       };
     });
 

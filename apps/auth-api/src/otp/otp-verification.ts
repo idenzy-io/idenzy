@@ -1,6 +1,6 @@
 import { ChallengeInvalidError } from "@idenzy/core/errors";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { FlowContext, IssuedSession } from "@idenzy/domain/ports/auth-flow";
+import type { AuthOutcome, FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { OtpChallengeRepository } from "@idenzy/persistence/repository/otp-challenge-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { Channel } from "@idenzy/protocol/enums/delivery";
@@ -31,7 +31,7 @@ export class OtpVerification {
     private readonly sms: SmsOtpFlow,
   ) {}
 
-  async authenticate(context: FlowContext, credentials: VerifyOtp): Promise<IssuedSession> {
+  async authenticate(context: FlowContext, credentials: VerifyOtp): Promise<AuthOutcome> {
     const input = parseOrThrow(verifyOtpSchema, credentials);
     const challengeId = PublicId.parse(IdPrefix.Challenge, input.challengeId).uuid;
     const tenant = tenantContextFrom(context);

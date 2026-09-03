@@ -1,12 +1,10 @@
 import { MissingCredentialsError } from "@idenzy/core/errors";
-import { PublicId } from "@idenzy/core/value-objects/public-id";
-import type { IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import { type UpgradeAnonymous, upgradeAnonymousSchema } from "@idenzy/protocol/schemas/auth";
-import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { SessionCreated } from "@idenzy/protocol/schemas/session";
+import type { AuthOutcome as AuthOutcomeBody } from "@idenzy/protocol/schemas/mfa";
 import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { AnonymousFlow } from "./anonymous.flow.js";
@@ -28,8 +26,8 @@ export class AnonymousController {
 
   @Post()
   @HttpCode(201)
-  async create(@Req() request: FastifyRequest): Promise<SessionCreated> {
-    return present(await this.flow.authenticate(flowContextFrom(request), {}));
+  async create(@Req() request: FastifyRequest): Promise<AuthOutcomeBody> {
+    return presentOutcome(await this.flow.authenticate(flowContextFrom(request), {}));
   }
 
   @Post("upgrade")
@@ -38,11 +36,13 @@ export class AnonymousController {
   async upgrade(
     @Req() request: FastifyRequest,
     @Body(new ZodValidationPipe(upgradeAnonymousSchema)) body: UpgradeAnonymous,
-  ): Promise<SessionCreated> {
+  ): Promise<AuthOutcomeBody> {
     // Spread first, userId last: a body carrying its own userId is overwritten rather
     // than trusted, so this route cannot be used to attach credentials to a stranger.
     const credentials = { ...body, userId: principalOf(request).userId };
-    return present(await this.upgradeFlow.authenticate(flowContextFrom(request), credentials));
+    return presentOutcome(
+      await this.upgradeFlow.authenticate(flowContextFrom(request), credentials),
+    );
   }
 }
 
@@ -50,14 +50,4 @@ function principalOf(request: FastifyRequest): SessionPrincipal {
   const principal = request.principal;
   if (principal === undefined) throw new MissingCredentialsError();
   return principal;
-}
-
-function present(issued: IssuedSession): SessionCreated {
-  return {
-    user: issued.user.toPublic(),
-    sessionId: PublicId.encode(IdPrefix.Session, issued.sessionId).value,
-    accessToken: issued.accessToken,
-    accessTokenExpiresAt: issued.accessTokenExpiresAt.toISOString(),
-    refreshToken: issued.refreshToken,
-  };
 }

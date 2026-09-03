@@ -12,6 +12,7 @@ import { LoggingSmsProvider } from "@idenzy/providers-sms/logging-sms-provider";
 import { MetadataPhoneGeography } from "@idenzy/providers-sms/metadata-phone-geography";
 import { ProviderRouter } from "@idenzy/providers-sms/provider-router";
 import { NoStoredSmsTemplates, SmsRenderer } from "@idenzy/templating/sms-renderer";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Texter } from "../dist/delivery/texter.js";
@@ -22,7 +23,7 @@ import { OtpVerification } from "../dist/otp/otp-verification.js";
 import { SmsOtpFlow } from "../dist/otp/sms-otp.flow.js";
 import { SmsOtpService } from "../dist/otp/sms-otp-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "55555555-5555-5555-5555-555555555555";
@@ -50,6 +51,7 @@ const allowing: FraudGuard = { assertAllowed: () => Promise.resolve() };
 const unlimited: SpendCap = { reserve: () => Promise.resolve(), settle: () => Promise.resolve() };
 
 let uow: UnitOfWork;
+let gate: ReturnType<typeof testMfaGate>;
 let service: SmsOtpService;
 let verification: OtpVerification;
 let smsFlow: SmsOtpFlow;
@@ -81,6 +83,7 @@ async function start(number: E164PhoneNumber): Promise<string> {
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
@@ -97,10 +100,10 @@ beforeAll(async () => {
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
-  smsFlow = new SmsOtpFlow(sessions, hooks, audit, uow, clock, hasher, encryptor);
+  smsFlow = new SmsOtpFlow(sessions, hooks, audit, gate, uow, clock, hasher, encryptor);
   verification = new OtpVerification(
     uow,
-    new EmailOtpFlow(sessions, hooks, audit, uow, clock, hasher, encryptor),
+    new EmailOtpFlow(sessions, hooks, audit, gate, uow, clock, hasher, encryptor),
     smsFlow,
   );
 
@@ -159,10 +162,12 @@ describe("verifying an sms challenge", () => {
   it("creates the account with the number already verified", async () => {
     const number = E164PhoneNumber.parse("+14155550110");
     const challengeId = await start(number);
-    const issued = await verification.authenticate(context, {
-      challengeId,
-      code: codeIn(number.value),
-    });
+    const issued = sessionOf(
+      await verification.authenticate(context, {
+        challengeId,
+        code: codeIn(number.value),
+      }),
+    );
 
     expect(issued.user.phone).toBe(number.value);
     expect(issued.user.phoneVerified).toBe(true);
@@ -171,14 +176,18 @@ describe("verifying an sms challenge", () => {
 
   it("signs the same number back in rather than creating a second account", async () => {
     const number = E164PhoneNumber.parse("+14155550111");
-    const first = await verification.authenticate(context, {
-      challengeId: await start(number),
-      code: codeIn(number.value),
-    });
-    const second = await verification.authenticate(context, {
-      challengeId: await start(number),
-      code: codeIn(number.value),
-    });
+    const first = sessionOf(
+      await verification.authenticate(context, {
+        challengeId: await start(number),
+        code: codeIn(number.value),
+      }),
+    );
+    const second = sessionOf(
+      await verification.authenticate(context, {
+        challengeId: await start(number),
+        code: codeIn(number.value),
+      }),
+    );
 
     expect(second.userId).toBe(first.userId);
     expect(second.sessionId).not.toBe(first.sessionId);
@@ -191,10 +200,12 @@ describe("verifying an sms challenge", () => {
   it("counts the verification against the day's sends", async () => {
     const before = await verifiedCount();
     const number = E164PhoneNumber.parse("+14155550112");
-    await verification.authenticate(context, {
-      challengeId: await start(number),
-      code: codeIn(number.value),
-    });
+    sessionOf(
+      await verification.authenticate(context, {
+        challengeId: await start(number),
+        code: codeIn(number.value),
+      }),
+    );
     expect(await verifiedCount()).toBe(before + 1);
   });
 
@@ -203,7 +214,7 @@ describe("verifying an sms challenge", () => {
     const challengeId = await start(number);
     const code = codeIn(number.value);
 
-    await verification.authenticate(context, { challengeId, code });
+    sessionOf(await verification.authenticate(context, { challengeId, code }));
     await expect(verification.authenticate(context, { challengeId, code })).rejects.toMatchObject({
       code: "challenge_invalid",
     });
@@ -240,6 +251,7 @@ describe("verifying an sms challenge", () => {
       await sessionsFor(),
       new NullFlowHooks(),
       new OutboxFlowAudit(uow, clock),
+      gate,
       uow,
       clock,
       hasher,
@@ -251,10 +263,12 @@ describe("verifying an sms challenge", () => {
     ).rejects.toMatchObject({ code: "challenge_invalid" });
 
     // And the challenge is still good for the flow it belongs to.
-    const issued = await smsFlow.authenticate(context, {
-      challengeId,
-      code: codeIn(number.value),
-    });
+    const issued = sessionOf(
+      await smsFlow.authenticate(context, {
+        challengeId,
+        code: codeIn(number.value),
+      }),
+    );
     expect(issued.user.phone).toBe(number.value);
   });
 });

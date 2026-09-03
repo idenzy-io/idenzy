@@ -6,6 +6,7 @@ import {
   type FlowAudit,
   type FlowContext,
   type FlowHooks,
+  type MfaGate,
 } from "@idenzy/domain/ports/auth-flow";
 import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-checker";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
@@ -15,7 +16,7 @@ import { upgradeAnonymousSchema } from "@idenzy/protocol/schemas/auth";
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { parseOrThrow } from "../common/parse.js";
-import { FLOW_AUDIT, FLOW_HOOKS } from "../flows/flow-tokens.js";
+import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -50,11 +51,12 @@ export class AnonymousUpgradeFlow extends AuthFlow {
     sessions: SessionService,
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
+    @Inject(MFA_GATE) mfa: MfaGate,
     private readonly uow: UnitOfWork,
     private readonly hasher: PasswordHasher,
     private readonly breached: BreachedPasswordChecker,
   ) {
-    super(sessions, hooks, audit);
+    super(sessions, hooks, audit, mfa);
   }
 
   protected override async verify(
@@ -84,7 +86,7 @@ export class AnonymousUpgradeFlow extends AuthFlow {
         hashed.hash,
         hashed.algorithmVersion,
       );
-      return { userId: input.userId, amr: [this.method], requiresMfa: false };
+      return { userId: input.userId, amr: [this.method], factorVerifiedAt: null };
     });
   }
 }

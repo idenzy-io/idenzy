@@ -14,8 +14,8 @@ class FixedClock extends Clock {
   constructor(private millis: number) {
     super();
   }
-  override nowMs(): number {
-    return this.millis;
+  override now(): Date {
+    return new Date(this.millis);
   }
   set(seconds: number): void {
     this.millis = seconds * 1000;

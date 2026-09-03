@@ -1,7 +1,12 @@
 import { Clock } from "@idenzy/core/time/clock";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
-import type { AuthenticatedSubject, FlowAudit, FlowHooks } from "@idenzy/domain/ports/auth-flow";
+import type {
+  AuthenticatedSubject,
+  FlowAudit,
+  FlowHooks,
+  MfaGate,
+} from "@idenzy/domain/ports/auth-flow";
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
@@ -10,7 +15,7 @@ import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { Channel } from "@idenzy/protocol/enums/delivery";
 import { Inject, Injectable } from "@nestjs/common";
-import { FLOW_AUDIT, FLOW_HOOKS } from "../flows/flow-tokens.js";
+import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 import { OtpFlow } from "./otp.flow.js";
 
@@ -35,12 +40,13 @@ export class SmsOtpFlow extends OtpFlow {
     sessions: SessionService,
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
+    @Inject(MFA_GATE) mfa: MfaGate,
     uow: UnitOfWork,
     clock: Clock,
     hasher: PasswordHasher,
     encryptor: FieldEncryptor,
   ) {
-    super(sessions, hooks, audit, uow, clock, hasher, encryptor);
+    super(sessions, hooks, audit, mfa, uow, clock, hasher, encryptor);
   }
 
   protected override async resolveSubject(
@@ -63,11 +69,11 @@ export class SmsOtpFlow extends OtpFlow {
         displayName: null,
         avatarUrl: null,
       });
-      return { userId: created.id, amr: [this.method], requiresMfa: false };
+      return { userId: created.id, amr: [this.method], factorVerifiedAt: null };
     }
 
     existing.assertCanSignIn(this.clock);
     if (!existing.phoneVerified) await users.setPhoneVerified(existing.id, true);
-    return { userId: existing.id, amr: [this.method], requiresMfa: false };
+    return { userId: existing.id, amr: [this.method], factorVerifiedAt: null };
   }
 }

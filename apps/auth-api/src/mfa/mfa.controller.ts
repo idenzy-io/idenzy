@@ -1,20 +1,25 @@
 import { MissingCredentialsError } from "@idenzy/core/errors";
 import {
+  type AuthOutcome as AuthOutcomeBody,
   type ConfirmTotpEnrolment,
   confirmTotpEnrolmentSchema,
   type MfaEnrolmentConfirmed,
   type MfaFactorList,
   type RecoveryCodes,
   type StartTotpEnrolment,
+  type SubmitMfa,
   startTotpEnrolmentSchema,
+  submitMfaSchema,
   type TotpEnrolment,
 } from "@idenzy/protocol/schemas/mfa";
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
 import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
+import { MfaVerificationFlow } from "./mfa-verification.flow.js";
 
 /**
  * Managing your own second factors (PROJECT.md 4.5).
@@ -30,7 +35,27 @@ import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
  */
 @Controller("v1/auth/mfa")
 export class MfaController {
-  constructor(private readonly enrolment: MfaEnrolmentService) {}
+  constructor(
+    private readonly enrolment: MfaEnrolmentService,
+    private readonly verification: MfaVerificationFlow,
+  ) {}
+
+  /**
+   * Answers the challenge a sign-in stopped at.
+   *
+   * Deliberately the one route here that takes no session. The caller has proved a first
+   * factor and holds a challenge id, which is what stands in for one: requiring a session
+   * would mean issuing one before the second factor, which is the whole thing this
+   * endpoint exists to prevent.
+   */
+  @Post("verify")
+  @HttpCode(200)
+  async verify(
+    @Req() request: FastifyRequest,
+    @Body(new ZodValidationPipe(submitMfaSchema)) body: SubmitMfa,
+  ): Promise<AuthOutcomeBody> {
+    return presentOutcome(await this.verification.authenticate(flowContextFrom(request), body));
+  }
 
   @Get("factors")
   @RequireSession()

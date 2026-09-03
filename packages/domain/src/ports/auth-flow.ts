@@ -1,11 +1,18 @@
-import { MfaRequiredError } from "@idenzy/core/errors";
-import type { AuthMethod } from "@idenzy/protocol/enums/auth";
+import type { AuthMethod, MfaChallengePurpose, MfaFactorType } from "@idenzy/protocol/enums/auth";
 import type { User } from "../entities/user.js";
 
 export interface AuthenticatedSubject {
   readonly userId: string;
   readonly amr: readonly AuthMethod[];
-  readonly requiresMfa: boolean;
+  /**
+   * When a factor was proved, for the `fva` claim, or null when only one was.
+   *
+   * Set by a flow that is itself multi-factor rather than by the gate, because the gate
+   * only ever sees the flows that owe a second one. A passkey with user verification is
+   * the case that matters: possession and verification in one ceremony, so asking for a
+   * code afterwards asks the user to prove something they already proved.
+   */
+  readonly factorVerifiedAt: Date | null;
 }
 
 export interface FlowContext {
@@ -58,6 +65,42 @@ export interface SessionIssuer {
   issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<IssuedSession>;
 }
 
+/** A proved first factor waiting on a second. Carries no credential of any kind. */
+export interface IssuedChallenge {
+  readonly challengeId: string;
+  readonly purpose: MfaChallengePurpose;
+  /** What this user can answer with, strongest first. */
+  readonly factors: readonly MfaFactorType[];
+  readonly expiresAt: Date;
+}
+
+/**
+ * What an authentication ends as.
+ *
+ * A union rather than a session with a nullable field, so a caller that ignores the
+ * second case does not compile. Every flow returns this shape, including the ones that
+ * can never challenge: a controller branching on `kind` should not have to know which
+ * those are, and one that does know is one that stops being right when MFA reaches a
+ * flow it was written before.
+ */
+export type AuthOutcome =
+  | { readonly kind: "session"; readonly session: IssuedSession }
+  | { readonly kind: "mfa"; readonly challenge: IssuedChallenge };
+
+/**
+ * Decides whether a proved first factor is enough, and mints the challenge when it is not.
+ *
+ * A port rather than a method on the base, because the answer needs the user's enrolled
+ * factors and a challenge table, and the domain layer has neither. What the base owns is
+ * where it is consulted: after `verify` and before anything that creates a session.
+ */
+export interface MfaGate {
+  challengeFor(
+    context: FlowContext,
+    subject: AuthenticatedSubject,
+  ): Promise<IssuedChallenge | null>;
+}
+
 export interface FlowHooks {
   beforeSignIn(context: FlowContext, userId: string): Promise<void>;
 }
@@ -86,6 +129,7 @@ export abstract class AuthFlow {
     protected readonly sessions: SessionIssuer,
     protected readonly hooks: FlowHooks,
     protected readonly audit: FlowAudit,
+    protected readonly mfa: MfaGate,
   ) {}
 
   abstract readonly method: AuthMethod;
@@ -96,28 +140,24 @@ export abstract class AuthFlow {
     credentials: unknown,
   ): Promise<AuthenticatedSubject>;
 
-  async authenticate(context: FlowContext, credentials: unknown): Promise<IssuedSession> {
+  async authenticate(context: FlowContext, credentials: unknown): Promise<AuthOutcome> {
     const subject = await this.verify(context, credentials);
-    this.assertMfaSatisfied(subject);
+
+    // Consulted before the hooks and before anything that creates a session. Inherited
+    // rather than checked per flow, because a flow that forgot it would hand a fully
+    // valid session to someone who proved one factor of two.
+    const challenge = await this.mfa.challengeFor(context, subject);
+    if (challenge !== null) {
+      await this.audit.record(context, "mfa.challenged", {
+        method: this.method,
+        factors: [...challenge.factors],
+      });
+      return { kind: "mfa", challenge };
+    }
+
     await this.hooks.beforeSignIn(context, subject.userId);
     const session = await this.sessions.issueSession(context, subject);
-    await this.audit.record(context, "session.created", {
-      method: this.method,
-      requiresMfa: subject.requiresMfa,
-    });
-    return session;
-  }
-
-  /**
-   * A subject that still owes a second factor never reaches session creation.
-   *
-   * Inherited rather than checked per flow, because a flow that forgets this issues a
-   * fully valid session to someone who proved one factor. Phase 2 replaces the throw
-   * with an MFA challenge; the position in the ordering does not move.
-   */
-  protected assertMfaSatisfied(subject: AuthenticatedSubject): void {
-    if (subject.requiresMfa) {
-      throw new MfaRequiredError({ detail: { userId: subject.userId, method: this.method } });
-    }
+    await this.audit.record(context, "session.created", { method: this.method });
+    return { kind: "session", session };
   }
 }

@@ -4,12 +4,13 @@ import {
   type FlowAudit,
   type FlowContext,
   type FlowHooks,
+  type MfaGate,
 } from "@idenzy/domain/ports/auth-flow";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { Inject, Injectable } from "@nestjs/common";
-import { FLOW_AUDIT, FLOW_HOOKS } from "../flows/flow-tokens.js";
+import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -34,9 +35,10 @@ export class AnonymousFlow extends AuthFlow {
     sessions: SessionService,
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
+    @Inject(MFA_GATE) mfa: MfaGate,
     private readonly uow: UnitOfWork,
   ) {
-    super(sessions, hooks, audit);
+    super(sessions, hooks, audit, mfa);
   }
 
   protected override verify(context: FlowContext): Promise<AuthenticatedSubject> {
@@ -51,7 +53,7 @@ export class AnonymousFlow extends AuthFlow {
         displayName: null,
         avatarUrl: null,
       });
-      return { userId: user.id, amr: [this.method], requiresMfa: false };
+      return { userId: user.id, amr: [this.method], factorVerifiedAt: null };
     });
   }
 }

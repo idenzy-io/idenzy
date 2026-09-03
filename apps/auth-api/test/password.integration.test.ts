@@ -6,6 +6,7 @@ import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import argon2 from "argon2";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -14,7 +15,7 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -63,17 +64,19 @@ const tenant = new TenantContext(PROJECT, "req_password", "user");
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
-  signUp = new PasswordSignUpFlow(sessions, hooks, audit, uow, hasher, new StubChecker());
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, uow, hasher, clock);
+  signUp = new PasswordSignUpFlow(sessions, hooks, audit, gate, uow, hasher, new StubChecker());
+  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, uow, hasher, clock);
   signUpRefusing = new PasswordSignUpFlow(
     sessions,
     hooks,
     audit,
+    gate,
     uow,
     hasher,
     new AlwaysBreachedChecker(),
@@ -101,11 +104,13 @@ afterAll(async () => {
 
 describe("signing up", () => {
   it("creates the user and returns a usable session", async () => {
-    const issued = await signUp.authenticate(context, {
-      email: "new@a.test",
-      password: "a-long-enough-password",
-      displayName: "Hasan",
-    });
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "new@a.test",
+        password: "a-long-enough-password",
+        displayName: "Hasan",
+      }),
+    );
 
     expect(issued.user.email).toBe("new@a.test");
     expect(issued.user.emailVerified).toBe(false);
@@ -114,10 +119,12 @@ describe("signing up", () => {
   });
 
   it("stores an Argon2id hash and never the password", async () => {
-    await signUp.authenticate(context, {
-      email: "hashed@a.test",
-      password: "another-long-password",
-    });
+    sessionOf(
+      await signUp.authenticate(context, {
+        email: "hashed@a.test",
+        password: "another-long-password",
+      }),
+    );
     const user = await uow.run(tenant, (tx) =>
       new UserRepository(tx, tenant).findByEmail("hashed@a.test"),
     );
@@ -138,7 +145,9 @@ describe("signing up", () => {
   });
 
   it("refuses a duplicate address as a conflict", async () => {
-    await signUp.authenticate(context, { email: "dupe@a.test", password: "first-password-here" });
+    sessionOf(
+      await signUp.authenticate(context, { email: "dupe@a.test", password: "first-password-here" }),
+    );
     await expect(
       signUp.authenticate(context, { email: "dupe@a.test", password: "second-password-here" }),
     ).rejects.toMatchObject({ status: 409 });
@@ -156,11 +165,11 @@ describe("signing in", () => {
   const password = "correct-horse-battery";
 
   beforeAll(async () => {
-    await signUp.authenticate(context, { email, password });
+    sessionOf(await signUp.authenticate(context, { email, password }));
   });
 
   it("accepts the right password", async () => {
-    const issued = await signIn.authenticate(context, { email, password });
+    const issued = sessionOf(await signIn.authenticate(context, { email, password }));
     expect(issued.user.email).toBe(email);
     expect(issued.user.toPublic().lastSignInAt).not.toBeNull();
   });
@@ -198,10 +207,12 @@ describe("signing in", () => {
   });
 
   it("refuses a suspended account and says why", async () => {
-    await signUp.authenticate(context, {
-      email: "banned@a.test",
-      password: "banned-user-password",
-    });
+    sessionOf(
+      await signUp.authenticate(context, {
+        email: "banned@a.test",
+        password: "banned-user-password",
+      }),
+    );
     await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE users SET banned_until = now() + interval '1 day' WHERE email = 'banned@a.test'`,
@@ -226,12 +237,16 @@ describe("signing in", () => {
     });
     expect(hasher.needsRehash(legacy)).toBe(true);
 
-    await signUp.authenticate(context, { email: "stale@a.test", password: stalePassword });
+    sessionOf(
+      await signUp.authenticate(context, { email: "stale@a.test", password: stalePassword }),
+    );
     await harness.owner.query(`UPDATE users SET password_hash = $1 WHERE email = 'stale@a.test'`, [
       legacy,
     ]);
 
-    await signIn.authenticate(context, { email: "stale@a.test", password: stalePassword });
+    sessionOf(
+      await signIn.authenticate(context, { email: "stale@a.test", password: stalePassword }),
+    );
 
     const user = await uow.run(tenant, (tx) =>
       new UserRepository(tx, tenant).findByEmail("stale@a.test"),

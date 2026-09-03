@@ -2,24 +2,30 @@ import { SystemClock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { Argon2idHasher } from "@idenzy/crypto/hashing/password-hasher";
+import { base32Decode } from "@idenzy/crypto/mfa/base32";
 import { Totp } from "@idenzy/crypto/mfa/totp";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-checker";
 import { MfaRecoveryCodeRepository } from "@idenzy/persistence/repository/mfa-recovery-code-repository";
+import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { MfaFactorType } from "@idenzy/protocol/enums/auth";
+import { AuthMethod, MfaFactorType } from "@idenzy/protocol/enums/auth";
+import { challengeOf, sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
+import { MfaFactorRegistry } from "../dist/mfa/factor-registry.js";
 import { MfaEnrolmentService } from "../dist/mfa/mfa-enrolment-service.js";
+import { MfaVerificationFlow } from "../dist/mfa/mfa-verification.flow.js";
 import { RecoveryCodeFactor } from "../dist/mfa/recovery-code.factor.js";
 import { TotpFactor } from "../dist/mfa/totp.factor.js";
+import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -33,6 +39,8 @@ let enrolment: MfaEnrolmentService;
 let totpFactor: TotpFactor;
 let recoveryFactor: RecoveryCodeFactor;
 let signUp: PasswordSignUpFlow;
+let signIn: PasswordSignInFlow;
+let verification: MfaVerificationFlow;
 
 class NoBreaches extends BreachedPasswordChecker {
   protected override fetchRange(): Promise<readonly string[]> {
@@ -54,27 +62,71 @@ const tenant = new TenantContext(PROJECT, "req_mfa", "user");
 /** The code an authenticator app would be showing for a secret right now. */
 const codeFor = (secret: string): string => new Totp(clock).current(secret);
 
+/**
+ * The code for the following step.
+ *
+ * Confirming an enrolment spends the current one, so a sign-in a moment later has to
+ * present the next. That is the replay defence working, not a quirk of the test.
+ */
+const nextCodeFor = (secret: string): string =>
+  new Totp(clock).at(base32Decode(secret), Math.floor(clock.nowMs() / 1000 / 30) + 1);
+
+/** What the session actually claims, read from the row rather than from the caller. */
+async function amrOf(sessionId: string): Promise<readonly string[]> {
+  const session = await uow.run(tenant, (tx) =>
+    new SessionRepository(tx, tenant).findById(sessionId),
+  );
+  return session?.amr ?? [];
+}
+
+async function liveSessions(userId: string): Promise<number> {
+  const rows = await uow.run(tenant, (tx) => new SessionRepository(tx, tenant).listForUser(userId));
+  return rows.filter((row) => row.revokedAt === null).length;
+}
+
 async function newUser(email: string): Promise<string> {
-  const issued = await signUp.authenticate(context, { email, password: "a-good-password" });
+  const issued = sessionOf(
+    await signUp.authenticate(context, { email, password: "a-good-password" }),
+  );
   return issued.userId;
 }
 
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
   signUp = new PasswordSignUpFlow(
     sessions,
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
+    gate,
     uow,
     new Argon2idHasher(),
     new NoBreaches(),
   );
+  signIn = new PasswordSignInFlow(
+    sessions,
+    new NullFlowHooks(),
+    new OutboxFlowAudit(uow, clock),
+    gate,
+    uow,
+    new Argon2idHasher(),
+    clock,
+  );
   enrolment = new MfaEnrolmentService(uow, clock, encryptor, config);
   totpFactor = new TotpFactor(uow, encryptor, clock);
   recoveryFactor = new RecoveryCodeFactor(uow, clock);
+  verification = new MfaVerificationFlow(
+    sessions,
+    new NullFlowHooks(),
+    new OutboxFlowAudit(uow, clock),
+    gate,
+    uow,
+    clock,
+    new MfaFactorRegistry(totpFactor, recoveryFactor),
+  );
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -347,5 +399,154 @@ describe("the secret at rest", () => {
     const hashes = rows.map((row) => row.code_hash);
     for (const code of confirmed.recoveryCodes?.codes ?? []) expect(hashes).not.toContain(code);
     expect(hashes).toHaveLength(10);
+  });
+});
+
+describe("signing in with a second factor", () => {
+  const password = "a-good-password";
+
+  /** Enrols an authenticator and hands back everything a later sign-in needs. */
+  async function enrolledUser(
+    email: string,
+  ): Promise<{ userId: string; secret: string; codes: readonly string[] }> {
+    const userId = await newUser(email);
+    const started = await enrolment.startTotp(context, userId, null);
+    const confirmed = await enrolment.confirmTotp(
+      context,
+      userId,
+      started.factorId,
+      codeFor(started.secret),
+    );
+    return { userId, secret: started.secret, codes: confirmed.recoveryCodes?.codes ?? [] };
+  }
+
+  it("stops a correct password at a challenge rather than a session", async () => {
+    const email = "signin-challenged@a.test";
+    await enrolledUser(email);
+
+    const outcome = challengeOf(await signIn.authenticate(context, { email, password }));
+
+    expect(outcome.challenge.purpose).toBe("sign_in");
+    expect(outcome.challenge.factors).toEqual([MfaFactorType.Totp, MfaFactorType.RecoveryCode]);
+  });
+
+  /** The property the whole feature rests on: one factor creates no session at all. */
+  it("creates no session for a first factor alone", async () => {
+    const email = "signin-nosession@a.test";
+    const { userId } = await enrolledUser(email);
+
+    const before = await liveSessions(userId);
+    challengeOf(await signIn.authenticate(context, { email, password }));
+
+    expect(await liveSessions(userId)).toBe(before);
+  });
+
+  it("issues a session claiming both factors when the code is right", async () => {
+    const email = "signin-completed@a.test";
+    const { secret } = await enrolledUser(email);
+    const outcome = challengeOf(await signIn.authenticate(context, { email, password }));
+
+    // A step later, because confirming the enrolment already spent the current one.
+    const issued = sessionOf(
+      await verification.authenticate(context, {
+        challengeId: outcome.challenge.challengeId,
+        factor: MfaFactorType.Totp,
+        code: nextCodeFor(secret),
+      }),
+    );
+
+    expect(issued.user.email).toBe(email);
+    expect(await amrOf(issued.sessionId)).toEqual([
+      AuthMethod.Password,
+      AuthMethod.Totp,
+      AuthMethod.Mfa,
+    ]);
+  });
+
+  it("refuses to spend one challenge twice", async () => {
+    const email = "signin-once@a.test";
+    const { secret } = await enrolledUser(email);
+    const outcome = challengeOf(await signIn.authenticate(context, { email, password }));
+    const challengeId = outcome.challenge.challengeId;
+
+    await verification.authenticate(context, {
+      challengeId,
+      factor: MfaFactorType.Totp,
+      code: nextCodeFor(secret),
+    });
+    await expect(
+      verification.authenticate(context, {
+        challengeId,
+        factor: MfaFactorType.Totp,
+        code: nextCodeFor(secret),
+      }),
+    ).rejects.toMatchObject({ code: "challenge_invalid" });
+  });
+
+  it("costs an attempt for a wrong code, and dies on the fifth", async () => {
+    const email = "signin-bruteforce@a.test";
+    await enrolledUser(email);
+    const outcome = challengeOf(await signIn.authenticate(context, { email, password }));
+    const challengeId = outcome.challenge.challengeId;
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await expect(
+        verification.authenticate(context, {
+          challengeId,
+          factor: MfaFactorType.Totp,
+          code: "000000",
+        }),
+      ).rejects.toMatchObject({ code: "mfa_factor_invalid" });
+    }
+    await expect(
+      verification.authenticate(context, {
+        challengeId,
+        factor: MfaFactorType.Totp,
+        code: "000000",
+      }),
+    ).rejects.toMatchObject({ code: "challenge_attempts_exhausted" });
+  });
+
+  it("completes on a recovery code when the authenticator is gone", async () => {
+    const email = "signin-recovery@a.test";
+    const { codes } = await enrolledUser(email);
+    const outcome = challengeOf(await signIn.authenticate(context, { email, password }));
+
+    const issued = sessionOf(
+      await verification.authenticate(context, {
+        challengeId: outcome.challenge.challengeId,
+        factor: MfaFactorType.RecoveryCode,
+        code: codes[0] ?? "",
+      }),
+    );
+
+    expect(await amrOf(issued.sessionId)).toContain(AuthMethod.RecoveryCode);
+  });
+
+  /**
+   * A challenge names a user. Answering it with a factor belonging to somebody else must
+   * be indistinguishable from a wrong code, and must not sign anybody in.
+   */
+  it("refuses a code from another account's authenticator", async () => {
+    const victim = "signin-victim@a.test";
+    await enrolledUser(victim);
+    const attacker = await enrolledUser("signin-attacker@a.test");
+    const outcome = challengeOf(await signIn.authenticate(context, { email: victim, password }));
+
+    await expect(
+      verification.authenticate(context, {
+        challengeId: outcome.challenge.challengeId,
+        factor: MfaFactorType.Totp,
+        code: nextCodeFor(attacker.secret),
+      }),
+    ).rejects.toMatchObject({ code: "mfa_factor_invalid" });
+  });
+
+  it("leaves a user with nothing enrolled signing in on one factor", async () => {
+    const email = "signin-plain@a.test";
+    await newUser(email);
+
+    const issued = sessionOf(await signIn.authenticate(context, { email, password }));
+    expect(await amrOf(issued.sessionId)).toEqual([AuthMethod.Password]);
   });
 });

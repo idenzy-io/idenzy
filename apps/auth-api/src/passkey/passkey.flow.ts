@@ -12,6 +12,7 @@ import {
   type FlowAudit,
   type FlowContext,
   type FlowHooks,
+  type MfaGate,
 } from "@idenzy/domain/ports/auth-flow";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import {
@@ -25,7 +26,7 @@ import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { finishPasskeyAuthenticationSchema } from "@idenzy/protocol/schemas/webauthn";
 import { Inject, Injectable } from "@nestjs/common";
 import { parseOrThrow } from "../common/parse.js";
-import { FLOW_AUDIT, FLOW_HOOKS } from "../flows/flow-tokens.js";
+import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 import { PasskeyCeremony } from "./passkey-ceremony.js";
@@ -53,12 +54,13 @@ export class PasskeyFlow extends AuthFlow {
     sessions: SessionService,
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
+    @Inject(MFA_GATE) mfa: MfaGate,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly ceremony: PasskeyCeremony,
     private readonly relyingParties: RelyingPartyResolver,
   ) {
-    super(sessions, hooks, audit);
+    super(sessions, hooks, audit, mfa);
   }
 
   protected override async verify(
@@ -149,7 +151,7 @@ export class PasskeyFlow extends AuthFlow {
         });
       }
       user.assertCanSignIn(this.clock);
-      return { userId, amr: [this.method], requiresMfa: false };
+      return { userId, amr: [this.method], factorVerifiedAt: null };
     });
   }
 }

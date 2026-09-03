@@ -10,6 +10,7 @@ import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { NoStoredTemplates, TemplateRenderer } from "@idenzy/templating/renderer";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { CapturingEmailProvider } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,7 +20,7 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
 import { MAGIC_LINK_REDIRECT, MagicLinkService } from "../dist/magic-link/magic-link-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -61,6 +62,7 @@ async function clickThrough(email: string): Promise<string> {
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
 
@@ -71,6 +73,7 @@ beforeAll(async () => {
     sessions,
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
+    gate,
     uow,
     clock,
   );
@@ -191,7 +194,7 @@ describe("following a link", () => {
 describe("exchanging the code", () => {
   it("returns a session for a verified account it may have just created", async () => {
     const code = await clickThrough("exchanged@a.test");
-    const issued = await flow.authenticate(context, { code });
+    const issued = sessionOf(await flow.authenticate(context, { code }));
 
     expect(issued.user.email).toBe("exchanged@a.test");
     expect(issued.user.emailVerified).toBe(true);
@@ -200,7 +203,7 @@ describe("exchanging the code", () => {
 
   it("spends the code exactly once", async () => {
     const code = await clickThrough("spent@a.test");
-    await flow.authenticate(context, { code });
+    sessionOf(await flow.authenticate(context, { code }));
     await expect(flow.authenticate(context, { code })).rejects.toMatchObject({
       code: "challenge_invalid",
     });
@@ -214,7 +217,7 @@ describe("exchanging the code", () => {
   it("refuses a code that was minted for a different method", async () => {
     const code = generateOpaqueToken();
     const borrowed = await clickThrough("mixer@a.test");
-    const session = await flow.authenticate(context, { code: borrowed });
+    const session = sessionOf(await flow.authenticate(context, { code: borrowed }));
 
     await uow.run(tenant, (tx) =>
       new AuthCodeRepository(tx, tenant).issue({

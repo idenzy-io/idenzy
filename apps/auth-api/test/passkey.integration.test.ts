@@ -5,6 +5,7 @@ import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { TestAuthenticator } from "@idenzy/testing/webauthn-authenticator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -16,7 +17,7 @@ import { PasskeyService } from "../dist/passkey/passkey-service.js";
 import { RelyingPartyResolver } from "../dist/passkey/relying-party-resolver.js";
 import { encodeUserHandle } from "../dist/passkey/user-handle.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const clock = new SystemClock();
@@ -71,6 +72,7 @@ async function beginSignIn(on: FlowContext): Promise<{ challengeId: string; chal
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  const gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
   const ceremony = new PasskeyCeremony();
@@ -80,6 +82,7 @@ beforeAll(async () => {
     sessions,
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
+    gate,
     uow,
     clock,
     ceremony,
@@ -136,10 +139,12 @@ describe("passkey ceremonies", () => {
     const authenticator = await enrol(context, userId);
     const { challengeId, challenge } = await beginSignIn(context);
 
-    const issued = await flow.authenticate(context, {
-      challengeId,
-      response: authenticator.authenticate(RP_ID, ORIGIN, challenge, encodeUserHandle(userId)),
-    });
+    const issued = sessionOf(
+      await flow.authenticate(context, {
+        challengeId,
+        response: authenticator.authenticate(RP_ID, ORIGIN, challenge, encodeUserHandle(userId)),
+      }),
+    );
 
     expect(issued.userId).toBe(userId);
     expect(issued.accessToken.length).toBeGreaterThan(0);
@@ -180,10 +185,12 @@ describe("passkey ceremonies", () => {
 
     for (let round = 0; round < 2; round += 1) {
       const { challengeId, challenge } = await beginSignIn(context);
-      await flow.authenticate(context, {
-        challengeId,
-        response: authenticator.authenticate(RP_ID, ORIGIN, challenge, encodeUserHandle(user)),
-      });
+      sessionOf(
+        await flow.authenticate(context, {
+          challengeId,
+          response: authenticator.authenticate(RP_ID, ORIGIN, challenge, encodeUserHandle(user)),
+        }),
+      );
     }
 
     const { rows } = await harness.owner.query<{ sign_count: number }>(
@@ -200,10 +207,17 @@ describe("passkey attacks", () => {
     const authenticator = await enrol(context, user);
 
     const first = await beginSignIn(context);
-    await flow.authenticate(context, {
-      challengeId: first.challengeId,
-      response: authenticator.authenticate(RP_ID, ORIGIN, first.challenge, encodeUserHandle(user)),
-    });
+    sessionOf(
+      await flow.authenticate(context, {
+        challengeId: first.challengeId,
+        response: authenticator.authenticate(
+          RP_ID,
+          ORIGIN,
+          first.challenge,
+          encodeUserHandle(user),
+        ),
+      }),
+    );
 
     // A second authenticator holding a copy of the key would report a counter it has
     // already used. The signature is perfectly valid; the counter is what gives it away.
@@ -270,7 +284,9 @@ describe("passkey attacks", () => {
       captured.challenge,
       encodeUserHandle(user),
     );
-    await flow.authenticate(context, { challengeId: captured.challengeId, response: assertion });
+    sessionOf(
+      await flow.authenticate(context, { challengeId: captured.challengeId, response: assertion }),
+    );
 
     const fresh = await beginSignIn(context);
     await expect(
@@ -417,10 +433,12 @@ describe("passkey sign-in method", () => {
     const authenticator = await enrol(context, user);
     const { challengeId, challenge } = await beginSignIn(context);
 
-    const issued = await flow.authenticate(context, {
-      challengeId,
-      response: authenticator.authenticate(RP_ID, ORIGIN, challenge, encodeUserHandle(user)),
-    });
+    const issued = sessionOf(
+      await flow.authenticate(context, {
+        challengeId,
+        response: authenticator.authenticate(RP_ID, ORIGIN, challenge, encodeUserHandle(user)),
+      }),
+    );
 
     const { rows } = await harness.owner.query<{ amr: string[] }>(
       `SELECT amr FROM sessions WHERE id = $1`,

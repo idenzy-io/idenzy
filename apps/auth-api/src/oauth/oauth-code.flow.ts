@@ -1,10 +1,10 @@
 import { Clock } from "@idenzy/core/time/clock";
-import type { FlowAudit, FlowHooks } from "@idenzy/domain/ports/auth-flow";
+import type { FlowAudit, FlowHooks, MfaGate } from "@idenzy/domain/ports/auth-flow";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { Inject, Injectable } from "@nestjs/common";
 import { AuthCodeExchangeFlow } from "../flows/auth-code-exchange.flow.js";
-import { FLOW_AUDIT, FLOW_HOOKS } from "../flows/flow-tokens.js";
+import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 
 /**
@@ -22,9 +22,10 @@ export class OAuthCodeFlow extends AuthCodeExchangeFlow {
     sessions: SessionService,
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
+    @Inject(MFA_GATE) mfa: MfaGate,
     uow: UnitOfWork,
     clock: Clock,
   ) {
-    super(sessions, hooks, audit, uow, clock);
+    super(sessions, hooks, audit, mfa, uow, clock);
   }
 }

@@ -7,6 +7,7 @@ import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
+import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AnonymousFlow } from "../dist/anonymous/anonymous.flow.js";
@@ -16,7 +17,7 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { testConfig, testRevocations } from "./fixtures.js";
+import { testConfig, testMfaGate, testRevocations } from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -26,6 +27,7 @@ const config = testConfig();
 const hasher = new Argon2idHasher();
 
 let uow: UnitOfWork;
+let gate: ReturnType<typeof testMfaGate>;
 let anonymous: AnonymousFlow;
 let upgrade: AnonymousUpgradeFlow;
 let signUp: PasswordSignUpFlow;
@@ -51,15 +53,16 @@ const tenant = new TenantContext(PROJECT, "req_anon", "user");
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
+  gate = testMfaGate(uow, clock, config);
   const issuer = await LocalEs256Issuer.create(clock, config.get("ISSUER_BASE_URL"), 300);
   const sessions = new SessionService(uow, clock, issuer, config, revocations.publisher);
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
 
-  anonymous = new AnonymousFlow(sessions, hooks, audit, uow);
-  upgrade = new AnonymousUpgradeFlow(sessions, hooks, audit, uow, hasher, new NoBreaches());
-  signUp = new PasswordSignUpFlow(sessions, hooks, audit, uow, hasher, new NoBreaches());
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, uow, hasher, clock);
+  anonymous = new AnonymousFlow(sessions, hooks, audit, gate, uow);
+  upgrade = new AnonymousUpgradeFlow(sessions, hooks, audit, gate, uow, hasher, new NoBreaches());
+  signUp = new PasswordSignUpFlow(sessions, hooks, audit, gate, uow, hasher, new NoBreaches());
+  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, uow, hasher, clock);
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -83,7 +86,7 @@ afterAll(async () => {
 
 describe("an anonymous session", () => {
   it("is a real revocable session with nothing identifying behind it", async () => {
-    const issued = await anonymous.authenticate(context, {});
+    const issued = sessionOf(await anonymous.authenticate(context, {}));
 
     expect(issued.user.email).toBeNull();
     expect(issued.user.isAnonymous()).toBe(true);
@@ -93,7 +96,7 @@ describe("an anonymous session", () => {
 
   /** A customer decides what an anonymous user may do, and needs the claim to say so. */
   it("carries anon in the amr so a customer can tell", async () => {
-    const issued = await anonymous.authenticate(context, {});
+    const issued = sessionOf(await anonymous.authenticate(context, {}));
     const claims = JSON.parse(
       Buffer.from(issued.accessToken.split(".")[1] ?? "", "base64url").toString(),
     ) as { amr: string[] };
@@ -101,8 +104,8 @@ describe("an anonymous session", () => {
   });
 
   it("gives each caller their own account rather than sharing one", async () => {
-    const first = await anonymous.authenticate(context, {});
-    const second = await anonymous.authenticate(context, {});
+    const first = sessionOf(await anonymous.authenticate(context, {}));
+    const second = sessionOf(await anonymous.authenticate(context, {}));
     expect(first.userId).not.toBe(second.userId);
   });
 });
@@ -114,12 +117,14 @@ describe("upgrading one", () => {
    * migration they had to write themselves.
    */
   it("keeps the same user id", async () => {
-    const anon = await anonymous.authenticate(context, {});
-    const upgraded = await upgrade.authenticate(context, {
-      userId: anon.userId,
-      email: "upgraded@a.test",
-      password: "a-perfectly-fine-password",
-    });
+    const anon = sessionOf(await anonymous.authenticate(context, {}));
+    const upgraded = sessionOf(
+      await upgrade.authenticate(context, {
+        userId: anon.userId,
+        email: "upgraded@a.test",
+        password: "a-perfectly-fine-password",
+      }),
+    );
 
     expect(upgraded.userId).toBe(anon.userId);
     expect(upgraded.user.email).toBe("upgraded@a.test");
@@ -128,12 +133,14 @@ describe("upgrading one", () => {
   });
 
   it("issues a session that no longer claims to be anonymous", async () => {
-    const anon = await anonymous.authenticate(context, {});
-    const upgraded = await upgrade.authenticate(context, {
-      userId: anon.userId,
-      email: "claims@a.test",
-      password: "another-fine-password",
-    });
+    const anon = sessionOf(await anonymous.authenticate(context, {}));
+    const upgraded = sessionOf(
+      await upgrade.authenticate(context, {
+        userId: anon.userId,
+        email: "claims@a.test",
+        password: "another-fine-password",
+      }),
+    );
 
     const claims = JSON.parse(
       Buffer.from(upgraded.accessToken.split(".")[1] ?? "", "base64url").toString(),
@@ -143,17 +150,21 @@ describe("upgrading one", () => {
   });
 
   it("leaves an account that can sign in with the password it just set", async () => {
-    const anon = await anonymous.authenticate(context, {});
-    await upgrade.authenticate(context, {
-      userId: anon.userId,
-      email: "signsin@a.test",
-      password: "the-set-password",
-    });
+    const anon = sessionOf(await anonymous.authenticate(context, {}));
+    sessionOf(
+      await upgrade.authenticate(context, {
+        userId: anon.userId,
+        email: "signsin@a.test",
+        password: "the-set-password",
+      }),
+    );
 
-    const issued = await signIn.authenticate(context, {
-      email: "signsin@a.test",
-      password: "the-set-password",
-    });
+    const issued = sessionOf(
+      await signIn.authenticate(context, {
+        email: "signsin@a.test",
+        password: "the-set-password",
+      }),
+    );
     expect(issued.userId).toBe(anon.userId);
   });
 
@@ -162,10 +173,12 @@ describe("upgrading one", () => {
    * account that already has credentials would be a password change with no proof.
    */
   it("refuses an account that is not anonymous", async () => {
-    const real = await signUp.authenticate(context, {
-      email: "already-real@a.test",
-      password: "already-real-password",
-    });
+    const real = sessionOf(
+      await signUp.authenticate(context, {
+        email: "already-real@a.test",
+        password: "already-real-password",
+      }),
+    );
     await expect(
       upgrade.authenticate(context, {
         userId: real.userId,
@@ -176,8 +189,10 @@ describe("upgrading one", () => {
   });
 
   it("refuses an address someone else already holds, and changes nothing", async () => {
-    const anon = await anonymous.authenticate(context, {});
-    await signUp.authenticate(context, { email: "occupied@a.test", password: "occupied-pass" });
+    const anon = sessionOf(await anonymous.authenticate(context, {}));
+    sessionOf(
+      await signUp.authenticate(context, { email: "occupied@a.test", password: "occupied-pass" }),
+    );
 
     await expect(
       upgrade.authenticate(context, {
@@ -212,11 +227,12 @@ describe("upgrading one", () => {
       ),
       new NullFlowHooks(),
       new OutboxFlowAudit(uow, clock),
+      gate,
       uow,
       hasher,
       new AlwaysBreached(),
     );
-    const anon = await anonymous.authenticate(context, {});
+    const anon = sessionOf(await anonymous.authenticate(context, {}));
 
     await expect(
       strict.authenticate(context, {

@@ -197,6 +197,34 @@ describe("reuse detection", () => {
     expect(Number(events.rows[0]?.count)).toBeGreaterThan(0);
   });
 
+  it("says how the reuse looked, without letting that change what it does", async () => {
+    const { refreshToken, sessionId } = await signIn("telemetry@a.test");
+    await refresh.rotate(context, refreshToken);
+    await expect(refresh.rotate(context, refreshToken)).rejects.toThrow();
+
+    const events = await uow.run(tenant, (tx) =>
+      tx.execute<{ payload: { likelyCause?: string; millisecondsSinceRotation?: number } }>(
+        sql`select payload from outbox where topic = 'security.refresh_token_reused'
+            order by created_at desc limit 1`,
+      ),
+    );
+    const payload = events.rows[0]?.payload;
+    // A replay this fast is almost always a client refreshing twice, and being able to say
+    // so turns a support conversation from guesswork into a fix.
+    expect(payload?.likelyCause).toBe("concurrent_client");
+    expect(payload?.millisecondsSinceRotation).toBeGreaterThanOrEqual(0);
+
+    // The half that matters more: the discriminator is telemetry, not policy. This family
+    // is revoked exactly as it would be for a token stolen an hour ago.
+    const family = await uow.run(tenant, (tx) =>
+      tx.execute<{ count: string }>(
+        sql`select count(*) from refresh_tokens
+            where session_id = ${sessionId}::uuid and revoked_at is null`,
+      ),
+    );
+    expect(Number(family.rows[0]?.count)).toBe(0);
+  });
+
   it("refuses to rotate for a session that was signed out", async () => {
     const { refreshToken, sessionId } = await signIn("signed-out@a.test");
     await sessions.signOut(context, refreshToken, "current");

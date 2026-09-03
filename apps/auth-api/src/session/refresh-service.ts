@@ -78,7 +78,7 @@ export class RefreshService {
 
     const outcome = repos.refresh.family(state).evaluate(this.clock);
     if (outcome === RefreshOutcome.Reuse) {
-      return this.compromise(repos, state.familyId, state.sessionId, context);
+      return this.compromise(repos, state.familyId, state.sessionId, context, state.usedAt);
     }
     if (outcome === RefreshOutcome.Revoked || outcome === RefreshOutcome.Expired) {
       return { kind: "invalid" };
@@ -87,7 +87,10 @@ export class RefreshService {
     // The race: two presentations of the same token can both reach here. Only one UPDATE
     // matches `used_at is null`, and the loser is reuse by definition.
     const won = await repos.refresh.consume(state.id, this.clock.now());
-    if (!won) return this.compromise(repos, state.familyId, state.sessionId, context);
+    // Lost the race, so another request rotated this token moments ago. Reuse by definition,
+    // and reported as concurrent rather than replayed because the rotation is this recent.
+    if (!won)
+      return this.compromise(repos, state.familyId, state.sessionId, context, this.clock.now());
 
     return this.reissue(repos, tenant, state.id, state.familyId, state.sessionId);
   }
@@ -150,16 +153,23 @@ export class RefreshService {
    * A replayed token. Revoke the family and the session it belongs to, and record it as
    * a security event rather than a failed request: this is the signal that a refresh
    * token leaked.
+   *
+   * The event now carries how long ago the token was rotated and a guess at why. **Nothing
+   * branches on it**, and the test that matters asserts the family is revoked identically
+   * either way. It exists so that "your SDK is refreshing twice" can be told apart from
+   * "somebody has your token" during a support conversation, which today is guesswork.
    */
   private async compromise(
     repos: Repositories,
     familyId: string,
     sessionId: string,
     context: FlowContext,
+    rotatedAt: Date | null,
   ): Promise<Rotation> {
     const now = this.clock.now();
     const revoked = await repos.refresh.revokeFamily(familyId, now);
     await repos.sessions.revoke(sessionId, SessionRevokeReason.RefreshTokenReuse, now);
+    const sinceRotation = rotatedAt === null ? null : now.getTime() - rotatedAt.getTime();
     await repos.outbox.enqueue("security.refresh_token_reused", {
       sessionId,
       familyId,
@@ -167,6 +177,8 @@ export class RefreshService {
       ip: context.ip,
       userAgent: context.userAgent,
       at: now.toISOString(),
+      millisecondsSinceRotation: sinceRotation,
+      likelyCause: likelyCause(sinceRotation),
     });
     return { kind: "reused" };
   }
@@ -200,4 +212,13 @@ export class RefreshService {
       outbox: new OutboxRepository(tx, tenant),
     };
   }
+}
+
+/**
+ * A guess, for humans reading an incident. Two seconds is the width of a plausible client
+ * race: several components hitting a 401 together, or two tabs waking from sleep.
+ */
+function likelyCause(sinceRotation: number | null): string {
+  if (sinceRotation === null) return "unknown";
+  return sinceRotation <= 2000 ? "concurrent_client" : "delayed_replay";
 }

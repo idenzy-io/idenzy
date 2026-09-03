@@ -69,6 +69,24 @@ export class IdenzyConfigurationError extends IdenzyError {
   }
 }
 
+/**
+ * A failure that came back through a redirect rather than a response.
+ *
+ * Our callback answers a browser with a 302 to the customer's own route, so when something
+ * goes wrong after the destination has been checked, the only channel left is `?error=` on
+ * that redirect. There is no status and no request id in a query string, and inventing either
+ * would make this look like an answer we gave to a request this browser made.
+ */
+export class IdenzyRedirectError extends IdenzyError {
+  override readonly code: ErrorCode;
+  override readonly status = 0;
+
+  constructor(code: ErrorCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 type ErrorPayload = ReturnType<typeof errorBodySchema.parse>["error"];
 
 /**

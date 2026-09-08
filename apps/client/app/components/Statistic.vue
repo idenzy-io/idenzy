@@ -19,7 +19,8 @@
  * way is good news is the caller's to say, because for a count of failures it is down.
  */
 import { fitScale } from "~/utils/fit";
-import { type FigureFormat, formatChange, formatFigure, relativeChange } from "~/utils/format";
+import { type FigureFormat, formatFigure } from "~/utils/format";
+import { TREND_ICONS, TREND_TONES, trendOf } from "~/utils/trend";
 
 const props = withDefaults(
   defineProps<{
@@ -76,35 +77,11 @@ const figure = computed(() => {
   return { ...parts, unit: parts.unit || props.unit };
 });
 
-/* Written out in full so @nuxt/icon's scan finds them; a name assembled at runtime
-   draws nothing. */
-const TREND_ICONS = {
-  up: "material-symbols:trending-up",
-  down: "material-symbols:trending-down",
-  flat: "material-symbols:trending-flat",
-} as const;
-
-const TREND_TONES = {
-  good: "text-success",
-  bad: "text-error",
-  neutral: "text-ink/60",
-} as const;
-
-/**
- * Direction is judged on the change as it will be written, not as it was computed: a
- * rise of 0.04% prints as "0%", and green beside a zero says the tile disagrees with
- * itself.
- */
+/* Shared with the metric card, so a tile and the card beside it agree on the arithmetic
+   and on which way is good news. */
 const trend = computed(() => {
   if (props.previous === null || typeof props.value !== "number") return null;
-
-  const change = relativeChange(props.value, props.previous);
-  if (change === null) return { tone: "neutral", icon: TREND_ICONS.flat, text: "–" } as const;
-
-  const written = Math.round(change * 1000) / 1000;
-  const direction = written === 0 ? "flat" : written > 0 ? "up" : "down";
-  const tone = direction === "flat" ? "neutral" : direction === props.positive ? "good" : "bad";
-  return { tone, icon: TREND_ICONS[direction], text: formatChange(change) } as const;
+  return trendOf(props.value, props.previous, props.positive);
 });
 
 const row = useTemplateRef<HTMLElement>("row");
@@ -178,7 +155,7 @@ useResizeObserver([row, run, aside], fit);
             :class="TREND_TONES[trend.tone]"
             class="inline-flex items-center gap-0.5 font-mono font-medium tabular-nums"
           >
-            <Icon :name="trend.icon" aria-hidden="true" class="text-sm" />
+            <Icon :name="TREND_ICONS[trend.direction]" aria-hidden="true" class="text-sm" />
             {{ trend.text }}
           </span>
           <span class="text-ink/55">{{ compare }}</span>

@@ -12,12 +12,25 @@
     "clean": "rm -rf .nuxt .output dist .turbo"
   },
   "dependencies": {
+    "@vueuse/core": "catalog:",
+    "echarts": "catalog:",
     "nuxt": "catalog:",
-    "vue": "catalog:"
+    "pinia": "catalog:",
+    "vue": "catalog:",
+    "vue-echarts": "catalog:",
+    "vuetify": "catalog:"
   },
   "devDependencies": {
+    "@iconify-json/material-symbols": "catalog:",
+    "@nuxt/icon": "catalog:",
+    "@pinia/nuxt": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@vueuse/nuxt": "catalog:",
+    "nuxt-echarts": "catalog:",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "vue-tsc": "catalog:"
+    "vue-tsc": "catalog:",
+    "vuetify-nuxt-module": "catalog:"
   }
 }

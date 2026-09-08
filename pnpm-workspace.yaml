@@ -66,6 +66,23 @@ catalog:
   vue: 3.5.42
   vue-tsc: 3.3.11
 
+  # Panel UI. Vuetify 4 is only supported by the 1.0 line of the Nuxt module, which is
+  # still a release candidate; the stable 0.18 line pins vuetify to ^3.4. Exact pins
+  # everywhere because saveExact is on and an RC may break between patches.
+  vuetify: 4.2.0
+  vuetify-nuxt-module: 1.0.0-rc.5
+  tailwindcss: 4.3.3
+  '@tailwindcss/vite': 4.3.3
+  '@iconify-json/material-symbols': 1.2.91
+  '@nuxt/icon': 2.5.1
+  '@vueuse/core': 14.4.0
+  '@vueuse/nuxt': 14.4.0
+  echarts: 6.1.0
+  vue-echarts: 8.3.0
+  nuxt-echarts: 1.0.1
+  pinia: 4.0.3
+  '@pinia/nuxt': 1.0.2
+
   # Client SDK frameworks. Peer-dependency ranges stay wide in the packages
   # themselves; these versions are what we develop and test against.
   react: 19.2.8

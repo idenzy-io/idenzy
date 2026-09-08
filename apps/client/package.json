@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "catalog:",
+    "@fontsource/dm-mono": "catalog:",
     "@vueuse/core": "catalog:",
     "echarts": "catalog:",
     "nuxt": "catalog:",
@@ -22,6 +23,7 @@
     "vuetify": "catalog:"
   },
   "devDependencies": {
+    "@iconify-json/carbon": "catalog:",
     "@iconify-json/logos": "catalog:",
     "@iconify-json/lucide": "catalog:",
     "@iconify-json/material-symbols": "catalog:",

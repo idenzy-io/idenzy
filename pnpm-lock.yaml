@@ -12,6 +12,12 @@ catalogs:
     '@fontsource-variable/dm-sans':
       specifier: 5.3.0
       version: 5.3.0
+    '@fontsource/dm-mono':
+      specifier: 5.3.0
+      version: 5.3.0
+    '@iconify-json/carbon':
+      specifier: 1.2.26
+      version: 1.2.26
     '@iconify-json/logos':
       specifier: 1.2.14
       version: 1.2.14
@@ -325,6 +331,9 @@ importers:
       '@fontsource-variable/dm-sans':
         specifier: 'catalog:'
         version: 5.3.0
+      '@fontsource/dm-mono':
+        specifier: 'catalog:'
+        version: 5.3.0
       '@vueuse/core':
         specifier: 'catalog:'
         version: 14.4.0(vue@3.5.42(typescript@6.0.3))
@@ -347,6 +356,9 @@ importers:
         specifier: 'catalog:'
         version: 4.2.0(typescript@6.0.3)(vue@3.5.42(typescript@6.0.3))
     devDependencies:
+      '@iconify-json/carbon':
+        specifier: 'catalog:'
+        version: 1.2.26
       '@iconify-json/logos':
         specifier: 'catalog:'
         version: 1.2.14
@@ -2045,6 +2057,9 @@ packages:
   '@fontsource-variable/dm-sans@5.3.0':
     resolution: {integrity: sha512-BpUG5bqePiDFMBM4ZtLSlPdAIOM990uB1dlXzIf4aw21yQR7BmykedLXXXMqGWsR18aMLOsbWccwJNh3ztTQaA==}
 
+  '@fontsource/dm-mono@5.3.0':
+    resolution: {integrity: sha512-OINjI8C1S/wpchhQxl7njZdMn4+hnDCpQ4YtvvOpKNARo+0J8O1x1IcrChxNjHOhfVv1by8C/FQoy3hXK+C1Ug==}
+
   '@grpc/grpc-js@1.14.4':
     resolution: {integrity: sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==}
     engines: {node: '>=12.10.0'}
@@ -2061,6 +2076,9 @@ packages:
 
   '@hexagon/base64@1.1.28':
     resolution: {integrity: sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==}
+
+  '@iconify-json/carbon@1.2.26':
+    resolution: {integrity: sha512-UVzlnCAzSkrNydW3GYESeggndriR1JSgU5M8DNz9S0Fu10I3NpJUYPWar+WYjMAQUIm9B7mljPpc30oal3PRSQ==}
 
   '@iconify-json/logos@1.2.14':
     resolution: {integrity: sha512-O36DicXkgAMT6NAsH7MTWlOql8NktHz9fBCItTjz6L/9gyRXw4vQj6qTeVgww5UZWiVugUV1MhVFA/g9HWIkBw==}
@@ -7451,6 +7469,8 @@ snapshots:
 
   '@fontsource-variable/dm-sans@5.3.0': {}
 
+  '@fontsource/dm-mono@5.3.0': {}
+
   '@grpc/grpc-js@1.14.4':
     dependencies:
       '@grpc/proto-loader': 0.8.1
@@ -7471,6 +7491,10 @@ snapshots:
       yargs: 17.7.3
 
   '@hexagon/base64@1.1.28': {}
+
+  '@iconify-json/carbon@1.2.26':
+    dependencies:
+      '@iconify/types': 2.0.0
 
   '@iconify-json/logos@1.2.14':
     dependencies:

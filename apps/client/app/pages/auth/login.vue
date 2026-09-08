@@ -38,7 +38,7 @@ function sendMagicLink() {
   <div class="flex flex-col items-center">
     <Icon class="text-4xl" name="material-symbols:fingerprint" />
 
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Log in to Idenzy</h1>
+    <h1 class="mt-4 text-2xl font-semibold tracking-tight">Log in to Idenzy</h1>
 
     <!-- One breakpoint drives both the columns and the divider's orientation. Tailwind's
          `md` is 768px and Vuetify's is 960px, and between the two the page would show

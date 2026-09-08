@@ -58,7 +58,7 @@ function sendSignUpLink() {
   <div class="flex flex-col items-center">
     <Icon class="text-4xl" name="material-symbols:fingerprint" />
 
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Create your Idenzy account</h1>
+    <h1 class="mt-4 text-2xl font-semibold tracking-tight">Create your Idenzy account</h1>
 
     <div class="mt-10 grid w-full" :class="mdAndUp ? 'grid-cols-[1fr_auto_1fr] gap-10' : 'gap-8'">
       <form class="flex flex-col gap-2 self-center" @submit.prevent="signUp">

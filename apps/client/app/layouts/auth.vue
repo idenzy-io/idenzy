@@ -18,11 +18,33 @@ const route = useRoute();
  * The bar always offers the screen the visitor is not on. Derived from the route rather
  * than passed up by each page, because a page that forgot to set it would offer a link
  * to itself, and that is the sort of thing nobody notices in review.
+ *
+ * Signing up is offered from the sign-in screen alone, and logging in from everywhere
+ * else. The screens a link drops somebody on belong to an account that already exists,
+ * so "create account" is the one thing the visitor there is not trying to do.
  */
 const alternative = computed(() =>
-  route.path === "/auth/signup"
-    ? { label: "Log in", to: "/auth/login" }
-    : { label: "Create account", to: "/auth/signup" },
+  route.path === "/auth/login"
+    ? { label: "Create account", to: "/auth/register" }
+    : { label: "Log in", to: "/auth/login" },
+);
+
+/**
+ * Whether there is anything behind this screen to go back to.
+ *
+ * A screen reached from an email opens a tab of its own, where the button would be
+ * furniture that does nothing when pressed. Vue Router records the entry it navigated
+ * from in history state, and that is null on the first page of a session. Read through a
+ * watcher rather than a computed because history state is not reactive.
+ */
+const returnable = ref(false);
+
+watch(
+  () => route.fullPath,
+  () => {
+    returnable.value = router.options.history.state["back"] != null;
+  },
+  { immediate: true },
 );
 </script>
 
@@ -30,6 +52,7 @@ const alternative = computed(() =>
   <v-app>
     <v-app-bar color="transparent" flat>
       <v-btn
+        v-if="returnable"
         class="text-xs font-medium"
         prepend-icon="material-symbols:chevron-left"
         variant="text"

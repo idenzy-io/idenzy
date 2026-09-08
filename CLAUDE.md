@@ -207,6 +207,14 @@ through turbo, which is rarely what you want while working on one panel.
   Tailwind entry point is a parse error and the file goes unformatted rather than unchecked.
 - **Versions live in the `catalog:` in `pnpm-workspace.yaml`,** like everything else here.
   `nuxi module add` writes a literal version into the package instead; move it.
+- **`font-mono` is DM Mono, and medium is its heaviest weight.** The face ships static in
+  300, 400 and 500 only, and `theme.css` loads the last two; a `font-bold` on a figure is
+  synthesised by the browser and looks it. Figures go through `Statistic.vue`, whose
+  formatting lives in `app/utils/format.ts` and is fixed to English on purpose.
+- **A test under `test/nuxt/` is typechecked and one anywhere else is not.** That is the
+  one test directory in Nuxt's generated `tsconfig` includes, so `pnpm typecheck` sees it
+  and `vitest` finds it either way. A ResizeObserver never fires in a background tab, which
+  is why the fit rule those tests cover is a pure function and not read off the layout.
 
 Design tokens and the shared `ApiClient` belong in `@idenzy/ui` (PROJECT.md 10.3), which
 does not exist yet. The theme colours in `nuxt.config.ts` are placeholders until it does.

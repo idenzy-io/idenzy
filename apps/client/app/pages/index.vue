@@ -7,13 +7,6 @@
 
 const theme = useTheme();
 
-const tiles = [
-  { label: "Monthly active users", value: "12,480", delta: "+4.1%" },
-  { label: "Sign-ins today", value: "3,142", delta: "+1.8%" },
-  { label: "Failed sign-ins", value: "87", delta: "-12.4%" },
-  { label: "Active sessions", value: "5,903", delta: "+0.6%" },
-];
-
 const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const signIns = [820, 932, 901, 1290, 1330, 640, 520];
 
@@ -52,19 +45,60 @@ const chart = computed<ECOption>(() => ({
 
 <template>
   <div class="flex flex-col gap-6">
-    <header>
-      <h1 class="text-2xl font-semibold tracking-tight">Overview</h1>
-      <p class="text-sm opacity-70">Last seven days across every project.</p>
-    </header>
+    <PageHeader description="Last seven days across every project." title="Overview">
+      <template #actions>
+        <!-- Unwired, like the numbers: the export is the management API's report
+             endpoint once there is one. -->
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:download"
+          size="small"
+          variant="outlined"
+        >
+          Export
+        </v-btn>
+      </template>
+    </PageHeader>
 
+    <!-- Placeholder figures, like the chart's. The `previous` on each is last week's, which
+         is what the header promises the comparison is. -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <v-card v-for="tile in tiles" :key="tile.label" border flat>
-        <v-card-text>
-          <p class="text-sm opacity-70">{{ tile.label }}</p>
-          <p class="mt-1 text-3xl font-semibold tabular-nums">{{ tile.value }}</p>
-          <p class="mt-1 text-xs opacity-70">{{ tile.delta }} on last week</p>
-        </v-card-text>
-      </v-card>
+      <Statistic
+        :previous="11988"
+        :value="12480"
+        compact
+        compare="vs last week"
+        description="Signed in at least once in the last 30 days."
+        info="A user who signed in on two projects is counted once."
+        label="Monthly active users"
+      />
+      <Statistic
+        :previous="3086"
+        :value="3142"
+        compare="vs last week"
+        description="Every method, passkeys included."
+        label="Sign-ins today"
+        compact
+      />
+      <Statistic
+        :previous="99"
+        :value="87"
+        compare="vs last week"
+        description="Expired codes and refused passkeys."
+        label="Failed sign-ins"
+        positive="down"
+        compact
+      />
+      <Statistic
+        :previous="5868"
+        :value="5903"
+        compare="vs last week"
+        description="Signed-in devices, across every user."
+        info="A session is active while its refresh token has neither expired nor been revoked."
+        label="Active sessions"
+        compact
+      />
     </div>
 
     <v-card border flat>

@@ -138,6 +138,16 @@ export default defineNuxtConfig({
            * under 3:1, which is readable as a heading and not as the 12px trend beside
            * a figure, and the same colour marks both. Down two steps for text on white,
            * up one for text on near-black; the hue is unchanged in each case.
+           *
+           * `chart-1` to `chart-6` are the series colours a chart assigns in order,
+           * read through `useMetricPalette`. The first is the accent, so a chart of one
+           * series is drawn in the panel's own colour; the rest are stepped for each
+           * surface and the order is not cosmetic: adjacent pairs were checked for
+           * separation under simulated colour-vision deficiency and reordering them
+           * undoes that. Three light slots sit under 3:1 on white, which is why every
+           * chart has a table view and no series is told apart by colour alone. The
+           * outcome colours stay out of this list: a series that means good or bad
+           * wears those, and a series that is merely fourth must not.
            */
           light: {
             dark: false,
@@ -151,6 +161,12 @@ export default defineNuxtConfig({
               success: "#2e7d32",
               warning: "#ef6c00",
               error: "#c62828",
+              "chart-1": "#2979ff",
+              "chart-2": "#eb6834",
+              "chart-3": "#1baf7a",
+              "chart-4": "#eda100",
+              "chart-5": "#e87ba4",
+              "chart-6": "#4a3aa7",
             },
             variables: { "border-color": "#e4e4e3", "border-opacity": 1 },
           },
@@ -166,6 +182,12 @@ export default defineNuxtConfig({
               success: "#66bb6a",
               warning: "#ffa726",
               error: "#ef5350",
+              "chart-1": "#448aff",
+              "chart-2": "#d95926",
+              "chart-3": "#199e70",
+              "chart-4": "#c98500",
+              "chart-5": "#d55181",
+              "chart-6": "#9085e9",
             },
             variables: { "border-color": "#363635", "border-opacity": 1 },
           },

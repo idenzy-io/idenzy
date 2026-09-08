@@ -12,6 +12,7 @@
     "clean": "rm -rf .nuxt .output dist .turbo"
   },
   "dependencies": {
+    "@fontsource-variable/dm-sans": "catalog:",
     "@vueuse/core": "catalog:",
     "echarts": "catalog:",
     "nuxt": "catalog:",
@@ -21,6 +22,8 @@
     "vuetify": "catalog:"
   },
   "devDependencies": {
+    "@iconify-json/logos": "catalog:",
+    "@iconify-json/lucide": "catalog:",
     "@iconify-json/material-symbols": "catalog:",
     "@nuxt/icon": "catalog:",
     "@pinia/nuxt": "catalog:",

@@ -1,0 +1,211 @@
+/**
+ * Where the panel can go, in the order the drawer shows it.
+ *
+ * One tree rather than a list per screen, because the drawer, the rail's flyouts and
+ * the "which group holds this route" question all read the same structure and would
+ * otherwise disagree about it. Sections carry a heading; a group folds its children
+ * under one glyph; a link is a screen. The screens are the dashboard PROJECT.md 3.2
+ * describes, and most of them are routes that do not exist yet.
+ *
+ * Icon names are written out in full. `@nuxt/icon` bundles what it finds by scanning
+ * `app/**\/*.ts`, so a literal here is compiled in and a name assembled at runtime would
+ * draw nothing and report nothing.
+ */
+export interface NavLink {
+  title: string;
+  to: string;
+  /** Top-level links carry one; a link inside a group is indented instead. */
+  icon?: string;
+}
+
+export interface NavGroup {
+  /** What `v-list` tracks the open state by. Stable, because it is written to storage. */
+  id: string;
+  title: string;
+  icon: string;
+  children: readonly NavLink[];
+}
+
+export type NavEntry = NavLink | NavGroup;
+
+export interface NavSection {
+  /** Absent on the first section, which is the one above every heading. */
+  heading?: string;
+  entries: readonly NavEntry[];
+}
+
+export function isGroup(entry: NavEntry): entry is NavGroup {
+  return "children" in entry;
+}
+
+export const NAV_SECTIONS: readonly NavSection[] = [
+  {
+    entries: [
+      { title: "Overview", to: "/", icon: "material-symbols:space-dashboard-outline" },
+      {
+        id: "users",
+        title: "Users",
+        icon: "material-symbols:group-outline",
+        children: [
+          { title: "All users", to: "/users" },
+          { title: "Sessions & devices", to: "/sessions" },
+          { title: "Import", to: "/import" },
+        ],
+      },
+    ],
+  },
+  {
+    heading: "Authenticate",
+    entries: [
+      {
+        id: "methods",
+        title: "Sign-in methods",
+        icon: "material-symbols:key-outline",
+        children: [
+          { title: "Passwords", to: "/methods/passwords" },
+          { title: "Passkeys", to: "/methods/passkeys" },
+          { title: "One-time codes", to: "/methods/otp" },
+          { title: "Social providers", to: "/methods/providers" },
+        ],
+      },
+      {
+        id: "mfa",
+        title: "Multi-factor",
+        icon: "material-symbols:shield-lock-outline",
+        children: [
+          { title: "Authenticator apps", to: "/mfa/totp" },
+          { title: "Recovery codes", to: "/mfa/recovery" },
+          { title: "Step-up", to: "/mfa/step-up" },
+        ],
+      },
+      {
+        id: "tokens",
+        title: "Tokens",
+        icon: "material-symbols:token-outline",
+        children: [
+          { title: "Claim templates", to: "/tokens/claims" },
+          { title: "Lifetimes", to: "/tokens/lifetimes" },
+          { title: "Revocation", to: "/tokens/revocation" },
+        ],
+      },
+    ],
+  },
+  {
+    heading: "Deliver",
+    entries: [
+      {
+        id: "email",
+        title: "Email",
+        icon: "material-symbols:mail-outline",
+        children: [
+          { title: "Templates", to: "/email/templates" },
+          { title: "Suppressions", to: "/email/suppressions" },
+          { title: "Sending domains", to: "/email/domains" },
+        ],
+      },
+      {
+        id: "sms",
+        title: "SMS",
+        icon: "material-symbols:sms-outline",
+        children: [
+          { title: "Policy & spend", to: "/sms/policy" },
+          { title: "Providers", to: "/sms/providers" },
+        ],
+      },
+      {
+        id: "domains",
+        title: "Domains",
+        icon: "material-symbols:language",
+        children: [
+          { title: "Auth domains", to: "/domains" },
+          { title: "Allowed origins", to: "/domains/origins" },
+        ],
+      },
+    ],
+  },
+  {
+    heading: "Observe",
+    entries: [
+      { title: "Audit log", to: "/audit", icon: "material-symbols:history" },
+      { title: "Security center", to: "/security", icon: "material-symbols:security" },
+      { title: "Usage", to: "/usage", icon: "material-symbols:monitoring" },
+    ],
+  },
+  {
+    heading: "Integrate",
+    entries: [
+      { title: "API keys", to: "/keys", icon: "material-symbols:vpn-key-outline" },
+      { title: "Webhooks", to: "/webhooks", icon: "material-symbols:webhook" },
+      { title: "Hooks", to: "/hooks", icon: "material-symbols:alt-route" },
+      {
+        title: "Data requests",
+        to: "/data-requests",
+        icon: "material-symbols:folder-managed-outline",
+      },
+    ],
+  },
+];
+
+/** Below the rule at the foot of the list: the project itself rather than what it does. */
+export const NAV_PROJECT: NavGroup = {
+  id: "project",
+  title: "Project settings",
+  icon: "material-symbols:settings-outline",
+  children: [
+    { title: "General", to: "/settings" },
+    { title: "Members", to: "/settings/members" },
+    { title: "Billing", to: "/settings/billing" },
+  ],
+};
+
+/** The groups, in order, so the drawer can find the one a route lives in. */
+export const NAV_GROUPS: readonly NavGroup[] = [
+  ...NAV_SECTIONS.flatMap((section) => section.entries.filter(isGroup)),
+  NAV_PROJECT,
+];
+
+/** The group whose child is `path`, or null for a top-level screen. */
+export function groupOf(path: string): NavGroup | null {
+  return NAV_GROUPS.find((group) => group.children.some((child) => child.to === path)) ?? null;
+}
+
+/** Every screen in the tree, flat, so a path can be named. */
+export const NAV_LINKS: readonly NavLink[] = [
+  ...NAV_SECTIONS.flatMap((section) =>
+    section.entries.flatMap((entry) => (isGroup(entry) ? entry.children : [entry])),
+  ),
+  ...NAV_PROJECT.children,
+];
+
+/**
+ * The screen at `path`. A path the tree does not name exactly resolves to the deepest
+ * link it sits under, so one user's page reads as "All users" rather than as nothing.
+ * The root is excluded from that, or it would name every path there is.
+ */
+export function linkOf(path: string): NavLink | null {
+  const exact = NAV_LINKS.find((link) => link.to === path);
+  if (exact) return exact;
+  const above = NAV_LINKS.filter((link) => link.to !== "/" && path.startsWith(`${link.to}/`));
+  above.sort((a, b) => b.to.length - a.to.length);
+  return above[0] ?? null;
+}
+
+/** What the tab calls the screen at `path`. */
+export function titleOf(path: string): string | null {
+  return linkOf(path)?.title ?? null;
+}
+
+export interface Crumb {
+  title: string;
+  /** Absent on a group, which is a place in the tree and not a screen. */
+  to?: string;
+}
+
+/** The way down the tree to the screen at `path`: its group, when it has one, then itself. */
+export function crumbsOf(path: string): Crumb[] {
+  const link = linkOf(path);
+  if (!link) return [];
+  const group = NAV_GROUPS.find((candidate) => candidate.children.includes(link));
+  const last: Crumb = { title: link.title, to: link.to };
+  return group ? [{ title: group.title }, last] : [last];
+}

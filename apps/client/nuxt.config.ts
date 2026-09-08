@@ -19,7 +19,7 @@ export default defineNuxtConfig({
   // Only publishable keys ever reach this bundle.
   runtimeConfig: { public: { idenzyPublishableKey: "", authApiBaseUrl: "" } },
 
-  modules: ["vuetify-nuxt-module", "@vueuse/nuxt", "@pinia/nuxt", "@nuxt/icon"],
+  modules: ["vuetify-nuxt-module", "@vueuse/nuxt", "nuxt-echarts", "@pinia/nuxt", "@nuxt/icon"],
 
   css: ["~/assets/css/main.css"],
 
@@ -101,5 +101,22 @@ export default defineNuxtConfig({
         },
       },
     },
+  },
+
+  /**
+   * Registered explicitly so the bundle carries the chart types this panel draws and
+   * nothing else. ECharts imports its whole catalogue otherwise, which is roughly a
+   * megabyte for the four charts on a usage page.
+   */
+  echarts: {
+    renderer: "canvas",
+    charts: ["BarChart", "LineChart", "PieChart"],
+    components: [
+      "DatasetComponent",
+      "GridComponent",
+      "LegendComponent",
+      "TitleComponent",
+      "TooltipComponent",
+    ],
   },
 });

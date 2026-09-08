@@ -66,6 +66,11 @@
   --idenzy-nav-inset: 12px;
   --idenzy-nav-item-height: 36px;
 
+  /* A menu's inset, half the drawer's. The drawer's is set to line up with the rows the
+     layout builds above and below its list; a menu has no such rows, and at twelve
+     pixels a list of three items floats in its box with more frame than content. */
+  --idenzy-menu-inset: 6px;
+
   /* The drawer's two shades of ink under the theme's own. A heading is furniture and
      takes the muted one; a row nobody is on or over takes the second; the row the
      pointer or the route is on takes `on-surface`. Given as colours rather than as
@@ -545,6 +550,13 @@
 .v-menu > .v-overlay__content > .v-sheet {
   border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.24);
+}
+
+/* A menu's list is a nav list for the sake of the item, and takes the menu's inset over
+   the drawer's. Three classes deep so it outranks the nav rule further down whatever
+   order the two are in. */
+.v-menu > .v-overlay__content > .v-list {
+  padding: var(--idenzy-menu-inset);
 }
 
 /*

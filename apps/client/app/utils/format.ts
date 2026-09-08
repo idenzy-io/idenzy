@@ -98,6 +98,29 @@ function formatBytes(value: number, decimals: number): FigureParts {
   return { digits: sign + numbers.format(scaled), magnitude: "", unit: BYTE_UNITS[tier] ?? "B" };
 }
 
+export interface WrittenFigureOptions extends FigureOptions {
+  /** Before the digits: a currency sign. */
+  prefix?: string;
+  /** After them: `ms`, `users`. Bytes name their own and ignore it. */
+  unit?: string;
+}
+
+/**
+ * The parts joined into one string, for the places a figure is text rather than markup:
+ * an axis tick, a tooltip row, a table cell. A unit is set off by a space, except the
+ * percent sign, which English writes closed up. A value that cannot be written is the
+ * dash alone, with no unit or sign hung on it.
+ */
+export function writeFigure(value: number, options: WrittenFigureOptions = {}): string {
+  const { prefix = "", unit = "", ...figure } = options;
+  const parts = formatFigure(value, figure);
+  if (parts === NO_FIGURE) return parts.digits;
+
+  const suffix = parts.unit || unit;
+  const gap = suffix === "" || suffix === "%" ? "" : " ";
+  return `${prefix}${parts.digits}${parts.magnitude}${gap}${suffix}`;
+}
+
 /**
  * Movement from `previous` to `current` as a fraction of `previous`, so 0.041 is a rise
  * of 4.1%. Null when there is nothing to compare against: a previous period of zero has

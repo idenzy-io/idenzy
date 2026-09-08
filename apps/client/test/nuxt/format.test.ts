@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatChange, formatFigure, NO_FIGURE, relativeChange } from "../../app/utils/format";
+import {
+  formatChange,
+  formatFigure,
+  NO_FIGURE,
+  relativeChange,
+  writeFigure,
+} from "../../app/utils/format";
 
 describe("formatFigure", () => {
   it("groups a plain number and writes only the fraction digits it has", () => {
@@ -95,6 +101,24 @@ describe("formatFigure", () => {
   it("writes a dash for a value that is not a number", () => {
     expect(formatFigure(Number.NaN)).toEqual(NO_FIGURE);
     expect(formatFigure(Number.POSITIVE_INFINITY, { compact: true })).toEqual(NO_FIGURE);
+  });
+});
+
+describe("writeFigure", () => {
+  it("joins the parts into one run, with the affixes in their places", () => {
+    expect(writeFigure(4212)).toBe("4,212");
+    expect(writeFigure(4212, { compact: true, prefix: "$" })).toBe("$4.2k");
+    expect(writeFigure(142.4, { unit: "ms", decimals: 0 })).toBe("142 ms");
+    expect(writeFigure(79720, { format: "bytes", decimals: 2, unit: "ignored" })).toBe("77.85 kB");
+  });
+
+  it("closes a percent sign up and sets every other unit off", () => {
+    expect(writeFigure(42, { unit: "%" })).toBe("42%");
+    expect(writeFigure(42, { unit: "users" })).toBe("42 users");
+  });
+
+  it("writes a dash alone for a value that is not a number", () => {
+    expect(writeFigure(Number.NaN, { prefix: "$", unit: "ms" })).toBe("–");
   });
 });
 

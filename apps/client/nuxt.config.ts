@@ -21,7 +21,7 @@ export default defineNuxtConfig({
 
   modules: ["vuetify-nuxt-module", "@vueuse/nuxt", "nuxt-echarts", "@pinia/nuxt", "@nuxt/icon"],
 
-  css: ["~/assets/css/main.css"],
+  css: ["~/assets/css/main.css", "~/assets/css/theme.css"],
 
   /**
    * Every icon in the panel, including the ones Vuetify draws for itself. See
@@ -91,13 +91,39 @@ export default defineNuxtConfig({
        * origin on this panel at all.
        */
       icons: { defaultSet: "custom" },
+
+      /**
+       * Ripple is off everywhere rather than per component. It is a Material signature
+       * and reads as one, and a panel this dense shows the animation more often than it
+       * shows the thing the animation was meant to confirm. Hover, focus and pressed
+       * states carry that on their own.
+       */
+      defaults: { global: { ripple: false } },
+
       theme: {
         // Vuetify 4 follows prefers-color-scheme itself, so no watcher of ours can
         // disagree with it. Colours are placeholders until @idenzy/ui owns the tokens.
         defaultTheme: "system",
         themes: {
-          light: { dark: false, colors: { primary: "#4338ca", surface: "#ffffff" } },
-          dark: { dark: true, colors: { primary: "#818cf8", surface: "#18181b" } },
+          /**
+           * Material Blue A400 and A200: the accent pair, one step apart so the dark
+           * theme's fill sits off a dark surface without becoming a second colour.
+           *
+           * `neutral` is the ink for a control that carries no accent, a step in from
+           * pure black and pure white so an outlined button does not out-contrast the
+           * heading above it. It is a theme colour rather than a palette name on the
+           * component, because `grey-darken-4` means one fixed value in both themes and
+           * a near-black label on a near-black surface is the half of that nobody sees
+           * until they switch.
+           */
+          light: {
+            dark: false,
+            colors: { primary: "#2979ff", surface: "#ffffff", neutral: "#212121" },
+          },
+          dark: {
+            dark: true,
+            colors: { primary: "#448aff", surface: "#18181b", neutral: "#f5f5f5" },
+          },
         },
       },
     },

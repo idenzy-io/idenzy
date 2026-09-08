@@ -1,0 +1,28 @@
+/*
+ * Tailwind, entered through its individual modules rather than `@import "tailwindcss"`.
+ *
+ * The difference is preflight, which we deliberately skip: Vuetify's `styles/core`
+ * already resets the document, and running both leaves buttons, inputs and borders
+ * styled by whichever loaded last. Vuetify owns the reset, Tailwind owns the utilities,
+ * and Vuetify's own utilities are switched off in nuxt.config.ts so there is one of each.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+
+/*
+ * Utilities are imported unlayered, which is the one place this file departs from
+ * Tailwind's own entry point.
+ *
+ * Vuetify 4 puts its entire stylesheet in cascade layers (`vuetify-core`,
+ * `vuetify-components`, and three more), and the module appends them after this file. A
+ * later layer beats an earlier one whatever the specificity, so `@layer utilities` here
+ * means `class="p-6"` on a `v-card-text` silently does nothing. Unlayered declarations
+ * outrank every layer, so the utility wins, which is the whole point of a utility.
+ *
+ * Declaring the order instead would work and would hard-code the names of Vuetify's
+ * internal layers, which a minor release is free to change without telling anyone.
+ */
+@import "tailwindcss/utilities.css";
+
+/* Nuxt 4 puts application code under app/. Stated rather than inferred, because
+   automatic detection walks up from this file and would scan .output and .nuxt too. */
+@source "../../";

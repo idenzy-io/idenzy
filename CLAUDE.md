@@ -155,6 +155,62 @@ their browser send one request. Four routes are exempt via `@BrowserNavigation()
 Apple form-posts its callback with its own `Origin`; they are defended by a one-shot `state`
 and a single-use code instead.
 
+## Working on the client panel
+
+`apps/client` is the customer dashboard (PROJECT.md 10.1): a Nuxt SPA with `ssr: false`,
+Vuetify 4 for components, Tailwind 4 for layout, `@nuxt/icon` for Material Symbols, plus
+VueUse, Pinia and ECharts. `apps/admin` is the same shape and does not have the stack yet;
+copy this one when it does.
+
+Run it with `pnpm --filter @idenzy/client dev`. `pnpm dev` at the root starts every app
+through turbo, which is rarely what you want while working on one panel.
+
+- **Two utility systems is the thing this setup exists to avoid.** Vuetify's utilities are
+  switched off (`styles: { utilities: false }`), so `d-flex`, `ma-4` and `text-center` do
+  not exist here and the Tailwind spelling is the only one. That is 236 KB of the 296 KB
+  Vuetify would otherwise add, and it removes every name that collides.
+- **Tailwind's utilities are imported unlayered, and that is load-bearing.** Vuetify 4
+  puts its whole stylesheet in cascade layers and the module appends them after ours, so a
+  later layer beats an earlier one whatever the specificity: inside `@layer utilities`,
+  `class="p-6"` on a `v-card-text` silently does nothing. Unlayered wins over every layer.
+  Preflight is skipped for the mirror-image reason: Vuetify's `styles/core` already resets
+  the document and two resets fight.
+- **Icons are Material Symbols through `@nuxt/icon`, and `<v-icon>` goes through it too.**
+  Vuetify 4 does ship an `ms` set and it emits UnoCSS class names
+  (`i-material-symbols:menu`) that nothing in this build generates, so
+  `app/icons/material-symbols.ts` hands the name to `<Icon>` instead and
+  `defaultSet: "custom"` stops the module overwriting it. One collection, one bundle. The
+  webfont was the other option and weighs 4 MB unsubsetted.
+- **The module is configured to never reach the network**, which is three of its four
+  settings: it fetches from api.iconify.design by default, and a statically generated SPA
+  has no server to answer its own icon endpoint either. `mode: "svg"` is part of the same
+  argument, because CSS mode injects a style element that a strict `style-src` refuses.
+  Those API URLs do appear in the bundle as dead constants from `@iconify/vue`; a network
+  panel on a production build shows only same-origin requests.
+- **An icon has to be bundled to exist, and an unbundled one fails silently.** The scan
+  reads `app/**/*.{vue,ts}` — `.ts` is not in the module's default globs and the Vuetify
+  alias map is a `.ts` file — so `material-symbols:search` written out is found and
+  `` `material-symbols:${name}` `` draws nothing, with no error and no request. Names that
+  cannot be written out go in `icon.clientBundle.icons`.
+- **`useStorage` is not auto-imported and looks like it is.** Nitro owns that name, so
+  `@vueuse/nuxt` leaves VueUse's out; it resolves to nothing and the page dies at runtime
+  with the build green. Use `useLocalStorage` or `useSessionStorage`, which are exported.
+  `useLayout` collides the same way and is settled by `prefixComposables`, which leaves
+  Nuxt's built-in under the plain name and Vuetify's as `useVLayout`.
+- **`enableRules: false` is a workaround, not a preference.** `vuetify-nuxt-module` is on
+  its 1.0 release candidate, the only line that supports Vuetify 4, and it still imports
+  `createRulesPlugin` from `vuetify/labs/rules`. Rules graduated to the root export in 4.0,
+  so the path does not resolve and the bundle fails outright. Revisit when it leaves RC.
+- **Biome does not read SFC templates**, so `noUnusedVariables` calls every `<script setup>`
+  binding unused. It is off for `**/*.vue` rather than suppressed per file. Biome also
+  needs `css.parser.tailwindDirectives` to parse `@plugin` and `@source`; without it every
+  Tailwind entry point is a parse error and the file goes unformatted rather than unchecked.
+- **Versions live in the `catalog:` in `pnpm-workspace.yaml`,** like everything else here.
+  `nuxi module add` writes a literal version into the package instead; move it.
+
+Design tokens and the shared `ApiClient` belong in `@idenzy/ui` (PROJECT.md 10.3), which
+does not exist yet. The theme colours in `nuxt.config.ts` are placeholders until it does.
+
 ## Working on `@idenzy/js`
 
 The client half of the edge above. It may import `protocol` and `core` and nothing else, which

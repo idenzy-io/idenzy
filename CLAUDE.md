@@ -202,7 +202,8 @@ through turbo, which is rarely what you want while working on one panel.
   `createRulesPlugin` from `vuetify/labs/rules`. Rules graduated to the root export in 4.0,
   so the path does not resolve and the bundle fails outright. Revisit when it leaves RC.
 - **Biome does not read SFC templates**, so `noUnusedVariables` calls every `<script setup>`
-  binding unused. It is off for `**/*.vue` rather than suppressed per file. Biome also
+  binding unused, and `noUnusedImports` says the same of an import a template alone uses.
+  Both are off for `**/*.vue` rather than suppressed per file. Biome also
   needs `css.parser.tailwindDirectives` to parse `@plugin` and `@source`; without it every
   Tailwind entry point is a parse error and the file goes unformatted rather than unchecked.
 - **Versions live in the `catalog:` in `pnpm-workspace.yaml`,** like everything else here.
@@ -218,6 +219,36 @@ through turbo, which is rarely what you want while working on one panel.
 
 Design tokens and the shared `ApiClient` belong in `@idenzy/ui` (PROJECT.md 10.3), which
 does not exist yet. The theme colours in `nuxt.config.ts` are placeholders until it does.
+
+## Working on the metric card
+
+`MetricCard` is the panel's one chart surface, and every screen that draws a series goes
+through it. The option ECharts is given is built in `app/utils/metric-chart.ts`, which is
+pure and tested; the components read the theme and hand it over. Six things are load-bearing.
+
+- **A canvas inherits nothing.** The faces are named as strings and the ink is read off
+  `useTheme` through `useMetricPalette`, never off a stylesheet. The chart is painted before
+  DM Mono has loaded and a canvas does not repaint itself when a font arrives, so
+  `MetricChart` calls `resize()` on `document.fonts.ready`. Drop that and every axis label
+  stays in the fallback face.
+- **The tooltip is DOM that ECharts writes, outside any template.** Its styles are the
+  unscoped block in `MetricChart.vue` under the `metric-tooltip` prefix, because a scoped
+  block cannot reach it. ECharts is told to draw no box of its own and the markup carries
+  the look. Series names go through `escapeHtml`: the markup is a string, and a series name
+  is text from outside.
+- **The legend the reader sees is HTML in the card, and ECharts' own is `show: false`.** It
+  still holds `selected`, which is what switches a series off in both views. Colour is
+  assigned by a series' position in the list and not by what is visible, so hiding the
+  first does not repaint the second.
+- **`chart-1` to `chart-6` are validated in that order.** Adjacent pairs were checked for
+  separation under simulated colour-vision deficiency, in both themes, against the panel's
+  own surfaces. Reordering or restepping one slot undoes the check. Three light slots sit
+  under 3:1 on white, which is why the table view is not optional and a series is never
+  told apart by colour alone.
+- **A series that means good or bad wears the outcome colours, never a slot**, and a series
+  that is merely fourth never wears an outcome colour. A chart of one series gets no legend.
+- **Vertical gridlines are dashed and horizontal ones solid, both under a tenth of the ink.**
+  The test asserts it, because it is the sort of thing a well-meant refactor evens out.
 
 ## Working on `@idenzy/js`
 

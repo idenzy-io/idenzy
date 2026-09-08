@@ -19,6 +19,13 @@
    fonts.googleapis.com is out and the variable font is compiled into the bundle. */
 @import "@fontsource-variable/dm-sans";
 
+/* DM Sans's companion face, for figures. Static rather than variable because that is
+   all it ships as, and two weights rather than the six: the regular for a figure in
+   running text and the medium for one set large. Medium is the heaviest it has, so a
+   `font-bold` on it is synthesised and looks it. */
+@import "@fontsource/dm-mono/400.css";
+@import "@fontsource/dm-mono/500.css";
+
 :root {
   /* Vuetify's own hook. Everything it styles reads this, Roboto being the fallback it
      ships with rather than a font we load. */
@@ -52,6 +59,35 @@
   --idenzy-field-icon-size-compact: 1rem;
   --idenzy-field-icon-size-comfortable: 1.125rem;
   --idenzy-field-icon-size: 1.25rem;
+
+  /* The drawer's inset and the height of an item in it, shared with the rows the layout
+     builds above and below the list so they sit on the same edge. The rail restates the
+     inset below, where the class that means "rail" is. */
+  --idenzy-nav-inset: 12px;
+  --idenzy-nav-item-height: 36px;
+
+  /* The drawer's two shades of ink under the theme's own. A heading is furniture and
+     takes the muted one; a row nobody is on or over takes the second; the row the
+     pointer or the route is on takes `on-surface`. Given as colours rather than as
+     opacities of white, because a grey over a near-black surface picks up a cast the
+     eye reads as blue, and these are warm on purpose. */
+  --idenzy-nav-muted: #84827c;
+  --idenzy-nav-inactive: #4f4d48;
+
+  /* The shell's two lines, each a step quieter than the theme's. A card's edge marks
+     something set on the page; the drawer's and the bar's mark where the page begins,
+     and drawn at the same weight they box the content in. The rules inside the drawer
+     are quieter again: they part one row of the chrome from the next, and at the
+     weight of the edge they would cut the drawer into boxes. */
+  --idenzy-shell-line: #ececeb;
+  --idenzy-shell-divider: #f0f0ef;
+}
+
+:where(.v-theme--dark) {
+  --idenzy-nav-muted: #898781;
+  --idenzy-nav-inactive: #a9a7a1;
+  --idenzy-shell-line: #292929;
+  --idenzy-shell-divider: #202020;
 }
 
 /*
@@ -252,8 +288,10 @@
   opacity: 1;
 }
 
+/* A step under the resting outline further down, so the button that cannot be pressed is
+   not the one drawn with the heavier line. */
 .v-btn--disabled.v-btn--variant-outlined {
-  border-color: rgba(var(--v-theme-on-surface), 0.12);
+  border-color: rgba(var(--v-theme-on-surface), 0.1);
 }
 
 :where(.v-theme--dark) .v-btn--disabled.v-btn--variant-elevated,
@@ -267,6 +305,10 @@
 :where(.v-theme--dark) .v-btn--disabled.v-btn--variant-text,
 :where(.v-theme--dark) .v-btn--disabled.v-btn--variant-plain {
   color: rgba(var(--v-theme-on-surface), 0.3);
+}
+
+:where(.v-theme--dark) .v-btn--disabled.v-btn--variant-outlined {
+  border-color: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 /*
@@ -302,6 +344,64 @@
   --v-btn-height: var(--idenzy-control-height-x-large);
 
   border-radius: var(--idenzy-radius-x-large);
+}
+
+/*
+ * Outlined buttons.
+ *
+ * Vuetify draws the variant as a 1px line of the button's own ink at full strength with
+ * nothing inside it. On a dark surface that is a white rectangle, the brightest thing on
+ * the screen, and a column of five reads as a wireframe rather than a list of ways in.
+ * Here the line is a hairline of the ink, and the dark theme adds a faint fill so the
+ * button reads as a surface rather than a hole in one. Light keeps the page's own
+ * surface, where a fill would only grey it.
+ *
+ * Mixed from `currentColor` rather than from `on-surface`, so a button that carries an
+ * accent keeps it: an outlined `error` button is faintly red around red text, not grey.
+ * For `neutral`, which is every outlined button in the panel today, the two are a step
+ * apart and the result is the same.
+ *
+ * Hover strengthens the line, and Vuetify's own overlay tints the fill on hover and
+ * focus, so those two are left to it. Pressed is the one state the overlay does not
+ * cover, and its fill is stated here. The weights are custom properties so the dark
+ * theme restates four numbers rather than four rules; the disabled state is above, with
+ * the other variants, and sits a step under the resting line in both themes.
+ *
+ * The transition is the shorthand on purpose. Vuetify's own covers shadow, transform and
+ * opacity, none of which an outlined button has, and the two properties that do move
+ * here are not in its list.
+ */
+.v-btn--variant-outlined {
+  --idenzy-outlined-fill: 0%;
+  --idenzy-outlined-fill-pressed: 6%;
+  --idenzy-outlined-line: 16%;
+  --idenzy-outlined-line-raised: 28%;
+
+  background-color: color-mix(in srgb, currentColor var(--idenzy-outlined-fill), transparent);
+  border-color: color-mix(in srgb, currentColor var(--idenzy-outlined-line), transparent);
+  transition:
+    background-color 150ms var(--v-transition-standard-easing, ease),
+    border-color 150ms var(--v-transition-standard-easing, ease);
+}
+
+:where(.v-theme--dark) .v-btn--variant-outlined {
+  --idenzy-outlined-fill: 4%;
+  --idenzy-outlined-fill-pressed: 10%;
+  --idenzy-outlined-line: 10%;
+  --idenzy-outlined-line-raised: 18%;
+}
+
+.v-btn--variant-outlined:hover,
+.v-btn--variant-outlined:focus-visible {
+  border-color: color-mix(in srgb, currentColor var(--idenzy-outlined-line-raised), transparent);
+}
+
+.v-btn--variant-outlined:active {
+  background-color: color-mix(
+    in srgb,
+    currentColor var(--idenzy-outlined-fill-pressed),
+    transparent
+  );
 }
 
 /*
@@ -350,18 +450,80 @@
   font-size: var(--idenzy-field-icon-size-compact);
 }
 
-/* An icon button is square, so its radius comes off the same ladder as its width. */
+/*
+ * An icon button is square at its size's height, so it lines up with the text button
+ * beside it. Vuetify makes it twelve pixels bigger than that in both directions, which
+ * beside a 32px "Docs" is a 44px bell. Its radius comes off the same ladder as its width.
+ */
+.v-btn--icon {
+  height: var(--v-btn-height);
+  width: var(--v-btn-height);
+}
+
 .v-btn--icon.v-btn--size-default {
   border-radius: var(--idenzy-radius);
 }
 
+/*
+ * The one-time-code field.
+ *
+ * Its own block rather than one more field variant, because the component nests a
+ * `v-field` per digit and Vuetify sizes those from the row instead of from the control
+ * ladder above. The two paddings go first: the component insets its boxes by 8px on
+ * every side, which is invisible until a button underneath is asked to line up with
+ * them.
+ *
+ * The row states what it is and the boxes take the rest. Width is left to the page, so
+ * six boxes fill whatever column they are given and the button below spans the same
+ * edges; Vuetify's own 320px cap would otherwise decide the layout from in here.
+ */
+.v-otp-input {
+  padding: 0;
+}
+
+.v-otp-input__content {
+  gap: 0.625rem;
+  height: var(--idenzy-control-height-x-large);
+  max-width: none;
+  padding: 0;
+}
+
+/*
+ * The boxes themselves are Vuetify's filled field and are left that way: the fill, the
+ * rule under it and the weights they take through hover, focus and error are the
+ * variant's own.
+ *
+ * The two corners are the exception, and putting them back is what keeps the rest of it
+ * intact. A filled field is square at the bottom so the rule under it meets both ends
+ * flush; `.v-field` above rounds all four, since an unlayered shorthand beats the
+ * variant's two layered longhands, and a straight line then runs across two rounded
+ * corners and out past the edges of the box.
+ */
+.v-otp-input .v-field--variant-filled {
+  border-end-end-radius: 0;
+  border-end-start-radius: 0;
+}
+
+/* A box is a place to type, so it answers the pointer like one. Vuetify draws each digit
+   in a div rather than an input, and a div carries no cursor of its own. Figures are
+   tabular for the same reason they are in a table: a 1 that sits narrow puts itself off
+   the centre of a box whose whole job is to hold one character. */
+.v-otp-input__field {
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Surfaces sit one step above the controls they hold, which is what keeps a 12px control
-   from looking pinned to the corner of the card it is in. */
+   from looking pinned to the corner of the card it is in. A menu holds 8px items and
+   takes the step above those. */
 .v-card,
-.v-sheet.v-sheet--border,
+.v-sheet.v-sheet--border {
+  border-radius: var(--idenzy-radius-x-large);
+}
+
 .v-menu > .v-overlay__content,
 .v-select__content {
-  border-radius: var(--idenzy-radius-x-large);
+  border-radius: var(--idenzy-radius);
 }
 
 .v-list {
@@ -370,6 +532,204 @@
 
 .v-list-item {
   border-radius: var(--idenzy-radius-small);
+}
+
+/*
+ * A menu is a card that floats, so it carries a card's edge and a shadow light enough
+ * that the edge is what separates it from the page. Vuetify's own shadow is the Material
+ * eight-step one, and on a page whose surfaces are a few percent apart it reads as a
+ * smudge rather than a lift.
+ */
+.v-menu > .v-overlay__content > .v-list,
+.v-menu > .v-overlay__content > .v-card,
+.v-menu > .v-overlay__content > .v-sheet {
+  border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.24);
+}
+
+/*
+ * A divider is the one edge Vuetify draws in the text colour: `currentColor` under the
+ * border opacity, which with that opacity at 1 (nuxt.config.ts) is a solid line of ink.
+ * Every other edge takes the line colour, so this one does too. The cost is the `color`
+ * prop, which now changes nothing, and nothing here passes one.
+ */
+.v-divider {
+  border-color: rgba(var(--v-border-color), var(--v-border-opacity));
+  opacity: 1;
+}
+
+/* A tooltip is the theme inverted: the ink for a ground and the surface for the words.
+   Vuetify's is a mid grey in both themes, which on the dark one is the brightest
+   rectangle on the screen. */
+.v-tooltip > .v-overlay__content {
+  background: rgb(var(--v-theme-on-surface));
+  border-radius: var(--idenzy-radius-x-small);
+  color: rgb(var(--v-theme-surface));
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  padding: 2px 8px;
+}
+
+/*
+ * The shell: the drawer and the app bar, and the navigation list inside the first.
+ *
+ * Both are `color="shell"` in the layout, so their fill is the theme's and nothing here
+ * paints one. The app bar draws its bottom edge and no other: its left edge meets the
+ * drawer's right one, and two thin lines side by side read as one thick one. The
+ * drawer's edge is Vuetify's own, drawn for a left drawer whether or not `border` is
+ * set; both edges take the shell's line rather than the theme's, and a divider inside
+ * the drawer takes the quieter one, for the reason given where they are declared. A
+ * list inside the drawer is see-through, because Vuetify paints every list in the
+ * surface colour and a card-coloured block down the middle of the chrome is not a list.
+ */
+.v-app-bar.v-toolbar {
+  border-bottom-color: var(--idenzy-shell-line);
+  border-bottom-width: thin;
+}
+
+/* The bar's contents are the page's column, laid out by the layout, and Vuetify's own
+   inset would put that column a few pixels off the one under it. */
+.v-app-bar.v-toolbar > .v-toolbar__content {
+  padding: 0;
+}
+
+.v-navigation-drawer {
+  border-color: var(--idenzy-shell-line);
+}
+
+.v-navigation-drawer .v-divider {
+  border-color: var(--idenzy-shell-divider);
+}
+
+.v-navigation-drawer .v-list {
+  background: transparent;
+}
+
+.v-navigation-drawer--rail {
+  --idenzy-nav-inset: 8px;
+}
+
+/*
+ * A navigation item: 36px tall, an 8px corner, a 16px glyph ten pixels from a 13px
+ * label. Vuetify's nav preset has the type right and is a size up on everything else.
+ * The two overlay weights are its own hooks, so hover and active stay one colour at two
+ * strengths.
+ *
+ * The ink is the ladder above: a row rests at the inactive shade and goes to the
+ * theme's ink when the pointer, the focus or the route is on it. A group's header goes
+ * with its children: white while one of them is the current screen, so the fold reads
+ * as the place the person is, whether or not it is open. The glyph is drawn at full
+ * strength for the same reason, where Vuetify dims it; here the colour is the state.
+ *
+ * Scoped to `nav` lists rather than to the drawer, so the menus that open off the
+ * drawer take the same item on the same ladder.
+ */
+.v-list--nav {
+  --v-list-prepend-gap: 10px;
+
+  padding: var(--idenzy-nav-inset);
+}
+
+.v-list--nav .v-list-item {
+  --v-hover-opacity: 0.05;
+  --v-activated-opacity: 0.08;
+
+  border-radius: var(--idenzy-radius-x-small);
+  color: var(--idenzy-nav-inactive);
+  min-height: var(--idenzy-nav-item-height);
+  padding-inline: 12px;
+  transition: color 150ms var(--v-transition-standard-easing, ease);
+}
+
+.v-list--nav .v-list-item:hover,
+.v-list--nav .v-list-item:focus-visible,
+.v-list--nav .v-list-item--active,
+.v-list--nav .idenzy-nav-group--current > .v-list-group__header {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.v-list--nav .v-list-item:not(:first-child) {
+  margin-top: 2px;
+}
+
+.v-list--nav .v-list-item__prepend > .v-icon,
+.v-list--nav .v-list-item__append > .v-icon {
+  font-size: var(--idenzy-icon-size);
+  opacity: 1;
+}
+
+/*
+ * A section heading is a label and not an item: twelve pixels, the muted shade, at the
+ * item's inset so it sits over the glyphs. The gap above it is the one that separates
+ * sections, so it is the larger of its two.
+ */
+.v-list--nav .v-list-subheader {
+  color: var(--idenzy-nav-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  margin: 16px 0 4px;
+  min-height: 0;
+  padding-inline: 12px;
+}
+
+/*
+ * A group unfolds under a rule dropped from the centre of its glyph, with its children
+ * set eight pixels in from it: the drawer's inset and half a glyph put the rule at
+ * twenty. Vuetify indents by a prepend width that assumes a 24px glyph and a 16px step,
+ * so both are replaced rather than adjusted. The rule is the drawer's divider, dashed,
+ * because it is a guide and not a boundary: it says which rows belong to the header,
+ * and nothing sits on either side of it. The header takes the item's 2px rhythm in
+ * place of Vuetify's four.
+ */
+.v-list--nav .v-list-group:not(:first-child) > .v-list-group__header {
+  margin-top: 2px;
+}
+
+.v-list--nav .v-list-group__items {
+  border-inline-start: thin dashed var(--idenzy-shell-divider);
+  margin: 2px 0 2px 20px;
+  padding-inline-start: 8px;
+}
+
+.v-list--nav .v-list-group__items .v-list-item {
+  padding-inline-start: 12px;
+}
+
+.v-list--nav .v-list-group__items > .v-list-item:first-child {
+  margin-top: 0;
+}
+
+/* The chevron is one glyph turned a quarter rather than two swapped, so it moves rather
+   than blinks. Smaller and fainter than a leading glyph: it says "more", not "here". */
+.v-list--nav .v-list-group__header .v-list-item__append > .v-icon {
+  font-size: var(--idenzy-icon-size-small);
+  opacity: 0.6;
+  transition: transform 150ms var(--v-transition-standard-easing, ease);
+}
+
+.v-list--nav .v-list-group--open > .v-list-group__header .v-list-item__append > .v-icon {
+  transform: rotate(90deg);
+}
+
+/*
+ * In the rail the label has nowhere to go, and Vuetify leaves it to be clipped, which
+ * shows a first letter or an ellipsis depending on the width that day. Content and
+ * spacer go together: with the spacer left in, the glyph sits five pixels off centre.
+ * Padding plus glyph is the rail's forty pixels exactly, which is where the centring
+ * comes from.
+ */
+.v-navigation-drawer--rail .v-list--nav .v-list-item__content,
+.v-navigation-drawer--rail .v-list--nav .v-list-item__spacer {
+  display: none;
+}
+
+/* A divider in the rail stands in for a heading, so it is set in from both sides: at
+   the width of an item it would read as one more row, and at twenty-four pixels it
+   reads as the mark between two runs of them. */
+.v-navigation-drawer--rail .v-list--nav .v-divider {
+  margin-inline: 8px;
 }
 
 p,

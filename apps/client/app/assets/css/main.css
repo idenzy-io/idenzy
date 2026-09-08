@@ -26,3 +26,67 @@
 /* Nuxt 4 puts application code under app/. Stated rather than inferred, because
    automatic detection walks up from this file and would scan .output and .nuxt too. */
 @source "../../";
+
+/*
+ * The one piece of preflight the panel does need. Vuetify's reset stops short of
+ * `button`, so a bare one keeps the browser's outset border, grey fill and system font,
+ * and the drawer is built from three of them. Layered so it loses to every utility, and
+ * to Vuetify's own button, whose layers are appended after this file.
+ */
+@layer base {
+  button {
+    appearance: none;
+    background: none;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+}
+
+/*
+ * Vuetify's theme as Tailwind colours, so a template can say `bg-ink/5` or `border-line`
+ * where it would otherwise spell `rgba(var(--v-theme-on-surface), 0.05)` into an
+ * arbitrary value. Vuetify owns the values, in nuxt.config.ts; this is one name per
+ * token and nothing more. A colour a template wants that is not here is a token to add,
+ * not a hex to write.
+ *
+ * `inline` is what keeps a token honest about where it is used. Vuetify writes its
+ * properties on `:root` for the current theme and again on every theme class, which is
+ * how a light island can sit inside a dark page. A Tailwind variable declared on `:root`
+ * would resolve the reference there, once, and paint the island in the page's colours;
+ * inlined, the reference is substituted at the element that carries the utility and
+ * resolves inside whatever theme scope that element is in. The opacity modifier still
+ * works: Tailwind mixes with `color-mix()`, which takes any colour, computed ones
+ * included.
+ */
+@theme inline {
+  --color-canvas: rgb(var(--v-theme-background));
+  --color-shell: rgb(var(--v-theme-shell));
+  --color-surface: rgb(var(--v-theme-surface));
+  --color-ink: rgb(var(--v-theme-on-surface));
+  --color-primary: rgb(var(--v-theme-primary));
+  --color-on-primary: rgb(var(--v-theme-on-primary));
+  --color-success: rgb(var(--v-theme-success));
+  --color-warning: rgb(var(--v-theme-warning));
+  --color-error: rgb(var(--v-theme-error));
+  --color-line: rgba(var(--v-border-color), var(--v-border-opacity));
+  /* The shell's edge and the rule between its rows, declared in theme.css beside the
+     reason neither is `line`. Here so the drawer's own rows can draw them with a class. */
+  --color-shell-line: var(--idenzy-shell-line);
+  --color-shell-divider: var(--idenzy-shell-divider);
+}
+
+/*
+ * The panel's mono face, loaded in theme.css beside the body face. Tailwind's own
+ * `font-mono` is the system stack, which is a different face on every operating system,
+ * and a figure is the one place the panel is looked at closely enough to tell.
+ */
+@theme {
+  --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

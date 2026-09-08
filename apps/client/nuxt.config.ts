@@ -106,8 +106,25 @@ export default defineNuxtConfig({
         defaultTheme: "system",
         themes: {
           /**
+           * Three surfaces, and the chrome sits below the page rather than on it.
+           * `shell` is the drawer and the app bar, `background` the page they frame,
+           * `surface` a card on the page. In the dark theme each is a step lighter than
+           * the last, so a card reads as raised and the chrome as recessed; the light
+           * theme keeps the order with the page white and the chrome a shade off it.
+           *
+           * The line is one opaque colour rather than a tint of the ink, so a card's
+           * edge, a menu's edge and a divider are the same pixel wherever they meet
+           * and none of them darkens over a fill. `border-color` and `border-opacity`
+           * are Vuetify's own variables, read by everything it draws an edge on. The
+           * shell's own edges are the one exception and take a quieter line, declared
+           * in theme.css beside the reason.
+           *
            * Material Blue A400 and A200: the accent pair, one step apart so the dark
            * theme's fill sits off a dark surface without becoming a second colour.
+           * `primary-sharp` is the ground of the one lit button (FancyButton): deeper
+           * and more saturated than either, because that button carries a wash of white
+           * that brings it back up, and it is the same in both themes so the one call
+           * to action looks the same wherever it is met.
            *
            * `neutral` is the ink for a control that carries no accent, a step in from
            * pure black and pure white so an outlined button does not out-contrast the
@@ -115,14 +132,42 @@ export default defineNuxtConfig({
            * component, because `grey-darken-4` means one fixed value in both themes and
            * a near-black label on a near-black surface is the half of that nobody sees
            * until they switch.
+           *
+           * The three outcome colours are Material's 800s on the light theme and 400s
+           * on the dark, in place of the 500s Vuetify ships. A 500 green on white is
+           * under 3:1, which is readable as a heading and not as the 12px trend beside
+           * a figure, and the same colour marks both. Down two steps for text on white,
+           * up one for text on near-black; the hue is unchanged in each case.
            */
           light: {
             dark: false,
-            colors: { primary: "#2979ff", surface: "#ffffff", neutral: "#212121" },
+            colors: {
+              background: "#ffffff",
+              surface: "#ffffff",
+              shell: "#fafafa",
+              primary: "#2979ff",
+              "primary-sharp": "#0162ec",
+              neutral: "#212121",
+              success: "#2e7d32",
+              warning: "#ef6c00",
+              error: "#c62828",
+            },
+            variables: { "border-color": "#e4e4e3", "border-opacity": 1 },
           },
           dark: {
             dark: true,
-            colors: { primary: "#448aff", surface: "#18181b", neutral: "#f5f5f5" },
+            colors: {
+              background: "#151515",
+              surface: "#20201f",
+              shell: "#111111",
+              primary: "#448aff",
+              "primary-sharp": "#0162ec",
+              neutral: "#f5f5f5",
+              success: "#66bb6a",
+              warning: "#ffa726",
+              error: "#ef5350",
+            },
+            variables: { "border-color": "#363635", "border-opacity": 1 },
           },
         },
       },

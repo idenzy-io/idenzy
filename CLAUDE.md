@@ -191,7 +191,12 @@ through turbo, which is rarely what you want while working on one panel.
   reads `app/**/*.{vue,ts}` — `.ts` is not in the module's default globs and the Vuetify
   alias map is a `.ts` file — so `material-symbols:search` written out is found and
   `` `material-symbols:${name}` `` draws nothing, with no error and no request. Names that
-  cannot be written out go in `icon.clientBundle.icons`.
+  cannot be written out go in `icon.clientBundle.icons`. **The scan runs once, when the dev
+  server starts.** A name added to a file while `pnpm dev` is running is not in the bundle
+  and draws an empty `<svg viewBox="0 0 16 16">` until the server is restarted, which looks
+  exactly like a name that does not exist. Check the DOM before rewriting the icon: an empty
+  `viewBox="0 0 16 16"` is a stale bundle, a `viewBox="0 0 24 24"` with a path is a working
+  icon that something else is hiding.
 - **`useStorage` is not auto-imported and looks like it is.** Nitro owns that name, so
   `@vueuse/nuxt` leaves VueUse's out; it resolves to nothing and the page dies at runtime
   with the build green. Use `useLocalStorage` or `useSessionStorage`, which are exported.
@@ -249,6 +254,71 @@ pure and tested; the components read the theme and hand it over. Six things are 
   that is merely fourth never wears an outcome colour. A chart of one series gets no legend.
 - **Vertical gridlines are dashed and horizontal ones solid, both under a tenth of the ink.**
   The test asserts it, because it is the sort of thing a well-meant refactor evens out.
+
+## Working on the social providers screen
+
+`app/utils/providers.ts` is the panel's catalogue of the eighteen adapters registered in
+`apps/auth-api/src/oauth/oauth.module.ts`, plus the generic OIDC connector, which is shown
+grey because "not supported" and "not yet" read differently. `app/utils/auth-providers.ts`
+now derives the four marks our own sign-in screens use from it, so there is one answer to
+what Google looks like.
+
+- **`email` is the field the file exists for.** Whether a provider asserts the address it
+  hands over is verified is what decides whether a sign-in may join an account somebody
+  already has (PROJECT.md 4.6). Ten of them state it and eight do not, and the eight report
+  unverified because their provider states nothing rather than because nobody checked. The
+  catalogue card, the row and the linking card all say which, because a customer who does
+  not know it reads "sign in with Twitch made a second account" as a bug.
+- **The client secret goes one way.** The panel holds `secretSet` and when it was written,
+  never the value, so the field on an existing provider is a replacement and a blank one is
+  a keep. Clearing is not offered: a provider without a secret cannot finish a sign-in, and
+  removing it from the project is the honest way to say that.
+- **Credentials are one write and everything else writes itself.** A switch and the linking
+  rule save on the spot like the passwords and passkeys screens; the credential set goes
+  through a dialog because a provider half saved fails at the token endpoint rather than in
+  the panel. Same reason the passkey relying party is one write.
+- **The dialog opens with the callback URL, not with a field.** A redirect URI the provider
+  console does not hold is refused before we are ever called, so that value is step one and
+  the console it goes in is a click away. It is ours (`/v1/auth/oauth/:provider/callback`),
+  never the customer's route.
+- **Both credential fields are named and the secret is `new-password`.** A text field
+  followed by a password field is a sign-in form as far as a browser is concerned, and it
+  will put the operator's own address in the client id and their panel password in the
+  secret, which saves cleanly and fails at the provider.
+- **Instant mode is shown as a warning wherever it appears.** It is our shared app, our name
+  on the consent screen, and refused anywhere but localhost and preview domains, so a row on
+  it says so in full rather than wearing a quiet pill.
+- **Removing a provider keeps the identities.** What comes off is the credentials, so
+  setting it up again recognises everybody who used it. What the dialog states is the number
+  of accounts with no other way in, because for them a removal is the account.
+
+## Working on the recovery codes screen
+
+`/mfa/recovery` is a list first and a settings screen barely at all, because a sheet is
+ten codes the server decides everything about. `app/utils/recovery.ts` states those facts
+and reads the ones it shares with the authenticator screen out of `app/utils/mfa.ts`
+rather than writing them again: the count of codes, the attempt cap and the challenge's
+lifetime are one fact each.
+
+- **The list is the page, and what it is for is the accounts with nothing left.** An
+  account holding a second factor and no unspent code is a support ticket that has not
+  happened yet, so the filter opens on those and the other two segments carry their counts.
+- **There is no "generate a sheet for them", and there will not be.** The codes are
+  returned exactly once and only digests are kept, so an operator who could regenerate
+  would be handed ten working credentials for an account that is not theirs. Clearing a
+  sheet is the action that hands nobody anything, which is why it is the only one offered.
+- **A sheet nobody holds and a sheet spent to the last code both read as zero to the
+  server**, because `countUnused` is all it publishes. The panel knows which is which and
+  says so: "None" and "Never made" against "0/10" and a date. The clear dialog drops its
+  acknowledgement for an already-spent sheet, since asking somebody to tick a box about a
+  loss that already happened teaches them to tick boxes.
+- **The threshold is the dashboard's, not the server's.** It decides when this screen and
+  the security centre call a sheet low and nothing else, and the dialog that sets it says
+  so. A sign-in behaves the same whether a sheet is full or down to its last code.
+- **The placeholder sheets are derived from the users store**, seeded by user id. The
+  accounts with a second factor are the accounts with a sheet, so two independently
+  invented sets of people would disagree the moment somebody compared this screen with the
+  users list.
 
 ## Working on `@idenzy/js`
 

@@ -1,14 +1,18 @@
 /**
- * The identity providers the panel offers, in the order they are shown.
+ * The identity providers the panel offers on its own sign-in screens, in the order they
+ * are shown.
  *
  * Shared by sign-in and sign-up because they are the same list: a provider button
  * creates the account on first use and signs in on every one after, so two copies would
  * only ever be a chance for them to disagree.
  *
- * Icon names are written out in full. `@nuxt/icon` bundles what it finds by scanning the
- * source, and `app/**\/*.ts` is in that scan, so a literal here is compiled in and a name
- * assembled at runtime would draw nothing and report nothing.
+ * The marks come from the provider catalogue rather than being written again here. That
+ * file is what the providers screen draws a customer's project from, and a Google that
+ * looked one way on our sign-in screen and another on theirs would be one mark too many.
+ * What this list decides is which four we ourselves offer.
  */
+import { type ProviderName, providerInfo } from "./providers";
+
 export interface AuthProvider {
   id: string;
   label: string;
@@ -21,9 +25,15 @@ export interface AuthProvider {
   monochrome: boolean;
 }
 
-export const AUTH_PROVIDERS: readonly AuthProvider[] = [
-  { id: "google", label: "Google", icon: "logos:google-icon", monochrome: false },
-  { id: "apple", label: "Apple", icon: "logos:apple", monochrome: true },
-  { id: "microsoft", label: "Microsoft", icon: "logos:microsoft-icon", monochrome: false },
-  { id: "github", label: "GitHub", icon: "logos:github-icon", monochrome: true },
-];
+/** The four we sign into our own panel with. */
+const OFFERED: readonly ProviderName[] = ["google", "apple", "microsoft", "github"];
+
+export const AUTH_PROVIDERS: readonly AuthProvider[] = OFFERED.map((id) => {
+  const provider = providerInfo(id);
+  return {
+    id: provider.id,
+    label: provider.label,
+    icon: provider.icon,
+    monochrome: provider.monochrome,
+  };
+});

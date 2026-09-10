@@ -24,8 +24,14 @@ const route = useRoute();
  * What the tab calls the screen, from the navigation tree, so the tab and the drawer
  * never disagree about a name: a person with six of these open finds the right one by
  * its title. The bar itself shows the way to the screen rather than its name alone.
+ *
+ * A page about one record names itself through `usePageCrumb`, and that name wins: six
+ * tabs of "All users" is exactly the case a title is read to settle.
  */
-const title = computed(() => titleOf(route.path) ?? "Idenzy");
+const crumb = usePageCrumbValue();
+const title = computed(() =>
+  crumb.value === "" ? (titleOf(route.path) ?? "Idenzy") : crumb.value,
+);
 
 useHead({ title: () => (title.value === "Idenzy" ? "Idenzy" : `${title.value} · Idenzy`) });
 

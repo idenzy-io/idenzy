@@ -27,6 +27,13 @@ const props = defineProps<{
   options: readonly SegmentedOption[];
   /** What is being chosen, for a screen reader: "Period". */
   label: string;
+  /** The whole control, while a choice is being saved or cannot be made yet. */
+  disabled?: boolean;
+  /**
+   * Fill the container and share it equally between the segments, for a control that
+   * is a row of its own rather than one sitting beside a button.
+   */
+  stretch?: boolean;
 }>();
 
 const model = defineModel<string>({ required: true });
@@ -74,8 +81,10 @@ function move(event: KeyboardEvent, from: number) {
 <template>
   <div
     ref="group"
+    :aria-disabled="disabled || undefined"
     :aria-label="label"
-    class="segmented inline-flex h-7 items-center gap-0.5 rounded-(--idenzy-radius-x-small) bg-ink/5 p-0.5"
+    :class="[disabled ? 'opacity-50' : '', stretch ? 'flex w-full' : 'inline-flex']"
+    class="segmented h-7 items-center gap-0.5 rounded-(--idenzy-radius-x-small) bg-ink/5 p-0.5 transition-opacity duration-150"
     role="radiogroup"
   >
     <button
@@ -86,8 +95,9 @@ function move(event: KeyboardEvent, from: number) {
       :class="[
         option.value === model ? 'text-ink' : 'text-ink/60 hover:text-ink',
         option.label ? 'px-2' : 'w-6',
+        stretch ? 'min-w-0 flex-1' : '',
       ]"
-      :disabled="option.disabled"
+      :disabled="disabled || option.disabled"
       :tabindex="option.value === model ? 0 : -1"
       class="segmented__option relative inline-flex h-6 items-center justify-center gap-1 rounded-[6px] text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:text-ink/30"
       role="radio"

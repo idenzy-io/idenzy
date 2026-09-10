@@ -32,9 +32,11 @@ function initials(address: string): string {
   return letters.toUpperCase();
 }
 
+/** The address, the password and the factors the signed-in person holds, none of which
+    belongs to a project. Its own route rather than a panel, because it is a screen
+    somebody links a colleague to. */
 function openAccount() {
-  // The account screen, once there is one: the address, the password and the factors
-  // the signed-in person holds, none of which belongs to a project.
+  void navigateTo("/account");
 }
 
 function signOut() {

@@ -106,11 +106,12 @@ export default defineNuxtConfig({
         defaultTheme: "system",
         themes: {
           /**
-           * Three surfaces, and the chrome sits below the page rather than on it.
-           * `shell` is the drawer and the app bar, `background` the page they frame,
-           * `surface` a card on the page. In the dark theme each is a step lighter than
-           * the last, so a card reads as raised and the chrome as recessed; the light
-           * theme keeps the order with the page white and the chrome a shade off it.
+           * Three surfaces. `shell` is the drawer and the app bar, `background` the page
+           * they frame, `surface` a card on the page. In the dark theme each is a step
+           * lighter than the last, so a card reads as raised and the chrome as recessed.
+           * The light theme puts the page a shade off white and the chrome and the cards
+           * on white, so the page is the one recessed thing and everything set on it or
+           * around it is lit the same.
            *
            * The line is one opaque colour rather than a tint of the ink, so a card's
            * edge, a menu's edge and a divider are the same pixel wherever they meet
@@ -152,9 +153,9 @@ export default defineNuxtConfig({
           light: {
             dark: false,
             colors: {
-              background: "#ffffff",
+              background: "#fafafa",
               surface: "#ffffff",
-              shell: "#fafafa",
+              shell: "#ffffff",
               primary: "#2979ff",
               "primary-sharp": "#0162ec",
               neutral: "#212121",
@@ -203,11 +204,14 @@ export default defineNuxtConfig({
    */
   echarts: {
     renderer: "canvas",
-    charts: ["BarChart", "LineChart", "PieChart"],
+    charts: ["BarChart", "LineChart", "PieChart", "RadarChart"],
     components: [
       "DatasetComponent",
       "GridComponent",
       "LegendComponent",
+      // A radar draws on its own coordinate system rather than the grid, so the chart
+      // type alone is not enough: without this it registers and renders nothing.
+      "RadarComponent",
       "TitleComponent",
       "TooltipComponent",
     ],

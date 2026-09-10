@@ -80,6 +80,13 @@
      reason neither is `line`. Here so the drawer's own rows can draw them with a class. */
   --color-shell-line: var(--idenzy-shell-line);
   --color-shell-divider: var(--idenzy-shell-divider);
+  /* The platform a device reports, declared in theme.css beside the reason they are not
+     the chart slots. One name each so the sessions table can tint a glyph with a class. */
+  --color-platform-windows: var(--idenzy-platform-windows);
+  --color-platform-apple: var(--idenzy-platform-apple);
+  --color-platform-android: var(--idenzy-platform-android);
+  --color-platform-chrome: var(--idenzy-platform-chrome);
+  --color-platform-linux: var(--idenzy-platform-linux);
 }
 
 /*

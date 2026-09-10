@@ -158,6 +158,18 @@ export const NAV_PROJECT: NavGroup = {
   ],
 };
 
+/**
+ * The signed-in person's own screen. Outside `NAV_SECTIONS` because the drawer does not
+ * list it, the user menu at the foot does; in `NAV_LINKS` below because the tab's title and
+ * the breadcrumb read that list, and a screen the tree cannot name shows as "Idenzy" with
+ * no crumb at all.
+ */
+export const NAV_ACCOUNT: NavLink = {
+  title: "Account",
+  to: "/account",
+  icon: "material-symbols:person-outline",
+};
+
 /** The groups, in order, so the drawer can find the one a route lives in. */
 export const NAV_GROUPS: readonly NavGroup[] = [
   ...NAV_SECTIONS.flatMap((section) => section.entries.filter(isGroup)),
@@ -175,6 +187,7 @@ export const NAV_LINKS: readonly NavLink[] = [
     section.entries.flatMap((entry) => (isGroup(entry) ? entry.children : [entry])),
   ),
   ...NAV_PROJECT.children,
+  NAV_ACCOUNT,
 ];
 
 /**

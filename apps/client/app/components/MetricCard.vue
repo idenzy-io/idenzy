@@ -25,9 +25,14 @@ export type MetricView = "chart" | "table";
  *
  * The figure and its trend are the statistic tile's at a size up, and share its
  * arithmetic (`utils/trend.ts`) so the card and the tile agree on what a change of 4.1% is.
- * While the card is loading it holds what it last drew at half strength rather than
- * swapping in a skeleton: a chart that keeps its shape does not make the page jump. The
- * table is capped at the chart's height for the same reason.
+ * While the card is loading, everything that depends on the answer is drawn as bones
+ * (`MetricSkeleton`) in its own place and at its own size: the figure and its trend, the
+ * view switch, the legend when the series say there will be one, and the view itself at
+ * the height of what is coming, which is what keeps the card one height across the swap;
+ * the table is capped at the chart's height for the same reason. The controls are bones
+ * rather than controls because the actions, the switch and the legend would each offer to
+ * change, redraw or filter something that is not there yet. What stays live is what the
+ * card is, its name and its sentence, which do not depend on the answer.
  */
 import { type FigureFormat, formatFigure, type WrittenFigureOptions } from "~/utils/format";
 import { colorOf, type MetricChartType, type MetricSeries } from "~/utils/metric-chart";
@@ -170,6 +175,11 @@ const legend = computed(() =>
 
 const empty = computed(() => props.series.length === 0 || props.categories.length === 0);
 
+/* One announcement per card, and it names the card: several of these load at once and
+   "Loading" three times says nothing about which of them the reader is waiting on. The
+   figure's bones are hidden from a screen reader rather than announced again. */
+const loadingLabel = computed(() => (heading.value ? `Loading ${heading.value}` : "Loading"));
+
 const chartLabel = computed(() => {
   const names = props.series.map((entry) => entry.name).join(", ");
   return `${heading.value}: ${names} by ${props.categoryLabel.toLowerCase()}. The table view lists every value.`;
@@ -192,10 +202,11 @@ const chartLabel = computed(() => {
             {{ title }}
           </h2>
 
-          <div class="ml-auto flex flex-wrap items-center gap-2">
+          <div v-if="!loading" class="ml-auto flex flex-wrap items-center gap-2">
             <slot name="actions" />
             <SegmentedControl v-model="view" :options="views" label="View" />
           </div>
+          <MetricSkeleton v-else class="ml-auto" shape="control" />
         </div>
 
         <p v-if="caption || $slots.description" class="m-0 text-sm text-ink/60">
@@ -208,8 +219,9 @@ const chartLabel = computed(() => {
         class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1"
       >
         <slot name="figure">
+          <MetricSkeleton v-if="loading" :trend="previous !== null" shape="figure" />
           <span
-            v-if="figure === null"
+            v-else-if="figure === null"
             aria-hidden="true"
             class="metric-card__figure font-mono text-ink/30"
           >
@@ -237,8 +249,9 @@ const chartLabel = computed(() => {
       </div>
 
       <div class="flex flex-col gap-3">
+        <MetricSkeleton v-if="loading && legend.length" :count="legend.length" shape="legend" />
         <ul
-          v-if="legend.length"
+          v-else-if="legend.length"
           aria-label="Series"
           class="m-0 flex list-none flex-wrap items-center gap-x-4 gap-y-1 p-0 sm:justify-end"
         >
@@ -261,37 +274,36 @@ const chartLabel = computed(() => {
           </li>
         </ul>
 
+        <MetricSkeleton v-if="loading" :height="height" :label="loadingLabel" />
         <div
-          v-if="empty"
+          v-else-if="empty"
           :style="{ height: `${height}px` }"
           class="flex items-center justify-center rounded-(--idenzy-radius-small) border border-dashed border-line text-xs text-ink/55"
         >
           Nothing to show yet.
         </div>
-        <div v-else :class="loading ? 'opacity-50' : ''" class="transition-opacity duration-300">
-          <MetricChart
-            v-if="view === 'chart'"
-            :categories="categories"
-            :format="written"
-            :height="height"
-            :hidden="hidden"
-            :label="chartLabel"
-            :series="series"
-            :titles="titles"
-            :type="type"
-          />
-          <MetricTable
-            v-else
-            :categories="categories"
-            :category-label="categoryLabel"
-            :format="written"
-            :height="height"
-            :hidden="hidden"
-            :series="series"
-            :titles="titles"
-            :type="type"
-          />
-        </div>
+        <MetricChart
+          v-else-if="view === 'chart'"
+          :categories="categories"
+          :format="written"
+          :height="height"
+          :hidden="hidden"
+          :label="chartLabel"
+          :series="series"
+          :titles="titles"
+          :type="type"
+        />
+        <MetricTable
+          v-else
+          :categories="categories"
+          :category-label="categoryLabel"
+          :format="written"
+          :height="height"
+          :hidden="hidden"
+          :series="series"
+          :titles="titles"
+          :type="type"
+        />
       </div>
     </div>
   </v-card>
@@ -300,7 +312,8 @@ const chartLabel = computed(() => {
 <style scoped>
 /* The statistic tile's figure a step up, in the tile's proportions: medium, because it
    is DM Mono's heaviest weight, and tracked in a touch because a mono face opens up at
-   display size. The affixes sit at half size. */
+   display size. The affixes sit at half size. MetricSkeleton draws the loading figure
+   at this size and leading, so the two move together. */
 .metric-card__figure {
   align-items: baseline;
   display: inline-flex;

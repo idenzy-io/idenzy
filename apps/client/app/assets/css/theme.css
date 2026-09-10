@@ -86,6 +86,30 @@
      weight of the edge they would cut the drawer into boxes. */
   --idenzy-shell-line: #ececeb;
   --idenzy-shell-divider: #f0f0ef;
+
+  /* A skeleton's bone, at the strength the statistic tile's is, and the well a set of
+     them sits in, a step under it so the bones read as ink on a surface. */
+  --idenzy-skeleton-bone: rgba(var(--v-theme-on-surface), 0.08);
+  --idenzy-skeleton-well: rgba(var(--v-theme-on-surface), 0.035);
+
+  /* The platform a device reports, for the one glyph that draws it (SessionDevice).
+     Here rather than in the Vuetify theme because nothing draws a button in Android
+     teal: these tint a mark, they are not component colours.
+
+     Stepped per theme the way the outcome colours are, and for the same reason: a 500
+     on white is under 3:1 and these sit at 14px. The chart slots were the other
+     candidate and three of them fail that test on white.
+
+     Apple's two share one colour on purpose. What has to be told apart is two platforms
+     wearing the same glyph, and macOS always draws a monitor while iOS always draws a
+     phone, so the pair can never be confused; giving them two near-identical blues
+     would only make Windows harder to pick out. Nothing here is an outcome hue, because
+     a platform is not good or bad and must not borrow the colours that mean it. */
+  --idenzy-platform-windows: #1565c0;
+  --idenzy-platform-apple: #37474f;
+  --idenzy-platform-android: #00695c;
+  --idenzy-platform-chrome: #6a1b9a;
+  --idenzy-platform-linux: #4e342e;
 }
 
 :where(.v-theme--dark) {
@@ -93,6 +117,13 @@
   --idenzy-nav-inactive: #a9a7a1;
   --idenzy-shell-line: #292929;
   --idenzy-shell-divider: #202020;
+  --idenzy-skeleton-bone: rgba(var(--v-theme-on-surface), 0.1);
+  --idenzy-skeleton-well: rgba(var(--v-theme-on-surface), 0.05);
+  --idenzy-platform-windows: #64b5f6;
+  --idenzy-platform-apple: #b0bec5;
+  --idenzy-platform-android: #4db6ac;
+  --idenzy-platform-chrome: #ce93d8;
+  --idenzy-platform-linux: #bcaaa4;
 }
 
 /*
@@ -164,8 +195,10 @@
 
 /* Single-line by construction, so the control is exactly its height. Left to stretch it
    takes whatever the row gives it, which is where the extra space under the rule came
-   from. Textareas and selects that grow are their own components and keep their own box. */
-.v-text-field .v-input__control {
+   from. The exclusion is explicit because `v-textarea` renders with `v-text-field` on its
+   root, so it is caught by this selector: without it a textarea's control is pinned to one
+   row's height and the element inside draws over whatever follows. */
+.v-text-field:not(.v-textarea) .v-input__control {
   height: var(--v-input-control-height);
 }
 
@@ -260,8 +293,11 @@
   --v-field-border-opacity: 0.22;
 }
 
-.v-field--focused .v-field__outline,
-.v-field--error .v-field__outline {
+/* `.v-field` is restated on these so they weigh as much as the hover rule above, whose
+   `:hover` counts as a class. Without it a field the pointer is still over keeps the
+   hover strength after it is focused, and lights up only once the pointer leaves. */
+.v-field.v-field--focused .v-field__outline,
+.v-field.v-field--error .v-field__outline {
   --v-field-border-opacity: 1;
 }
 
@@ -497,14 +533,17 @@
  * The boxes themselves are Vuetify's filled field and are left that way: the fill, the
  * rule under it and the weights they take through hover, focus and error are the
  * variant's own.
- *
- * The two corners are the exception, and putting them back is what keeps the rest of it
- * intact. A filled field is square at the bottom so the rule under it meets both ends
- * flush; `.v-field` above rounds all four, since an unlayered shorthand beats the
- * variant's two layered longhands, and a straight line then runs across two rounded
- * corners and out past the edges of the box.
  */
-.v-otp-input .v-field--variant-filled {
+
+/*
+ * A filled field is square at the bottom so the rule under it meets both ends flush.
+ * `.v-field` above rounds all four corners, since an unlayered shorthand beats the
+ * variant's two layered longhands, and a straight line would then run across two rounded
+ * corners and out past the edges of the box. Every filled field takes this: the code
+ * boxes, and the forms that use the variant on a card, where a box reads better than a
+ * bare rule.
+ */
+.v-field--variant-filled {
   border-end-end-radius: 0;
   border-end-start-radius: 0;
 }
@@ -524,6 +563,20 @@
 .v-card,
 .v-sheet.v-sheet--border {
   border-radius: var(--idenzy-radius-x-large);
+}
+
+/*
+ * A dialog's scrim hides the page rather than tinting it. Vuetify's is black at a third,
+ * which leaves the screen behind a dialog readable and competing with it; this one is the
+ * theme's own background at nearly three quarters over a blur, so what is behind reads as
+ * a surface the dialog sits on and not as content. The colour is set with its alpha rather
+ * than through `opacity`, because opacity on the element would fade the blur with it.
+ */
+.v-overlay__scrim {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(var(--v-theme-background), 0.72);
+  opacity: 1;
 }
 
 .v-menu > .v-overlay__content,
@@ -584,6 +637,26 @@
 }
 
 /*
+ * A skeleton, recoloured. Vuetify paints a bone in the ink at `--v-border-opacity`, and
+ * ours is 1 where Material's is 0.12 (nuxt.config.ts), so left alone every bone is a
+ * solid bar of ink rather than a placeholder.
+ *
+ * Only the fill is ours. The sweep that crosses a bone is switched off where a skeleton
+ * is drawn, with Vuetify's own `boilerplate`, so there is nothing here to recolour or to
+ * hold back for a reader who asked for stillness.
+ */
+.v-skeleton-loader .v-skeleton-loader__avatar,
+.v-skeleton-loader .v-skeleton-loader__button,
+.v-skeleton-loader .v-skeleton-loader__chip,
+.v-skeleton-loader .v-skeleton-loader__divider,
+.v-skeleton-loader .v-skeleton-loader__heading,
+.v-skeleton-loader .v-skeleton-loader__image,
+.v-skeleton-loader .v-skeleton-loader__ossein,
+.v-skeleton-loader .v-skeleton-loader__text {
+  background: var(--idenzy-skeleton-bone);
+}
+
+/*
  * The shell: the drawer and the app bar, and the navigation list inside the first.
  *
  * Both are `color="shell"` in the layout, so their fill is the theme's and nothing here
@@ -633,6 +706,10 @@
  * with its children: white while one of them is the current screen, so the fold reads
  * as the place the person is, whether or not it is open. The glyph is drawn at full
  * strength for the same reason, where Vuetify dims it; here the colour is the state.
+ * Weight follows the route alone: every label rests at regular, where Vuetify's preset
+ * sets them all medium, and the current row and the header over it are the only ones
+ * set medium. Not on hover, because a heavier label is a wider one and a row that
+ * changes width under the pointer shifts.
  *
  * Scoped to `nav` lists rather than to the drawer, so the menus that open off the
  * drawer take the same item on the same ladder.
@@ -659,6 +736,15 @@
 .v-list--nav .v-list-item--active,
 .v-list--nav .idenzy-nav-group--current > .v-list-group__header {
   color: rgb(var(--v-theme-on-surface));
+}
+
+.v-list--nav .v-list-item-title {
+  font-weight: 400;
+}
+
+.v-list--nav .v-list-item--active .v-list-item-title,
+.v-list--nav .idenzy-nav-group--current > .v-list-group__header .v-list-item-title {
+  font-weight: 500;
 }
 
 .v-list--nav .v-list-item:not(:first-child) {
@@ -747,4 +833,73 @@
 p,
 ul {
   margin: initial;
+}
+
+/*
+ * A switch, at the panel's size and in the panel's colours. Vuetify's inset switch is
+ * Material's, 32px tall with a thumb that changes size as it moves; here the track is
+ * a 36 by 20 pill, the thumb a 16px disc that only slides, and the colour is the whole
+ * state: the accent when on, a wash of ink when off. Restated at every step because
+ * Vuetify's own rules are layered and these are not.
+ */
+.v-switch.v-switch--inset {
+  --v-switch-track-height: 20px;
+  --v-switch-thumb-height: 16px;
+  --v-switch-thumb-width: 16px;
+  --v-selection-control-size: 24px;
+
+  flex: none;
+}
+
+.v-switch.v-switch--inset .v-selection-control {
+  min-height: 0;
+}
+
+.v-switch.v-switch--inset .v-switch__track {
+  background-color: rgba(var(--v-theme-on-surface), 0.15);
+  min-width: 36px;
+  opacity: 1;
+  padding: 0;
+  transition: background-color 150ms var(--v-transition-standard-easing, ease);
+}
+
+.v-switch.v-switch--inset .v-selection-control--dirty .v-switch__track {
+  background-color: rgb(var(--v-theme-primary));
+}
+
+.v-switch.v-switch--inset .v-selection-control--disabled .v-switch__track {
+  opacity: 0.4;
+}
+
+.v-switch.v-switch--inset .v-switch__thumb {
+  background-color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: transparent;
+  transform: none;
+  transition: transform 150ms var(--v-transition-standard-easing, ease);
+}
+
+/* The thumb travels the track's width less its own, less two pixels of margin. */
+.v-switch.v-switch--inset .v-selection-control__wrapper {
+  height: var(--v-switch-track-height);
+  width: 36px;
+}
+
+.v-switch.v-switch--inset .v-selection-control__input {
+  height: var(--v-switch-track-height);
+  transform: translateX(-8px);
+  width: var(--v-switch-thumb-width);
+}
+
+.v-switch.v-switch--inset .v-selection-control--dirty .v-selection-control__input {
+  transform: translateX(8px);
+}
+
+.v-switch.v-switch--inset .v-selection-control__input::before {
+  display: none;
+}
+
+/* Vuetify's inset thumb inherits the track's accent when on; the disc stays white. */
+.v-switch.v-switch--inset .v-selection-control--dirty .v-switch__thumb {
+  background-color: #fff;
 }

@@ -7,13 +7,19 @@
  * in two tabs which one they are looking at. A group in between is a place in the tree
  * and not a screen, so it is written but not linked. The last crumb is where the person
  * is, and is not linked either.
+ *
+ * A page about one record adds its own last crumb through `usePageCrumb`, and the link the
+ * tree found becomes the way back to the list rather than the claim that the reader is
+ * still on it.
  */
 const route = useRoute();
 const project = useProjectStore();
+const own = usePageCrumbValue();
 
 const crumbs = computed<Crumb[]>(() => [
   { title: project.current.name, to: "/" },
   ...crumbsOf(route.path),
+  ...(own.value === "" ? [] : [{ title: own.value }]),
 ]);
 
 const last = computed(() => crumbs.value.length - 1);

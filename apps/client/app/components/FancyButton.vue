@@ -22,7 +22,7 @@ defineProps<{
 <template>
   <button
     :disabled="disabled"
-    class="fancy relative inline-flex h-8 items-center justify-center gap-2 rounded-(--idenzy-radius-small) px-3 text-xs font-medium whitespace-nowrap text-on-primary transition duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:scale-[0.98] disabled:pointer-events-none disabled:bg-ink/6 disabled:text-ink/26"
+    class="fancy relative inline-flex h-8 items-center justify-center gap-2 rounded-(--idenzy-radius-small) px-3 text-xs font-medium whitespace-nowrap text-on-primary transition duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:scale-[0.98] disabled:pointer-events-none"
     type="button"
   >
     <slot />
@@ -79,9 +79,16 @@ defineProps<{
   opacity: 0.24;
 }
 
-/* Disabled is grey and flat: the light is what says "press me", so it goes with it. */
+/*
+ * Disabled is grey and flat: the light is what says "press me", so it goes with it. The
+ * grey is set here and not as a `disabled:` utility, because the ground above is a
+ * scoped rule of the same weight that comes later in the stylesheet, and it was winning:
+ * a disabled button that stayed lit. Same values as theme.css gives a disabled `v-btn`.
+ */
 .fancy:disabled {
+  background: rgba(var(--v-theme-on-surface), 0.06);
   box-shadow: none;
+  color: rgba(var(--v-theme-on-surface), 0.26);
 }
 
 .fancy:disabled::before,

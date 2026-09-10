@@ -6,26 +6,26 @@
  * Ordered by what each thing is. Top up is the one action here and sits at the edge,
  * where a primary control belongs; Docs and Help are words beside it; the bell is the
  * one thing that speaks first rather than when asked; and the balance is a figure, not
- * a control, so it stands apart behind a rule. Everything is a placeholder shape until
- * the management API answers: the balance is a constant and the bell has nothing to
- * show.
+ * a control, so it stands apart behind a rule.
+ *
+ * The figure is the billing screen's, read from the same store, and Top up goes there
+ * rather than opening anything of its own. Two places showing a balance is one place too
+ * many for them to disagree in, and the checkout when there is one is the payment
+ * provider's page, so there is nothing for this button to open here anyway.
  */
+import { formatCents } from "~/utils/billing";
+
 const { mdAndUp } = useDisplay();
+const projects = useProjectStore();
+const billing = useBillingStore();
 
-/** In cents, the way the billing API will hand it over. A float would round the wrong way. */
-const balanceCents = 12_840;
-
-const balance = computed(() =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(balanceCents / 100),
-);
+/* The same figure the billing screen shows, read from the same store. In cents, the way
+   the billing API hands it over: a float would round the wrong way, and a bar quoting a
+   different balance from the page it links to is worse than a bar quoting none. */
+const balance = computed(() => formatCents(billing.balanceFor(projects.current.id)));
 
 /** The docs shell on the landing site (PROJECT.md 10.1). The host is a placeholder. */
 const DOCS_URL = "https://idenzy.dev/docs";
-
-function topUp() {
-  // The billing checkout, once there is one: a page hosted by the payment provider and
-  // never a form of ours, so no card number reaches this bundle.
-}
 </script>
 
 <template>
@@ -80,7 +80,7 @@ function topUp() {
       </v-btn>
     </template>
 
-    <FancyButton class="ml-1" @click="topUp">
+    <FancyButton class="ml-1" @click="navigateTo('/settings/billing')">
       <Icon aria-hidden="true" class="text-base" name="carbon:purchase" />
       Top up
     </FancyButton>

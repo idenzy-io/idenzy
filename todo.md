@@ -572,6 +572,36 @@ template pipeline of its own rather than a branch in the OTP flow.
 - [ ] Security center: breached password alerts, impossible travel, attack dashboards
 - [ ] Synchronous customer hooks with a fail-closed deadline
 
+### 3.1 Logging (a metered product, priced per GB)
+
+The first line we sell that is not a per-user or per-message one, so it is a billing
+decision before it is a feature. The panel already carries the meter: `apps/client`'s usage
+screen lists it, charts it and shows it on the bill at a **provisional** $0.30 per GB with
+the row marked "not billed yet", so a customer meets the line before an invoice does. That
+rate is a placeholder and closing it is the first task here.
+
+- [ ] **Decide the price per GB and whether there is a free allowance**, then replace
+      `LOGGING_PRICE_PER_GB` in `apps/client/app/utils/usage.ts` and drop `provisional`
+      from the `logging` meter. Everything else on that screen already reads the real
+      rates from the screens that own them, and this is the one number that does not.
+- [ ] Meter by **bytes ingested rather than bytes stored**, so a query costs nothing to
+      run and a customer's bill does not move when they search it. `usage_daily` gains a
+      `log_bytes` column, declared through `classified()` like every other (§4.13.2).
+- [ ] Ingestion path: structured application logs and delivery events onto the existing
+      Pub/Sub fan-out (§5.2 lever 6), never inline on the request path.
+- [ ] Retention by compliance tier, enforced by dropping partitions rather than by mass
+      deletes, the way `audit_events` already is (§4.13.3). Retention changes what is
+      stored and must not change what was metered.
+- [ ] A per-project daily ingest ceiling with an alert and a hard stop, on the shape
+      `sms_policies` uses for the spend cap (§4.8): this is the second channel where a
+      request costs us money before anybody reads it, and the failure mode is an invoice.
+- [ ] Search and export through the management API. The audit trail is hash-chained and
+      logging is not: they are different products with different guarantees, and the panel
+      must not let one read as the other.
+- [ ] Usage screen follow-ups once the meter is live: fill the `logBytes` series in
+      `apps/client/app/stores/usage.ts` (it is deliberately zero today rather than
+      invented), and add the ingest ceiling to the free-tier card.
+
 ---
 
 ## Phase 4: B2B (12 weeks)

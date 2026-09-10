@@ -77,6 +77,9 @@ catalog:
   '@iconify-json/logos': 1.2.14
   '@iconify-json/lucide': 1.2.130
   '@iconify-json/carbon': 1.2.26
+  '@iconify-json/simple-icons': 1.2.95
+  '@iconify-json/hugeicons': 1.2.34
+  dayjs: 1.11.23
   '@fontsource-variable/dm-sans': 5.3.0
   '@fontsource/dm-mono': 5.3.0
   '@nuxt/icon': 2.5.1

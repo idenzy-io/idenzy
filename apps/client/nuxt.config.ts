@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { IDENZY_CODE_DARK, IDENZY_CODE_LIGHT } from "./app/shiki/theme";
 
 /**
  * Customer dashboard (PROJECT.md 10.1).
@@ -19,7 +20,14 @@ export default defineNuxtConfig({
   // Only publishable keys ever reach this bundle.
   runtimeConfig: { public: { idenzyPublishableKey: "", authApiBaseUrl: "" } },
 
-  modules: ["vuetify-nuxt-module", "@vueuse/nuxt", "nuxt-echarts", "@pinia/nuxt", "@nuxt/icon"],
+  modules: [
+    "vuetify-nuxt-module",
+    "@vueuse/nuxt",
+    "nuxt-echarts",
+    "@pinia/nuxt",
+    "@nuxt/icon",
+    "nuxt-shiki",
+  ],
 
   css: ["~/assets/css/main.css", "~/assets/css/theme.css"],
 
@@ -44,6 +52,38 @@ export default defineNuxtConfig({
     serverBundle: false,
     // .ts is not scanned by default, and the Vuetify alias map is a .ts file.
     clientBundle: { scan: { globInclude: ["app/**/*.{vue,ts}"] } },
+  },
+
+  /**
+   * Syntax highlighting, for the token preview on the claims screen and for the payload
+   * and snippet views that follow it.
+   *
+   * `bundledThemes` is empty and that is the point. The module can only import themes
+   * Shiki ships, and none of them is this panel: the pair in app/shiki/theme.ts is built
+   * from our own palette and handed straight to `codeToHtml`, which accepts a theme
+   * object and registers it on first use. Shiki still writes its own default into the
+   * generated options as `theme: "min-dark"`; a `themes` pair always wins over it and
+   * nothing imports it, so it is inert rather than a setting.
+   *
+   * `defaultColor: false` is what makes the block theme-aware. Both themes are rendered
+   * and each token carries `--idenzy-code-light` and `--idenzy-code-dark`; theme.css
+   * picks between them off Vuetify's own theme class, the same way every other pair of
+   * values in this panel does. A single theme baked into the markup would be the one
+   * thing on the screen that does not follow the reader's choice.
+   *
+   * Languages are declared rather than dynamic, for the same reason the icons are: a
+   * grammar fetched on demand is a request to a CDN, and PROJECT.md 10.3 allows no
+   * third-party origin here. A language not on this list is a line to add.
+   */
+  shiki: {
+    bundledLangs: ["json", "typescript"],
+    bundledThemes: [],
+    defaultLang: "json",
+    highlightOptions: {
+      themes: { light: IDENZY_CODE_LIGHT, dark: IDENZY_CODE_DARK },
+      defaultColor: false,
+      cssVariablePrefix: "--idenzy-code-",
+    },
   },
 
   // Tailwind 4 is a Vite plugin rather than a Nuxt module: @nuxtjs/tailwindcss is still

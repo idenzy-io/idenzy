@@ -88,8 +88,28 @@ catalog:
   echarts: 6.1.0
   vue-echarts: 8.3.0
   nuxt-echarts: 1.0.1
+  # nuxt-shiki generates a virtual module that imports grammars and themes straight from
+  # `shiki`, so the app resolves it itself and the version has to be pinned beside the
+  # module's own rather than left to whatever the module happens to hoist.
+  nuxt-shiki: 0.3.2
+  shiki: 3.23.0
   pinia: 4.0.3
   '@pinia/nuxt': 1.0.2
+  # CodeMirror 6, the panel's editable code surface. Individual packages rather than the
+  # `codemirror` meta package: that one pulls `basicSetup`, which is every extension it
+  # ships, and this panel wants six of them. Monaco was the other candidate and loses on
+  # the two things that decide it here: it loads its language services from separate
+  # worker URLs, which a statically generated SPA with no third-party origin
+  # (PROJECT.md 10.3) has nowhere to serve from, and it is unusable on a touch screen,
+  # which the email template workspace is specified for.
+  '@codemirror/state': 6.7.4
+  '@codemirror/view': 6.43.11
+  '@codemirror/commands': 6.11.0
+  '@codemirror/language': 6.12.4
+  '@codemirror/autocomplete': 6.20.3
+  '@codemirror/lang-html': 6.4.12
+  '@codemirror/lint': 6.9.7
+  '@lezer/highlight': 1.2.3
 
   # Client SDK frameworks. Peer-dependency ranges stay wide in the packages
   # themselves; these versions are what we develop and test against.

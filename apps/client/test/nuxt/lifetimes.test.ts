@@ -5,6 +5,7 @@ import {
   ACCESS_TOKEN_CHOICES,
   ACCESS_TOKEN_FLOOR_SECONDS,
   choiceRange,
+  clockRows,
   DEFAULT_LIFETIME_SETTINGS,
   durationChoices,
   FIXED_CLOCKS,
@@ -12,8 +13,11 @@ import {
   IDLE_CHOICES,
   isAbsoluteOffered,
   isIdleOffered,
+  isPolicyValid,
   type LifetimeSettings,
   LONGEST_CLOCK_SECONDS,
+  policyChanges,
+  policySummary,
   REFRESH_TOKEN_SECONDS,
   REVOCATION_POLL_SECONDS,
   REVOCATION_SKEW_SECONDS,
@@ -21,10 +25,12 @@ import {
   refreshesPerActiveUser,
   revocationWindowSeconds,
   SHORTEST_CLOCK_SECONDS,
+  sessionTimeline,
   shortDuration,
   snapshotRetentionSeconds,
   untouchedEnd,
 } from "../../app/utils/lifetimes";
+import { CODE } from "../../app/utils/otp";
 
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
@@ -207,5 +213,143 @@ describe("FIXED_CLOCKS", () => {
       expect(clock.seconds).toBeGreaterThanOrEqual(SHORTEST_CLOCK_SECONDS);
       expect(clock.seconds).toBeLessThanOrEqual(LONGEST_CLOCK_SECONDS);
     }
+  });
+
+  /* The clocks another module owns are read from it rather than copied, which is the
+     whole reason a stale value cannot appear on this screen. */
+  it("takes the one-time-code family's lengths from the module that defines them", () => {
+    const seconds = (id: string) => FIXED_CLOCKS.find((clock) => clock.id === id)?.seconds;
+    expect(seconds("otp")).toBe(CODE.lifetimeSeconds);
+    expect(seconds("magic-link")).toBe(CODE.linkLifetimeSeconds);
+    expect(seconds("auth-code")).toBe(CODE.exchangeLifetimeSeconds);
+  });
+
+  it("holds no clock a screen of ours offers a control for", () => {
+    expect(FIXED_CLOCKS.map((clock) => clock.id)).not.toContain("password-reset");
+  });
+
+  /* The copy said a passkey challenge was longer than a one-time code while the two
+     figures beside each other said the opposite. */
+  it("does not claim the passkey challenge outlasts a one-time code", () => {
+    const passkey = FIXED_CLOCKS.find((clock) => clock.id === "webauthn");
+    expect(passkey?.seconds).toBeLessThan(CODE.lifetimeSeconds);
+    expect(passkey?.note).not.toMatch(/longer than a one-time code/i);
+  });
+});
+
+describe("clockRows", () => {
+  const clocks = {
+    settings: DEFAULT_LIFETIME_SETTINGS,
+    stepUpSeconds: 15 * MINUTE,
+    passwordResetSeconds: 30 * MINUTE,
+  };
+
+  it("reads the two clocks another screen owns from that screen rather than a copy", () => {
+    const rows = clockRows(clocks);
+    const stepUp = rows.find((row) => row.id === "step-up");
+    const reset = rows.find((row) => row.id === "password-reset");
+    expect(stepUp?.seconds).toBe(15 * MINUTE);
+    expect(reset?.seconds).toBe(30 * MINUTE);
+    expect(stepUp?.owner?.to).toBe("/mfa/step-up");
+    expect(reset?.owner?.to).toBe("/methods/passwords");
+  });
+
+  it("marks exactly the three this screen sets as its own, and gives them no link", () => {
+    const rows = clockRows(clocks);
+    expect(rows.filter((row) => row.here).map((row) => row.id)).toEqual([
+      "access",
+      "idle",
+      "absolute",
+    ]);
+    for (const row of rows.filter((row) => row.here)) expect(row.owner).toBeNull();
+  });
+
+  it("names every clock once and says something about each", () => {
+    const rows = clockRows(clocks);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+    for (const row of rows) expect(row.note.length).toBeGreaterThan(0);
+  });
+
+  it("follows the settings it is handed", () => {
+    const rows = clockRows({
+      ...clocks,
+      settings: { ...DEFAULT_LIFETIME_SETTINGS, idleSeconds: DAY },
+    });
+    expect(rows.find((row) => row.id === "idle")?.seconds).toBe(DAY);
+  });
+});
+
+describe("sessionTimeline", () => {
+  it("opens at the sign-in and puts the endings in the order they fall", () => {
+    const stops = sessionTimeline(DEFAULT_LIFETIME_SETTINGS);
+    expect(stops.map((stop) => stop.id)).toEqual(["signin", "idle", "refresh", "absolute"]);
+    expect(stops[0]?.seconds).toBe(0);
+  });
+
+  it("marks the first ending, and only it", () => {
+    const stops = sessionTimeline(DEFAULT_LIFETIME_SETTINGS);
+    expect(stops.filter((stop) => stop.earliest).map((stop) => stop.id)).toEqual(["idle"]);
+  });
+
+  it("agrees with untouchedEnd whichever clock falls first", () => {
+    const cases: LifetimeSettings[] = [
+      DEFAULT_LIFETIME_SETTINGS,
+      { accessTokenSeconds: 300, idleSeconds: 90 * DAY, absoluteSeconds: 90 * DAY },
+      { accessTokenSeconds: 300, idleSeconds: 30 * DAY, absoluteSeconds: 30 * DAY },
+    ];
+    for (const settings of cases) {
+      const earliest = sessionTimeline(settings).find((stop) => stop.earliest);
+      expect(earliest?.id).toBe(untouchedEnd(settings).clock);
+    }
+  });
+
+  /* The maximum is the one clock a session in daily use cannot get past, whether or not
+     it is also the first to fall. */
+  it("always names the maximum lifetime as the held-open ending", () => {
+    const stops = sessionTimeline(DEFAULT_LIFETIME_SETTINGS);
+    expect(stops.filter((stop) => stop.heldOpen).map((stop) => stop.id)).toEqual(["absolute"]);
+  });
+});
+
+describe("policyChanges", () => {
+  const saved = DEFAULT_LIFETIME_SETTINGS;
+
+  it("says nothing about a draft that matches what is saved", () => {
+    expect(policyChanges(saved, { ...saved })).toEqual([]);
+  });
+
+  it("names each moved field, its direction and who it reaches", () => {
+    const changes = policyChanges(saved, {
+      accessTokenSeconds: 15 * MINUTE,
+      idleSeconds: 7 * DAY,
+      absoluteSeconds: 90 * DAY,
+    });
+    expect(changes.map((change) => [change.field, change.direction])).toEqual([
+      ["accessTokenSeconds", "longer"],
+      ["idleSeconds", "shorter"],
+    ]);
+    /* The distinction the note asks for: one reaches sessions that exist, one does not. */
+    expect(changes[1]?.appliesTo).toMatch(/already exists/i);
+    expect(policyChanges(saved, { ...saved, absoluteSeconds: 30 * DAY })[0]?.appliesTo).toMatch(
+      /Sign-ins from now on/i,
+    );
+  });
+
+  it("prices the access token's reach against the lifetime being replaced", () => {
+    const change = policyChanges(saved, { ...saved, accessTokenSeconds: 60 * MINUTE })[0];
+    expect(change?.appliesTo).toContain("5 minutes");
+  });
+});
+
+describe("isPolicyValid and policySummary", () => {
+  it("takes the pair the controls allow and refuses the one they do not", () => {
+    expect(isPolicyValid(DEFAULT_LIFETIME_SETTINGS)).toBe(true);
+    expect(
+      isPolicyValid({ accessTokenSeconds: 300, idleSeconds: 90 * DAY, absoluteSeconds: 30 * DAY }),
+    ).toBe(false);
+  });
+
+  it("writes the policy in force as three short durations", () => {
+    expect(policySummary(DEFAULT_LIFETIME_SETTINGS)).toBe("5 min · 14 d · 90 d");
   });
 });

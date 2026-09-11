@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   authenticatorOf,
+  backupLine,
+  creationOptions,
+  evaluatePasskeySetup,
   isRpId,
   normaliseOrigin,
   parseOrigin,
+  passkeyBlockers,
+  type RelyingParty,
   validateOrigin,
   validateRelyingParty,
 } from "../../app/utils/passkeys";
+import type { SetupCheck } from "../../app/utils/setup-check";
 
 describe("isRpId", () => {
   it("takes a registrable domain and localhost, and nothing with a scheme or port", () => {
@@ -81,5 +87,138 @@ describe("authenticatorOf", () => {
       "Another authenticator",
     );
     expect(authenticatorOf(null).name).toBe("Another authenticator");
+  });
+});
+
+const PARTY: RelyingParty = {
+  rpId: "example.com",
+  rpName: "Acme",
+  origins: ["https://example.com", "https://app.example.com"],
+};
+
+const stateOf = (checks: SetupCheck[], id: SetupCheck["id"]) =>
+  checks.find((check) => check.id === id)?.state;
+
+describe("creationOptions", () => {
+  it("reads the domain and the name off the party and the rest off the fixed rules", () => {
+    const options = creationOptions(PARTY);
+    expect(options.map((option) => option.name)).toEqual([
+      "rp",
+      "authenticatorSelection",
+      "attestation",
+      "pubKeyCredParams",
+    ]);
+    expect(options[0]?.value).toContain('"example.com"');
+    expect(options[0]?.value).toContain('"Acme"');
+    /* Discoverable and verified are what the usernameless flow rests on, so the sample
+       must not be able to say otherwise while the rows say it does. */
+    expect(options[1]?.value).toContain('"residentKey": "required"');
+    expect(options[1]?.value).toContain('"userVerification": "required"');
+    expect(options[3]?.value).toBe('[{ "alg": -8 }, { "alg": -7 }, { "alg": -257 }]');
+  });
+});
+
+describe("evaluateSetup", () => {
+  it("passes everything for a project that is wired up", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: PARTY,
+      allowedOrigins: PARTY.origins,
+      ceremonies: 12,
+    });
+    expect(checks.map((check) => check.state)).toEqual(["pass", "pass", "pass", "pass"]);
+  });
+
+  it("fails the domain and the URLs for a project with no party", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: null,
+      allowedOrigins: [],
+      ceremonies: 0,
+    });
+    expect(stateOf(checks, "domain")).toBe("fail");
+    expect(stateOf(checks, "urls")).toBe("fail");
+  });
+
+  it("warns on a URL the CORS allowlist does not hold, and points at the screen that fixes it", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: PARTY,
+      allowedOrigins: ["https://example.com"],
+      ceremonies: 12,
+    });
+    const cors = checks.find((check) => check.id === "cors");
+    expect(cors?.state).toBe("warn");
+    expect(cors?.finding).toContain("1 URL is missing");
+    expect(cors?.fix?.to).toBe("/domains/origins");
+  });
+
+  it("takes a URL as covered whatever case or trailing slash the allowlist holds it in", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: PARTY,
+      allowedOrigins: ["HTTPS://Example.com/", "https://app.example.com"],
+      ceremonies: 1,
+    });
+    expect(stateOf(checks, "cors")).toBe("pass");
+  });
+
+  it("fails a URL that is not on the passkey domain, because a ceremony there is refused", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: { ...PARTY, origins: ["https://app.example.com", "https://other.io"] },
+      allowedOrigins: [],
+      ceremonies: 0,
+    });
+    expect(stateOf(checks, "urls")).toBe("fail");
+  });
+
+  it("warns rather than fails when nothing has reached us, which is quiet and not broken", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: PARTY,
+      allowedOrigins: PARTY.origins,
+      ceremonies: 0,
+    });
+    expect(stateOf(checks, "integration")).toBe("warn");
+  });
+});
+
+describe("setupBlockers", () => {
+  it("is empty for a project that is on and configured", () => {
+    expect(
+      passkeyBlockers({ enabled: true, party: PARTY, allowedOrigins: [], ceremonies: 0 }),
+    ).toEqual([]);
+  });
+
+  it("names the missing domain and the switch, in the order they have to be settled", () => {
+    const blockers = passkeyBlockers({
+      enabled: false,
+      party: null,
+      allowedOrigins: [],
+      ceremonies: 0,
+    });
+    expect(blockers.map((blocker) => blocker.id)).toEqual(["party", "disabled"]);
+  });
+
+  it("counts a switched-off method as blocking however well it is configured", () => {
+    const blockers = passkeyBlockers({
+      enabled: false,
+      party: PARTY,
+      allowedOrigins: PARTY.origins,
+      ceremonies: 40,
+    });
+    expect(blockers.map((blocker) => blocker.id)).toEqual(["disabled"]);
+  });
+});
+
+describe("backupLine", () => {
+  it("says where an authenticator's passkeys live, and never in figures alone", () => {
+    expect(backupLine(27, 27)).toBe("All synced to a cloud.");
+    expect(backupLine(1, 1)).toBe("Synced to a cloud.");
+    expect(backupLine(3, 0)).toBe("All bound to their device.");
+    expect(backupLine(1, 0)).toBe("Bound to its device.");
+    expect(backupLine(8, 4)).toBe("4 synced, 4 on the device.");
+    expect(backupLine(0, 0)).toBe("Nothing enrolled.");
   });
 });

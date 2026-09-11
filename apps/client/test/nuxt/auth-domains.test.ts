@@ -5,14 +5,20 @@ import {
   AUTH_RECORD_INFO,
   AUTH_RECORD_KINDS,
   type AuthDomain,
+  apiBaseUrl,
+  authNextStep,
+  authSetupStage,
   CERT_AUTH_PREFIX,
+  cookieModeState,
   DOMAIN_ISSUE_LABELS,
   effectiveHost,
+  headerModeState,
   LOAD_BALANCER_TARGET,
   liveDomain,
   normalizeDomain,
   recordsFor,
   SHARED_API_HOST,
+  setupProbe,
   siteOf,
   validateDomain,
 } from "../../app/utils/auth-domains";
@@ -196,5 +202,102 @@ describe("the status vocabulary", () => {
       "verified",
       "verifying",
     ]);
+  });
+});
+
+function found(change: Partial<AuthDomain> = {}): AuthDomain {
+  const base = domain(change);
+  return { ...base, records: base.records.map((record) => ({ ...record, status: "found" })) };
+}
+
+describe("apiBaseUrl", () => {
+  it("is the one derivation every copyable endpoint is built from", () => {
+    expect(apiBaseUrl(SHARED_API_HOST)).toBe(`https://${SHARED_API_HOST}`);
+    expect(apiBaseUrl("auth.example.com")).toBe("https://auth.example.com");
+  });
+});
+
+describe("cookieModeState", () => {
+  it("calls the shared host a setup rather than a refusal, and offers the way in", () => {
+    const state = cookieModeState([]);
+    expect(state.state).toBe("setup");
+    expect(state.label).toBe("Requires a custom domain");
+    expect(state.action).toBe("Add a domain");
+    expect(state.detail).not.toMatch(/refused/i);
+  });
+
+  it("reserves the unhappy words for a domain that was added and did not verify", () => {
+    expect(cookieModeState([domain({ status: "failed" })]).state).toBe("failed");
+    expect(cookieModeState([domain({ status: "verifying" })]).state).toBe("pending");
+  });
+
+  it("is ready on a verified domain, and names the site the cookie works across", () => {
+    const state = cookieModeState([domain()]);
+    expect(state.state).toBe("ready");
+    expect(state.action).toBeNull();
+    expect(state.detail).toContain("example.com");
+  });
+
+  it("never says header mode is off, because it is not", () => {
+    expect(headerModeState().state).toBe("available");
+    expect(headerModeState().action).toBeNull();
+  });
+});
+
+describe("authSetupStage", () => {
+  it("waits on the CNAME before anything else", () => {
+    expect(authSetupStage(domain({ status: "verifying" }), false)).toBe("dns");
+  });
+
+  it("waits on the certificate once the name resolves", () => {
+    const half = domain({ status: "verifying" });
+    half.records = half.records.map((record) =>
+      record.kind === "cname" ? { ...record, status: "found" as const } : record,
+    );
+    expect(authSetupStage(half, false)).toBe("certificate");
+  });
+
+  it("stops at the SDK on a verified domain, because a deployment is not ours to see", () => {
+    expect(authSetupStage(found(), false)).toBe("sdk");
+  });
+
+  it("reaches the test only once one has been run", () => {
+    expect(authSetupStage(found(), true)).toBe("test");
+  });
+
+  it("never promises a deployed client, whatever step it is on", () => {
+    expect(authNextStep(found(), false)).toMatch(/nothing about a deployed application/i);
+    expect(authNextStep(found(), true)).toMatch(/cannot see is your own build/i);
+  });
+});
+
+describe("setupProbe", () => {
+  it("reports the three things it can see and the one it cannot finish", () => {
+    const probe = setupProbe(found(), "https://app.example.com", true);
+    expect(probe.ok).toBe(true);
+    expect(probe.lines.map((line) => line.ok)).toEqual([true, true, true, true]);
+    expect(probe.lines[3]?.detail).toMatch(/not something this check can see/i);
+  });
+
+  it("fails the origin line where the origin is not on the CORS allowlist", () => {
+    const probe = setupProbe(found(), "https://elsewhere.example", false);
+    expect(probe.ok).toBe(false);
+    expect(probe.lines[3]?.ok).toBe(false);
+  });
+
+  it("asks for an origin rather than passing without one", () => {
+    const probe = setupProbe(found(), "", false);
+    expect(probe.ok).toBe(false);
+    expect(probe.lines[3]?.label).toBe("An application origin to test");
+  });
+
+  it("says a pending host is refused as an unknown project, not as nearly ready", () => {
+    const probe = setupProbe(domain({ status: "verifying" }), "", false);
+    expect(probe.lines[0]?.ok).toBe(false);
+    expect(probe.lines[2]?.detail).toMatch(/unknown project/i);
+  });
+
+  it("answers for no domain at all rather than throwing", () => {
+    expect(setupProbe(null, "", false).ok).toBe(false);
   });
 });

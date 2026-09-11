@@ -3,17 +3,25 @@ import {
   callbackShape,
   callbackUri,
   draftFrom,
+  evaluateProviderSetup,
   isHttpsOrigin,
   issueFor,
+  linkingExamples,
+  missingFor,
   normaliseInstance,
   PROVIDERS,
   type ProviderConfig,
   type ProviderDraft,
   parseScopes,
+  providerBlockers,
   providerInfo,
+  readinessOf,
+  returnUriIssue,
+  returnUrisMissingOrigin,
   scopesOf,
   validateProvider,
 } from "../../app/utils/providers";
+import type { SetupCheck } from "../../app/utils/setup-check";
 
 const google = providerInfo("google");
 const apple = providerInfo("apple");
@@ -64,6 +72,7 @@ describe("scopesOf", () => {
     scopes: [],
     settings: {},
     storeTokens: false,
+    testedAt: null,
   };
 
   it("falls back to the provider's own list where the project chose none", () => {
@@ -177,6 +186,7 @@ describe("draftFrom", () => {
       scopes: ["openid", "email"],
       settings: { teamId: "9QJ4TZ2P8L", keyId: "K7D2M4XR9V" },
       storeTokens: true,
+      testedAt: null,
     });
     expect(opened.clientSecret).toBe("");
     expect(opened.customScopes).toBe(true);
@@ -196,5 +206,208 @@ describe("callbackUri", () => {
     expect(callbackShape("https://api.idenzy.io")).toBe(
       "https://api.idenzy.io/v1/auth/oauth/{provider}/callback",
     );
+  });
+});
+
+describe("readinessOf", () => {
+  const complete: ProviderConfig = {
+    enabled: true,
+    mode: "custom",
+    clientId: "id",
+    secretSet: true,
+    secretUpdatedAt: null,
+    scopes: [],
+    settings: {},
+    storeTokens: false,
+    testedAt: null,
+  };
+
+  it("leads with a gap, because turning on a provider that cannot exchange changes nothing", () => {
+    expect(readinessOf(google, { ...complete, secretSet: false })).toBe("incomplete");
+    // Off as well as incomplete: the gap still leads, because switching it on does not help.
+    expect(readinessOf(google, { ...complete, secretSet: false, enabled: false })).toBe(
+      "incomplete",
+    );
+  });
+
+  it("puts a deliberate off before a restricted on", () => {
+    expect(readinessOf(google, { ...complete, enabled: false })).toBe("off");
+    expect(readinessOf(google, { ...complete, enabled: false, mode: "instant" })).toBe("off");
+  });
+
+  it("calls our shared app development only, whatever else is right", () => {
+    const instant = { ...complete, mode: "instant" as const, clientId: "", secretSet: false };
+    expect(readinessOf(google, instant)).toBe("development");
+  });
+
+  it("does not call a provider ready until a sign-in has been through it", () => {
+    expect(readinessOf(google, complete)).toBe("untested");
+    expect(readinessOf(google, { ...complete, testedAt: "2026-09-08T08:41:00.000Z" })).toBe(
+      "ready",
+    );
+  });
+
+  it("counts a required provider field as missing and an optional one as not", () => {
+    // Apple needs its team and key ids; Microsoft's directory falls back to a default.
+    expect(missingFor(apple, complete)).toEqual(["Team ID", "Key ID"]);
+    expect(missingFor(microsoft, complete)).toEqual([]);
+    // Instant mode carries our credentials, so there is nothing for a project to miss.
+    expect(missingFor(apple, { ...complete, mode: "instant", secretSet: false })).toEqual([]);
+  });
+});
+
+describe("returnUriIssue", () => {
+  it("takes the whole URL and refuses what a redirect cannot be", () => {
+    expect(returnUriIssue("https://app.example.com/auth/callback", [])).toBe("");
+    expect(returnUriIssue("myapp://auth", [])).toBe("");
+    expect(returnUriIssue("http://app.example.com/auth", [])).not.toBe("");
+    expect(returnUriIssue("https://app.example.com/auth#done", [])).not.toBe("");
+    expect(returnUriIssue("https://app.example.com/auth?code=1", [])).not.toBe("");
+  });
+
+  it("says nothing about a blank field nobody has filled in yet", () => {
+    expect(returnUriIssue("", [])).toBe("");
+  });
+
+  it("names a duplicate as one rather than adding a second row", () => {
+    const held = ["https://app.example.com/auth/callback"];
+    expect(returnUriIssue("https://app.example.com/auth/callback", held)).toBe(
+      "Already registered on this project.",
+    );
+  });
+});
+
+describe("returnUrisMissingOrigin", () => {
+  it("counts only origins the CORS allowlist could hold and does not already", () => {
+    const uris = [
+      "https://app.example.com/auth/callback",
+      "https://app.example.com/auth/other",
+      "https://portal.example.com/back",
+      // A native scheme has no origin, and a loopback one the list refuses anyway.
+      "myapp://auth",
+      "http://localhost:3000/auth",
+    ];
+    expect(returnUrisMissingOrigin(uris, ["https://app.example.com"])).toEqual([
+      "https://portal.example.com",
+    ]);
+  });
+});
+
+describe("providerBlockers", () => {
+  const live = {
+    info: google,
+    config: {
+      enabled: true,
+      mode: "custom" as const,
+      clientId: "id",
+      secretSet: true,
+      secretUpdatedAt: null,
+      scopes: [],
+      settings: {},
+      storeTokens: false,
+      testedAt: null,
+    },
+  };
+  const returnUris = ["https://app.example.com/auth/callback"];
+
+  it("is empty for a project with a live provider and somewhere to come back to", () => {
+    expect(providerBlockers({ providers: [live], returnUris, allowedOrigins: [] })).toEqual([]);
+  });
+
+  it("names an empty project and one whose providers are all off or incomplete", () => {
+    const empty = providerBlockers({ providers: [], returnUris, allowedOrigins: [] });
+    expect(empty.map((blocker) => blocker.id)).toEqual(["none"]);
+
+    const off = providerBlockers({
+      providers: [{ ...live, config: { ...live.config, enabled: false } }],
+      returnUris,
+      allowedOrigins: [],
+    });
+    expect(off.map((blocker) => blocker.id)).toEqual(["nothing-live"]);
+  });
+
+  it("raises a provider that is on and incomplete, because that one fails after consent", () => {
+    const broken = providerBlockers({
+      providers: [{ ...live, config: { ...live.config, secretSet: false } }],
+      returnUris,
+      allowedOrigins: [],
+    });
+    // Nothing is live either, so both are said: neither replaces the other.
+    expect(broken.map((blocker) => blocker.id)).toEqual(["nothing-live", "broken-google"]);
+    expect(broken[1]?.detail).toContain("Client secret");
+  });
+
+  it("raises a project with nowhere to come back to, whatever its providers hold", () => {
+    const blockers = providerBlockers({
+      providers: [live],
+      returnUris: [],
+      allowedOrigins: [],
+    });
+    expect(blockers.map((blocker) => blocker.id)).toEqual(["return"]);
+  });
+});
+
+describe("evaluateProviderSetup", () => {
+  const config: ProviderConfig = {
+    enabled: true,
+    mode: "custom",
+    clientId: "id",
+    secretSet: true,
+    secretUpdatedAt: null,
+    scopes: [],
+    settings: {},
+    storeTokens: false,
+    testedAt: null,
+  };
+
+  const setup = (over: Partial<Parameters<typeof evaluateProviderSetup>[0]> = {}) =>
+    evaluateProviderSetup({
+      providers: [{ info: google, config }],
+      returnUris: ["https://app.example.com/auth/callback"],
+      allowedOrigins: ["https://app.example.com"],
+      ...over,
+    });
+
+  const stateOf = (checks: SetupCheck[], id: string) =>
+    checks.find((check) => check.id === id)?.state;
+
+  it("passes on a project with a live provider, a return URL and its origin allowed", () => {
+    expect(setup().every((check) => check.state === "pass")).toBe(true);
+  });
+
+  it("fails, rather than warns, where nobody could start or finish a sign-in", () => {
+    expect(stateOf(setup({ providers: [] }), "provider")).toBe("fail");
+    expect(stateOf(setup({ returnUris: [] }), "return")).toBe("fail");
+  });
+
+  it("warns where the redirect lands and the browser then refuses the exchange", () => {
+    const checks = setup({ allowedOrigins: [] });
+    expect(stateOf(checks, "cors")).toBe("warn");
+    expect(checks.find((check) => check.id === "cors")?.fix?.to).toBe("/domains/origins");
+  });
+
+  it("warns about our shared app, which is refused anywhere but localhost", () => {
+    const checks = setup({
+      providers: [{ info: google, config: { ...config, mode: "instant" } }],
+    });
+    expect(stateOf(checks, "instant")).toBe("warn");
+  });
+});
+
+describe("linkingExamples", () => {
+  it("moves only the proved address with the rule, because the other two never move", () => {
+    const on = linkingExamples(true);
+    const off = linkingExamples(false);
+    expect(on[0]?.tone).toBe("join");
+    expect(off[0]?.tone).toBe("verify");
+    // An address nobody proved is never joined, and no address has nothing to join to.
+    expect(on[1]?.tone).toBe("verify");
+    expect(off[1]?.tone).toBe("verify");
+    expect(on[2]?.tone).toBe("new");
+    expect(off[2]?.tone).toBe("new");
+  });
+
+  it("names the code the SDK is given, because a customer builds their message from it", () => {
+    expect(linkingExamples(true)[1]?.detail).toContain("linking_requires_verification");
   });
 });

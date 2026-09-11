@@ -3,23 +3,29 @@ import {
   assembledClaims,
   CLAIMABLE_USER_FIELDS,
   type ClaimMapping,
+  claimPathText,
   defaultClaimName,
   isSameTemplate,
   isTemplateValid,
   MAX_CLAIM_BYTES,
   MAX_CLAIMS,
   namesBytes,
+  profileOutcomes,
   RESERVED_CLAIMS,
+  refusedProfiles,
   renderTemplate,
   SAMPLE_PROFILES,
   type SampleProfile,
+  templateChanges,
+  tokenLines,
   validateMapping,
   validateTemplate,
 } from "../../app/utils/claims";
 
-/* Two profiles the file promises; a missing one fails the first assertion below. */
+/* Three profiles the file promises; a missing one fails the first assertion below. */
 const complete = (SAMPLE_PROFILES[0] as SampleProfile).user;
 const sparse = (SAMPLE_PROFILES[1] as SampleProfile).user;
+const phoneOnly = (SAMPLE_PROFILES[2] as SampleProfile).user;
 
 const mapping = (over: Partial<ClaimMapping>): ClaimMapping => ({
   name: "email",
@@ -179,6 +185,131 @@ describe("assembledClaims", () => {
     expect(claims["aud"]).toBe("prj_acme");
     expect((claims["exp"] as number) - (claims["iat"] as number)).toBe(300);
     for (const name of Object.keys(claims)) expect(RESERVED_CLAIMS).toContain(name);
+  });
+});
+
+describe("SAMPLE_PROFILES", () => {
+  it("holds an account with no address, which is who a required email claim locks out", () => {
+    expect(phoneOnly.email).toBeNull();
+    expect(phoneOnly.phone).not.toBeNull();
+    const rendered = renderTemplate([mapping({ required: true })], phoneOnly);
+    expect(rendered.refusedBy?.name).toBe("email");
+  });
+
+  it("gives every profile a short name, because a segment cannot carry the long one", () => {
+    for (const profile of SAMPLE_PROFILES) expect(profile.short).not.toBe("");
+  });
+});
+
+describe("templateChanges", () => {
+  const template = (claims: ClaimMapping[]) => ({ claims, acknowledgePrivateMetadata: false });
+
+  it("says nothing about a draft that matches what is published", () => {
+    const claims = [mapping({ name: "plan", source: "metadata_public", path: "plan" })];
+    expect(templateChanges(template(claims), template([...claims]))).toEqual([]);
+  });
+
+  it("names what is added, what goes, and what moved", () => {
+    const before = template([mapping({ name: "email" }), mapping({ name: "old", path: "phone" })]);
+    const after = template([
+      mapping({ name: "email", path: "displayName" }),
+      mapping({ name: "plan", source: "metadata_public", path: "plan", required: true }),
+    ]);
+    const changes = templateChanges(before, after);
+    expect(changes.map((change) => [change.kind, change.name])).toEqual([
+      ["changed", "email"],
+      ["added", "plan"],
+      ["removed", "old"],
+    ]);
+    expect(changes[0]?.detail).toContain("profile.displayName");
+    expect(changes[1]?.detail).toContain("required");
+  });
+
+  it("reports becoming required, which is the change that can refuse a sign-in", () => {
+    const before = template([mapping({ name: "email" })]);
+    const after = template([mapping({ name: "email", required: true })]);
+    expect(templateChanges(before, after)).toEqual([
+      { kind: "changed", name: "email", detail: "becomes required" },
+    ]);
+  });
+
+  it("counts a reshuffle, because the order is the order a token writes them in", () => {
+    const two = [mapping({ name: "a" }), mapping({ name: "b" })];
+    const changes = templateChanges(
+      { claims: two, acknowledgePrivateMetadata: false },
+      { claims: [...two].reverse(), acknowledgePrivateMetadata: false },
+    );
+    expect(changes.map((change) => change.kind)).toEqual(["reordered"]);
+  });
+
+  it("ignores a claim with no name yet, which cannot be published and so changes nothing", () => {
+    expect(templateChanges(template([]), template([mapping({ name: "  " })]))).toEqual([]);
+  });
+
+  it("spells a source as the column it comes out of", () => {
+    expect(claimPathText(mapping({}))).toBe("profile.email");
+    expect(claimPathText(mapping({ source: "metadata_private", path: "orgId" }))).toBe(
+      "metadata_private.orgId",
+    );
+  });
+});
+
+describe("tokenLines", () => {
+  const assembled = { sub: "usr_1", aud: "prj_acme" };
+
+  it("marks nothing when there is no published template to compare to", () => {
+    const after = renderTemplate([mapping({ name: "email" })], complete);
+    const lines = tokenLines(assembled, after, null);
+    expect(lines.every((line) => line.change === "same")).toBe(true);
+    expect(lines.filter((line) => line.custom)).toHaveLength(1);
+  });
+
+  it("marks an added, a changed and a removed claim against the published render", () => {
+    const before = renderTemplate(
+      [mapping({ name: "email" }), mapping({ name: "gone", path: "displayName" })],
+      complete,
+    );
+    const after = renderTemplate(
+      [mapping({ name: "email", path: "displayName" }), mapping({ name: "fresh", path: "phone" })],
+      complete,
+    );
+    const marks = Object.fromEntries(
+      tokenLines(assembled, after, before)
+        .filter((line) => line.custom)
+        .map((line) => [line.key, line.change]),
+    );
+    expect(marks).toEqual({
+      "claim-email": "changed",
+      "claim-fresh": "added",
+      "gone-gone": "removed",
+    });
+  });
+
+  /* The block is handed to a JSON grammar whole, so it has to be valid JSON however the
+     draft differs: a separator missing anywhere but the end tokenises as the error it is. */
+  it("commas every line but the last, a removed one included", () => {
+    const before = renderTemplate([mapping({ name: "gone" })], complete);
+    const after = renderTemplate([mapping({ name: "email" })], complete);
+    const lines = tokenLines(assembled, after, before);
+    expect(lines.at(-1)?.change).toBe("removed");
+    expect(lines.at(-1)?.text.endsWith(",")).toBe(false);
+    expect(lines.slice(0, -1).every((line) => line.text.endsWith(","))).toBe(true);
+  });
+});
+
+describe("profileOutcomes", () => {
+  it("answers for every sample user, and names the ones a required claim locks out", () => {
+    const claims = [mapping({ required: true })];
+    const outcomes = profileOutcomes(claims, [], true);
+    expect(outcomes).toHaveLength(SAMPLE_PROFILES.length);
+    expect(refusedProfiles(outcomes).map((entry) => entry.profile.id)).toEqual(["phone"]);
+  });
+
+  it("carries no before while the draft matches what is published", () => {
+    const outcomes = profileOutcomes([mapping({})], [mapping({})], false);
+    expect(outcomes.every((entry) => entry.before === null)).toBe(true);
+    expect(outcomes[1]?.rendered.absent).toEqual([]);
+    expect(outcomes[1]?.rendered.present.map((claim) => claim.value)).toEqual([sparse.email]);
   });
 });
 

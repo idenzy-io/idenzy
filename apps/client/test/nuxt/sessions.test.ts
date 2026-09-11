@@ -28,6 +28,8 @@ import {
   sessionFilterCount,
   sessionStatus,
   sessionsToCsv,
+  sessionTone,
+  summariseSessions,
 } from "../../app/utils/sessions";
 
 const NOW = new Date("2026-09-09T12:00:00.000Z");
@@ -334,6 +336,78 @@ describe("countDevices", () => {
       session({ id: "ses_d", deviceId: null }),
     ];
     expect(countDevices(rows)).toBe(3);
+  });
+});
+
+describe("sessionTone", () => {
+  it("colours a live session, a lapsed one and a revoked one apart", () => {
+    expect(sessionTone(session(), NOW)).toBe("success");
+    expect(sessionTone(session({ idleExpiresAt: "2026-09-09T11:00:00.000Z" }), NOW)).toBe(
+      "neutral",
+    );
+    expect(
+      sessionTone(
+        session({ revokedAt: "2026-09-08T10:00:00.000Z", revokeReason: "admin_revoked" }),
+        NOW,
+      ),
+    ).toBe("warning");
+  });
+
+  it("takes reuse detection to the error colour, since it is not somebody signing out", () => {
+    const attacked = session({
+      revokedAt: "2026-09-08T10:00:00.000Z",
+      revokeReason: "refresh_token_reuse",
+    });
+    expect(sessionTone(attacked, NOW)).toBe("error");
+  });
+});
+
+describe("summariseSessions", () => {
+  const ended = { revokedAt: "2026-09-08T10:00:00.000Z", revokeReason: "signed_out" } as const;
+
+  it("scopes every figure but reuse to the live sessions", () => {
+    const rows = [
+      session({ id: "ses_a", userId: "usr_1", deviceId: "dev_1" }),
+      session({ id: "ses_b", userId: "usr_1", deviceId: "dev_1" }),
+      session({ id: "ses_c", userId: "usr_2", deviceId: null, factorVerifiedAt: null }),
+      session({ id: "ses_d", userId: "usr_3", deviceId: "dev_9", ...ended }),
+    ];
+    const summary = summariseSessions(rows, NOW);
+    expect(summary.live).toBe(3);
+    expect(summary.devices).toBe(2);
+    expect(summary.unidentified).toBe(1);
+    expect(summary.accounts).toBe(2);
+    expect(summary.factor).toBe(2);
+    expect(summary.factorShare).toBe(67);
+  });
+
+  it("counts reuse over every row, since a session it ended is revoked by definition", () => {
+    const rows = [
+      session({ id: "ses_a" }),
+      session({
+        id: "ses_b",
+        revokedAt: "2026-09-08T10:00:00.000Z",
+        revokeReason: "refresh_token_reuse",
+      }),
+    ];
+    expect(summariseSessions(rows, NOW).reuse).toBe(1);
+  });
+
+  it("counts an anonymising network and not an address nothing answered for", () => {
+    const rows = [
+      session({ id: "ses_a", network: { country: "NL", vpn: true, proxy: false, tor: false } }),
+      session({ id: "ses_b", network: { country: "FR", vpn: false, proxy: false, tor: true } }),
+      session({ id: "ses_c", network: null }),
+      session({ id: "ses_d" }),
+    ];
+    expect(summariseSessions(rows, NOW).anonymised).toBe(2);
+  });
+
+  it("reports no share where nothing is live, rather than dividing by nothing", () => {
+    const summary = summariseSessions([session(ended)], NOW);
+    expect(summary.live).toBe(0);
+    expect(summary.devices).toBe(0);
+    expect(summary.factorShare).toBe(0);
   });
 });
 

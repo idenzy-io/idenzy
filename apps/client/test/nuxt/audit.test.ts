@@ -3,14 +3,18 @@ import {
   ACTOR_TYPES,
   type AuditEvent,
   actionInfo,
+  actionsFor,
   actorsIn,
   auditCsv,
   auditFilterCount,
+  auditScope,
   CHAIN_GENESIS,
+  canPerform,
   categoryOf,
   filterAudit,
   groupByDay,
   hiddenEndUserCount,
+  INTEGRITY_CLAIMS,
   isContiguous,
   isGenesis,
   isNotable,
@@ -20,6 +24,8 @@ import {
   NO_AUDIT_FILTERS,
   orderBySeq,
   phraseFor,
+  SENSITIVE_CRITERION,
+  SENSITIVE_LABEL,
   shortHash,
   summarise,
   TEAM_ACTORS,
@@ -38,6 +44,7 @@ function event(part: Partial<AuditEvent> & Pick<AuditEvent, "seq">): AuditEvent 
     action: "project.settings_updated",
     target: null,
     targetName: null,
+    requestId: "req_test",
     ip: "203.0.113.7",
     ua: "Mozilla/5.0",
     metadata: {},
@@ -346,5 +353,97 @@ describe("the export", () => {
   it("quotes a cell that would otherwise break the row", () => {
     const csv = auditCsv([event({ seq: 1, targetName: 'a,b"c', action: "user.deleted" })]);
     expect(csv).toContain('"a,b""c"');
+  });
+});
+
+describe("who can have done what", () => {
+  it("refuses a service credential the two things only a person with a browser does", () => {
+    expect(canPerform("member.signed_in", "api_key")).toBe(false);
+    expect(canPerform("member.joined", "api_key")).toBe(false);
+    expect(canPerform("member.signed_in", "member")).toBe(true);
+    expect(canPerform("member.joined", "member")).toBe(true);
+  });
+
+  it("keeps support's own grant to support", () => {
+    expect(canPerform("staff.access_granted", "staff")).toBe(true);
+    expect(canPerform("staff.access_granted", "member")).toBe(false);
+    expect(canPerform("staff.access_granted", "api_key")).toBe(false);
+  });
+
+  it("lets a key do the things a key does", () => {
+    expect(canPerform("session.revoked", "api_key")).toBe(true);
+    expect(canPerform("user.suspended", "api_key")).toBe(true);
+    expect(canPerform("project.settings_updated", "api_key")).toBe(true);
+  });
+
+  it("allows an action nobody has constrained, so a new one is never invisible", () => {
+    expect(canPerform("something.new", "api_key")).toBe(true);
+  });
+
+  it("narrows a table of actions to the ones an actor could author", () => {
+    const actions = ["member.signed_in", "session.revoked", "staff.access_granted"];
+    expect(actionsFor("api_key", actions)).toEqual(["session.revoked"]);
+    expect(actionsFor("staff", actions)).toEqual(["session.revoked", "staff.access_granted"]);
+  });
+});
+
+describe("what the screen may claim", () => {
+  it("says entries cannot be edited through the product, not that storage is immutable", () => {
+    const claims = INTEGRITY_CLAIMS.map((claim) => claim.detail).join(" ");
+    expect(claims).toMatch(/no code path we could add here can change an entry/i);
+    expect(claims).toMatch(/detectable is not the same as impossible/i);
+  });
+
+  it("names the two fields the chain does not cover, and why", () => {
+    const outside = INTEGRITY_CLAIMS.find((claim) => claim.id === "outside");
+    expect(outside?.detail).toMatch(/erasure/i);
+  });
+
+  it("gives the sensitive flag a rule rather than an opinion about the rest", () => {
+    expect(SENSITIVE_LABEL).toBe("Sensitive");
+    expect(SENSITIVE_CRITERION).toMatch(/an unmarked entry is not a less important one/i);
+  });
+});
+
+describe("auditScope", () => {
+  it("always states the project, the period, the count and the end-user decision", () => {
+    const lines = auditScope(NO_AUDIT_FILTERS, "Acme Inc.", 42, "Last 30 days");
+    expect(lines.map((line) => line.label)).toEqual([
+      "Project",
+      "Period",
+      "Entries",
+      "Your users' activity",
+    ]);
+    expect(lines[3]?.value).toBe("Excluded");
+  });
+
+  it("says so when the end-user activity is in the file", () => {
+    const lines = auditScope(
+      { ...NO_AUDIT_FILTERS, includeEndUsers: true },
+      "Acme Inc.",
+      9,
+      "Last 7 days",
+    );
+    expect(lines.find((line) => line.label === "Your users' activity")?.value).toBe("Included");
+  });
+
+  it("lists every filter that narrowed it, so the file cannot outrun the summary", () => {
+    const lines = auditScope(
+      {
+        ...NO_AUDIT_FILTERS,
+        text: "invited",
+        actors: ["api_key"],
+        categories: ["keys"],
+        notableOnly: true,
+      },
+      "Acme Inc.",
+      3,
+      "Last 30 days",
+    );
+    const labels = lines.map((line) => line.label);
+    expect(labels).toContain("Search");
+    expect(labels).toContain("Actor kinds");
+    expect(labels).toContain("Categories");
+    expect(labels).toContain("Marked");
   });
 });

@@ -2,13 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   analyse,
   classifyHash,
+  countImportsByKind,
   detectFormat,
   detectSource,
   EMPTY_FIREBASE_HASH_CONFIG,
+  EMPTY_IMPORT_FILTERS,
+  filterImports,
   firebaseHashConfigComplete,
   foldKey,
+  type ImportFilters,
   type ImportFormat,
+  type ImportJob,
   type ImportRecord,
+  importFilterCount,
+  importOutcome,
   inferMapping,
   issuesToCsv,
   parseCsv,
@@ -274,5 +281,117 @@ describe("firebaseHashConfigComplete", () => {
     expect(
       firebaseHashConfigComplete({ ...EMPTY_FIREBASE_HASH_CONFIG, signerKey: "abc", rounds: 0 }),
     ).toBe(false);
+  });
+});
+
+/*
+ * The history: the rules the past-imports table narrows itself with.
+ */
+const NOW = new Date("2026-09-10T12:00:00Z");
+
+function job(over: Partial<ImportJob> = {}): ImportJob {
+  return {
+    id: "imp_1",
+    projectId: "prj_acme",
+    source: "firebase",
+    fileName: "users-export.json",
+    format: "json",
+    dryRun: false,
+    rows: 10,
+    imported: 10,
+    skipped: 0,
+    failed: 0,
+    passwordsKept: 8,
+    passwordsDropped: 0,
+    passwordsUpgraded: 3,
+    status: "done",
+    progress: 1,
+    startedAt: "2026-09-10T11:00:00Z",
+    finishedAt: "2026-09-10T11:01:00Z",
+    startedBy: "hasan@example.com",
+    errors: [],
+    ...over,
+  };
+}
+
+describe("importOutcome", () => {
+  it("calls a finished dry run a dry run and everything else by its status", () => {
+    expect(importOutcome(job({ dryRun: true }))).toBe("dry-run");
+    expect(importOutcome(job())).toBe("done");
+    expect(importOutcome(job({ dryRun: true, status: "running" }))).toBe("running");
+    expect(importOutcome(job({ status: "failed" }))).toBe("failed");
+  });
+});
+
+describe("countImportsByKind", () => {
+  it("puts a running job under the kind it will be when it finishes", () => {
+    const counts = countImportsByKind([
+      job({ id: "a" }),
+      job({ id: "b", dryRun: true, status: "running" }),
+      job({ id: "c", dryRun: true }),
+    ]);
+    expect(counts).toEqual({ all: 3, import: 1, "dry-run": 2 });
+    expect(counts.import + counts["dry-run"]).toBe(counts.all);
+  });
+});
+
+describe("filterImports", () => {
+  const jobs = [
+    job({ id: "a", fileName: "users-export.json", source: "firebase" }),
+    job({
+      id: "b",
+      fileName: "auth_users.csv",
+      source: "supabase",
+      format: "csv",
+      dryRun: true,
+      startedBy: "nuray@example.com",
+    }),
+    job({
+      id: "c",
+      fileName: "customers-q3.csv",
+      source: "file",
+      format: "csv",
+      status: "failed",
+      startedAt: "2026-08-01T09:00:00Z",
+    }),
+  ];
+
+  it("keeps everything when nothing is set", () => {
+    expect(filterImports(jobs, EMPTY_IMPORT_FILTERS, NOW)).toHaveLength(3);
+  });
+
+  it("narrows to a kind, a source, an outcome and a window", () => {
+    const only = (filters: Partial<ImportFilters>) =>
+      filterImports(jobs, { ...EMPTY_IMPORT_FILTERS, ...filters }, NOW).map((entry) => entry.id);
+    expect(only({ kind: "dry-run" })).toEqual(["b"]);
+    expect(only({ sources: ["file", "supabase"] })).toEqual(["b", "c"]);
+    expect(only({ outcomes: ["failed"] })).toEqual(["c"]);
+    expect(only({ outcomes: ["dry-run"] })).toEqual(["b"]);
+    expect(only({ started: "24h" })).toEqual(["a", "b"]);
+  });
+
+  it("searches the file, whoever ran it, the id and the source's name", () => {
+    const found = (query: string) =>
+      filterImports(jobs, { ...EMPTY_IMPORT_FILTERS, query }, NOW).map((entry) => entry.id);
+    expect(found("Q3")).toEqual(["c"]);
+    expect(found("nuray@")).toEqual(["b"]);
+    expect(found("imp_")).toEqual([]);
+    expect(found("Supabase")).toEqual(["b"]);
+    expect(found("  ")).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("importFilterCount", () => {
+  it("counts only what sits behind the Filter button", () => {
+    expect(importFilterCount(EMPTY_IMPORT_FILTERS)).toBe(0);
+    expect(importFilterCount({ ...EMPTY_IMPORT_FILTERS, kind: "dry-run", query: "acme" })).toBe(0);
+    expect(
+      importFilterCount({
+        ...EMPTY_IMPORT_FILTERS,
+        sources: ["firebase"],
+        outcomes: ["failed"],
+        started: "7d",
+      }),
+    ).toBe(3);
   });
 });

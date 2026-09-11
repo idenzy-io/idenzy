@@ -3,10 +3,15 @@ import {
   ALLOW_ORIGIN_HEADER,
   ALLOWED_ORIGIN_ISSUE_LABELS,
   type AllowedOrigin,
+  checkOrigin,
   corsSample,
   isOriginAllowed,
+  OBSERVED_FIGURES,
+  ORIGIN_SOURCE_FROM,
   ORIGIN_SOURCES,
+  ORIGIN_TELEMETRY,
   originOf,
+  SUGGESTION_GRANT,
   sortOrigins,
   suggestionsFrom,
   validateAllowedOrigin,
@@ -90,35 +95,47 @@ describe("suggestionsFrom", () => {
   ];
   const passkeyOrigins = ["https://app.acme.com", "https://www.acme.com"];
 
+  const oauthReturns = ["https://app.acme.com/auth/callback", "https://portal.acme.com/back"];
+
   it("offers an origin per redirect target and never the same one twice", () => {
-    const offered = suggestionsFrom(redirects, [], []).map((entry) => entry.origin);
+    const offered = suggestionsFrom({ magic_link: redirects }, []).map((entry) => entry.origin);
     expect(offered).toEqual(["https://app.acme.com", "https://staging.acme.com"]);
   });
 
   it("drops a redirect target that can never appear in an Origin header", () => {
-    const offered = suggestionsFrom(["myapp://callback"], [], []);
-    expect(offered).toEqual([]);
+    expect(suggestionsFrom({ magic_link: ["myapp://callback"] }, [])).toEqual([]);
   });
 
-  it("offers passkey origins too, and says which list each came from", () => {
-    const offered = suggestionsFrom(redirects, passkeyOrigins, []);
+  it("offers passkey and OAuth origins too, and says which list each came from", () => {
+    const offered = suggestionsFrom(
+      { magic_link: redirects, oauth: oauthReturns, passkey: passkeyOrigins },
+      [],
+    );
     const sources = new Map(offered.map((entry) => [entry.origin, entry.source]));
     expect(sources.get("https://app.acme.com")).toBe("magic_link");
+    expect(sources.get("https://portal.acme.com")).toBe("oauth");
     expect(sources.get("https://www.acme.com")).toBe("passkey");
   });
 
+  it("takes a source nobody passed as nothing to offer", () => {
+    const offered = suggestionsFrom({ oauth: oauthReturns }, []);
+    expect(offered.map((entry) => entry.source)).toEqual(["oauth", "oauth"]);
+  });
+
   it("never offers what is already allowed", () => {
-    const offered = suggestionsFrom(redirects, passkeyOrigins, ["https://app.acme.com"]);
+    const offered = suggestionsFrom({ magic_link: redirects, passkey: passkeyOrigins }, [
+      "https://app.acme.com",
+    ]);
     expect(offered.map((entry) => entry.origin)).not.toContain("https://app.acme.com");
   });
 
   it("never offers what the list would refuse anyway", () => {
-    expect(suggestionsFrom(["http://localhost:3000/auth"], [], [])).toEqual([]);
-    expect(suggestionsFrom(["http://app.example.com/auth"], [], [])).toEqual([]);
+    expect(suggestionsFrom({ magic_link: ["http://localhost:3000/auth"] }, [])).toEqual([]);
+    expect(suggestionsFrom({ magic_link: ["http://app.example.com/auth"] }, [])).toEqual([]);
   });
 
   it("says where each kind of suggestion comes from and why it is still a choice", () => {
-    for (const source of ["magic_link", "passkey"] as const) {
+    for (const source of ["magic_link", "oauth", "passkey"] as const) {
       expect(ORIGIN_SOURCES[source].note.length).toBeGreaterThan(0);
     }
   });
@@ -166,5 +183,74 @@ describe("what a browser gets", () => {
     expect(yes.headers.find((header) => header.name === ALLOW_ORIGIN_HEADER)?.value).toBe(
       "https://app.acme.com",
     );
+  });
+});
+
+describe("checkOrigin", () => {
+  const allowed = ["https://app.example.com"];
+
+  it("answers nothing for an empty field rather than an error", () => {
+    expect(checkOrigin("", allowed)).toBeNull();
+    expect(checkOrigin("   ", allowed)).toBeNull();
+  });
+
+  it("reduces a whole application URL to the origin a browser would send", () => {
+    const answer = checkOrigin("https://app.example.com/sign-in?next=/x#top", allowed);
+    expect(answer?.origin).toBe("https://app.example.com");
+    expect(answer?.verdict).toBe("allowed");
+    expect(answer?.addable).toBe(false);
+  });
+
+  it("names a blocked origin and offers to add it", () => {
+    const answer = checkOrigin("https://staging.example.com/app", allowed);
+    expect(answer?.verdict).toBe("blocked");
+    expect(answer?.origin).toBe("https://staging.example.com");
+    expect(answer?.addable).toBe(true);
+    expect(answer?.detail).toMatch(/nothing in a server log says why/i);
+  });
+
+  it("refuses to offer what this list could never hold, and says which rule", () => {
+    const insecure = checkOrigin("http://app.example.com", allowed);
+    expect(insecure?.verdict).toBe("refusable");
+    expect(insecure?.addable).toBe(false);
+    expect(insecure?.detail).toBe(ALLOWED_ORIGIN_ISSUE_LABELS.origin_insecure);
+
+    const loopback = checkOrigin("http://localhost:3000/sign-in", allowed);
+    expect(loopback?.verdict).toBe("refusable");
+    expect(loopback?.detail).toBe(ALLOWED_ORIGIN_ISSUE_LABELS.origin_loopback);
+  });
+
+  it("says a custom scheme has no origin at all rather than calling it blocked", () => {
+    const answer = checkOrigin("myapp://callback", allowed);
+    expect(answer?.verdict).toBe("unusable");
+    expect(answer?.origin).toBe("");
+    expect(answer?.addable).toBe(false);
+  });
+
+  it("matches exactly, so a port or a scheme makes it a different origin", () => {
+    expect(checkOrigin("https://app.example.com:8443", allowed)?.verdict).toBe("blocked");
+  });
+});
+
+describe("what the panel admits it has not observed", () => {
+  it("records nothing per origin yet, which the screen has to say out loud", () => {
+    expect(ORIGIN_TELEMETRY).toBe(false);
+  });
+
+  it("names the four figures it would show, each saying what it counts", () => {
+    expect(OBSERVED_FIGURES).toHaveLength(4);
+    for (const figure of OBSERVED_FIGURES) {
+      expect(figure.info.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("phrases a suggestion's source as the screen it came from", () => {
+    expect(ORIGIN_SOURCE_FROM.passkey).toBe("From passkey settings");
+    expect(ORIGIN_SOURCE_FROM.oauth).toBe("From a provider return URL");
+    expect(ORIGIN_SOURCE_FROM.magic_link).toBe("From magic-link settings");
+  });
+
+  it("states what accepting a suggestion grants, and that it grants nothing else", () => {
+    expect(SUGGESTION_GRANT).toMatch(/grants nothing else/i);
   });
 });

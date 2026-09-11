@@ -2,22 +2,30 @@ import { describe, expect, it } from "vitest";
 import {
   ALWAYS_IN_SCOPE,
   BUILT_IN,
+  bodiesEqual,
   catalogueEntry,
   DEFAULT_LOCALE,
   type EmailTemplateType,
   escapeHtml,
   hasIssues,
+  LOCALE_STATUS_LABELS,
   localeChain,
+  localeStatusOf,
   normalizeLocale,
   referencedVariables,
   renderPreview,
   resolve,
   sampleValues,
+  scanPlaceholders,
   startingPoint,
+  statusOf,
   TEMPLATE_CATALOGUE,
+  TEMPLATE_STATUS_LABELS,
   type TemplateBodies,
+  type TemplateVariable,
   toPlainText,
   unmatchedPlaceholders,
+  VARIABLE_HELP,
   validateTemplate,
   variablesInScope,
 } from "../../app/utils/email-templates";
@@ -268,5 +276,122 @@ describe("startingPoint", () => {
     const draft = startingPoint("email_otp");
     draft.subject = "changed";
     expect(BUILT_IN.email_otp?.subject).not.toBe("changed");
+  });
+});
+
+describe("scanPlaceholders", () => {
+  it("finds every braced run in order, with its offsets", () => {
+    const found = scanPlaceholders("a {{ otp }} b {{ link }}");
+    expect(found.map((match) => [match.name, match.from, match.to])).toStrictEqual([
+      ["otp", 2, 11],
+      ["link", 14, 24],
+    ]);
+  });
+
+  /* The two failures are opposite: an unknown name refuses the send, a run that is not a
+     placeholder is delivered as typed. An editor has to draw them differently. */
+  it("marks a braced run the grammar refuses with a null name", () => {
+    expect(scanPlaceholders("{{#if x}}").map((match) => match.name)).toStrictEqual([null]);
+    expect(scanPlaceholders("{{ 1 + 1 }}").map((match) => match.name)).toStrictEqual([null]);
+    expect(scanPlaceholders("{{ user.Email }}").map((match) => match.name)).toStrictEqual([null]);
+  });
+
+  it("keeps a well-formed name whether or not it is in scope", () => {
+    expect(scanPlaceholders("{{ nonsense }}")[0]?.name).toBe("nonsense");
+  });
+
+  it("agrees with the validator about which runs are placeholders", () => {
+    const source = "{{ otp }} {{#if}} {{ link }}";
+    const scanned = scanPlaceholders(source);
+    expect(scanned.filter((match) => match.name !== null).map((match) => match.name)).toStrictEqual(
+      referencedVariables(source),
+    );
+    expect(scanned.filter((match) => match.name === null).map((match) => match.text)).toStrictEqual(
+      unmatchedPlaceholders(source),
+    );
+  });
+
+  it("hands back the offsets of the run itself, braces included", () => {
+    const source = "code: {{ otp }}";
+    const match = scanPlaceholders(source)[0];
+    expect(source.slice(match?.from, match?.to)).toBe("{{ otp }}");
+  });
+
+  it("is not left holding a regex position between calls", () => {
+    const source = "{{ otp }} and {{ link }}";
+    expect(scanPlaceholders(source)).toStrictEqual(scanPlaceholders(source));
+  });
+});
+
+describe("VARIABLE_HELP", () => {
+  it("says what every variable holds, so no completion row is blank", () => {
+    const named = new Set<TemplateVariable>([
+      ...ALWAYS_IN_SCOPE,
+      ...TEMPLATE_CATALOGUE.flatMap((entry) => entry.variables),
+    ]);
+    for (const name of named) {
+      expect(VARIABLE_HELP[name].summary.length).toBeGreaterThan(0);
+      expect(VARIABLE_HELP[name].detail.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("statusOf", () => {
+  it("says Unavailable for a message no flow sends, whatever is stored", () => {
+    expect(statusOf({ live: false, source: "yours", compiling: 0 })).toBe("unavailable");
+    expect(statusOf({ live: false, source: "built_in", compiling: 3 })).toBe("unavailable");
+  });
+
+  /* The window this whole distinction exists for: published, and not yet what sends. */
+  it("says Compiling while a saved row has not been through the worker pool", () => {
+    expect(statusOf({ live: true, source: "built_in", compiling: 1 })).toBe("compiling");
+    expect(statusOf({ live: true, source: "yours", compiling: 1 })).toBe("compiling");
+  });
+
+  it("distinguishes the project's copy from ours once everything has compiled", () => {
+    expect(statusOf({ live: true, source: "yours", compiling: 0 })).toBe("active");
+    expect(statusOf({ live: true, source: "built_in", compiling: 0 })).toBe("built_in");
+  });
+
+  it("has a label for every state", () => {
+    for (const status of ["active", "compiling", "built_in", "unavailable"] as const) {
+      expect(TEMPLATE_STATUS_LABELS[status].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("localeStatusOf", () => {
+  /* Unsaved work outranks everything, because it is the state this screen exists to
+     stop losing: a language saved and still compiling with an edit on top of it is a
+     language with an edit on top of it. */
+  it("puts a draft above every saved state", () => {
+    expect(localeStatusOf({ dirty: true, stored: true, compiled: true })).toBe("draft");
+    expect(localeStatusOf({ dirty: true, stored: false, compiled: false })).toBe("draft");
+  });
+
+  it("separates sending from compiling for a saved language", () => {
+    expect(localeStatusOf({ dirty: false, stored: true, compiled: true })).toBe("active");
+    expect(localeStatusOf({ dirty: false, stored: true, compiled: false })).toBe("compiling");
+  });
+
+  it("says a language with nothing stored is on the built-in", () => {
+    expect(localeStatusOf({ dirty: false, stored: false, compiled: false })).toBe("none");
+  });
+
+  it("has a label for every state", () => {
+    for (const status of ["draft", "compiling", "active", "none"] as const) {
+      expect(LOCALE_STATUS_LABELS[status].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("bodiesEqual", () => {
+  const bodies: TemplateBodies = { subject: "s", html: "<p>h</p>", text: "t" };
+
+  it("compares all three, because they are one message", () => {
+    expect(bodiesEqual(bodies, { ...bodies })).toBe(true);
+    for (const field of ["subject", "html", "text"] as const) {
+      expect(bodiesEqual(bodies, { ...bodies, [field]: "changed" })).toBe(false);
+    }
   });
 });

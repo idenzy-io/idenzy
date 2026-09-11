@@ -1,16 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  DELIVERY_CAPABILITIES,
+  deliveryStatus,
   hashAddress,
+  ingestionAvailable,
+  JUSTIFICATION_MIN,
   LOOKUP_ISSUE_LABELS,
+  type LookupAnswer,
+  nextStepFor,
   normalizeTarget,
   reasonInfo,
   reasonLabel,
+  releaseDecision,
   SUPPRESSION_CHANNEL_LABELS,
   SUPPRESSION_REASONS,
-  SUPPRESSION_SOURCES,
   type SuppressionRow,
   shortDigest,
+  sourceLabel,
   tallyReasons,
+  validateJustification,
   validateLookup,
 } from "../../app/utils/suppressions";
 
@@ -160,17 +168,159 @@ describe("tallyReasons", () => {
   });
 });
 
-describe("SUPPRESSION_SOURCES", () => {
+describe("the capability list", () => {
   it("says plainly that nothing writes to the list yet", () => {
-    expect(SUPPRESSION_SOURCES.length).toBeGreaterThan(0);
-    expect(SUPPRESSION_SOURCES.every((source) => !source.built)).toBe(true);
+    expect(ingestionAvailable()).toBe(false);
+    expect(DELIVERY_CAPABILITIES.some((entry) => entry.state === "not_built")).toBe(true);
   });
 
-  it("names each once and explains it", () => {
-    const ids = SUPPRESSION_SOURCES.map((source) => source.id);
+  it("names each once and says what is true of it", () => {
+    const ids = DELIVERY_CAPABILITIES.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const source of SUPPRESSION_SOURCES) {
-      expect(source.detail.length).toBeGreaterThan(0);
+    for (const entry of DELIVERY_CAPABILITIES) {
+      expect(entry.label.length).toBeGreaterThan(0);
+      expect(entry.finding.length).toBeGreaterThan(0);
+    }
+  });
+
+  /* The page leads with this badge, and a warning is the honest word while the recorder
+     is unbuilt: a green one over an empty list reads as "nothing has ever bounced". */
+  it("warns while any half is missing and only then calls itself available", () => {
+    expect(deliveryStatus().tone).toBe("warning");
+    expect(
+      deliveryStatus([{ id: "enforcement", label: "Blocking a send", state: "live", finding: "x" }])
+        .tone,
+    ).toBe("success");
+  });
+});
+
+describe("sourceLabel", () => {
+  it("separates what a provider reported from what somebody here chose", () => {
+    expect(sourceLabel("hard_bounce")).toMatch(/provider/i);
+    expect(sourceLabel("manual")).toMatch(/dashboard/i);
+  });
+});
+
+/*
+ * The release is conditional, and these are the two conditions. A channel this screen does
+ * not own must not be released from it, or the acceptance check that an email release
+ * leaves SMS blocked cannot hold; and a block a provider reported asks for the evidence,
+ * because releasing it overrules a mailbox rather than undoing a mistake.
+ */
+describe("releaseDecision", () => {
+  const row = (reason: string, channel: SuppressionRow["channel"]): SuppressionRow => ({
+    id: "sup_1",
+    channel,
+    targetHash: "a".repeat(64),
+    reason,
+    createdAt: "2026-09-09T12:00:00.000Z",
+  });
+
+  it("refuses a channel this screen does not own", () => {
+    const decision = releaseDecision(row("hard_bounce", "sms"));
+    expect(decision.rule).toBe("elsewhere");
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("asks for a reason where a provider reported the block", () => {
+    for (const reason of ["hard_bounce", "complaint", "invalid_address", "list_unsubscribe"]) {
+      expect(releaseDecision(row(reason, "email")).rule).toBe("justified");
+    }
+  });
+
+  it("asks for nothing where the block was added from the dashboard", () => {
+    expect(releaseDecision(row("manual", "email")).rule).toBe("direct");
+  });
+
+  /* An unfamiliar reason is treated as reported, because the one thing we know is that
+     nobody on this project typed it. */
+  it("treats a reason it does not know as reported", () => {
+    expect(releaseDecision(row("blocked_by_recipient", "email")).rule).toBe("justified");
+  });
+});
+
+describe("validateJustification", () => {
+  it("refuses nothing and refuses a word", () => {
+    expect(validateJustification("")).toBe("empty");
+    expect(validateJustification("   ")).toBe("empty");
+    expect(validateJustification("fixed")).toBe("too_short");
+  });
+
+  it("accepts a sentence somebody else could read later", () => {
+    expect(validateJustification("Owner confirmed the mailbox works")).toBeNull();
+    expect(validateJustification("x".repeat(JUSTIFICATION_MIN))).toBeNull();
+  });
+});
+
+/*
+ * The finding this screen was rebuilt for: "not found" is not proof of deliverability, and
+ * the words have to change with the pipeline behind them.
+ */
+describe("nextStepFor", () => {
+  const answer = (over: Partial<LookupAnswer> = {}): LookupAnswer => ({
+    asked: "alex@example.com",
+    digest: "a".repeat(64),
+    checkedAt: "2026-09-11T12:00:00.000Z",
+    verdict: "clear",
+    email: null,
+    others: [],
+    failure: null,
+    ...over,
+  });
+
+  const blocked = (reason: string): LookupAnswer =>
+    answer({
+      verdict: "blocked",
+      email: {
+        id: "sup_1",
+        channel: "email",
+        targetHash: "a".repeat(64),
+        reason,
+        createdAt: "2026-09-09T12:00:00.000Z",
+      },
+    });
+
+  it("calls an unrecorded absence unknown rather than deliverable", () => {
+    const step = nextStepFor(answer(), false);
+    expect(step.detail).toMatch(/nothing writes to the list/i);
+    expect(step.steps.some((line) => /unknown/i.test(line))).toBe(true);
+  });
+
+  it("still refuses to promise delivery where the recorder works", () => {
+    const step = nextStepFor(answer(), true);
+    expect(step.detail).toMatch(/not the same as one arriving/i);
+    expect(step.steps.some((line) => /provider console/i.test(line))).toBe(true);
+  });
+
+  /* One "release it" under every block would be the wrong advice five times out of six,
+     which is the reason this is keyed by reason rather than by verdict. */
+  it("gives each reason its own repair", () => {
+    const titles = [
+      "hard_bounce",
+      "complaint",
+      "invalid_address",
+      "list_unsubscribe",
+      "manual",
+    ].map((reason) => nextStepFor(blocked(reason), false).title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(nextStepFor(blocked("hard_bounce"), false).detail).toMatch(/corrected address/i);
+    expect(nextStepFor(blocked("complaint"), false).detail).toMatch(/spam button/i);
+  });
+
+  it("answers an unfamiliar reason without inventing a repair for it", () => {
+    const step = nextStepFor(blocked("blocked_by_recipient"), false);
+    expect(step.steps.some((line) => /evidence/i.test(line))).toBe(true);
+  });
+
+  it("says nothing was compared where nothing was", () => {
+    const step = nextStepFor(answer({ verdict: "unavailable", failure: "no_crypto" }), true);
+    expect(step.title).toMatch(/hash/i);
+    expect(step.steps.some((line) => /unread list is not an empty one/i.test(line))).toBe(true);
+  });
+
+  it("always gives at least one thing to do", () => {
+    for (const one of [answer(), blocked("manual"), answer({ verdict: "unavailable" })]) {
+      expect(nextStepFor(one, true).steps.length).toBeGreaterThan(0);
     }
   });
 });

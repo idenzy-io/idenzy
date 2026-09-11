@@ -2,19 +2,28 @@ import { describe, expect, it } from "vitest";
 import { snapshotRetentionSeconds } from "../../app/utils/lifetimes";
 import {
   agesOutAt,
+  cacheExample,
   entryKindFor,
+  INTEGRATION_TONES,
+  integrationStateOf,
   isPublished,
+  MATCHED_CLAIM,
   POLL_SECONDS,
   PUBLISHING_REASONS,
+  probeCheckExample,
+  probeLatencySeconds,
   publishedEntries,
   REVOCATION_KIND_LABELS,
   REVOCATION_KIND_RULES,
-  REVOCATION_PATH,
   type RevocationEntry,
   remainingShare,
+  revocationPath,
+  SNAPSHOT_PATH,
   SNAPSHOT_TTL_SECONDS,
   SNAPSHOT_TYP,
+  STALE_AFTER_SECONDS,
   secondsLeft,
+  snapshotEndpoint,
   snapshotPayload,
 } from "../../app/utils/revocation";
 import { REVOKE_REASONS, type RevokeReason } from "../../app/utils/sessions";
@@ -170,22 +179,152 @@ describe("the published facts", () => {
   });
 });
 
-describe("REVOCATION_PATH", () => {
+describe("revocationPath", () => {
+  const connected = revocationPath(true);
+  const alone = revocationPath(false);
+
   it("runs from the row being written to the verifier refusing the token", () => {
-    expect(REVOCATION_PATH[0]?.id).toBe("row");
-    expect(REVOCATION_PATH[REVOCATION_PATH.length - 1]?.id).toBe("verifier");
+    expect(connected[0]?.id).toBe("row");
+    expect(connected[connected.length - 1]?.id).toBe("verifier");
   });
 
   it("names each stage once and gives every one a cost and a reason", () => {
-    expect(new Set(REVOCATION_PATH.map((stage) => stage.id)).size).toBe(REVOCATION_PATH.length);
-    for (const stage of REVOCATION_PATH) {
+    expect(new Set(connected.map((stage) => stage.id)).size).toBe(connected.length);
+    for (const stage of connected) {
       expect(stage.cost.length).toBeGreaterThan(0);
       expect(stage.detail.length).toBeGreaterThan(0);
     }
   });
 
   it("hangs the durable path off the write it stands behind", () => {
-    const backstopped = REVOCATION_PATH.filter((stage) => stage.backstop !== undefined);
-    expect(backstopped.map((stage) => stage.id)).toEqual(["set"]);
+    expect(connected.filter((stage) => stage.backstop !== undefined).map((s) => s.id)).toEqual([
+      "set",
+    ]);
+  });
+
+  it("marks the verifier stage conditional, because it is the one we do not perform", () => {
+    expect(connected.filter((stage) => stage.conditional === true).map((s) => s.id)).toEqual([
+      "verifier",
+    ]);
+    expect(alone.filter((stage) => stage.conditional === true).map((s) => s.id)).toEqual([
+      "verifier",
+    ]);
+  });
+
+  it("never promises a poll window to a project nothing polls", () => {
+    const last = alone[alone.length - 1];
+    expect(last?.cost).not.toContain(String(POLL_SECONDS));
+    expect(connected[connected.length - 1]?.cost).toContain(String(POLL_SECONDS));
+  });
+});
+
+describe("integrationStateOf", () => {
+  const at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000).toISOString();
+
+  it("tells a read that never happened from one that has stopped", () => {
+    expect(integrationStateOf(null, NOW)).toBe("never");
+    expect(integrationStateOf(at(STALE_AFTER_SECONDS + 1), NOW)).toBe("stale");
+  });
+
+  it("holds a poller inside its own window, missed polls included", () => {
+    expect(integrationStateOf(at(0), NOW)).toBe("live");
+    expect(integrationStateOf(at(POLL_SECONDS * 3), NOW)).toBe("live");
+    expect(integrationStateOf(at(STALE_AFTER_SECONDS), NOW)).toBe("live");
+  });
+
+  it("does not mark an unconnected project as a fault, because it is a decision", () => {
+    expect(INTEGRATION_TONES.never).toBe("neutral");
+    expect(INTEGRATION_TONES.stale).toBe("warning");
+  });
+});
+
+describe("snapshotEndpoint", () => {
+  const inputs = {
+    authDomain: null,
+    deploymentBase: "",
+    regionEndpoint: "https://eu.idenzy.dev",
+  };
+
+  it("prefers the project's own auth domain, because that is what it is called on", () => {
+    const endpoint = snapshotEndpoint({ ...inputs, authDomain: "auth.acme.example" });
+    expect(endpoint.issuerUrl).toBe("https://auth.acme.example");
+    expect(endpoint.source).toBe("auth-domain");
+  });
+
+  it("falls to the deployment's host and then to the region cell", () => {
+    expect(snapshotEndpoint({ ...inputs, deploymentBase: "https://api.local" }).issuerUrl).toBe(
+      "https://api.local",
+    );
+    expect(snapshotEndpoint(inputs).issuerUrl).toBe("https://eu.idenzy.dev");
+    expect(snapshotEndpoint(inputs).source).toBe("region");
+  });
+
+  it("never leaves a trailing slash on a host a path is appended to", () => {
+    const endpoint = snapshotEndpoint({ ...inputs, deploymentBase: "https://api.local/" });
+    expect(`${endpoint.issuerUrl}${SNAPSHOT_PATH}`).toBe(`https://api.local${SNAPSHOT_PATH}`);
+  });
+
+  it("says which configuration the host came from rather than leaving it implied", () => {
+    for (const source of [inputs, { ...inputs, authDomain: "auth.acme.example" }]) {
+      expect(snapshotEndpoint(source).note.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("cacheExample", () => {
+  const code = cacheExample("https://auth.acme.example", "prj_acme");
+
+  it("is written against the project and the host it is generated for", () => {
+    expect(code).toContain('const issuerUrl = "https://auth.acme.example"');
+    expect(code).toContain('const projectId = "prj_acme"');
+  });
+
+  it("reads the secret key from the environment and never inlines one", () => {
+    expect(code).toContain('process.env["IDENZY_SECRET_KEY"]');
+    expect(code).not.toContain("sk_");
+  });
+});
+
+describe("probeCheckExample", () => {
+  const code = probeCheckExample("ses_probe_ab12cd34");
+
+  it("checks the probe the screen actually published", () => {
+    expect(code).toContain('sessionId: "ses_probe_ab12cd34"');
+  });
+
+  it("reads freshness beside the answer, because a stale cache answers false", () => {
+    expect(code).toContain("status()");
+    expect(code).toContain("stale");
+    expect(code).toContain("isRevoked");
+  });
+});
+
+describe("probeLatencySeconds", () => {
+  it("answers nothing for a run no read has landed on", () => {
+    expect(
+      probeLatencySeconds({
+        sessionId: "ses_probe_1",
+        startedAt: NOW.toISOString(),
+        readAt: null,
+        state: "running",
+      }),
+    ).toBeNull();
+  });
+
+  it("measures from the entry being published to the read that carried it", () => {
+    expect(
+      probeLatencySeconds({
+        sessionId: "ses_probe_1",
+        startedAt: secondsAgo(6),
+        readAt: secondsAgo(2),
+        state: "read",
+      }),
+    ).toBe(4);
+  });
+});
+
+describe("MATCHED_CLAIM", () => {
+  it("names the claim each shape is compared against", () => {
+    expect(MATCHED_CLAIM).toEqual({ session: "sid", user: "sub", project: "aud" });
   });
 });

@@ -5,19 +5,25 @@ import {
   BYO_VENDORS,
   type ByoAccount,
   byoVendorInfo,
+  CARRIERS,
+  DESTINATION_FILTERS,
   formatPrice,
   isAllowed,
   isByoKey,
+  liveTransport,
   priceFor,
   priceRange,
   providerInfo,
   providerLabel,
+  RATE_SOURCE,
   REGISTRATIONS,
   routeFor,
+  routeReadiness,
   type SendingState,
   SMS_MARGIN,
   SMS_PROVIDERS,
   SMS_ROUTES,
+  transportWired,
   validateByo,
   withMode,
 } from "../../app/utils/sms-providers";
@@ -185,5 +191,71 @@ describe("whose account carries it", () => {
     for (const state of [managed, own, withMode(own, "managed"), afterAccountRemoved()]) {
       if (state.mode === "byo") expect(state.account).not.toBeNull();
     }
+  });
+});
+
+describe("what this deployment can actually do", () => {
+  it("calls no vendor live, because every adapter is a port with nothing behind it", () => {
+    expect(SMS_PROVIDERS.filter((provider) => provider.state === "live")).toEqual([]);
+    expect(transportWired()).toBe(false);
+    expect(liveTransport()).toBeNull();
+  });
+
+  it("keeps the two headline vendors out of the state that reads as carrying traffic", () => {
+    expect(providerInfo("twilio")?.state).toBe("planned");
+    expect(providerInfo("aws")?.state).toBe("planned");
+  });
+
+  it("offers the carriers without the development transport among them", () => {
+    expect(CARRIERS.map((provider) => provider.id)).not.toContain("logging");
+  });
+
+  it("says where a rate came from, so a price is never read as a quote", () => {
+    expect(RATE_SOURCE).toMatch(/not.*live price feed|rather than read from a live price feed/i);
+  });
+});
+
+describe("routeReadiness", () => {
+  const us = routeFor("US");
+  const gb = routeFor("GB");
+
+  it("puts the allowlist first, because it is the project's own and it is free", () => {
+    const answer = routeReadiness(us!, []);
+    expect(answer.state).toBe("not_allowed");
+    expect(answer.fix?.to).toBe("/sms/policy");
+  });
+
+  it("names the registration that is in the way once the country is allowed", () => {
+    const answer = routeReadiness(us!, ["US"]);
+    expect(answer.state).toBe("registration");
+    expect(answer.label).toBe("Needs 10DLC");
+  });
+
+  it("reads a country as ready where nothing has to be filed", () => {
+    const answer = routeReadiness(gb!, ["GB"]);
+    expect(answer.state).toBe("ready");
+    expect(answer.fix).toBeNull();
+  });
+
+  it("sends every fix to a setup flow rather than to a general guide", () => {
+    for (const route of SMS_ROUTES) {
+      const answer = routeReadiness(route, [route.country]);
+      if (answer.fix === null) continue;
+      expect(answer.fix.to ?? answer.fix.href).toMatch(/^(\/sms\/policy|https:\/\/idenzy\.dev\/)/);
+    }
+  });
+});
+
+describe("the destinations filter", () => {
+  it("opens on the project's own countries, which is the question somebody arrived with", () => {
+    expect(DESTINATION_FILTERS[0]?.value).toBe("allowed_first");
+  });
+
+  it("offers the three the note names and nothing else", () => {
+    expect(DESTINATION_FILTERS.map((entry) => entry.value)).toEqual([
+      "allowed_first",
+      "allowed_only",
+      "all",
+    ]);
   });
 });

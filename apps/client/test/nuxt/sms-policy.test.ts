@@ -2,15 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   allCountries,
   canSendSms,
+  capChange,
   capShare,
   evaluateReadiness,
   formatMoney,
+  nextUtcReset,
   SMS_BLOCKERS,
   SMS_CHECK_ORDER,
   SMS_GUARD_CONSTANTS,
   SMS_POLICY_BOUNDS,
   SMS_POLICY_DEFAULTS,
   type SmsPolicy,
+  smsBlockers,
+  smsReadiness,
+  untilReset,
 } from "../../app/utils/sms-policy";
 
 function policy(change: Partial<SmsPolicy> = {}): SmsPolicy {
@@ -202,5 +207,129 @@ describe("SMS_GUARD_CONSTANTS", () => {
   it("holds the two values a project cannot move", () => {
     expect(SMS_GUARD_CONSTANTS.blockBurstLimit).toBe(10);
     expect(SMS_GUARD_CONSTANTS.blockWindowSeconds).toBe(3600);
+  });
+});
+
+describe("smsReadiness", () => {
+  function input(change: Partial<Parameters<typeof smsReadiness>[0]> = {}) {
+    return {
+      methodEnabled: true,
+      delivery: { ready: true, label: "Sent through our own routing" },
+      policy: policy(),
+      spentToday: 0,
+      attestationWired: true,
+      balanceCents: 10_000,
+      ...change,
+    };
+  }
+
+  it("answers the five things the note names, in its order", () => {
+    expect(smsReadiness(input()).map((check) => check.id)).toEqual([
+      "method",
+      "vendor",
+      "countries",
+      "attestation",
+      "funding",
+    ]);
+  });
+
+  it("is ready only when every one of them is", () => {
+    expect(smsBlockers(smsReadiness(input()))).toEqual([]);
+  });
+
+  it("refuses to read as ready while the method is off, whatever the policy says", () => {
+    const blocked = smsBlockers(smsReadiness(input({ methodEnabled: false })));
+    expect(blocked.map((check) => check.id)).toEqual(["method"]);
+  });
+
+  it("refuses to read as ready while no carrier can be reached", () => {
+    const blocked = smsBlockers(
+      smsReadiness(input({ delivery: { ready: false, label: "Nothing wired" } })),
+    );
+    expect(blocked.map((check) => check.id)).toEqual(["vendor"]);
+  });
+
+  it("blocks a required human check nothing can answer, which is the silent one", () => {
+    const blocked = smsBlockers(smsReadiness(input({ attestationWired: false })));
+    expect(blocked.map((check) => check.id)).toEqual(["attestation"]);
+  });
+
+  it("calls an unrequired human check worth a look rather than passing", () => {
+    const checks = smsReadiness(
+      input({ policy: policy({ attestationRequired: false }), attestationWired: false }),
+    );
+    expect(checks.find((check) => check.id === "attestation")?.state).toBe("warn");
+  });
+
+  it("blocks an empty allowlist and a missing policy alike", () => {
+    for (const held of [null, policy({ allowedCountries: [] })]) {
+      const blocked = smsBlockers(smsReadiness(input({ policy: held })));
+      expect(blocked.map((check) => check.id)).toContain("countries");
+    }
+  });
+
+  it("warns where the balance runs out before the cap does", () => {
+    const checks = smsReadiness(
+      input({ policy: policy({ dailySpendCap: 50 }), balanceCents: 900 }),
+    );
+    expect(checks.find((check) => check.id === "funding")?.state).toBe("warn");
+  });
+
+  it("blocks a balance of nought, which refuses before the cap is even read", () => {
+    const blocked = smsBlockers(smsReadiness(input({ balanceCents: 0 })));
+    expect(blocked.map((check) => check.id)).toEqual(["funding"]);
+  });
+
+  it("names the screen every check that is not settled here is settled on", () => {
+    const checks = smsReadiness(input());
+    const elsewhere = checks.filter((check) => check.fix !== undefined);
+    expect(elsewhere.map((check) => check.fix?.to)).toEqual([
+      "/methods/otp?channel=sms",
+      "/sms/providers",
+      "/billing",
+    ]);
+  });
+});
+
+describe("capChange", () => {
+  it("states what is left today before and after", () => {
+    const change = capChange(6.42, 25, 12);
+    expect(change.remainingNow).toBeCloseTo(18.58);
+    expect(change.remainingNext).toBeCloseTo(5.58);
+    expect(change.stopsNow).toBe(false);
+  });
+
+  it("says a cap at or below the day's spend stops sending immediately", () => {
+    expect(capChange(6.42, 25, 3).stopsNow).toBe(true);
+    expect(capChange(6.42, 25, 6).stopsNow).toBe(true);
+    expect(capChange(6.42, 25, 7).stopsNow).toBe(false);
+  });
+
+  it("never reports a negative allowance, which is not a thing a day can hold", () => {
+    expect(capChange(30, 25, 1).remainingNow).toBe(0);
+    expect(capChange(30, 25, 1).remainingNext).toBe(0);
+  });
+
+  it("knows the cap in force from a typed one", () => {
+    expect(capChange(0, 25, 25).unchanged).toBe(true);
+    expect(capChange(0, 25, 26).unchanged).toBe(false);
+  });
+});
+
+describe("the UTC day", () => {
+  it("resets at the next midnight UTC and not at a local one", () => {
+    const at = nextUtcReset(new Date("2026-09-11T22:30:00.000Z"));
+    expect(at.toISOString()).toBe("2026-09-12T00:00:00.000Z");
+  });
+
+  it("rolls over the month rather than landing on a day that is not one", () => {
+    const at = nextUtcReset(new Date("2026-09-30T23:59:00.000Z"));
+    expect(at.toISOString()).toBe("2026-10-01T00:00:00.000Z");
+  });
+
+  it("says how long is left in the words a strip has room for", () => {
+    expect(untilReset(new Date("2026-09-11T23:30:00.000Z"))).toBe("in 30 minutes");
+    expect(untilReset(new Date("2026-09-11T22:00:00.000Z"))).toBe("in 2 hours");
+    expect(untilReset(new Date("2026-09-11T23:00:00.000Z"))).toBe("in an hour");
   });
 });

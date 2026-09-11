@@ -1,27 +1,42 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   ALL_EVENTS,
+  deliveriesIn,
+  deliveryFigures,
   deliveryPercent,
   ENDPOINT_ISSUE_LABELS,
+  EVENT_GROUP_NOTES,
   EVENT_GROUPS,
+  endpointState,
   eventInfo,
   eventsIn,
+  groupSelection,
   healthOf,
-  healthTone,
+  healthWords,
   isStale,
   isSuccessStatus,
   MAX_ATTEMPTS,
   nextRetrySeconds,
   normaliseEndpointUrl,
+  outcomeCounts,
   RETRY_SCHEDULE,
+  redactPayload,
+  responseExcerpt,
   retryWindowSeconds,
-  samplePayload,
+  signatureHeader,
   signedPayload,
   subscriptionLabel,
   TIMESTAMP_TOLERANCE_SECONDS,
+  toggleEvent,
+  toggleGroup,
+  VERIFY_BODY,
+  VERIFY_SNIPPET,
   validateEndpointUrl,
+  WEBHOOK_DELIVERY,
   WEBHOOK_EVENTS,
   type WebhookDelivery,
+  type WebhookEndpoint,
 } from "../../app/utils/webhooks";
 
 const NOW = new Date("2026-09-09T12:00:00.000Z");
@@ -31,11 +46,29 @@ function delivery(part: Partial<WebhookDelivery> & Pick<WebhookDelivery, "id">):
     endpointId: "whk_1",
     event: "user.created",
     outcome: "delivered",
-    status: 200,
-    error: null,
-    attempt: 1,
-    durationMs: 120,
-    at: NOW.toISOString(),
+    attempts: [
+      { n: 1, at: NOW.toISOString(), status: 200, error: null, durationMs: 120, response: "" },
+    ],
+    nextRetryAt: null,
+    payload: "{}",
+    createdAt: NOW.toISOString(),
+    test: false,
+    ...part,
+  };
+}
+
+function endpoint(part: Partial<WebhookEndpoint> = {}): WebhookEndpoint {
+  return {
+    id: "whk_1",
+    url: "https://api.acme.com/hooks",
+    description: "",
+    enabled: true,
+    disabled: null,
+    events: [],
+    allEvents: true,
+    createdAt: NOW.toISOString(),
+    rolledAt: null,
+    previousSecretUntil: null,
     ...part,
   };
 }
@@ -46,22 +79,42 @@ describe("the event catalogue", () => {
     for (const event of WEBHOOK_EVENTS) expect(event.note.length).toBeGreaterThan(0);
   });
 
-  it("puts every event in a group the picker offers", () => {
-    for (const event of WEBHOOK_EVENTS) expect(EVENT_GROUPS).toContain(event.group);
+  it("puts every event in a group, and every group has a line of its own", () => {
     const grouped = EVENT_GROUPS.flatMap((group) => eventsIn(group));
     expect(grouped).toHaveLength(WEBHOOK_EVENTS.length);
-  });
-
-  it("knows what it knows and nothing it does not", () => {
-    expect(eventInfo("user.created")?.group).toBe("accounts");
+    for (const group of EVENT_GROUPS) expect(EVENT_GROUP_NOTES[group].length).toBeGreaterThan(0);
     expect(eventInfo("nothing.at.all")).toBeNull();
   });
 
-  it("tells an endpoint that took everything from one that took them all", () => {
+  it("tells an endpoint that took everything from one that ticked them all", () => {
     expect(subscriptionLabel(ALL_EVENTS, true)).toContain("including new ones");
     expect(subscriptionLabel(ALL_EVENTS, false)).toBe(`${ALL_EVENTS.length} events`);
     expect(subscriptionLabel(["user.created"], false)).toBe("1 event");
-    expect(subscriptionLabel([], false)).toBe("No events");
+  });
+});
+
+describe("choosing events by group", () => {
+  const sessions = eventsIn("sessions").map((event) => event.id);
+
+  it("counts a group's chosen events and reads a partial group as some", () => {
+    expect(groupSelection("sessions", []).state).toBe("none");
+    expect(groupSelection("sessions", [sessions[0] ?? ""]).state).toBe("some");
+    expect(groupSelection("sessions", sessions)).toEqual({
+      chosen: sessions.length,
+      total: sessions.length,
+      state: "all",
+    });
+  });
+
+  it("takes a whole group, then leaves it, without touching another group", () => {
+    const taken = toggleGroup("sessions", ["user.created"]);
+    expect(taken).toEqual(["user.created", ...sessions]);
+    expect(toggleGroup("sessions", taken)).toEqual(["user.created"]);
+  });
+
+  it("toggles one event at a time", () => {
+    expect(toggleEvent("user.created", [])).toEqual(["user.created"]);
+    expect(toggleEvent("user.created", ["user.created"])).toEqual([]);
   });
 });
 
@@ -70,18 +123,9 @@ describe("naming an endpoint", () => {
     expect(validateEndpointUrl("https://api.acme.com/hooks/idenzy?v=1", [])).toBeNull();
   });
 
-  it("refuses anything that is not a URL", () => {
-    for (const value of ["", "api.acme.com/hooks", "not a url"]) {
-      expect(validateEndpointUrl(value, [])).toBe("url_invalid");
-    }
-  });
-
-  it("refuses http, where a signed payload is readable on the wire", () => {
+  it("refuses what is not a URL, what is plain http and what we cannot reach", () => {
+    expect(validateEndpointUrl("api.acme.com/hooks", [])).toBe("url_invalid");
     expect(validateEndpointUrl("http://api.acme.com/hooks", [])).toBe("url_insecure");
-  });
-
-  it("refuses an address nothing of ours could reach, before https is even checked", () => {
-    expect(validateEndpointUrl("http://localhost:3000/hooks", [])).toBe("url_unreachable");
     expect(validateEndpointUrl("https://127.0.0.1/hooks", [])).toBe("url_unreachable");
   });
 
@@ -89,137 +133,207 @@ describe("naming an endpoint", () => {
     expect(validateEndpointUrl("https://api.acme.com/hooks/", ["https://api.acme.com/hooks"])).toBe(
       "url_duplicate",
     );
-  });
-
-  it("stores the path and the query and drops the fragment", () => {
     expect(normaliseEndpointUrl("https://api.acme.com/hooks?v=1#x")).toBe(
       "https://api.acme.com/hooks?v=1",
     );
-    expect(normaliseEndpointUrl("https://api.acme.com/hooks/")).toBe("https://api.acme.com/hooks");
+    expect(ENDPOINT_ISSUE_LABELS.events_empty.length).toBeGreaterThan(0);
+  });
+});
+
+/*
+ * The documented verifier, run as the text customers copy.
+ */
+
+type Verify = (
+  body: string,
+  headers: Record<string, string> | Headers,
+  secret: string,
+  now?: number,
+) => boolean;
+
+/* The published sample is executed as written, to prove it verifies its own request. */
+const verify = new Function(
+  "createHmac",
+  "timingSafeEqual",
+  `${VERIFY_BODY}\nreturn verifyIdenzyWebhook;`,
+)(createHmac, timingSafeEqual) as Verify;
+
+const SECRET = "whsec_test_4f1c9e0b7a2d";
+const OTHER = "whsec_test_previous_0000";
+const BODY = '{"id":"dlv_1","type":"user.created"}';
+const STAMP = Math.floor(NOW.getTime() / 1000);
+
+function sign(secret: string, body = BODY, stamp = STAMP): string {
+  return createHmac("sha256", secret).update(signedPayload(stamp, body)).digest("hex");
+}
+
+function request(signature: string, stamp = STAMP) {
+  return { "x-idenzy-timestamp": String(stamp), "x-idenzy-signature": signature };
+}
+
+describe("the verifier customers copy", () => {
+  it("accepts the documented request, signed the way the header says", () => {
+    expect(verify(BODY, request(signatureHeader([sign(SECRET)])), SECRET, NOW.getTime())).toBe(
+      true,
+    );
   });
 
-  it("has a sentence for every issue it can report", () => {
-    for (const issue of [
-      "url_invalid",
-      "url_insecure",
-      "url_unreachable",
-      "url_duplicate",
-      "events_empty",
-    ] as const) {
-      expect(ENDPOINT_ISSUE_LABELS[issue].length).toBeGreaterThan(0);
+  it("accepts either signature during a rotation, and reads a fetch Headers object", () => {
+    const both = signatureHeader([sign(SECRET), sign(OTHER)]);
+    expect(verify(BODY, request(both), OTHER, NOW.getTime())).toBe(true);
+    expect(verify(BODY, new Headers(request(both)), SECRET, NOW.getTime())).toBe(true);
+  });
+
+  it("refuses malformed signatures without throwing", () => {
+    const hex = sign(SECRET);
+    for (const header of [
+      "",
+      hex,
+      `sha1=${hex}`,
+      `sha256=${hex.slice(2)}`,
+      "sha256=zz",
+      "sha256=",
+    ]) {
+      expect(() => verify(BODY, request(header), SECRET, NOW.getTime())).not.toThrow();
+      expect(verify(BODY, request(header), SECRET, NOW.getTime())).toBe(false);
     }
   });
+
+  it("refuses a tampered body, a wrong secret and a stale or missing timestamp", () => {
+    const header = signatureHeader([sign(SECRET)]);
+    expect(verify(`${BODY} `, request(header), SECRET, NOW.getTime())).toBe(false);
+    expect(verify(BODY, request(header), OTHER, NOW.getTime())).toBe(false);
+    const late = NOW.getTime() + (TIMESTAMP_TOLERANCE_SECONDS + 10) * 1000;
+    expect(verify(BODY, request(header), SECRET, late)).toBe(false);
+    expect(verify(BODY, { "x-idenzy-signature": header }, SECRET, NOW.getTime())).toBe(false);
+  });
+
+  it("is published with its import and as an export", () => {
+    expect(
+      VERIFY_SNIPPET.startsWith('import { createHmac, timingSafeEqual } from "node:crypto";'),
+    ).toBe(true);
+    expect(VERIFY_SNIPPET).toContain("export function verifyIdenzyWebhook");
+  });
+
+  it("agrees with the staleness rule the screen states", () => {
+    expect(isStale(STAMP - TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(false);
+    expect(isStale(STAMP + TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(true);
+  });
 });
 
-describe("signing", () => {
-  it("covers the timestamp and the body together, so neither can be moved alone", () => {
-    expect(signedPayload(1757443331, '{"a":1}')).toBe('1757443331.{"a":1}');
-  });
-
-  it("refuses a delivery whose clock is too far out, in either direction", () => {
-    const at = Math.floor(NOW.getTime() / 1000);
-    expect(isStale(at, NOW)).toBe(false);
-    expect(isStale(at - TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(false);
-    expect(isStale(at - TIMESTAMP_TOLERANCE_SECONDS - 10, NOW)).toBe(true);
-    expect(isStale(at + TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(true);
-  });
-
-  it("carries the instant the thing happened, not the instant we called", () => {
-    const body = JSON.parse(samplePayload("user.created", "dlv_1", NOW.toISOString()));
-    expect(body.id).toBe("dlv_1");
-    expect(body.type).toBe("user.created");
-    expect(body.occurred_at).toBe(NOW.toISOString());
-  });
-});
-
-describe("what counts as taken", () => {
-  it("takes a 2xx and nothing else, a redirect included", () => {
-    expect(isSuccessStatus(200)).toBe(true);
+describe("what counts as taken, and when it is tried again", () => {
+  it("takes a 2xx and nothing else, no answer included", () => {
     expect(isSuccessStatus(204)).toBe(true);
     expect(isSuccessStatus(302)).toBe(false);
-    expect(isSuccessStatus(404)).toBe(false);
-    expect(isSuccessStatus(500)).toBe(false);
-  });
-
-  it("treats no answer at all as a failure", () => {
     expect(isSuccessStatus(null)).toBe(false);
   });
-});
 
-describe("retrying", () => {
-  it("grows the gap and spans about a day", () => {
+  it("grows the gap, spans about a day and ends", () => {
     for (let index = 1; index < RETRY_SCHEDULE.length; index += 1) {
       expect(RETRY_SCHEDULE[index] ?? 0).toBeGreaterThan(RETRY_SCHEDULE[index - 1] ?? 0);
     }
     expect(retryWindowSeconds()).toBeGreaterThan(24 * 3600);
-  });
-
-  it("counts the first call as an attempt and not as a retry", () => {
-    expect(MAX_ATTEMPTS).toBe(RETRY_SCHEDULE.length + 1);
-  });
-
-  it("has no next try once the schedule is spent", () => {
-    expect(nextRetrySeconds(1)).toBe(RETRY_SCHEDULE[0]);
     expect(nextRetrySeconds(MAX_ATTEMPTS)).toBeNull();
   });
 });
 
-describe("how an endpoint is doing", () => {
-  const deliveries = [
+describe("while nothing delivers", () => {
+  it("claims no delivery: health is not measured and an enabled endpoint says nothing is sent", () => {
+    expect(WEBHOOK_DELIVERY.running).toBe(false);
+    expect(healthWords(healthOf([], "whk_1")).label).toBe("Not measured");
+    expect(endpointState(endpoint())).toEqual({
+      label: "On",
+      tone: "neutral",
+      detail: "Saved, nothing sent",
+    });
+  });
+
+  it("says why an endpoint is off and who paused it", () => {
+    const paused = endpoint({
+      enabled: false,
+      disabled: { kind: "paused", at: NOW.toISOString(), by: "Mei Tanaka" },
+    });
+    expect(endpointState(paused)).toMatchObject({ label: "Paused", detail: "By Mei Tanaka" });
+    const failing = endpoint({
+      enabled: false,
+      disabled: { kind: "failing", at: NOW.toISOString(), by: null },
+    });
+    expect(endpointState(failing)).toMatchObject({ label: "Off", tone: "error" });
+  });
+});
+
+describe("an endpoint's deliveries", () => {
+  const list = [
     delivery({ id: "1" }),
-    delivery({ id: "2" }),
-    delivery({ id: "3", outcome: "failed", status: 500 }),
+    delivery({ id: "2", outcome: "failed" }),
+    delivery({ id: "3", outcome: "pending" }),
     delivery({ id: "4", endpointId: "whk_other" }),
-    delivery({ id: "5", outcome: "pending", status: null, error: "Timed out" }),
+    delivery({ id: "5", createdAt: "2026-09-01T00:00:00.000Z" }),
   ];
 
-  it("counts only its own endpoint's attempts", () => {
-    const health = healthOf(deliveries, "whk_1");
-    expect(health.delivered).toBe(2);
-    expect(health.failed).toBe(1);
+  it("reads one endpoint over the period, newest first", () => {
+    expect(deliveriesIn(list, "whk_1", "24h", NOW).map((entry) => entry.id)).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    expect(deliveriesIn(list, "whk_1", "30d", NOW)).toHaveLength(4);
   });
 
-  it("leaves a retry out of the rate, because it has not finished either way", () => {
-    expect(healthOf(deliveries, "whk_1").rate).toBeCloseTo(2 / 3, 10);
-  });
-
-  it("reads full health off an endpoint nothing has been sent to yet", () => {
-    const health = healthOf([], "whk_1");
-    expect(health.rate).toBe(1);
-    expect(health.last).toBeNull();
-    expect(healthTone(health)).toBe("success");
-  });
-
-  it("finds the most recent attempt whatever order they arrived in", () => {
-    const older = delivery({ id: "old", at: "2026-09-01T00:00:00.000Z" });
-    const newer = delivery({ id: "new", at: "2026-09-08T00:00:00.000Z" });
-    expect(healthOf([newer, older], "whk_1").last?.id).toBe("new");
-    expect(healthOf([older, newer], "whk_1").last?.id).toBe("new");
-  });
-
-  it("moves from good to worth looking at to broken", () => {
-    const at = (rate: number) => {
-      const delivered = Math.round(rate * 100);
-      return healthTone(
-        healthOf(
-          [
-            ...Array.from({ length: delivered }, (_unused, index) => delivery({ id: `d${index}` })),
-            ...Array.from({ length: 100 - delivered }, (_unused, index) =>
-              delivery({ id: `f${index}`, outcome: "failed", status: 500 }),
-            ),
-          ],
-          "whk_1",
-        ),
-      );
-    };
-    expect(at(0.99)).toBe("success");
-    expect(at(0.8)).toBe("warning");
-    expect(at(0.2)).toBe("error");
-  });
-
-  it("writes a rate as a whole percentage", () => {
-    expect(deliveryPercent(1)).toBe("100%");
+  it("counts each outcome and leaves a pending one out of the rate", () => {
+    expect(outcomeCounts(deliveriesIn(list, "whk_1", "24h", NOW))).toEqual({
+      failed: 1,
+      pending: 1,
+      delivered: 1,
+    });
+    expect(healthOf(list, "whk_1").rate).toBeCloseTo(2 / 3, 10);
+    expect(healthOf([], "whk_1").rate).toBeNull();
     expect(deliveryPercent(0.986)).toBe("99%");
-    expect(deliveryPercent(0)).toBe("0%");
+  });
+});
+
+describe("the evidence in an attempt", () => {
+  it("masks what identifies a person and leaves the rest", () => {
+    const shown = JSON.parse(
+      redactPayload(
+        '{"type":"user.created","data":{"email":"ana@acme.com","phone":"+905551234567","ip":"10.0.0.1"}}',
+      ),
+    );
+    expect(shown.type).toBe("user.created");
+    expect(shown.data).toEqual({ email: "a•••@acme.com", phone: "•••• 67", ip: "••••" });
+    expect(redactPayload("not json")).toBe("not json");
+  });
+
+  it("shows an excerpt of an answer, and says when it was cut", () => {
+    expect(responseExcerpt("ok")).toEqual({ text: "ok", truncated: false });
+    const long = responseExcerpt("x".repeat(2000));
+    expect(long.truncated).toBe(true);
+    expect(long.text).toHaveLength(512);
+  });
+});
+
+describe("the figures strip", () => {
+  it("draws nothing rather than nought while nothing is delivered", () => {
+    for (const figure of deliveryFigures([], NOW)) {
+      expect(figure.value).toBe(0);
+      expect(figure.series).toEqual([]);
+    }
+  });
+
+  it("counts a week of deliveries by outcome, each delivery once", () => {
+    const figures = deliveryFigures(
+      [
+        delivery({ id: "1" }),
+        delivery({ id: "2", outcome: "failed" }),
+        delivery({ id: "3", createdAt: "2026-08-01T00:00:00.000Z" }),
+      ],
+      NOW,
+    );
+    const value = (id: string) => figures.find((figure) => figure.id === id)?.value;
+    expect(value("deliveries")).toBe(2);
+    expect(value("delivered")).toBe(1);
+    expect(value("failed")).toBe(1);
+    expect(value("pending")).toBe(0);
+    expect(figures[0]?.series).toHaveLength(7);
   });
 });

@@ -15,6 +15,12 @@ describe("formatFigure", () => {
     expect(formatFigure(-87).digits).toBe("-87");
   });
 
+  it("writes money to the cent, trailing zero included, and never compacts it", () => {
+    expect(formatFigure(31.4, { format: "money" }).digits).toBe("31.40");
+    expect(formatFigure(12480, { format: "money", compact: true }).digits).toBe("12,480.00");
+    expect(writeFigure(0, { format: "money", prefix: "$" })).toBe("$0.00");
+  });
+
   it("compacts to one decimal with a lowercase suffix", () => {
     expect(formatFigure(4212, { compact: true })).toEqual({
       digits: "4.2",

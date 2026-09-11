@@ -93,7 +93,7 @@ export function validateAllowedOrigin(
  * Where a suggestion comes from.
  */
 
-export type OriginSource = "magic_link" | "passkey";
+export type OriginSource = "magic_link" | "oauth" | "passkey";
 
 export interface OriginSourceInfo {
   id: OriginSource;
@@ -111,6 +111,12 @@ export const ORIGIN_SOURCES: Record<OriginSource, OriginSourceInfo> = {
     icon: "material-symbols:link",
     note: "A page a magic link already lands on, so a browser there is one you have registered a destination for. It is offered rather than added, because landing on a page and reading a credentialed response are different privileges.",
   },
+  oauth: {
+    id: "oauth",
+    label: "Provider return URL",
+    icon: "material-symbols:hub-outline",
+    note: "A page a social sign-in already returns to. That page then exchanges its code for a session, which is a credentialed call and needs this list; without it the redirect lands and the browser refuses the call that follows.",
+  },
   passkey: {
     id: "passkey",
     label: "Passkey origin",
@@ -126,17 +132,23 @@ export interface OriginSuggestion {
   from: string;
 }
 
+/** The order suggestions are offered in, so a list of them does not reshuffle. */
+const SUGGESTION_ORDER: readonly OriginSource[] = ["magic_link", "oauth", "passkey"];
+
 /**
  * The origins the project's other lists imply, minus the ones already allowed and minus
  * anything this list would refuse anyway.
+ *
+ * Keyed by source rather than taken as a run of positional lists: there are three of them
+ * now and a fourth would be a fourth argument nobody could read at the call site. A
+ * source a caller has nothing for is left out rather than passed empty.
  *
  * A redirect target is a whole URL and an origin is its first three parts, so the same
  * origin usually arrives several times over; the first mention wins and the rest are
  * dropped, because a list offering `https://app.acme.com` twice reads as two decisions.
  */
 export function suggestionsFrom(
-  redirectUris: readonly string[],
-  passkeyOrigins: readonly string[],
+  from: Partial<Record<OriginSource, readonly string[]>>,
   allowed: readonly string[],
 ): OriginSuggestion[] {
   const held = new Set(allowed.map(normaliseOrigin));
@@ -152,8 +164,9 @@ export function suggestionsFrom(
     out.push({ origin, source, from: value });
   };
 
-  for (const uri of redirectUris) offer(uri, "magic_link");
-  for (const origin of passkeyOrigins) offer(origin, "passkey");
+  for (const source of SUGGESTION_ORDER) {
+    for (const value of from[source] ?? []) offer(value, source);
+  }
   return out;
 }
 
@@ -226,5 +239,141 @@ export function corsSample(origin: string, allowed: boolean): CorsSample {
     outcome: allowed
       ? "The page reads the response."
       : "The browser discards the response and reports a CORS error. The server answered normally.",
+  };
+}
+
+/*
+ * What the panel can honestly say it has observed.
+ *
+ * Nothing records the `Origin` on a request yet, so there is no last-seen time on a row
+ * and no list of origins that were refused. That matters more here than on most screens:
+ * a missing entry fails silently, so an operator reading an empty list of refusals could
+ * take it as proof that nobody was blocked. It is proof that nobody is counting
+ * (notes/domains-origins.md, acceptance checks).
+ */
+export const ORIGIN_TELEMETRY = false;
+
+/** The four figures this screen would show, and does not. */
+export const OBSERVED_FIGURES: readonly {
+  id: string;
+  label: string;
+  seed: number;
+  info: string;
+}[] = [
+  {
+    id: "requests",
+    label: "Browser requests",
+    seed: 13,
+    info: "Requests carrying an Origin header, which is every call a page makes and none a server makes.",
+  },
+  {
+    id: "allowed",
+    label: "Answered with the header",
+    seed: 19,
+    info: "Requests from an origin on this list, which is the only case a page can read the response.",
+  },
+  {
+    id: "refused",
+    label: "Discarded by the browser",
+    seed: 23,
+    info: "Requests we answered normally from an origin nobody allowed. The server saw them; the page did not.",
+  },
+  {
+    id: "origins",
+    label: "Distinct origins",
+    seed: 29,
+    info: "How many different pages called. More than this list holds is the shape of a first-run failure.",
+  },
+];
+
+/*
+ * Where a suggestion came from, in the reader's words.
+ *
+ * `label` names the thing; this names the screen it is held on, which is what a row in a
+ * list of suggestions needs: repeating the URL and the protocol's own word for it was the
+ * noise the note asks to be rid of (notes/domains-origins.md P2).
+ */
+export const ORIGIN_SOURCE_FROM: Record<OriginSource, string> = {
+  magic_link: "From magic-link settings",
+  oauth: "From a provider return URL",
+  passkey: "From passkey settings",
+};
+
+/** What allowing one actually grants, said on the row rather than left to be assumed. */
+export const SUGGESTION_GRANT =
+  "Allowing it lets a page on that origin read a credentialed response. It grants nothing else, and nothing on the screen it came from changes.";
+
+/*
+ * Testing an application URL.
+ *
+ * The field takes the whole URL a page is served from, because that is what somebody has
+ * in front of them, and the answer shows the origin it was reduced to before it offers to
+ * change anything. A path, a query and a fragment are all dropped, and seeing that happen
+ * is most of what the check is for (notes/domains-origins.md P1).
+ */
+
+export type OriginVerdict = "allowed" | "blocked" | "refusable" | "unusable";
+
+export interface OriginCheck {
+  verdict: OriginVerdict;
+  /** What was typed, trimmed. */
+  asked: string;
+  /** The origin it reduced to, or empty where it has none. */
+  origin: string;
+  title: string;
+  detail: string;
+  /** Whether the answer is one this list could change. */
+  addable: boolean;
+}
+
+export function checkOrigin(value: string, allowed: readonly string[]): OriginCheck | null {
+  const asked = value.trim();
+  if (asked === "") return null;
+
+  const origin = originOf(asked);
+  if (origin === null) {
+    return {
+      verdict: "unusable",
+      asked,
+      origin: "",
+      title: "That URL has no origin a browser would send",
+      detail:
+        "An Origin header is a scheme, a host and a port. A custom scheme such as myapp://callback is a perfectly good redirect target and never appears in one, so this list has nothing to say about it.",
+      addable: false,
+    };
+  }
+
+  if (isOriginAllowed(origin, allowed)) {
+    return {
+      verdict: "allowed",
+      asked,
+      origin,
+      title: "Allowed on this project",
+      detail:
+        "A page served from here is answered with the allow header, so it can read a credentialed response. The check is an exact string comparison, so a different port or scheme is a different origin.",
+      addable: false,
+    };
+  }
+
+  const issue = validateAllowedOrigin(origin, allowed);
+  if (issue !== null) {
+    return {
+      verdict: "refusable",
+      asked,
+      origin,
+      title: "Not allowed, and this list cannot allow it",
+      detail: ALLOWED_ORIGIN_ISSUE_LABELS[issue],
+      addable: false,
+    };
+  }
+
+  return {
+    verdict: "blocked",
+    asked,
+    origin,
+    title: "Not allowed",
+    detail:
+      "The API answers a request from here normally and without the allow header, so the browser discards the response and reports a CORS error. Nothing in a server log says why.",
+    addable: true,
   };
 }

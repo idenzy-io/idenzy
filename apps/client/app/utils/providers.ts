@@ -20,7 +20,16 @@
  * Icon names are written out in full. `@nuxt/icon` bundles what it finds by scanning
  * `app/**\/*.ts`, so a literal here is compiled in and a name assembled at runtime would
  * draw nothing and report nothing.
+ *
+ * What a return URL may be is imported from `./otp` rather than written again. Both
+ * kinds are rows of `redirect_uris` and the rule is the table's rather than either
+ * screen's: the whole URL, matched exactly, http on localhost alone, no fragment, and no
+ * `code` already in the query because the redirect adds one.
  */
+
+import { originOf, validateAllowedOrigin } from "./origins";
+import { REDIRECT_ISSUE_LABELS, validateRedirectUri } from "./otp";
+import { plural, type SetupBlocker, type SetupCheck } from "./setup-check";
 
 export type ProviderName =
   | "google"
@@ -585,6 +594,17 @@ export interface ProviderConfig {
   settings: Record<string, string>;
   /** Keep the provider's access and refresh tokens, envelope encrypted. Off by default. */
   storeTokens: boolean;
+  /**
+   * When a real sign-in was last started from the panel, and nothing about how it ended.
+   *
+   * The one thing nobody here can check is whether the provider console holds our
+   * callback: a wrong redirect URI is refused at their consent screen and never reaches
+   * us. Only a real sign-in exercises it, and where that sign-in ends up is the
+   * customer's own return page rather than this one, so what is recorded is that it was
+   * tried. Everything else about a provider is derived from the row every time it is
+   * asked for, so no stamp can outlive the thing it was a verdict on.
+   */
+  testedAt: string | null;
 }
 
 export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
@@ -596,6 +616,7 @@ export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
   scopes: [],
   settings: {},
   storeTokens: false,
+  testedAt: null,
 };
 
 /** The scopes actually requested: the project's, or the provider's own where it chose none. */
@@ -610,6 +631,360 @@ export function parseScopes(text: string): string[] {
     if (scope !== "") seen.add(scope);
   }
   return [...seen];
+}
+
+/*
+ * Configured, and working, which are not the same question.
+ *
+ * A provider can be switched off, set up with a field missing, running on our shared app,
+ * never checked, or actually taking sign-ins. Answering all five with "On" tells an
+ * operator the one thing they already knew and hides the four that would explain why
+ * nobody can sign in.
+ */
+
+export type ProviderReadiness = "incomplete" | "off" | "development" | "untested" | "ready";
+
+export interface ReadinessLook {
+  label: string;
+  /** One line under the name, saying what that state means for a user right now. */
+  detail: string;
+  /** The words on the row's own button, which is what settles this state. */
+  action: string;
+}
+
+export const READINESS: Record<ProviderReadiness, ReadinessLook> = {
+  incomplete: {
+    label: "Setup incomplete",
+    detail: "Something the token endpoint needs is missing, so a sign-in fails at the exchange.",
+    action: "Finish setup",
+  },
+  off: {
+    label: "Off",
+    detail: "The endpoints answer as though the provider were never configured.",
+    action: "Manage",
+  },
+  development: {
+    label: "Development only",
+    detail: `Our shared OAuth app: our name on the consent screen, and refused anywhere but ${INSTANT_HOSTS}.`,
+    action: "Use your own app",
+  },
+  untested: {
+    label: "Not tested",
+    detail:
+      "On and complete. Nobody has run a sign-in through it from here, and the redirect URI in the provider console is the one thing this end cannot see.",
+    action: "Test it",
+  },
+  ready: {
+    label: "Ready",
+    detail: "On, complete, and a real sign-in has been through it.",
+    action: "Manage",
+  },
+};
+
+/**
+ * What the credential set is still missing, in the field names the provider console uses.
+ * Empty for instant mode, which carries ours and has nothing for a project to get wrong.
+ */
+export function missingFor(info: ProviderInfo, config: ProviderConfig): string[] {
+  if (config.mode === "instant") return [];
+
+  const missing: string[] = [];
+  if (config.clientId.trim() === "") missing.push(info.clientIdLabel ?? "Client ID");
+  if (!config.secretSet) missing.push(info.secret.label);
+  for (const field of info.fields) {
+    if (field.required && (config.settings[field.key] ?? "").trim() === "") {
+      missing.push(field.label);
+    }
+  }
+  return missing;
+}
+
+/**
+ * The one state a row leads with.
+ *
+ * A gap comes before a decision, because turning on a provider that cannot finish an
+ * exchange changes nothing a user would notice. Off comes before the shared app, because
+ * a provider nobody can reach is not restricted to localhost, it is closed.
+ */
+export function readinessOf(info: ProviderInfo, config: ProviderConfig): ProviderReadiness {
+  if (missingFor(info, config).length > 0) return "incomplete";
+  if (!config.enabled) return "off";
+  if (config.mode === "instant") return "development";
+  return config.testedAt === null ? "untested" : "ready";
+}
+
+/*
+ * Where a sign-in comes back to.
+ *
+ * Two different destinations wear the word "redirect" in this flow and confusing them is
+ * the most common way a first setup fails. Ours is what the provider console holds and is
+ * fixed by the deployment; theirs is what we send the browser to afterwards with a code,
+ * and is a row of `redirect_uris` under the `oauth` kind. Neither is a CORS origin.
+ */
+
+/** The issue with a return URL somebody typed, in its own words, or "". */
+export function returnUriIssue(value: string, held: readonly string[]): string {
+  const text = value.trim();
+  if (text === "") return "";
+  const refused = validateRedirectUri(text);
+  if (refused !== null) return REDIRECT_ISSUE_LABELS[refused];
+  return held.includes(text) ? "Already registered on this project." : "";
+}
+
+/** The return URLs whose origin a browser could not read a credentialed response from. */
+export function returnUrisMissingOrigin(
+  returnUris: readonly string[],
+  allowedOrigins: readonly string[],
+): string[] {
+  const allowed = new Set(allowedOrigins.map((entry) => entry.toLowerCase()));
+  const out: string[] = [];
+  for (const uri of returnUris) {
+    const origin = originOf(uri);
+    // A native scheme has no origin and a loopback one is never on the list; neither is
+    // a gap, so neither is counted as one.
+    if (origin === null || allowed.has(origin)) continue;
+    if (validateAllowedOrigin(origin, []) !== null) continue;
+    if (!out.includes(origin)) out.push(origin);
+  }
+  return out;
+}
+
+/*
+ * Whether the method works at all, which is a project-wide question and not a provider's.
+ */
+
+export interface ProviderSetupInput {
+  providers: readonly { info: ProviderInfo; config: ProviderConfig }[];
+  /** Rows of `redirect_uris` under the `oauth` kind. Shared by every provider. */
+  returnUris: readonly string[];
+  /** The CORS allowlist, which the exchange call needs and the redirect does not. */
+  allowedOrigins: readonly string[];
+}
+
+/** The providers a sign-in could actually be started with today. */
+function live(input: ProviderSetupInput) {
+  return input.providers.filter(
+    (entry) => entry.config.enabled && missingFor(entry.info, entry.config).length === 0,
+  );
+}
+
+/**
+ * What is stopping social sign-in on this project, each of which is settled from this
+ * screen. A provider missing a field is not here: that is one provider's problem and its
+ * own row says so.
+ */
+export function providerBlockers(input: ProviderSetupInput): SetupBlocker[] {
+  const blockers: SetupBlocker[] = [];
+
+  if (input.providers.length === 0) {
+    blockers.push({
+      id: "none",
+      title: "No provider set up yet",
+      detail:
+        "Nobody can sign in with Google, Apple or any of the other sixteen until one is added here. Each takes a client id and a secret from that provider's console.",
+      action: "Add a provider",
+    });
+  } else if (live(input).length === 0) {
+    blockers.push({
+      id: "nothing-live",
+      title: "Nothing a user could sign in with",
+      detail:
+        "Every provider on this project is switched off or missing part of its credentials, so the start endpoint answers as though none were configured.",
+      action: "Manage providers",
+    });
+  }
+
+  /* A provider that is off and incomplete is one row's problem. One that is on and
+     incomplete fails after the user has already consented, which is nobody's fault they
+     can see, so it belongs at the top of the screen. */
+  const broken = input.providers.filter(
+    (entry) => entry.config.enabled && missingFor(entry.info, entry.config).length > 0,
+  );
+  for (const entry of broken) {
+    blockers.push({
+      id: `broken-${entry.info.id}`,
+      title: `${entry.info.label} is on and incomplete`,
+      detail: `${missingFor(entry.info, entry.config).join(" and ")} ${missingFor(entry.info, entry.config).length === 1 ? "is" : "are"} missing, so the exchange fails after the user has already agreed at ${entry.info.label}. They see an error and you see a refused sign-in.`,
+      action: "Finish setup",
+    });
+  }
+
+  if (input.returnUris.length === 0) {
+    blockers.push({
+      id: "return",
+      title: "No return URL registered",
+      detail:
+        "After the exchange we send the browser to a URL you registered, carrying a single-use code. There is none, so a start naming any URL at all is refused before the user leaves your page.",
+      action: "Add a return URL",
+    });
+  }
+
+  return blockers;
+}
+
+/**
+ * The four things that have to be true before a social sign-in completes, with what was
+ * found against each. Two of them are settled on other screens, which is the reason this
+ * exists rather than a badge saying "On".
+ */
+export function evaluateProviderSetup(input: ProviderSetupInput): SetupCheck[] {
+  const running = live(input);
+  const instant = running.filter((entry) => entry.config.mode === "instant");
+  const orphaned = returnUrisMissingOrigin(input.returnUris, input.allowedOrigins);
+
+  return [
+    {
+      id: "provider",
+      label: "A provider a user can pick",
+      state: running.length === 0 ? "fail" : "pass",
+      finding:
+        running.length === 0
+          ? "Nothing on this project is both switched on and completely configured, so the start endpoint has nothing to offer."
+          : `${plural(running.length, "provider is", "providers are")} on and complete: ${running.map((entry) => entry.info.label).join(", ")}.`,
+    },
+    {
+      id: "return",
+      label: "Somewhere to come back to",
+      state: input.returnUris.length === 0 ? "fail" : "pass",
+      finding:
+        input.returnUris.length === 0
+          ? "No return URL is registered, so every start is refused before the browser leaves your page."
+          : `${plural(input.returnUris.length, "URL is", "URLs are")} registered. A start naming anything else is refused, and the error never echoes the URL back.`,
+    },
+    {
+      id: "cors",
+      label: "The return page may call the API",
+      state: orphaned.length === 0 ? "pass" : "warn",
+      finding:
+        orphaned.length === 0
+          ? "Every return URL that has an origin is on the CORS allowlist, so the page can exchange its code."
+          : `${orphaned.join(", ")} ${orphaned.length === 1 ? "is" : "are"} not on the CORS allowlist. The redirect lands, and the browser then refuses the exchange call with nothing in our logs to explain it.`,
+      fix: { label: "Allowed origins", to: "/domains/origins" },
+    },
+    {
+      id: "instant",
+      label: "Your own OAuth app",
+      state: instant.length === 0 ? "pass" : "warn",
+      finding:
+        instant.length === 0
+          ? "Every provider that is on carries your own client credentials."
+          : `${instant.map((entry) => entry.info.label).join(", ")} ${instant.length === 1 ? "is" : "are"} on our shared app, which shows our name on the consent screen and is refused anywhere but ${INSTANT_HOSTS}.`,
+    },
+  ];
+}
+
+/**
+ * The same question asked of one provider, for the last step of its setup.
+ *
+ * Four rows and not five: whether the provider console holds our callback is deliberately
+ * absent, because a check that cannot be run must not be drawn as one that passed. That
+ * one is stated beside the list and settled by the sign-in test under it.
+ */
+export function evaluateProviderChecks(
+  info: ProviderInfo,
+  config: ProviderConfig,
+  project: { returnUris: readonly string[]; allowedOrigins: readonly string[] },
+): SetupCheck[] {
+  const missing = missingFor(info, config);
+  const orphaned = returnUrisMissingOrigin(project.returnUris, project.allowedOrigins);
+
+  return [
+    {
+      id: "credentials",
+      label: "Credentials complete",
+      state: missing.length === 0 ? "pass" : "fail",
+      finding:
+        missing.length === 0
+          ? config.mode === "instant"
+            ? "Our shared app carries the credentials, so there is nothing here to fill in."
+            : `Everything ${info.label}'s token endpoint needs is stored.`
+          : `${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} missing, so the exchange fails after the user has already consented.`,
+    },
+    {
+      id: "enabled",
+      label: "Switched on",
+      state: config.enabled ? "pass" : "warn",
+      finding: config.enabled
+        ? `A start naming ${info.label} is accepted.`
+        : `The endpoints answer as though ${info.label} were never configured. Saving from here turns it on.`,
+    },
+    {
+      id: "return",
+      label: "Somewhere to come back to",
+      state: project.returnUris.length === 0 ? "fail" : "pass",
+      finding:
+        project.returnUris.length === 0
+          ? "No return URL is registered on this project, so a start is refused before the browser leaves your page."
+          : `${plural(project.returnUris.length, "URL is", "URLs are")} registered, shared by every provider here.`,
+    },
+    {
+      id: "cors",
+      label: "The return page may call the API",
+      state: orphaned.length === 0 ? "pass" : "warn",
+      finding:
+        orphaned.length === 0
+          ? "Every return URL that has an origin is on the CORS allowlist."
+          : `${orphaned.join(", ")} ${orphaned.length === 1 ? "is" : "are"} not on the CORS allowlist, so the redirect lands and the exchange call after it is refused by the browser.`,
+      fix: { label: "Allowed origins", to: "/domains/origins" },
+    },
+  ];
+}
+
+/*
+ * What linking actually does, in the three cases a customer asks about.
+ */
+
+export interface LinkingExample {
+  id: string;
+  /** What arrived, in the reader's terms rather than the payload's. */
+  situation: string;
+  /** What happens to the person, in one short phrase. */
+  outcome: string;
+  detail: string;
+  /** Written out beside the mark, because a colour is not an outcome. */
+  tone: "join" | "verify" | "new";
+}
+
+/**
+ * The same three questions every customer asks about linking, answered against the rule
+ * this project is running under. The first answer moves with the switch; the other two
+ * never do, which is the point of showing all three together.
+ */
+export function linkingExamples(autoLink: boolean): LinkingExample[] {
+  return [
+    {
+      id: "verified",
+      situation: "Google hands over ada@acme.com and states it is verified",
+      outcome: autoLink ? "Signed into the account that holds it" : "Sent through an email code",
+      detail: autoLink
+        ? "The provider proved the address, so the sign-in joins the account already holding it and the person keeps their password, their passkeys and their history."
+        : "The rule is off, so a proved address is treated like an unproved one: a code goes to ada@acme.com and the accounts are joined once it comes back.",
+      tone: autoLink ? "join" : "verify",
+    },
+    {
+      id: "unverified",
+      situation: "Twitch hands over ada@acme.com and states nothing about it",
+      outcome: "Sent through an email code",
+      detail: `Nothing is ever joined on an address a provider did not prove, whatever the rule above says. The sign-in is answered ${LINKING_ERROR} and your screen sends them through a code, which is a detour rather than a refusal.`,
+      tone: "verify",
+    },
+    {
+      id: "none",
+      situation: "X hands over an account with no address at all",
+      outcome: "A new account",
+      detail:
+        "There is nothing to match on, so a new user is created with the X identity attached. Your own screens collect an address afterwards if the product needs one.",
+      tone: "new",
+    },
+    {
+      id: "relay",
+      situation: "Apple hands over a privaterelay.appleid.com address",
+      outcome: autoLink ? "Signed in, as a different person" : "Sent through an email code",
+      detail:
+        "A relay address is real, deliverable and verified, and it is a different one at every product somebody signs into. Somebody who used Apple here and their own address elsewhere is two accounts, which is Apple working as designed rather than linking failing.",
+      tone: autoLink ? "join" : "verify",
+    },
+  ];
 }
 
 /*

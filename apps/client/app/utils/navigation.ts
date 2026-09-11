@@ -75,7 +75,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         children: [
           { title: "Authenticator apps", to: "/mfa/totp" },
           { title: "Recovery codes", to: "/mfa/recovery" },
-          { title: "Step-up", to: "/mfa/step-up" },
+          { title: "Additional verification", to: "/mfa/step-up" },
         ],
       },
       {
@@ -99,7 +99,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         icon: "material-symbols:mail-outline",
         children: [
           { title: "Templates", to: "/email/templates" },
-          { title: "Suppressions", to: "/email/suppressions" },
+          { title: "Blocked addresses", to: "/email/suppressions" },
           { title: "Sending domains", to: "/email/domains" },
         ],
       },
@@ -146,34 +146,45 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   },
 ];
 
-/** Below the rule at the foot of the list: the project itself rather than what it does. */
-export const NAV_PROJECT: NavGroup = {
-  id: "project",
-  title: "Project settings",
+/**
+ * Below the rule at the foot of the list: the things that are about the account rather
+ * than about what it does.
+ *
+ * Settings is one drawer item and three tabs, not three drawer items. The rail inside the
+ * page is what navigates between them, so listing the children here as well would offer
+ * the same three destinations twice, a click apart. The group still exists because the
+ * breadcrumb and the browser tab read it, and a route the tree cannot name shows as
+ * "Idenzy" with no crumb at all.
+ */
+export const NAV_SETTINGS: NavGroup = {
+  id: "settings",
+  title: "Settings",
   icon: "material-symbols:settings-outline",
   children: [
     { title: "General", to: "/settings" },
     { title: "Members", to: "/settings/members" },
-    { title: "Billing", to: "/settings/billing" },
+    { title: "Account", to: "/settings/account" },
   ],
 };
 
 /**
- * The signed-in person's own screen. Outside `NAV_SECTIONS` because the drawer does not
- * list it, the user menu at the foot does; in `NAV_LINKS` below because the tab's title and
- * the breadcrumb read that list, and a screen the tree cannot name shows as "Idenzy" with
- * no crumb at all.
+ * Money, on its own.
+ *
+ * The wallet is the organisation's rather than one project's, and understanding a bill is
+ * its own task rather than a setting somebody changes, so it sits beside Settings instead
+ * of inside it. Filed under Project settings it would also have said the wrong thing about
+ * its own scope, which is the first finding on all three settings notes.
  */
-export const NAV_ACCOUNT: NavLink = {
-  title: "Account",
-  to: "/account",
-  icon: "material-symbols:person-outline",
+export const NAV_BILLING: NavLink = {
+  title: "Billing",
+  to: "/billing",
+  icon: "material-symbols:receipt-long-outline",
 };
 
 /** The groups, in order, so the drawer can find the one a route lives in. */
 export const NAV_GROUPS: readonly NavGroup[] = [
   ...NAV_SECTIONS.flatMap((section) => section.entries.filter(isGroup)),
-  NAV_PROJECT,
+  NAV_SETTINGS,
 ];
 
 /** The group whose child is `path`, or null for a top-level screen. */
@@ -186,8 +197,8 @@ export const NAV_LINKS: readonly NavLink[] = [
   ...NAV_SECTIONS.flatMap((section) =>
     section.entries.flatMap((entry) => (isGroup(entry) ? entry.children : [entry])),
   ),
-  ...NAV_PROJECT.children,
-  NAV_ACCOUNT,
+  ...NAV_SETTINGS.children,
+  NAV_BILLING,
 ];
 
 /**

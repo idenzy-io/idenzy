@@ -11,6 +11,8 @@
  * place: the ceiling on length, the hash and its parameters, the normalisation.
  */
 
+import { HASH_LABELS, type HashKind } from "./import";
+
 /** The protocol's bounds. The floor a project sets can only move up from the first. */
 export const LENGTH_FLOOR = 8;
 export const LENGTH_CEILING = 256;
@@ -55,16 +57,133 @@ export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
   notifyOnChange: true,
 };
 
-/** How passwords are stored. Read-only, and shown so nobody has to ask. */
+/**
+ * How passwords are stored (PROJECT.md 4.5, `packages/crypto/src/hashing`). Read-only,
+ * and shown so nobody has to ask. `phcVersion` is Argon2's own version number, which is
+ * written into every hash and is not our `version`.
+ */
 export const HASHING = {
   algorithm: "Argon2id",
   memoryMiB: 64,
   iterations: 3,
   parallelism: 1,
   version: 1,
+  phcVersion: 19,
   pepper: "Cloud KMS",
   normalisation: "NFKC",
 } as const;
+
+/**
+ * A stored hash exactly as it is written: variant, Argon2's version, the parameters,
+ * the salt and the digest.
+ *
+ * The parameter order is `m,p,t` because that is what the argon2 library emits, not the
+ * `m,t,p` everyone writes from memory. Getting it wrong here would put a string on the
+ * screen that no hash of ours matches, and it is the same mistake that once made
+ * `needsRehash` rehash every password on every sign-in.
+ */
+export const SAMPLE_HASH = `$argon2id$v=${HASHING.phcVersion}$m=${HASHING.memoryMiB * 1024},p=${HASHING.parallelism},t=${HASHING.iterations}$kQ3rV9pXbN2sLm8dT1yZfA$9tHc6vRk1LdQm4Xy0BsWfE2nJpZgA7uYcT3iOrN5hVQ`;
+
+/** The parameters inside that string, so a reader can match each one to its meaning. */
+export const HASH_PARAMETERS: readonly { field: string; value: string; means: string }[] = [
+  {
+    field: "m",
+    value: String(HASHING.memoryMiB * 1024),
+    means: `${HASHING.memoryMiB} MB of memory per hash`,
+  },
+  {
+    field: "p",
+    value: String(HASHING.parallelism),
+    means: "one lane, so the cost cannot be split",
+  },
+  { field: "t", value: String(HASHING.iterations), means: "three passes over that memory" },
+];
+
+/**
+ * The formats a stored password can be in. Ours is Argon2id; the rest arrive with an
+ * import and are verify-only, so nothing can create a credential in one of them.
+ */
+export type StoredFormat = Extract<HashKind, "argon2" | "bcrypt" | "scrypt" | "pbkdf2">;
+
+/** Where each format is usually met, which is the part an operator recognises. */
+const FORMAT_SOURCES: Record<StoredFormat, string> = {
+  bcrypt: "Auth0, Supabase, Clerk, and most Rails and Node applications",
+  scrypt: "Firebase, whose export carries the parameters beside the digest",
+  argon2: "Cognito, and anything already following current advice",
+  pbkdf2: "Django, and the .NET identity stack",
+};
+
+/**
+ * The formats a password can arrive in and still work. Labels come from the import
+ * screen rather than being spelled again here, so there is one answer to what bcrypt is
+ * called.
+ *
+ * Argon2 is on the list as something imported as well as what we write, because a hash
+ * in the family is still rehashed unless it is Argon2id at this version and at least
+ * these parameters.
+ */
+export const IMPORTED_FORMATS: readonly { kind: StoredFormat; label: string; source: string }[] = (
+  ["bcrypt", "scrypt", "argon2", "pbkdf2"] as const
+).map((kind) => ({ kind, label: HASH_LABELS[kind], source: FORMAT_SOURCES[kind] }));
+
+/** The digests an import refuses, listed because the reason is not that they are old. */
+export const REFUSED_FORMATS: readonly string[] = (["md5", "sha1", "sha256"] as const).map(
+  (kind) => HASH_LABELS[kind],
+);
+
+/** Accounts by the format their password hash is in. */
+export interface StoredCounts {
+  /** Argon2id at the parameters above, which is nothing to do. */
+  current: number;
+  /** Imported hashes still in the format they arrived in, by format. */
+  legacy: Record<StoredFormat, number>;
+}
+
+/** One row of the standing: a format, how many accounts hold it, and its share. */
+export interface StoredMixRow {
+  id: "current" | StoredFormat;
+  label: string;
+  count: number;
+  /** Of every account holding a password, as a percentage, for the bar. */
+  share: number;
+  /** Whether the row needs nothing done to it. */
+  current: boolean;
+}
+
+/**
+ * How a project's stored passwords stand: what is already Argon2id and what is still in
+ * the format it was imported in.
+ *
+ * The current row is always drawn, including at zero, because "none of your passwords
+ * are on the current hash yet" is the answer somebody mid-migration is looking for. A
+ * legacy format nobody holds is left out rather than drawn as an empty bar.
+ */
+export function storedMix(counts: StoredCounts): StoredMixRow[] {
+  const total =
+    counts.current + Object.values(counts.legacy).reduce((sum, count) => sum + count, 0);
+  const share = (count: number) => (total === 0 ? 0 : Math.round((count / total) * 100));
+
+  const legacy = IMPORTED_FORMATS.filter(({ kind }) => counts.legacy[kind] > 0)
+    .map(({ kind, label }) => ({
+      id: kind,
+      label,
+      count: counts.legacy[kind],
+      share: share(counts.legacy[kind]),
+      current: false,
+    }))
+    .sort((left, right) => right.count - left.count);
+
+  return [
+    {
+      id: "current" as const,
+      label: HASHING.algorithm,
+      count: counts.current,
+      share: share(counts.current),
+      current: true,
+    },
+    ...legacy,
+  ];
+}
 
 export const LOCKOUT_NOTE =
   "Lockout is off by default because it is a way to lock the victim out: anyone who knows an address can fail at it on purpose. Adaptive rate limiting per account and per address is always on and slows a guesser without that cost.";
@@ -105,4 +224,36 @@ export function requirementsOf(policy: PasswordPolicy): string[] {
   ];
   if (policy.breachCheck) rules.push("Not one that has appeared in a known breach.");
   return rules;
+}
+
+/*
+ * What a folded section says in its heading.
+ *
+ * A card that closes over its own settings makes an operator open all three to answer
+ * "what is the policy", so each one carries its saved values in the strip. They are
+ * assembled here rather than in the template because the same words belong in a summary
+ * an audit reads later, and because a heading that disagreed with the rows inside it
+ * would be worse than no heading at all.
+ */
+
+/** "12 characters, breach check on". */
+export function requirementsSummary(policy: PasswordPolicy): string {
+  return `${policy.minLength} characters, breach check ${policy.breachCheck ? "on" : "off"}`;
+}
+
+/** "15-minute link, other sessions end". */
+export function resetSummary(policy: PasswordPolicy): string {
+  const sessions = policy.signOutOnReset ? "other sessions end" : "other sessions stay";
+  return `${policy.resetLifetime}-minute link, ${sessions}`;
+}
+
+/** "Locks after 5 attempts" or "No lockout". */
+export function attemptsSummary(policy: PasswordPolicy): string {
+  if (!policy.lockout) return "Rate limited, no lockout";
+  return `Locks after ${policy.lockoutAttempts} attempts`;
+}
+
+/** Whether a draft differs from what is saved, which is what enables Save. */
+export function policyChanged(saved: PasswordPolicy, draft: PasswordPolicy): boolean {
+  return (Object.keys(saved) as (keyof PasswordPolicy)[]).some((key) => saved[key] !== draft[key]);
 }

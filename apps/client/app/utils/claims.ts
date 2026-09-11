@@ -255,8 +255,10 @@ export interface SampleUser {
 }
 
 export interface SampleProfile {
-  id: "complete" | "sparse";
+  id: "complete" | "sparse" | "phone";
   label: string;
+  /** For a segment or a tile, where the label would not fit. */
+  short: string;
   /** Written out in full so @nuxt/icon bundles it. */
   icon: string;
   note: string;
@@ -264,14 +266,17 @@ export interface SampleProfile {
 }
 
 /**
- * Two users to render against, because a template that looks fine for one can refuse the
- * other: the sparse profile is the account that signed up a minute ago by email and has
- * filled nothing in, which is exactly who a required claim on a phone number locks out.
+ * Three users to render against, because a template that looks fine for one refuses the
+ * others: the sparse profile signed up a minute ago by email and has filled nothing in,
+ * and the phone profile has no address at all. Both are ordinary accounts and both are
+ * what a required claim locks out, which is why the screen never judges a template
+ * against one synthetic complete profile.
  */
 export const SAMPLE_PROFILES: readonly SampleProfile[] = [
   {
     id: "complete",
     label: "A complete profile",
+    short: "Complete",
     icon: "material-symbols:person-outline",
     note: "Every field filled in, and metadata on both sides.",
     user: {
@@ -291,6 +296,7 @@ export const SAMPLE_PROFILES: readonly SampleProfile[] = [
   {
     id: "sparse",
     label: "A new account",
+    short: "New account",
     icon: "material-symbols:person-add-outline",
     note: "Signed up a minute ago by email. No name, no phone, no metadata yet.",
     user: {
@@ -305,6 +311,26 @@ export const SAMPLE_PROFILES: readonly SampleProfile[] = [
       lastSignInAt: null,
       metadataPublic: {},
       metadataPrivate: {},
+    },
+  },
+  {
+    id: "phone",
+    label: "A phone sign-up",
+    short: "Phone only",
+    icon: "material-symbols:call-outline",
+    note: "Signed in by SMS and holds no address at all, which is who a required email claim locks out.",
+    user: {
+      id: "usr_01j9k5r2n7y4h1b6",
+      email: null,
+      emailVerified: false,
+      phone: "+447700900142",
+      phoneVerified: true,
+      displayName: "Grace Hopper",
+      avatarUrl: null,
+      createdAt: "2026-06-02T18:20:00.000Z",
+      lastSignInAt: "2026-09-08T21:03:00.000Z",
+      metadataPublic: { plan: "free" },
+      metadataPrivate: { orgId: "org_91c4" },
     },
   },
 ];
@@ -568,4 +594,190 @@ export function isSameTemplate(a: ClaimTemplate, b: ClaimTemplate): boolean {
 
 export function copyTemplate<T extends ClaimTemplate>(template: T): T {
   return { ...template, claims: template.claims.map((claim) => ({ ...claim })) };
+}
+
+/*
+ * Before and after.
+ *
+ * A draft only means anything against what is saved, and a screen that says "unsaved
+ * changes" without saying which is a screen that reads like the autosaving ones next to
+ * it. Everything below answers the same question twice: in words, for the list of what
+ * publishing would do, and in the payload, for the token itself.
+ */
+
+/** Where a mapping reads from, spelled as the column it comes out of. */
+export function claimPathText(mapping: ClaimMapping): string {
+  const path = mapping.path.trim();
+  return mapping.source === "user" ? `profile.${path}` : `${mapping.source}.${path}`;
+}
+
+export type ChangeKind = "added" | "removed" | "changed" | "reordered";
+
+export interface TemplateChange {
+  kind: ChangeKind;
+  /** The claim's name; empty for a change about the template's shape rather than a claim. */
+  name: string;
+  detail: string;
+}
+
+export const CHANGE_ICONS: Record<ChangeKind, string> = {
+  added: "material-symbols:add",
+  removed: "material-symbols:remove",
+  changed: "material-symbols:swap-horiz",
+  reordered: "material-symbols:swap-vert",
+};
+
+/** What one claim publishing keeps would do differently, or null where it does nothing. */
+function claimChange(was: ClaimMapping, now: ClaimMapping): TemplateChange | null {
+  const parts: string[] = [];
+  if (was.source !== now.source || was.path !== now.path) {
+    parts.push(`reads ${claimPathText(now)} instead of ${claimPathText(was)}`);
+  }
+  if (was.required !== now.required) {
+    parts.push(now.required ? "becomes required" : "becomes optional");
+  }
+  return parts.length === 0
+    ? null
+    : { kind: "changed", name: now.name, detail: parts.join(", and ") };
+}
+
+/**
+ * What publishing would do to the saved template, as sentences. A claim with no name yet
+ * is left out: it cannot be published, so it is not yet a change to anything.
+ */
+export function templateChanges(saved: ClaimTemplate, draft: ClaimTemplate): TemplateChange[] {
+  const before = normaliseTemplate(saved).claims.filter((claim) => claim.name !== "");
+  const after = normaliseTemplate(draft).claims.filter((claim) => claim.name !== "");
+  const wasNamed = new Map(before.map((claim) => [claim.name, claim]));
+  const isNamed = new Map(after.map((claim) => [claim.name, claim]));
+  const changes: TemplateChange[] = [];
+
+  for (const claim of after) {
+    const was = wasNamed.get(claim.name);
+    const change =
+      was === undefined
+        ? ({
+            kind: "added",
+            name: claim.name,
+            detail: `reads ${claimPathText(claim)}${claim.required ? ", and is required" : ""}`,
+          } satisfies TemplateChange)
+        : claimChange(was, claim);
+    if (change !== null) changes.push(change);
+  }
+
+  for (const claim of before) {
+    if (isNamed.has(claim.name)) continue;
+    changes.push({
+      kind: "removed",
+      name: claim.name,
+      detail: `no longer carried, and it read ${claimPathText(claim)}`,
+    });
+  }
+
+  /* Order is the token's own, so a reshuffle of the claims that stayed is a change too. */
+  const keptBefore = before.filter((claim) => isNamed.has(claim.name)).map((claim) => claim.name);
+  const keptAfter = after.filter((claim) => wasNamed.has(claim.name)).map((claim) => claim.name);
+  if (keptBefore.some((name, at) => name !== keptAfter[at])) {
+    changes.push({
+      kind: "reordered",
+      name: "",
+      detail: "The claims that stay are in a new order, which is the order a token writes them in.",
+    });
+  }
+
+  return changes;
+}
+
+export type LineChange = "added" | "removed" | "changed" | "same";
+
+export interface TokenLine {
+  key: string;
+  /** False for the claims the issuer assembles, which a template cannot touch. */
+  custom: boolean;
+  change: LineChange;
+  text: string;
+}
+
+/**
+ * The payload's lines for one user, each marked against what the saved template renders
+ * for the same user, so the preview is a before and an after rather than only an after.
+ * A null `before` is a draft with nothing to compare to and every line comes back
+ * unmarked. A removed line is the ghost of a claim the saved template still carries; the
+ * strikethrough is what says it is leaving, and it takes a comma like any other line
+ * because the block is handed to a JSON grammar whole and a missing separator would be
+ * tokenised as the error it would be in a real payload.
+ */
+function lineChange(old: RenderedClaim | undefined, now: RenderedClaim): LineChange {
+  if (old === undefined) return "added";
+  return JSON.stringify(old.value) === JSON.stringify(now.value) ? "same" : "changed";
+}
+
+export function tokenLines(
+  assembled: Readonly<Record<string, unknown>>,
+  after: RenderedTemplate,
+  before: RenderedTemplate | null,
+): TokenLine[] {
+  const was = new Map((before?.present ?? []).map((claim) => [claim.name, claim]));
+  const lines: TokenLine[] = Object.entries(assembled).map(([name, value]) => ({
+    key: `issuer-${name}`,
+    custom: false,
+    change: "same" as LineChange,
+    text: `"${name}": ${JSON.stringify(value)}`,
+  }));
+
+  for (const claim of after.present) {
+    lines.push({
+      key: `claim-${claim.name}`,
+      custom: true,
+      change: before === null ? "same" : lineChange(was.get(claim.name), claim),
+      text: `"${claim.name}": ${JSON.stringify(claim.value)}`,
+    });
+  }
+
+  if (before !== null) {
+    const carried = new Set(after.present.map((claim) => claim.name));
+    for (const claim of before.present) {
+      if (carried.has(claim.name)) continue;
+      lines.push({
+        key: `gone-${claim.name}`,
+        custom: true,
+        change: "removed",
+        text: `"${claim.name}": ${JSON.stringify(claim.value)}`,
+      });
+    }
+  }
+
+  return lines.map((line, index) =>
+    index === lines.length - 1 ? line : { ...line, text: `${line.text},` },
+  );
+}
+
+export interface ProfileOutcome {
+  profile: SampleProfile;
+  /** What the draft makes of this user. */
+  rendered: RenderedTemplate;
+  /** What the saved template makes of them, or null while the draft matches it. */
+  before: RenderedTemplate | null;
+}
+
+/**
+ * Every sample user's answer to the draft, which is the only fleet-wide statement this
+ * screen can honestly make: a template is judged against the accounts that hold nothing
+ * as well as the one that holds everything.
+ */
+export function profileOutcomes(
+  draft: readonly ClaimMapping[],
+  saved: readonly ClaimMapping[],
+  compare: boolean,
+): ProfileOutcome[] {
+  return SAMPLE_PROFILES.map((profile) => ({
+    profile,
+    rendered: renderTemplate(draft, profile.user),
+    before: compare ? renderTemplate(saved, profile.user) : null,
+  }));
+}
+
+/** The sample users a required claim would lock out, by name. Empty is the good answer. */
+export function refusedProfiles(outcomes: readonly ProfileOutcome[]): ProfileOutcome[] {
+  return outcomes.filter((outcome) => outcome.rendered.refusedBy !== null);
 }

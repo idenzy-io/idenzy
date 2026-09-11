@@ -14,6 +14,8 @@
  * is dropped and the account signs in by a code or sets a new password instead.
  */
 
+import { anyOf, type TimeWindow, within } from "./filters";
+
 export type ImportSource = "firebase" | "supabase" | "auth0" | "clerk" | "cognito" | "file";
 
 export type ImportFormat = "json" | "ndjson" | "csv";
@@ -40,6 +42,13 @@ export interface SourceInfo {
   formats: readonly ImportFormat[];
   /** The hash the source exports, where it exports one. */
   hash: HashKind | null;
+  /**
+   * The short answer to what a migration from here does to passwords, for a list that
+   * has room for a phrase and not a sentence. `hash` cannot answer it on its own: it is
+   * null both for a source that exports no hashes at all and for a file that may carry
+   * any of the four we verify.
+   */
+  hashes: string;
   guide: string;
 }
 
@@ -56,6 +65,7 @@ export const SOURCES: readonly SourceInfo[] = [
       "scrypt hashes import. Sign-ins keep working, and each upgrades to Argon2id on first use.",
     formats: ["json", "csv"],
     hash: "scrypt",
+    hashes: "scrypt",
     guide: `${GUIDES}/firebase`,
   },
   {
@@ -67,6 +77,7 @@ export const SOURCES: readonly SourceInfo[] = [
     passwords: "bcrypt hashes import as they are.",
     formats: ["csv", "json"],
     hash: "bcrypt",
+    hashes: "bcrypt",
     guide: `${GUIDES}/supabase`,
   },
   {
@@ -79,6 +90,7 @@ export const SOURCES: readonly SourceInfo[] = [
       "bcrypt hashes import when the support export is included. Without it, users set a new password.",
     formats: ["ndjson", "json"],
     hash: "bcrypt",
+    hashes: "bcrypt, on request",
     guide: `${GUIDES}/auth0`,
   },
   {
@@ -90,6 +102,7 @@ export const SOURCES: readonly SourceInfo[] = [
     passwords: "bcrypt, Argon2 and PBKDF2 digests import as they are.",
     formats: ["csv", "json"],
     hash: "bcrypt",
+    hashes: "bcrypt, Argon2, PBKDF2",
     guide: `${GUIDES}/clerk`,
   },
   {
@@ -102,6 +115,7 @@ export const SOURCES: readonly SourceInfo[] = [
       "Cognito exports no hashes. Users set a new password, or sign in by code, on their first visit.",
     formats: ["json", "csv"],
     hash: null,
+    hashes: "None exported",
     guide: `${GUIDES}/cognito`,
   },
   {
@@ -115,6 +129,7 @@ export const SOURCES: readonly SourceInfo[] = [
       "bcrypt, Argon2, scrypt and PBKDF2 hashes import. Anything else asks the user for a new password.",
     formats: ["csv", "json", "ndjson"],
     hash: null,
+    hashes: "Whatever the file holds",
     guide: `${GUIDES}/file`,
   },
 ];
@@ -734,4 +749,161 @@ export function firebaseHashConfigComplete(config: FirebaseHashConfig): boolean 
     Number.isInteger(config.memoryCost) &&
     config.memoryCost > 0
   );
+}
+
+/*
+ * The history: a job as the panel sees it, and the rules that narrow a list of them.
+ *
+ * The type lives here rather than in the store for the reason `SessionRow` does: the
+ * store is one source of these rows and the management API will be another, and the
+ * rules over them are pure and tested either way.
+ */
+
+export type ImportStatus = "queued" | "running" | "done" | "failed";
+
+export interface ImportError {
+  line: number;
+  email: string | null;
+  reason: string;
+}
+
+export interface ImportJob {
+  id: string;
+  projectId: string;
+  source: ImportSource;
+  fileName: string;
+  format: ImportFormat;
+  /** A rehearsal: everything checked, nothing written. */
+  dryRun: boolean;
+  rows: number;
+  imported: number;
+  /** Rows left out on purpose: a duplicate of an earlier row. */
+  skipped: number;
+  /** Rows refused: no identifier, or one that is not an address. */
+  failed: number;
+  passwordsKept: number;
+  passwordsDropped: number;
+  /** How many of the kept passwords have since been rehashed on a sign-in. */
+  passwordsUpgraded: number;
+  status: ImportStatus;
+  /** 0 to 1 while running. */
+  progress: number;
+  startedAt: string;
+  finishedAt: string | null;
+  startedBy: string;
+  errors: ImportError[];
+}
+
+/**
+ * What a job's badge says. A finished dry run reads "Dry run" rather than "Done",
+ * because the two ran the same checks and only one of them wrote anything, and a
+ * rehearsal that reads like the real thing is one that gets run twice.
+ *
+ * One function, so the run card and the history table cannot draw the same job two
+ * ways, and one value, so the label and the colour are read off the same key.
+ */
+export type ImportOutcome = ImportStatus | "dry-run";
+
+export const IMPORT_OUTCOME_LABELS: Record<ImportOutcome, string> = {
+  queued: "Queued",
+  running: "Running",
+  done: "Done",
+  failed: "Failed",
+  "dry-run": "Dry run",
+};
+
+export function importOutcome(job: ImportJob): ImportOutcome {
+  return job.dryRun && job.status === "done" ? "dry-run" : job.status;
+}
+
+export const IMPORT_OUTCOMES: readonly ImportOutcome[] = [
+  "done",
+  "dry-run",
+  "running",
+  "queued",
+  "failed",
+];
+
+/**
+ * A rehearsal or a real run. It is the one cut that puts every job in exactly one
+ * place whatever it is doing, which is what a set of tabs over a list has to be: a
+ * running job belongs to the kind it will be when it finishes, and does not vanish
+ * from every tab until it does.
+ */
+export type ImportKind = "import" | "dry-run";
+
+export const IMPORT_KIND_LABELS: Record<ImportKind, string> = {
+  import: "Imports",
+  "dry-run": "Dry runs",
+};
+
+export function importKind(job: ImportJob): ImportKind {
+  return job.dryRun ? "dry-run" : "import";
+}
+
+export interface ImportFilters {
+  kind: "all" | ImportKind;
+  query: string;
+  /** Keep a job from any one of these sources. Empty keeps everything. */
+  sources: readonly ImportSource[];
+  outcomes: readonly ImportOutcome[];
+  started: TimeWindow;
+}
+
+export const EMPTY_IMPORT_FILTERS: ImportFilters = {
+  kind: "all",
+  query: "",
+  sources: [],
+  outcomes: [],
+  started: "any",
+};
+
+/**
+ * How many of the filters behind the Filter button are set. The tabs and the search box
+ * are controls of their own and show their own state, so neither is counted.
+ */
+export function importFilterCount(filters: ImportFilters): number {
+  let count = 0;
+  if (filters.sources.length > 0) count += 1;
+  if (filters.outcomes.length > 0) count += 1;
+  if (filters.started !== "any") count += 1;
+  return count;
+}
+
+/**
+ * Whether a search term names this job. Over the file as it was named, whoever ran it
+ * and the job's own id, which are the three things somebody arrives holding: a file
+ * name from a colleague, an address from the audit log, an id from a support thread.
+ */
+export function matchesImportQuery(job: ImportJob, query: string): boolean {
+  const term = query.trim().toLowerCase();
+  if (term === "") return true;
+  const fields = [job.fileName, job.startedBy, job.id, sourceInfo(job.source).label];
+  return fields.some((field) => field.toLowerCase().includes(term));
+}
+
+type KeepImport = (job: ImportJob, filters: ImportFilters, now: Date) => boolean;
+
+/** One rule per filter; a job stays while every rule keeps it. */
+const IMPORT_RULES: readonly KeepImport[] = [
+  (job, filters) => filters.kind === "all" || importKind(job) === filters.kind,
+  (job, filters) => matchesImportQuery(job, filters.query),
+  (job, filters) => anyOf(filters.sources, job.source),
+  (job, filters) => anyOf(filters.outcomes, importOutcome(job)),
+  (job, filters, now) => within(job.startedAt, filters.started, now),
+];
+
+export function filterImports(
+  jobs: readonly ImportJob[],
+  filters: ImportFilters,
+  now: Date,
+): ImportJob[] {
+  return jobs.filter((job) => IMPORT_RULES.every((keep) => keep(job, filters, now)));
+}
+
+/** How many jobs sit under each tab, plus the total the "All" tab shows. */
+export function countImportsByKind(jobs: readonly ImportJob[]): Record<"all" | ImportKind, number> {
+  const counts = { all: jobs.length, import: 0, "dry-run": 0 };
+  for (const job of jobs) counts[importKind(job)] += 1;
+  return counts;
 }

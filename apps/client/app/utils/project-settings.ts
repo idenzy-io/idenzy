@@ -101,8 +101,6 @@ export interface ProjectFacts {
   /** The public id, `prj_` and an opaque body, as every API surface names a project. */
   id: string;
   name: string;
-  /** The organisation that owns it. Members and billing belong to that, not to this. */
-  orgName: string;
   cellCode: string;
   tier: ProjectTier;
   plan: string;

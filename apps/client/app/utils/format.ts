@@ -22,9 +22,10 @@ export interface FigureParts {
 /**
  * `bytes` is a format rather than a unit because the unit is an output: 1,024 of them
  * is "1 kB" and 1,048,576 is "1 MB", and the caller cannot know which before the number
- * arrives.
+ * arrives. `money` always writes two fraction digits, because "$31.4" reads as a typo on
+ * a bill; the currency sign is the caller's prefix.
  */
-export type FigureFormat = "number" | "bytes";
+export type FigureFormat = "number" | "bytes" | "money";
 
 export interface FigureOptions {
   format?: FigureFormat;
@@ -52,8 +53,18 @@ export function formatFigure(value: number, options: FigureOptions = {}): Figure
   const { format = "number", compact = false, decimals = 1 } = options;
   if (!Number.isFinite(value)) return NO_FIGURE;
   if (format === "bytes") return formatBytes(value, decimals);
+  if (format === "money") return formatMoney(value);
   if (compact) return formatCompact(value);
   const digits = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: decimals }).format(value);
+  return { digits, magnitude: "", unit: "" };
+}
+
+/** Never compacted: "$1.2k" is not a figure anybody reconciles against an invoice. */
+function formatMoney(value: number): FigureParts {
+  const digits = new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
   return { digits, magnitude: "", unit: "" };
 }
 

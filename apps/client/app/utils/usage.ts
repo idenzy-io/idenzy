@@ -1,315 +1,714 @@
 /**
- * What a project has used this month and what it costs (PROJECT.md 5.1, `usage_daily`).
+ * What a project used in a billing period and what Idenzy charges for it (PROJECT.md 5.1,
+ * `usage_daily`, notes/usage.md).
  *
- * Every price here is imported from the screen that owns it rather than restated. The
- * per-thousand email rates and the five dollars a month for a custom sending domain are
- * `~/utils/sending-domains`; SMS is charged at what the sends actually cost, which the
- * routing table decides. A bill that quoted a rate a settings screen contradicts is worse
- * than a bill with no rates on it at all, and the two drift the day somebody changes one.
+ * Money is cents from the first multiplication. Each line is rounded to the cent once,
+ * halves up, and the total is the sum of the rounded lines, so this screen, Billing's
+ * draw-down and the invoice are one figure rather than three figures a cent apart.
  *
- * The two numbers that matter most on the screen are not the total. They are how far into
- * the free tier a project is, because fifty thousand monthly active users is where a bill
- * starts existing at all, and where the month lands at this rate, because a total halfway
- * through a month answers a question nobody asked.
+ * Rates are imported from the screen that owns them: the email rates and the monthly fee
+ * for a sending domain are `~/utils/sending-domains`, and SMS is what the routing table
+ * priced each segment at. A usage screen that restated a rate would be a second place for
+ * it to be wrong.
  *
- * Logging is on the list and is not billed yet. It is metered per gigabyte ingested, the
- * rate below is a proposal rather than a published price, and the row says so. A meter a
- * customer cannot see until the invoice arrives is how a usage screen loses its job.
+ * A line worth nothing still says why: inside the allowance, nothing sent, billed by the
+ * customer's own vendor, or not metered at all. Those are four different answers, and a
+ * bare "$0.00" gives the same one for each.
  */
-
-import { type FigureFormat, formatFigure } from "./format";
+import { formatCents } from "./billing";
+import { csvCell } from "./filters";
 import {
   CUSTOM_DOMAIN_MONTHLY,
   CUSTOM_RATE_PER_THOUSAND,
   SHARED_RATE_PER_THOUSAND,
 } from "./sending-domains";
+import { type ByoVendor, byoVendorInfo } from "./sms-providers";
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
 /*
- * What is metered.
+ * The price list.
  */
 
-export type MeterId = "mau" | "email" | "sms" | "logging";
-
-export interface Meter {
-  id: MeterId;
-  label: string;
-  /** What the chart's figure is, at the top of the card. */
-  headline: string;
-  /** Written out in full so @nuxt/icon bundles it. */
-  icon: string;
-  format: FigureFormat;
-  /** Whether a day's figure adds up over the month or is read off the last day. */
-  cumulative: boolean;
-  note: string;
-  /** Not shipped, so the meter reads zero and its rate is a proposal. */
-  provisional?: boolean;
-}
-
-export const METERS: readonly Meter[] = [
-  {
-    id: "mau",
-    label: "Monthly active users",
-    headline: "Active users",
-    icon: "material-symbols:group-outline",
-    format: "number",
-    cumulative: false,
-    note: "A user who authenticated at least once this calendar month. A user created and never seen again after their first day is not counted, and an anonymous one counts only once it is upgraded.",
-  },
-  {
-    id: "email",
-    label: "Email",
-    headline: "Emails sent",
-    icon: "material-symbols:mail-outline",
-    format: "number",
-    cumulative: true,
-    note: "Verification, reset, magic link, one-time code and the security notices. Bringing your own SES or SMTP makes this free.",
-  },
-  {
-    id: "sms",
-    label: "SMS",
-    headline: "Messages sent",
-    icon: "material-symbols:sms-outline",
-    format: "number",
-    cumulative: true,
-    note: "Billed per segment at the destination's own rate, which the routing table publishes per country. Bringing your own Twilio or Vonage makes this free.",
-  },
-  {
-    id: "logging",
-    label: "Logging",
-    headline: "Ingested",
-    icon: "material-symbols:database-outline",
-    format: "bytes",
-    cumulative: true,
-    provisional: true,
-    note: "Structured logs and delivery events kept for you to search. Metered by what is ingested rather than by what is stored, so a query costs nothing to run.",
-  },
-];
-
-export function meter(id: MeterId): Meter {
-  return METERS.find((entry) => entry.id === id) ?? (METERS[0] as Meter);
-}
-
-/*
- * The price list (PROJECT.md 5.1).
- */
-
-/** Free on every project, forever. The bill starts on the user after this one. */
+/** Free on every project. The bill starts on the user after this one. */
 export const FREE_MAU = 50_000;
 
+/** Per user past the allowance, in dollars. */
 export const MAU_PRICE = 0.0025;
 
-/**
- * A gigabyte of logs ingested. Provisional: logging is not shipped and this rate is a
- * proposal, kept here so the screen can price a month rather than leave a blank where a
- * customer's largest new line will be.
- */
-export const LOGGING_PRICE_PER_GB = 0.3;
+/* Integer rates, so a half cent is an exact half and rounds the way the rule says. */
+const MAU_TEN_THOUSANDTHS = Math.round(MAU_PRICE * 10_000);
+const SHARED_CENTS_PER_THOUSAND = Math.round(SHARED_RATE_PER_THOUSAND * 100);
+const CUSTOM_CENTS_PER_THOUSAND = Math.round(CUSTOM_RATE_PER_THOUSAND * 100);
+const DOMAIN_CENTS = Math.round(CUSTOM_DOMAIN_MONTHLY * 100);
 
-export const GIGABYTE = 1024 ** 3;
-
-/** Only the users past the free tier are charged, which is the whole shape of the plan. */
 export function billableMau(mau: number): number {
   return Math.max(0, mau - FREE_MAU);
 }
 
-export function mauCost(mau: number): number {
-  return billableMau(mau) * MAU_PRICE;
+export function mauCents(mau: number): number {
+  return Math.round((billableMau(mau) * MAU_TEN_THOUSANDTHS) / 100);
 }
 
-/** How much of the free tier is gone, 0 to 1, for the meter beside it. */
-export function freeTierShare(mau: number): number {
-  return Math.min(1, Math.max(0, mau / FREE_MAU));
-}
-
-/** What a month of mail costs, at the rate the sending-domains screen publishes. */
-export function emailCost(sent: number, ownDomain: boolean, byo: boolean): number {
+/** At the rate the sending-domains screen publishes. Nothing where the customer's own provider carried it. */
+export function emailCents(sent: number, ownDomain: boolean, byo: boolean): number {
   if (byo) return 0;
-  const rate = ownDomain ? CUSTOM_RATE_PER_THOUSAND : SHARED_RATE_PER_THOUSAND;
-  return (sent / 1000) * rate;
+  const rate = ownDomain ? CUSTOM_CENTS_PER_THOUSAND : SHARED_CENTS_PER_THOUSAND;
+  return Math.round((sent * rate) / 1000);
 }
 
-export function domainsCost(customDomains: number): number {
-  return customDomains * CUSTOM_DOMAIN_MONTHLY;
-}
-
-export function loggingCost(bytes: number): number {
-  return (bytes / GIGABYTE) * LOGGING_PRICE_PER_GB;
+export function domainsCents(customDomains: number): number {
+  return customDomains * DOMAIN_CENTS;
 }
 
 /*
- * A month.
+ * What a meter means. Written once, here, and read by every screen that counts it.
+ */
+
+/**
+ * PROJECT.md's first-day-free rule stated as one rule rather than a rule and an exception,
+ * which is what read as a contradiction (notes/usage.md P1).
+ */
+export const MAU_DEFINITION =
+  "A user counts once in a calendar month, in UTC, when they authenticate on this project on any day other than the day their account was created. A sign-in, a token refresh and a session exchange all count. An anonymous user counts once upgraded. Counted per project: two projects never share a count or an allowance.";
+
+export const MAU_EXAMPLES: readonly string[] = [
+  "Signs up on 3 September and never comes back: not counted, in September or any later month.",
+  "Signs up on 3 September and signs in again on the 10th: counted once, in September.",
+  "Signed up in July and keeps a session refreshing all through September: counted once, in September.",
+];
+
+/** The definition in two sentences, for the place a whole paragraph will not fit. */
+export const MAU_SUMMARY =
+  "Each user counts once a month per project, for any authentication after the day their account was created. Somebody seen only on the day they signed up is never counted.";
+
+/** The days a projection averages over. */
+export const RATE_WINDOW_DAYS = 7;
+
+/** The assumption behind every projected figure, in the words the screen uses for it. */
+export const PROJECTION_BASIS = `At the current average rate: each meter's average over the last ${RATE_WINDOW_DAYS} complete days, continued to the end of the month. A straight line, not a forecast of what anybody will do. It overstates active users, which slow as a month goes on because a returning user is counted once.`;
+
+export const ROUNDING_RULE =
+  "Each line is rounded to the nearest cent, halves up, and the total is the sum of the rounded lines. Billing draws down that figure and the invoice carries it. Before tax.";
+
+export interface MeterDefinition {
+  id: string;
+  label: string;
+  /** In place of a control on the row: the unit, or why there is none. */
+  badge: string;
+  description: string;
+}
+
+export const METER_DEFINITIONS: readonly MeterDefinition[] = [
+  {
+    id: "mau",
+    label: "Monthly active users",
+    badge: "Per project",
+    description: `${MAU_DEFINITION} The first ${FREE_MAU.toLocaleString("en")} are free on every project and each one after costs $${MAU_PRICE}.`,
+  },
+  {
+    id: "email",
+    label: "Email",
+    badge: "Per 1,000",
+    description: `Every email this project sends: verification, reset, magic link, one-time code and security notices. ${formatCents(SHARED_CENTS_PER_THOUSAND)} per 1,000 from our domain and ${formatCents(CUSTOM_CENTS_PER_THOUSAND)} from one of yours. Through your own SES or SMTP, Idenzy charges nothing and your provider bills you.`,
+  },
+  {
+    id: "domains",
+    label: "Sending domains",
+    badge: "Per month",
+    description: `${formatCents(DOMAIN_CENTS)} for each domain of yours on the project in a month, verified or not, charged for the whole month it is added in.`,
+  },
+  {
+    id: "sms",
+    label: "SMS",
+    badge: "Per segment",
+    description:
+      "Billed per segment at the destination's rate, which the routing table on SMS providers publishes. A message past 160 plain characters, or 70 with a single character outside the GSM set, is more than one segment. Through your own Twilio or Vonage account, Idenzy charges nothing and the vendor bills you.",
+  },
+  {
+    id: "logging",
+    label: "Logging",
+    badge: "Unavailable",
+    description:
+      "Not shipped, so nothing is metered and nothing is billed. It will appear in the line items with a published price when it ships, not before.",
+  },
+  {
+    id: "timing",
+    label: "Timing and rounding",
+    badge: "UTC",
+    description: `Metered hourly, so the last hour is not in the figures yet. A month closes at 00:00 UTC on the 1st and its invoice is issued the next day. ${ROUNDING_RULE}`,
+  },
+];
+
+/*
+ * A billing period.
  */
 
 export interface UsagePeriod {
-  /** The calendar month being billed, as ISO instants. */
+  /** The calendar month in UTC: "2026-09". */
+  id: string;
   start: string;
+  /** Exclusive: the first instant of the next month. */
   end: string;
-  /** One entry per day so far, oldest first. */
+  /** Over, so every figure is final and an invoice follows. */
+  closed: boolean;
+  /** Each UTC day with figures, oldest first. An open period's last day is partial. */
   days: string[];
-  /** Active users as at each day, which is a level and never a sum. */
+  /** Monthly active users as the count stood at the end of each day. It only climbs. */
   mau: number[];
   emails: number[];
-  sms: number[];
-  /** What those sends actually cost, in dollars, at the destinations' own rates. */
-  smsCost: number[];
-  logBytes: number[];
-  /** Verified sending domains of the customer's own, each billed monthly. */
+  smsMessages: number[];
+  /** What SMS is billed by: a long or non-GSM message is more than one. */
+  smsSegments: number[];
+  /** What the segments cost at the destinations' own rates, in cents. */
+  smsCostCents: number[];
+  /** Sending domains of the customer's own on the project this month, each billed for it. */
   customDomains: number;
-  /** Their own SES or SMTP, which makes email free. */
+  /** Mail left from a domain of theirs, at the lower rate. */
+  ownDomain: boolean;
+  /** Their own SES or SMTP, which Idenzy does not bill for. */
   byoEmail: boolean;
-  /** Their own Twilio or Vonage, which makes SMS free. */
-  byoSms: boolean;
+  /** Whose account carried SMS, or null for our routing. */
+  smsVendor: ByoVendor | null;
+}
+
+export interface UsageTotals {
+  mau: number;
+  emails: number;
+  smsMessages: number;
+  smsSegments: number;
+  smsCostCents: number;
 }
 
 export function sum(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
-/** A level metric is whatever it was on the last day, never the sum of the days. */
+/** A level is whatever it was on the last day, never the sum of the days. */
 export function latest(values: readonly number[]): number {
   return values.at(-1) ?? 0;
 }
 
-export function totalFor(period: UsagePeriod, id: MeterId): number {
-  if (id === "mau") return latest(period.mau);
-  if (id === "email") return sum(period.emails);
-  if (id === "sms") return sum(period.sms);
-  return sum(period.logBytes);
+export function totalsOf(period: UsagePeriod): UsageTotals {
+  return {
+    mau: latest(period.mau),
+    emails: sum(period.emails),
+    smsMessages: sum(period.smsMessages),
+    smsSegments: sum(period.smsSegments),
+    smsCostCents: sum(period.smsCostCents),
+  };
 }
 
-export function seriesFor(period: UsagePeriod, id: MeterId): number[] {
-  if (id === "mau") return period.mau;
-  if (id === "email") return period.emails;
-  if (id === "sms") return period.sms;
-  return period.logBytes;
+/** How much of the period has passed, 0 to 1. */
+export function periodProgress(period: UsagePeriod, now: Date): number {
+  const start = Date.parse(period.start);
+  const end = Date.parse(period.end);
+  if (end <= start) return 1;
+  return Math.min(1, Math.max(0, (now.getTime() - start) / (end - start)));
+}
+
+/**
+ * The same instant one calendar month earlier, in UTC, clamped to the shorter month: the
+ * 31st of March is compared with the 28th of February rather than with the 3rd of March.
+ */
+export function monthBefore(at: Date): Date {
+  const year = at.getUTCFullYear();
+  const month = at.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      Math.min(at.getUTCDate(), lastDay),
+      at.getUTCHours(),
+      at.getUTCMinutes(),
+      at.getUTCSeconds(),
+      at.getUTCMilliseconds(),
+    ),
+  );
+}
+
+/**
+ * The period as it stood at an instant, for "the same point last month". The day the
+ * instant falls in is taken pro rata, so eleven and a half days are compared with eleven
+ * and a half days rather than twelve.
+ */
+export function periodAt(period: UsagePeriod, at: Date): UsagePeriod {
+  const cut = at.getTime();
+  const kept = period.days.filter((day) => Date.parse(day) < cut).length;
+  const last = kept - 1;
+  const lastStart = last < 0 ? cut : Date.parse(period.days[last] ?? period.start);
+  const share = Math.min(1, Math.max(0, (cut - lastStart) / DAY));
+
+  const counter = (values: readonly number[]) =>
+    values
+      .slice(0, kept)
+      .map((value, index) => (index === last ? Math.round(value * share) : value));
+  const mau = period.mau.slice(0, kept).map((value, index) => {
+    if (index !== last) return value;
+    const before = period.mau[index - 1] ?? 0;
+    return Math.round(before + (value - before) * share);
+  });
+
+  return {
+    ...period,
+    days: period.days.slice(0, kept),
+    mau,
+    emails: counter(period.emails),
+    smsMessages: counter(period.smsMessages),
+    smsSegments: counter(period.smsSegments),
+    smsCostCents: counter(period.smsCostCents),
+  };
 }
 
 /*
  * The bill.
  */
 
-export interface CostLine {
-  id: string;
+export type LineId = "mau" | "email" | "domains" | "sms" | "logging" | "security";
+
+/**
+ * Why a line comes to what it does. `allowance`, `no_usage`, `vendor` and `unmetered` all
+ * charge nothing and mean four different things (notes/usage.md, acceptance checks).
+ */
+export type LineState = "charged" | "allowance" | "no_usage" | "vendor" | "unmetered" | "included";
+
+export interface BillLine {
+  id: LineId;
   label: string;
-  /** The quantity as the row writes it: "62,140 users", "18,402 emails". */
-  quantity: string;
-  /** The rate as the row writes it, or why there is none. */
+  /** In the billed unit. Null where there is nothing to count. */
+  quantity: number | null;
+  unit: string;
+  /** Under the quantity: "12,140 past the free 50,000", "620 messages". */
+  detail: string;
   rate: string;
-  amount: number;
-  /** Nothing to pay, and the row says why rather than showing a zero. */
-  free?: boolean;
-  /** The rate is a proposal, not a published price. */
-  provisional?: boolean;
+  /** Charged by Idenzy, in cents. Null where nothing is metered. */
+  cents: number | null;
+  /** Who invoices the line: "Idenzy", "Your Twilio account". */
+  owner: string;
+  state: LineState;
+  /** Beside the charge, where a bare figure would mislead. */
+  note: string;
 }
 
 export interface Bill {
-  lines: CostLine[];
-  total: number;
-}
-
-function money(amount: number): string {
-  return `$${amount.toFixed(2)}`;
+  lines: BillLine[];
+  totalCents: number;
 }
 
 function count(value: number): string {
   return value.toLocaleString("en");
 }
 
-/**
- * Every line, including the ones that come to nothing.
- *
- * A line worth zero is still a line: "50,000 of 50,000 users, free" is the answer to what
- * a customer is actually asking, and a bill that omitted it would read as a bill that had
- * not counted them. The same goes for a channel somebody brought their own vendor for.
- */
-export function billFor(period: UsagePeriod): Bill {
-  const mau = latest(period.mau);
-  const emails = sum(period.emails);
-  const messages = sum(period.sms);
-  const bytes = sum(period.logBytes);
-  const billable = billableMau(mau);
-
-  const lines: CostLine[] = [
-    {
-      id: "mau",
-      label: "Monthly active users",
-      quantity:
-        billable === 0
-          ? `${count(mau)} of ${count(FREE_MAU)} free`
-          : `${count(billable)} past the free ${count(FREE_MAU)}`,
-      rate: billable === 0 ? "Free on every project" : `$${MAU_PRICE.toFixed(4)} each`,
-      amount: mauCost(mau),
-      ...(billable === 0 ? { free: true } : {}),
-    },
-    {
-      id: "email",
-      label: "Email",
-      quantity: `${count(emails)} sent`,
-      rate: period.byoEmail
-        ? "Your own SES or SMTP"
-        : `${money(period.customDomains > 0 ? CUSTOM_RATE_PER_THOUSAND : SHARED_RATE_PER_THOUSAND)} per 1,000`,
-      amount: emailCost(emails, period.customDomains > 0, period.byoEmail),
-      ...(period.byoEmail ? { free: true } : {}),
-    },
-    {
-      id: "sms",
-      label: "SMS",
-      quantity: `${count(messages)} sent`,
-      rate: period.byoSms ? "Your own account" : "The destination's own rate",
-      amount: period.byoSms ? 0 : sum(period.smsCost),
-      ...(period.byoSms ? { free: true } : {}),
-    },
-    {
-      id: "logging",
-      label: "Logging",
-      quantity: formatBytes(bytes),
-      rate: `${money(LOGGING_PRICE_PER_GB)} per GB, proposed`,
-      amount: 0,
-      free: true,
-      provisional: true,
-    },
-  ];
-
-  if (period.customDomains > 0) {
-    lines.splice(2, 0, {
-      id: "domains",
-      label: "Sending domains",
-      quantity: `${period.customDomains} of your own`,
-      rate: `${money(CUSTOM_DOMAIN_MONTHLY)} a month each`,
-      amount: domainsCost(period.customDomains),
-    });
-  }
-
-  return { lines, total: lines.reduce((running, line) => running + line.amount, 0) };
+function plural(value: number, one: string, many: string): string {
+  return value === 1 ? one : many;
 }
 
-/** Bytes in the panel's voice: "1.4 GB", never "1503238553". */
-export function formatBytes(bytes: number): string {
-  const parts = formatFigure(bytes, { format: "bytes", decimals: 1 });
-  return `${parts.digits}${parts.magnitude} ${parts.unit}`.trim();
+function mauLine(totals: UsageTotals): BillLine {
+  const billable = billableMau(totals.mau);
+  return {
+    id: "mau",
+    label: "Monthly active users",
+    quantity: totals.mau,
+    unit: plural(totals.mau, "user", "users"),
+    detail:
+      billable === 0
+        ? `Within the free ${count(FREE_MAU)}`
+        : `${count(billable)} past the free ${count(FREE_MAU)}`,
+    rate: `$${MAU_PRICE} per user past ${count(FREE_MAU)}`,
+    cents: mauCents(totals.mau),
+    owner: "Idenzy",
+    state: billable === 0 ? "allowance" : "charged",
+    note: billable === 0 ? "Inside the allowance" : "",
+  };
+}
+
+function emailLine(period: UsagePeriod, totals: UsageTotals): BillLine {
+  const shared = {
+    id: "email" as const,
+    label: "Email",
+    quantity: totals.emails,
+    unit: plural(totals.emails, "email", "emails"),
+  };
+  if (period.byoEmail) {
+    return {
+      ...shared,
+      detail: "Through your own provider",
+      rate: "No Idenzy carriage fee",
+      cents: 0,
+      owner: "Your SES or SMTP provider",
+      state: "vendor",
+      note: "Charged by Idenzy. Your provider bills you separately.",
+    };
+  }
+  const perThousand = period.ownDomain ? CUSTOM_CENTS_PER_THOUSAND : SHARED_CENTS_PER_THOUSAND;
+  return {
+    ...shared,
+    detail: period.ownDomain ? "From a domain of yours" : "From our shared domain",
+    rate: `${formatCents(perThousand)} per 1,000`,
+    cents: emailCents(totals.emails, period.ownDomain, false),
+    owner: "Idenzy",
+    state: totals.emails === 0 ? "no_usage" : "charged",
+    note: totals.emails === 0 ? "Nothing sent" : "",
+  };
+}
+
+/** Only where the project has a domain of its own: nothing to count is not a line. */
+function domainsLine(period: UsagePeriod): BillLine[] {
+  if (period.customDomains === 0) return [];
+  return [
+    {
+      id: "domains",
+      label: "Sending domains",
+      quantity: period.customDomains,
+      unit: plural(period.customDomains, "domain", "domains"),
+      detail: "Billed for the month, verified or not",
+      rate: `${formatCents(DOMAIN_CENTS)} per domain a month`,
+      cents: domainsCents(period.customDomains),
+      owner: "Idenzy",
+      state: "charged",
+      note: "",
+    },
+  ];
+}
+
+function smsLine(period: UsagePeriod, totals: UsageTotals): BillLine {
+  const vendor = period.smsVendor === null ? null : byoVendorInfo(period.smsVendor);
+  const shared = {
+    id: "sms" as const,
+    label: "SMS",
+    quantity: totals.smsSegments,
+    unit: plural(totals.smsSegments, "segment", "segments"),
+    detail: `${count(totals.smsMessages)} ${plural(totals.smsMessages, "message", "messages")}`,
+  };
+  if (vendor) {
+    return {
+      ...shared,
+      rate: "No Idenzy carriage fee",
+      cents: 0,
+      owner: `Your ${vendor.label} account`,
+      state: "vendor",
+      note: `Charged by Idenzy. ${vendor.label} bills you separately.`,
+    };
+  }
+  return {
+    ...shared,
+    rate: "The destination's rate per segment",
+    cents: totals.smsCostCents,
+    owner: "Idenzy",
+    state: totals.smsSegments === 0 ? "no_usage" : "charged",
+    note: totals.smsSegments === 0 ? "Nothing sent" : "",
+  };
+}
+
+/** Not shipped: no quantity, no charge and no price, rather than a zero that looks measured. */
+const LOGGING_LINE: BillLine = {
+  id: "logging",
+  label: "Logging",
+  quantity: null,
+  unit: "",
+  detail: "Not shipped",
+  rate: "No published price",
+  cents: null,
+  owner: "Not billed",
+  state: "unmetered",
+  note: "Not metered",
+};
+
+/** On every bill so what costs nothing at any volume is seen to cost nothing. */
+const SECURITY_LINE: BillLine = {
+  id: "security",
+  label: "Security features",
+  quantity: null,
+  unit: "",
+  detail: "Passkeys, MFA, custom auth domains, the audit trail",
+  rate: "No charge at any volume",
+  cents: 0,
+  owner: "Idenzy",
+  state: "included",
+  note: "Included",
+};
+
+function linesFrom(period: UsagePeriod, totals: UsageTotals): BillLine[] {
+  return [
+    mauLine(totals),
+    emailLine(period, totals),
+    ...domainsLine(period),
+    smsLine(period, totals),
+    { ...LOGGING_LINE },
+    { ...SECURITY_LINE },
+  ];
+}
+
+function billOf(lines: BillLine[]): Bill {
+  return { lines, totalCents: lines.reduce((total, line) => total + (line.cents ?? 0), 0) };
+}
+
+/** Every line, including the ones that come to nothing, and the sum of their rounded cents. */
+export function billFor(period: UsagePeriod): Bill {
+  return billOf(linesFrom(period, totalsOf(period)));
+}
+
+/** The quantity as a cell writes it: "62,140 users", or why there is no count. */
+export function quantityWords(line: BillLine): string {
+  if (line.quantity === null) return line.state === "included" ? "Included" : "Not metered";
+  return `${count(line.quantity)} ${line.unit}`;
 }
 
 /*
  * Where the month lands.
  */
 
-/** How much of the billing period has passed, 0 to 1. */
-export function periodProgress(period: UsagePeriod, now: Date): number {
-  const start = new Date(period.start).getTime();
-  const end = new Date(period.end).getTime();
-  if (end <= start) return 1;
-  return Math.min(1, Math.max(0, (now.getTime() - start) / (end - start)));
+/** The average of the last complete days, or of the part of the day there is. */
+function dailyRate(values: readonly number[], complete: number, partialShare: number): number {
+  if (complete === 0) return (values[0] ?? 0) / Math.max(partialShare, 1 / 24);
+  const recent = values.slice(Math.max(0, complete - RATE_WINDOW_DAYS), complete);
+  return sum(recent) / recent.length;
 }
 
 /**
- * Where a running total lands if the rest of the month looks like the part that has
- * happened. Straight-line, which is the only projection worth showing: anything cleverer
- * invites a reader to trust it, and a bill is not a forecast.
- *
- * A level metric such as active users is not projected at all. Its value is not a running
- * total, so multiplying it by the month's remainder would say nothing.
+ * Each meter at month-end if the rest of the month runs at the last week's average
+ * (`PROJECTION_BASIS`). Per meter rather than the total divided by the month's progress,
+ * because active users are free up to the allowance and a domain costs the same on the
+ * 1st as on the 30th: straight-lining the dollars would project neither correctly.
  */
-export function projectedTotal(soFar: number, progress: number): number {
-  if (progress <= 0) return soFar;
-  return soFar / progress;
+export function projectTotals(period: UsagePeriod, asOf: Date): UsageTotals {
+  const so = totalsOf(period);
+  if (period.closed || period.days.length === 0) return so;
+
+  const lastStart = Date.parse(period.days.at(-1) ?? period.start);
+  const partialShare = Math.min(1, Math.max(0, (asOf.getTime() - lastStart) / DAY));
+  const complete = partialShare < 1 ? period.days.length - 1 : period.days.length;
+  const remaining = Math.max(0, (Date.parse(period.end) - asOf.getTime()) / DAY);
+
+  const additions = period.mau.map((value, index) => value - (period.mau[index - 1] ?? 0));
+  const ahead = (values: readonly number[]) =>
+    dailyRate(values, complete, partialShare) * remaining;
+
+  return {
+    mau: Math.round(so.mau + ahead(additions)),
+    emails: Math.round(so.emails + ahead(period.emails)),
+    smsMessages: Math.round(so.smsMessages + ahead(period.smsMessages)),
+    smsSegments: Math.round(so.smsSegments + ahead(period.smsSegments)),
+    smsCostCents: Math.round(so.smsCostCents + ahead(period.smsCostCents)),
+  };
+}
+
+/** The bill at month-end on the projected totals. A closed period's is its own bill. */
+export function projectBill(period: UsagePeriod, asOf: Date): Bill {
+  return billOf(linesFrom(period, projectTotals(period, asOf)));
+}
+
+/*
+ * The activity chart.
+ */
+
+export type UsageRange = "1d" | "7d" | "30d";
+
+export interface UsageWindow {
+  granularity: "hour" | "day";
+  /** Bucket starts, oldest first, in epoch milliseconds. */
+  buckets: number[];
+}
+
+const RANGE_BUCKETS: Record<UsageRange, number> = { "1d": 24, "7d": 7, "30d": 30 };
+
+/** The buckets that end at `anchor`, which is exclusive: the instant the figures run to. */
+export function usageWindow(range: UsageRange, anchor: Date): UsageWindow {
+  const granularity = range === "1d" ? "hour" : "day";
+  const step = granularity === "hour" ? HOUR : DAY;
+  const last = Math.floor((anchor.getTime() - 1) / step) * step;
+  const length = RANGE_BUCKETS[range];
+  return {
+    granularity,
+    buckets: Array.from({ length }, (_, index) => last - (length - 1 - index) * step),
+  };
+}
+
+/**
+ * The window and what it is compared with: the same buckets one calendar month earlier.
+ * Not the window immediately before, because active users are a level that starts again
+ * on the 1st, and the seven days before the 7th of a month straddle that reset.
+ */
+export function usageWindows(range: UsageRange, anchor: Date) {
+  return { current: usageWindow(range, anchor), previous: usageWindow(range, monthBefore(anchor)) };
+}
+
+const TICK_DAY = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
+const TICK_HOUR = new Intl.DateTimeFormat("en", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "UTC",
+});
+
+export function bucketTick(bucket: number, granularity: UsageWindow["granularity"]): string {
+  return (granularity === "hour" ? TICK_HOUR : TICK_DAY).format(bucket);
+}
+
+/** "Sep 11", or "Sep 11, 14:00" for an hour. */
+export function bucketTitle(bucket: number, granularity: UsageWindow["granularity"]): string {
+  const day = TICK_DAY.format(bucket);
+  return granularity === "hour" ? `${day}, ${TICK_HOUR.format(bucket)}` : day;
+}
+
+/** "Sep 5 to 11", "Aug 13 to Sep 11", "24 hours to Sep 11, 15:00". */
+export function windowLabel(window: UsageWindow): string {
+  const first = window.buckets[0] ?? 0;
+  const last = window.buckets.at(-1) ?? first;
+  if (window.granularity === "hour") return `24 hours to ${bucketTitle(last + HOUR, "hour")}`;
+  const from = TICK_DAY.format(first);
+  const to = TICK_DAY.format(last);
+  const sameMonth = new Date(first).getUTCMonth() === new Date(last).getUTCMonth();
+  return `${from} to ${sameMonth ? new Date(last).getUTCDate() : to}`;
+}
+
+export type ChartMeterId = "mau" | "emails" | "sms";
+
+export interface ChartMeter {
+  id: ChartMeterId;
+  label: string;
+  description: string;
+}
+
+/** What the chart can draw. Logging is not among them: a meter that does not exist has no line. */
+export const CHART_METERS: readonly ChartMeter[] = [
+  {
+    id: "mau",
+    label: "Monthly active users",
+    description:
+      "The month's count as it stood at each point. It starts again on the 1st, so a window across a month drops there.",
+  },
+  {
+    id: "emails",
+    label: "Emails sent",
+    description: "Every email this project sent, whoever carried it.",
+  },
+  {
+    id: "sms",
+    label: "SMS segments",
+    description: "Segments sent, which is the unit an SMS is billed by.",
+  },
+];
+
+/*
+ * Naming a period.
+ */
+
+const MONTH = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
+const MONTH_ONLY = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" });
+const SPAN_DAY = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "September 2026". */
+export function periodLabel(period: UsagePeriod): string {
+  return MONTH.format(Date.parse(period.start));
+}
+
+/** "September". */
+export function periodMonth(period: UsagePeriod): string {
+  return MONTH_ONLY.format(Date.parse(period.start));
+}
+
+/** "Sep 1 to Sep 30, 2026": the last day, since `end` is the first instant after it. */
+export function periodSpan(period: UsagePeriod): string {
+  const first = TICK_DAY.format(Date.parse(period.start));
+  return `${first} to ${SPAN_DAY.format(Date.parse(period.end) - DAY)}`;
+}
+
+/** "Sep 30": the last day of the period, which a projection runs to. */
+export function periodLastDay(period: UsagePeriod): string {
+  return TICK_DAY.format(Date.parse(period.end) - DAY);
+}
+
+/*
+ * Taking it away.
+ */
+
+export interface UsageExport {
+  period: UsagePeriod;
+  projectId: string;
+  projectName: string;
+  actual: Bill;
+  /** The month-end estimate, for an open period only. */
+  projected: Bill | null;
+  /** The instant the figures run to. */
+  updatedAt: string | null;
+}
+
+function dollars(cents: number | null): string {
+  return cents === null ? "" : (cents / 100).toFixed(2);
+}
+
+/**
+ * The period as CSV, carrying what the notes ask an export to carry: the period, the
+ * scope, the currency, each line's unit and owner, and whether a figure is actual, final
+ * or estimated. An open period's estimate is its own rows rather than a column, so a sum
+ * down the charge column of either set is that set's total.
+ */
+export function usageCsv(input: UsageExport): string {
+  const header = [
+    "period",
+    "period_start",
+    "period_end",
+    "project_id",
+    "project",
+    "currency",
+    "basis",
+    "line_item",
+    "quantity",
+    "unit",
+    "unit_rate",
+    "idenzy_charge",
+    "billing_owner",
+    "data_updated_at",
+  ];
+
+  const { period } = input;
+  const rows = (bill: Bill, basis: string) => [
+    ...bill.lines.map((line) => [
+      period.id,
+      period.start,
+      period.end,
+      input.projectId,
+      input.projectName,
+      "USD",
+      basis,
+      line.label,
+      line.quantity ?? "",
+      line.quantity === null ? quantityWords(line) : line.unit,
+      line.rate,
+      dollars(line.cents),
+      line.owner,
+      input.updatedAt ?? "",
+    ]),
+    [
+      period.id,
+      period.start,
+      period.end,
+      input.projectId,
+      input.projectName,
+      "USD",
+      basis,
+      "Total",
+      "",
+      "",
+      "",
+      dollars(bill.totalCents),
+      "Idenzy",
+      input.updatedAt ?? "",
+    ],
+  ];
+
+  const body = [
+    ...rows(input.actual, period.closed ? "final" : "actual"),
+    ...(input.projected && !period.closed ? rows(input.projected, "estimated") : []),
+  ];
+
+  return [header.join(","), ...body.map((row) => row.map(csvCell).join(","))].join("\n");
 }

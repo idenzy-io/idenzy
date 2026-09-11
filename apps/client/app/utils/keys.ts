@@ -1,32 +1,25 @@
 /**
- * API keys as the server issues and checks them (`api_keys`, PROJECT.md 12), and the small
- * amount of arithmetic the screen does over them.
+ * API keys as the server issues and checks them (`api_keys`, PROJECT.md 12), and what the
+ * screen works out from them (notes/keys.md).
  *
- * Three properties of that table decide almost everything this file and its screen do.
+ * Only a SHA-256 digest is stored, so a key is shown once, when it is made, and `prefix` is
+ * the only part of it that exists in the clear. `revoked_at` is read on the request path
+ * with no cache in front of it, so revoking lands on the next request, and replacing a key
+ * without downtime is a procedure: a second key, a deployment, then the revocation.
  *
- * What is stored is a SHA-256 digest under a unique index, not ciphertext. There is no
- * decrypt path to add, so a key is shown exactly once, at the moment it is made, and the
- * panel could not offer to show it a second time whoever asked. That is the trade the
- * industry states out loud and this schema has already settled: a dashboard that can
- * re-reveal a key is friendlier, and it makes a far more attractive database.
- *
- * `prefix` is stored beside the digest, first characters only, so a key can be named in a
- * log without being usable. It is therefore the only handle a key has here. The table
- * carries no name column, so a key is told apart by its prefix, its kind and its dates, and
- * matching a row against your own `.env` means matching the prefix.
- *
- * `revoked_at` is read on the request path: `resolve_project_by_key_hash` filters on it with
- * no cache in front, so a revocation is immediate and total. That is what makes rotation a
- * procedure and not a button. There is no grace window to grant, so the overlap has to be
- * two live keys at once, and `last_used_at` is the only thing that says when the old one has
- * gone quiet enough to take away.
+ * What the procedure never does is guess. Two live keys of one kind are two keys and not a
+ * rotation: a rotation exists only when somebody starts one on a key, and the replacement
+ * names the key it replaces. `last_used_at` is an observation rather than a census. It says
+ * when a key was last presented and nothing about who else holds it, so the screen says "no
+ * observed use" over a stated window and asks the operator to confirm their consumers. It
+ * never says a key is safe to remove.
  *
  * The kinds are written out rather than imported from `@idenzy/protocol`, for the reason
  * `sessions.ts` writes out `AuthMethod`: the panel takes no dependency on that package until
  * the management API client does, and then both come from the one place.
  */
 
-import { DURATIONS } from "./time";
+import { DURATIONS, relativeTimeWords } from "./time";
 
 /*
  * The two kinds.
@@ -58,18 +51,24 @@ export const KEY_KIND_PREFIXES: Record<ApiKeyKind, string> = {
   secret: "sk_",
 };
 
-/** Where the key belongs, in one line. The row's whole reason for existing. */
-export const KEY_KIND_NOTES: Record<ApiKeyKind, string> = {
-  publishable:
-    "Meant to sit in a browser bundle. It names your project and nothing more: it cannot read a user, change a setting or mint a token, so shipping it is the point rather than a risk.",
-  secret:
-    "Meant never to leave a server. It acts as the project on the management API, so anything your backend can do it can do. A secret key in a client bundle is published at the next build, and nothing after that unpublishes it.",
-};
-
-/** How a key of each kind reaches us, for the row that says so. */
+/** How a key of each kind reaches us. */
 export const KEY_KIND_CARRIERS: Record<ApiKeyKind, string> = {
   publishable: "x-idenzy-publishable-key",
   secret: "Authorization: Bearer",
+};
+
+/** The choice the create dialog offers, in the reader's words rather than ours. */
+export const KEY_USES: Record<ApiKeyKind, { label: string; description: string }> = {
+  publishable: {
+    label: "Browser or app",
+    description:
+      "Goes in code anybody can read: a web bundle, a mobile app, a game client. It names your project and authorises nothing on its own, so shipping it is the point.",
+  },
+  secret: {
+    label: "Server",
+    description:
+      "Stays on your backend and acts as the project on the management API. It must never reach a browser, an app binary or a repository: a bundle publishes it at build time, and nothing unpublishes it afterwards.",
+  },
 };
 
 /*
@@ -111,190 +110,270 @@ export interface ProjectApiKey {
   /** Nothing reads these yet, and the screen says so rather than offering them. */
   scopes: readonly string[];
   createdAt: string;
-  /** Null until something calls with it. The field a rotation is finished by. */
+  /** Null until something presents it. An observation, never proof of who holds it. */
   lastUsedAt: string | null;
   revokedAt: string | null;
+  /**
+   * Who made it, read off the audit trail's `key.created` entry, since the row has no column
+   * for it. Null once that entry is past retention.
+   */
+  createdBy: string | null;
+  /**
+   * The key this one was made to replace, set only by Rotate. Proposed: `api_keys` has no
+   * column for it yet, which is why a rotation is not inferred from anything else.
+   */
+  replaces: string | null;
 }
 
 /**
- * The three states a key is in.
- *
- * `unused` is not a lesser `in_use`: a live key nothing has called is either a rotation
- * somebody started and did not finish, or a key that was made, pasted somewhere unknown and
- * forgotten. Both are worth seeing, and neither shows up if the list only sorts by date.
+ * Said once on the screen rather than faked on every row: the row has no column for a name,
+ * and a label kept only in the panel would be a decoration that disagreed with every other
+ * client of the API (notes/keys.md P1).
  */
-export type KeyState = "in_use" | "unused" | "revoked";
-
-export const KEY_STATES: readonly KeyState[] = ["in_use", "unused", "revoked"];
-
-export const KEY_STATE_LABELS: Record<KeyState, string> = {
-  in_use: "In use",
-  unused: "Never used",
-  revoked: "Revoked",
-};
-
-export function keyStateOf(key: ProjectApiKey): KeyState {
-  if (key.revokedAt !== null) return "revoked";
-  return key.lastUsedAt === null ? "unused" : "in_use";
-}
+export const PURPOSE_FIELD =
+  "Purpose is a proposed field. The API keeps no name for a key yet, so a key is told apart by its prefix and by who made it.";
 
 export function isLive(key: ProjectApiKey): boolean {
   return key.revokedAt === null;
 }
 
-/** For sorting the state column: what an operator wants grouped at the top. */
-export const KEY_STATE_RANK: Record<KeyState, number> = { unused: 0, in_use: 1, revoked: 2 };
-
 /*
- * Narrowing the list.
+ * The tabs under the title.
  */
 
-export type KeyFilter = "live" | "revoked" | "all";
+export type KeyTab = "all" | ApiKeyKind | "revoked";
 
-export const KEY_FILTERS: readonly KeyFilter[] = ["live", "revoked", "all"];
+/** All keys first, so the page's own address is the whole list and each tab narrows it. */
+export const KEY_TABS: readonly { id: KeyTab; label: string }[] = [
+  { id: "all", label: "All keys" },
+  { id: "publishable", label: "Publishable keys" },
+  { id: "secret", label: "Secret keys" },
+  { id: "revoked", label: "Revoked" },
+];
 
-export function matchesKeyFilter(key: ProjectApiKey, filter: KeyFilter): boolean {
-  if (filter === "all") return true;
-  return filter === "live" ? isLive(key) : !isLive(key);
-}
-
-export interface KeyCounts {
-  all: number;
-  live: number;
-  revoked: number;
-  /** Live keys nothing has ever called. The one count worth a colour. */
-  unused: number;
-}
-
-export function countKeys(keys: readonly ProjectApiKey[]): KeyCounts {
-  const counts: KeyCounts = { all: keys.length, live: 0, revoked: 0, unused: 0 };
-  for (const key of keys) {
-    if (isLive(key)) {
-      counts.live += 1;
-      if (key.lastUsedAt === null) counts.unused += 1;
-    } else {
-      counts.revoked += 1;
-    }
-  }
-  return counts;
-}
-
-/*
- * Rotating.
- */
-
-/**
- * How long a live key must have been silent before taking it away is safe.
- *
- * A stated constant rather than a setting, because it is not a preference: it is how long a
- * deployment takes to finish rolling and how long a cached client holds an old value. A
- * project that wants longer waits longer, and the screen will keep saying the same thing.
- */
-export const QUIET_HOURS = 24;
-
-export interface Rotation {
-  kind: ApiKeyKind;
-  live: readonly ProjectApiKey[];
-  /**
-   * The live key traffic is arriving on: the most recently used, or the newest where none
-   * has been used at all. What a customer would call "the current key".
-   */
-  current: ProjectApiKey | null;
-  /** Every other live key of this kind. Taking these away is what ends the rotation. */
-  previous: readonly ProjectApiKey[];
-  /** Two or more live keys of one kind, which is a rotation that has not been finished. */
-  rotating: boolean;
-  /** Every `previous` key has been silent for `QUIET_HOURS`, so revoking breaks nothing. */
-  quiet: boolean;
-}
-
-function usedAt(key: ProjectApiKey): number {
-  return key.lastUsedAt === null ? 0 : new Date(key.lastUsedAt).getTime();
-}
-
-/** Whether a key has been silent long enough that revoking it should break nothing. */
-export function isQuiet(key: ProjectApiKey, now: Date): boolean {
-  if (key.lastUsedAt === null) return true;
-  return now.getTime() - new Date(key.lastUsedAt).getTime() > QUIET_HOURS * DURATIONS.HOUR;
+/** Anything the URL carries that is not a tab reads as the first one. */
+export function keyTabOf(value: unknown): KeyTab {
+  return KEY_TABS.some((tab) => tab.id === value) ? (value as KeyTab) : "all";
 }
 
 /**
- * Where each kind stands, which is the only question worth asking mid-rotation.
- *
- * `current` is decided by use and not by age, deliberately. The newest key is the one you
- * just made and have not deployed yet; the one traffic is actually arriving on is the one
- * you must not revoke. Sorting by `createdAt` would name the wrong key on exactly the day it
- * matters.
+ * What a tab lists, newest first. A revoked key is a record rather than something to act on,
+ * so it has a tab of its own and joins the others only when the reader asks for it with Show
+ * revoked.
  */
-export function rotationOf(keys: readonly ProjectApiKey[], kind: ApiKeyKind, now: Date): Rotation {
-  const live = keys.filter((key) => key.kind === kind && isLive(key));
-  const ranked = [...live].sort((a, b) => {
-    const used = usedAt(b) - usedAt(a);
-    return used !== 0 ? used : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+export function keysOnTab(
+  keys: readonly ProjectApiKey[],
+  tab: KeyTab,
+  showRevoked = false,
+): ProjectApiKey[] {
+  const shown = keys.filter((key) => {
+    if (tab === "revoked") return !isLive(key);
+    if (!isLive(key) && !showRevoked) return false;
+    return tab === "all" || key.kind === tab;
   });
-  const current = ranked[0] ?? null;
-  const previous = ranked.slice(1);
+  return shown.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Each tab's count as it would list, so a count never disagrees with the rows under it. */
+export function tabCounts(
+  keys: readonly ProjectApiKey[],
+  showRevoked = false,
+): Record<KeyTab, number> {
   return {
-    kind,
-    live,
-    current,
-    previous,
-    rotating: live.length > 1,
-    quiet: previous.every((key) => isQuiet(key, now)),
+    all: keysOnTab(keys, "all", showRevoked).length,
+    publishable: keysOnTab(keys, "publishable", showRevoked).length,
+    secret: keysOnTab(keys, "secret", showRevoked).length,
+    revoked: keysOnTab(keys, "revoked").length,
   };
 }
 
 /*
- * How old the live keys are.
+ * What was observed.
  */
 
-export interface AgeBucket {
-  id: string;
-  label: string;
-  /** Days since the key was made. Inclusive at `from`, exclusive at `to`. */
-  from: number;
-  to: number;
-  /** A text colour class where the bucket is one to think about. */
-  tone: string;
+/** How far back "no observed use" looks, stated wherever the words appear. */
+export const OBSERVATION_WINDOW_HOURS = 24;
+
+export const OBSERVATION_LIMIT =
+  "Observed use is the last time a request presented the key. It says nothing about what presented it or how often, so a job that runs once a week looks unused for six days at a time.";
+
+export type Observation = "recent" | "quiet" | "never";
+
+export function observationOf(key: ProjectApiKey, now: Date): Observation {
+  if (key.lastUsedAt === null) return "never";
+  const since = now.getTime() - Date.parse(key.lastUsedAt);
+  return since <= OBSERVATION_WINDOW_HOURS * DURATIONS.HOUR ? "recent" : "quiet";
 }
 
-export const AGE_BUCKETS: readonly AgeBucket[] = [
-  { id: "new", label: "Under a month", from: 0, to: 30, tone: "" },
-  { id: "recent", label: "1 to 3 months", from: 30, to: 90, tone: "" },
-  { id: "older", label: "3 to 12 months", from: 90, to: 365, tone: "" },
-  {
-    id: "ancient",
-    label: "Over a year",
-    from: 365,
-    to: Number.POSITIVE_INFINITY,
-    tone: "text-warning",
-  },
+/** What was seen, over what window. Never a verdict on whether anything still holds it. */
+export function observationWords(key: ProjectApiKey, now: Date): string {
+  const seen = observationOf(key, now);
+  if (seen === "never" || key.lastUsedAt === null) return "Not observed";
+  if (seen === "recent") return `Observed ${relativeTimeWords(key.lastUsedAt, now)}`;
+  return `No observed use in ${OBSERVATION_WINDOW_HOURS} hours`;
+}
+
+/*
+ * Rotating, only when somebody started it.
+ */
+
+export type RotationStep = "old" | "replacement" | "evidence" | "revoke";
+
+export const ROTATION_STEPS: readonly { id: RotationStep; label: string }[] = [
+  { id: "old", label: "Old key" },
+  { id: "replacement", label: "Replacement" },
+  { id: "evidence", label: "Deployment evidence" },
+  { id: "revoke", label: "Revoke old" },
 ];
 
-export interface AgeTally extends AgeBucket {
-  count: number;
-  /** Of the live keys counted, rounded, for the bar. */
-  share: number;
+export interface Rotation {
+  kind: ApiKeyKind;
+  old: ProjectApiKey;
+  replacement: ProjectApiKey;
+  /** Something has presented the replacement, so it is deployed somewhere. */
+  replacementObserved: boolean;
+  /** The old key was presented after the replacement was made: something still holds it. */
+  oldObservedSince: boolean;
+  /** Where it stands. Revoking the old key ends the rotation, so there is no finished step. */
+  step: RotationStep;
 }
 
-export function ageInDays(key: ProjectApiKey, now: Date): number {
-  return Math.floor((now.getTime() - new Date(key.createdAt).getTime()) / DURATIONS.DAY);
-}
-
-export function tallyKeyAges(keys: readonly ProjectApiKey[], now: Date): AgeTally[] {
-  const live = keys.filter(isLive);
-  const counts = new Map<string, number>();
-  for (const key of live) {
-    const days = ageInDays(key, now);
-    const bucket = AGE_BUCKETS.find((entry) => days >= entry.from && days < entry.to);
-    if (bucket) counts.set(bucket.id, (counts.get(bucket.id) ?? 0) + 1);
+/**
+ * Every rotation somebody started and has not finished: a live replacement naming a live old
+ * key. Two live keys of one kind are not one, whatever their dates say, because the newer of
+ * two keys is as likely to be an undeployed replacement as a key that already took over
+ * (notes/keys.md P1). Revoking the replacement abandons the rotation, which is why it needs
+ * both halves live.
+ */
+export function rotationsOf(keys: readonly ProjectApiKey[]): Rotation[] {
+  const byId = new Map(keys.map((key) => [key.id, key]));
+  const rotations: Rotation[] = [];
+  for (const replacement of keys) {
+    if (!isLive(replacement) || replacement.replaces === null) continue;
+    const old = byId.get(replacement.replaces);
+    if (old === undefined || !isLive(old)) continue;
+    const made = Date.parse(replacement.createdAt);
+    const replacementObserved = replacement.lastUsedAt !== null;
+    rotations.push({
+      kind: old.kind,
+      old,
+      replacement,
+      replacementObserved,
+      oldObservedSince: old.lastUsedAt !== null && Date.parse(old.lastUsedAt) > made,
+      step: replacementObserved ? "revoke" : "evidence",
+    });
   }
-  const total = live.length;
-  return AGE_BUCKETS.map((bucket) => {
-    const count = counts.get(bucket.id) ?? 0;
-    return { ...bucket, count, share: total === 0 ? 0 : Math.round((count / total) * 100) };
-  });
+  return rotations;
 }
+
+/** Which half of a rotation a key is, for its row. */
+export function rotationRole(
+  key: ProjectApiKey,
+  rotations: readonly Rotation[],
+): { role: "old" | "replacement"; rotation: Rotation } | null {
+  for (const rotation of rotations) {
+    if (rotation.old.id === key.id) return { role: "old", rotation };
+    if (rotation.replacement.id === key.id) return { role: "replacement", rotation };
+  }
+  return null;
+}
+
+/** What the workflow leads with. States what was observed and never that revoking is safe. */
+export function rotationHeadline(rotation: Rotation): string {
+  if (!rotation.replacementObserved) return "Deploy the replacement";
+  if (rotation.oldObservedSince) return "Both keys are still in use";
+  return "No observed use of the old key since the replacement was made";
+}
+
+export function rotationEvidence(
+  rotation: Rotation,
+  now: Date,
+): { old: string; replacement: string } {
+  const { old, replacement } = rotation;
+  const replacementWords =
+    replacement.lastUsedAt === null
+      ? "Not observed yet. Until something presents it, nothing is using it, and the rotation is not finished."
+      : `Observed ${relativeTimeWords(replacement.lastUsedAt, now)}, so something is deployed with it.`;
+
+  let oldWords = "Not observed since it was made.";
+  if (old.lastUsedAt !== null) {
+    const last = relativeTimeWords(old.lastUsedAt, now);
+    oldWords = rotation.oldObservedSince
+      ? `Observed ${last}, after the replacement was made. Something still holds it.`
+      : `No observed use since the replacement was made. Last observed ${last}.`;
+  }
+  return { old: oldWords, replacement: replacementWords };
+}
+
+/**
+ * The instructions somebody pastes into a ticket or a deploy checklist. The value is not in
+ * them because the panel does not hold it: it was shown once, to whoever made it.
+ */
+export function rotationInstructions(rotation: Rotation, projectName: string): string {
+  const { old, replacement, kind } = rotation;
+  const names = PLACEMENTS[kind].map((placement) => placement.name).join(" or ");
+  const lines = [
+    `Rotating the ${KEY_KIND_LABELS[kind].toLowerCase()} for ${projectName}.`,
+    "",
+    `1. Wherever ${old.prefix}… is set (${names}), put the replacement ${replacement.prefix}… in its place. Its value was shown once, when it was made; if nobody stored it, revoke ${replacement.prefix}… and start the rotation again.`,
+    "2. Deploy every consumer, including scheduled jobs and anything that runs less often than daily.",
+    `3. On the API keys screen, check the replacement shows observed use and the old key shows none after the replacement was made. ${OBSERVATION_LIMIT}`,
+    `4. Revoke ${old.prefix}… from its menu. It is refused on the very next request; there is no grace period.`,
+  ];
+  if (kind === "secret") {
+    lines.push("", `Server-side only: ${ENV_NAMES.secret} has no public spelling on purpose.`);
+  }
+  return lines.join("\n");
+}
+
+/*
+ * Where a key goes.
+ */
+
+export interface Placement {
+  id: string;
+  label: string;
+  /** The variable, under the framework's own prefix for a browser one. */
+  name: string;
+  /** The file or runtime that holds it. */
+  where: string;
+}
+
+/** The prefixes a framework exposes to a browser. A secret key is never under one. */
+export const PUBLIC_PREFIXES = ["VITE_", "NEXT_PUBLIC_", "NUXT_PUBLIC_", "PUBLIC_"] as const;
+
+/**
+ * The names our own starter templates write, so a line copied here and a line `idenzy init`
+ * wrote agree (`examples/`). The browser list carries no secret on purpose, and a test holds
+ * it to that.
+ */
+export const PLACEMENTS: Record<ApiKeyKind, readonly Placement[]> = {
+  publishable: [
+    {
+      id: "vite",
+      label: "React, Vue or Solid on Vite",
+      name: "VITE_IDENZY_PUBLISHABLE_KEY",
+      where: ".env",
+    },
+    {
+      id: "next",
+      label: "Next.js",
+      name: "NEXT_PUBLIC_IDENZY_PUBLISHABLE_KEY",
+      where: ".env.local",
+    },
+    { id: "nuxt", label: "Nuxt", name: "NUXT_PUBLIC_IDENZY_PUBLISHABLE_KEY", where: ".env" },
+    { id: "sveltekit", label: "SvelteKit", name: "PUBLIC_IDENZY_PUBLISHABLE_KEY", where: ".env" },
+  ],
+  secret: [
+    {
+      id: "server",
+      label: "Node, Next.js, SvelteKit, Remix or Astro server",
+      name: "IDENZY_SECRET_KEY",
+      where: "Server environment",
+    },
+    { id: "nuxt", label: "Nuxt", name: "NUXT_IDENZY_SECRET_KEY", where: "Server runtime config" },
+  ],
+};
 
 /*
  * Writing one down.
@@ -308,16 +387,17 @@ export function maskedKey(key: ProjectApiKey): string {
   return `${key.prefix}${KEY_MASK}`;
 }
 
+/** The key as the middle of a sentence names it: "secret key sk_4fQ2x9a…". */
+export function keyName(key: ProjectApiKey): string {
+  return `${KEY_KIND_LABELS[key.kind].toLowerCase()} ${key.prefix}…`;
+}
+
 /**
- * What is true of scopes today, in one place.
- *
- * The column exists, the resolver returns it and nothing reads it: `SecretKeyGuard` checks
- * only that the caller is a key at all. Offering a scope picker would put a control on the
- * screen that describes a restriction nobody enforces, which is the same mistake
- * `UnconfiguredAttestation` refuses to make on the SMS screen. So the screen says "full
- * access" and says why, and the picker arrives with the guard that reads it.
+ * What is true of scopes today, in one place. The column exists, the resolver returns it and
+ * nothing reads it, so the create dialog offers no picker (notes/keys.md: "scope only if
+ * enforced") and the screen says "full access" instead.
  */
 export const SCOPES = {
   label: "Full access",
-  note: "Every secret key can do everything the management API offers. The column that would narrow it exists on the row and no guard reads it yet, so a picker here would describe a restriction nothing applies.",
+  note: "Every secret key can do everything the management API offers. The column that would narrow it exists on the row and no guard reads it yet, so a picker would describe a restriction nothing applies.",
 } as const;

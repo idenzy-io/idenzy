@@ -82,6 +82,75 @@ export const EMAIL_CHANGE = {
   note: "Both addresses have to confirm, and a second factor has to have been proved recently. Confirming only the new one would let anybody at an unlocked screen move the account somewhere you cannot reach, and the old address is what stops that.",
 } as const;
 
+/**
+ * A change that has been asked for and not finished.
+ *
+ * Held apart from the profile on purpose. The address on the account is the one that still
+ * works, and it keeps working until both sides have answered; writing the new one straight
+ * onto the profile and marking it unverified would be the panel claiming a move that has
+ * not happened, and the reader would be locked out of a mailbox they still own
+ * (notes/account.md P1).
+ */
+export interface EmailChange {
+  /** Where it is going. The address on the profile is still the live one. */
+  email: string;
+  requestedAt: string;
+  expiresAt: string;
+  /** Whether each side has answered. Both, and the change lands. */
+  currentConfirmed: boolean;
+  newConfirmed: boolean;
+}
+
+/** How long a confirmation pair stands before the change has to be asked for again. */
+export const EMAIL_CHANGE_TTL_HOURS = 24;
+
+export function emailChangeExpiresAt(requestedAt: Date): string {
+  return new Date(requestedAt.getTime() + EMAIL_CHANGE_TTL_HOURS * 3_600_000).toISOString();
+}
+
+export function isEmailChangeExpired(change: EmailChange, now: Date): boolean {
+  return Date.parse(change.expiresAt) <= now.getTime();
+}
+
+/** Where a pending change has got to, in the words the row uses. */
+export function emailChangeWords(change: EmailChange, now: Date): string {
+  if (isEmailChangeExpired(change, now)) {
+    return "The confirmation links have expired. Nothing moved, so ask for the change again.";
+  }
+  if (change.currentConfirmed && !change.newConfirmed) {
+    return `Confirmed here. Waiting for ${change.email} to confirm.`;
+  }
+  if (!change.currentConfirmed && change.newConfirmed) {
+    return `${change.email} has confirmed. Waiting for the link sent to your current address.`;
+  }
+  return `Waiting for both addresses to confirm. Nothing changes until they do.`;
+}
+
+/*
+ * What this panel can actually write.
+ */
+
+export interface AccountCapability {
+  running: boolean;
+  /** Why not, in the reader's words. */
+  reason: string;
+}
+
+/**
+ * Whether a credential change on this account reaches a server.
+ *
+ * It does not. There is no management client behind this panel yet, so a password change
+ * moves a timestamp in memory and a confirmation link is never sent. The screen says so
+ * rather than reporting a success it cannot have had: a dialog that closes cleanly is the
+ * whole of the evidence a reader gets, and here that evidence would be false
+ * (notes/account.md P1, notes/dialogs.md "Saving is not the same as closing").
+ */
+export const ACCOUNT_WRITES: AccountCapability = {
+  running: false,
+  reason:
+    "Nothing on this screen reaches a server yet. There is no management API behind the panel, so a password change, an address change and a factor removal are held in this tab and gone on a reload, and no confirmation mail is sent.",
+};
+
 /*
  * Changing the password.
  */

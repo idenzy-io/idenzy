@@ -198,6 +198,30 @@ export function isSecurityEvent(reason: RevokeReason | null): boolean {
   return reason === "refresh_token_reuse";
 }
 
+/**
+ * The theme colour a status wears. Neutral is ink in both themes, which is what an expiry
+ * is: the session ran its course and nobody decided anything.
+ */
+export const SESSION_STATUS_TONES: Record<SessionStatus, string> = {
+  active: "success",
+  expired: "neutral",
+  revoked: "warning",
+};
+
+/**
+ * The colour a session's status is drawn in, here rather than in either table, because a
+ * project's list and one account's list show the same value and must not disagree about
+ * what it looks like.
+ *
+ * A session ended by reuse detection is not the same news as one somebody signed out of,
+ * so it is the one revocation that goes to the error colour.
+ */
+export function sessionTone(session: ProjectSession, now: Date): string {
+  const status = sessionStatus(session, now);
+  if (status === "revoked" && isSecurityEvent(endedBy(session, now))) return "error";
+  return SESSION_STATUS_TONES[status];
+}
+
 export const FACTOR_LABELS: Record<SignInFactor, string> = {
   pwd: "Password",
   otp_email: "Email code",
@@ -596,11 +620,6 @@ export function deviceLabel(session: ProjectSession): string {
 }
 
 /**
- * How many devices a list of sessions covers. Sessions sharing a `deviceId` are one
- * device; a session without one is counted as its own, because a client that does not
- * identify its install has given us no way to say two of them are the same machine.
- */
-/**
  * The countries a list actually came from, by name, so the filter offers the handful a
  * project sees rather than all two hundred and fifty. Sorted by name, because that is
  * the order they are read in, not the order the codes sort in.
@@ -616,6 +635,11 @@ export function countriesIn(sessions: readonly SessionRow[]): { code: string; na
     .sort((a, b) => a.name.localeCompare(b.name, "en"));
 }
 
+/**
+ * How many devices a list of sessions covers. Sessions sharing a `deviceId` are one
+ * device; a session without one is counted as its own, because a client that does not
+ * identify its install has given us no way to say two of them are the same machine.
+ */
 export function countDevices(sessions: readonly SessionRow[]): number {
   const identified = new Set<string>();
   let anonymous = 0;
@@ -758,6 +782,63 @@ export function countSessionsByStatus(
   const counts = { all: sessions.length, active: 0, expired: 0, revoked: 0 };
   for (const session of sessions) counts[sessionStatus(session, now)] += 1;
   return counts;
+}
+
+/** The figures over the table, each one the count of a list this screen can narrow to. */
+export interface SessionsSummary {
+  /** Sessions still live. */
+  live: number;
+  /** Devices behind them, by the rule `countDevices` keeps. */
+  devices: number;
+  /** Live sessions whose client sent no device id, so nothing can pair them up. */
+  unidentified: number;
+  /** Accounts holding at least one live session. */
+  accounts: number;
+  /** Live sessions that proved a second factor. */
+  factor: number;
+  /** That as a percentage of the live ones. Zero where none are live. */
+  factorShare: number;
+  /** Live sessions reached through a VPN, a proxy or a Tor exit. */
+  anonymised: number;
+  /** Sessions of any age that reuse detection ended. */
+  reuse: number;
+}
+
+/**
+ * The figures the strip over the table shows.
+ *
+ * Every one of them except `reuse` is scoped to the live sessions, because the figure and
+ * the list it opens have to be the same set: a device count over ended rows would count a
+ * machine that signed out last month, and a reader who clicked through to check would find
+ * a different number. `reuse` is the exception and has to be, since a session reuse
+ * detection ended is revoked by definition and counting only the live ones would report
+ * zero on a project where it fired this morning.
+ */
+export function summariseSessions(sessions: readonly SessionRow[], now: Date): SessionsSummary {
+  const live = sessions.filter((session) => sessionStatus(session, now) === "active");
+  const accounts = new Set<string>();
+  const summary: SessionsSummary = {
+    live: live.length,
+    devices: countDevices(live),
+    unidentified: 0,
+    accounts: 0,
+    factor: 0,
+    factorShare: 0,
+    anonymised: 0,
+    reuse: 0,
+  };
+  for (const session of live) {
+    accounts.add(session.userId);
+    if (session.deviceId === null) summary.unidentified += 1;
+    if (session.factorVerifiedAt !== null) summary.factor += 1;
+    if (networkFlags(session.network).length > 0) summary.anonymised += 1;
+  }
+  for (const session of sessions) {
+    if (endedBy(session, now) === "refresh_token_reuse") summary.reuse += 1;
+  }
+  summary.accounts = accounts.size;
+  summary.factorShare = live.length === 0 ? 0 : Math.round((summary.factor / live.length) * 100);
+  return summary;
 }
 
 /**

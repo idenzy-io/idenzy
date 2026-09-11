@@ -7,6 +7,8 @@
  * A project with no row sends nothing, which is the same answer as an empty allowlist
  * and is deliberate: "nobody configured this" is not a reason to start spending.
  */
+import { plural, type SetupCheck } from "./setup-check";
+
 export interface SmsPolicy {
   /** ISO 3166-1 alpha-2, default deny. Twenty countries share +1, so it is never a prefix. */
   allowedCountries: string[];
@@ -279,4 +281,212 @@ export function formatMoney(amount: number, currency: string): string {
 export function capShare(spentToday: number, cap: number): number {
   if (cap <= 0) return 1;
   return Math.min(1, Math.max(0, spentToday / cap));
+}
+
+/*
+ * Readiness: the five things that have to be true, and where each one is settled.
+ *
+ * They are on four different screens, which is the whole reason this list exists
+ * (notes/sms-policy.md P1). A project can have a perfect allowlist and a healthy cap and
+ * still send nothing because the method is off, the carrier account has no secret, or the
+ * attestation nobody wired is required. A policy must never read as ready while any of
+ * those is true, so the answer is computed over all five and the header badge is read
+ * from it rather than from the row.
+ */
+
+export interface SmsReadinessInput {
+  /** Whether the SMS one-time-code method is switched on at all. */
+  methodEnabled: boolean;
+  /** How SMS leaves, as the providers screen settled it. */
+  delivery: { ready: boolean; label: string };
+  policy: SmsPolicy | null;
+  spentToday: number;
+  /** The deployment's business rather than the project's, so it is passed in. */
+  attestationWired: boolean;
+  /** The account balance in cents, which pays for what the cap allows. */
+  balanceCents: number;
+}
+
+const POLICY_HERE = "Settled on this screen.";
+
+function methodCheck(enabled: boolean): SetupCheck {
+  return {
+    id: "method",
+    label: "Method",
+    state: enabled ? "pass" : "fail",
+    finding: enabled
+      ? "Codes by SMS are switched on, so a sign-in may ask for one."
+      : "Codes by SMS are switched off, so nothing on this screen is reached: the policy is read only once a send has been asked for.",
+    fix: { label: "One-time codes", to: "/methods/otp?channel=sms" },
+  };
+}
+
+function vendorCheck(delivery: { ready: boolean; label: string }): SetupCheck {
+  return {
+    id: "vendor",
+    label: "Vendor",
+    state: delivery.ready ? "pass" : "fail",
+    finding: delivery.ready
+      ? `${delivery.label}. A failed send is never retried: the spend is already reserved and a gateway timeout is the case where the message usually went out.`
+      : `${delivery.label}, so nothing can be handed to a carrier however this policy reads.`,
+    fix: { label: "Providers", to: "/sms/providers" },
+  };
+}
+
+function allowlistCheck(policy: SmsPolicy | null): SetupCheck {
+  if (policy === null) {
+    return {
+      id: "countries",
+      label: "Countries",
+      state: "fail",
+      finding:
+        "This project has no policy, which is the same answer as an empty allowlist: every send is refused with country_not_allowed and costs nothing.",
+    };
+  }
+  if (policy.allowedCountries.length === 0) {
+    return {
+      id: "countries",
+      label: "Countries",
+      state: "fail",
+      finding:
+        "The allowlist is empty, so every send is refused with country_not_allowed. It starts empty because pumping picks the destination, and the countries a product does not serve are the ones an attacker sends to.",
+    };
+  }
+  return {
+    id: "countries",
+    label: "Countries",
+    state: "pass",
+    finding: `${plural(policy.allowedCountries.length, "country is", "countries are")} allowed, placed from carrier metadata rather than from the dialling prefix. ${POLICY_HERE}`,
+  };
+}
+
+function humanCheck(policy: SmsPolicy | null, wired: boolean): SetupCheck {
+  const label = "Human check";
+  if (policy === null) {
+    return {
+      id: "attestation",
+      label,
+      state: "warn",
+      finding: "Nothing is decided about it yet, because the project has no policy.",
+    };
+  }
+  if (!policy.attestationRequired) {
+    return {
+      id: "attestation",
+      label,
+      state: "warn",
+      finding:
+        "Not required, so anybody who can reach your start endpoint can have a message sent to any allowed number at your expense. That is a risk to take deliberately, not a default.",
+    };
+  }
+  return {
+    id: "attestation",
+    label,
+    state: wired ? "pass" : "fail",
+    finding: wired
+      ? "Required, and checked before any counter is touched, so nobody can burn a stranger's daily allowance by naming their number."
+      : "Required, and nothing is wired on this deployment that can answer one, so every send is refused for a token the caller had no way to obtain. That is the intended failure: a verifier that accepted what it cannot check would make the setting read as protection while being none.",
+  };
+}
+
+/**
+ * Whether the account can pay for what the cap allows.
+ *
+ * A cap is a ceiling on spending and a balance is what there is to spend, so a cap above
+ * the balance is a limit that will never be reached: the send is refused for insufficient
+ * funds rather than for the reason the operator set. Compared against one day of the cap,
+ * because that is the horizon the cap itself is written in.
+ */
+function fundingCheck(policy: SmsPolicy | null, balanceCents: number): SetupCheck {
+  const balance = balanceCents / 100;
+  const label = "Funding";
+  const fix = { label: "Billing", to: "/billing" };
+  if (balance <= 0) {
+    return {
+      id: "funding",
+      label,
+      state: "fail",
+      finding: "The account balance is nought, so a send is refused before the cap is read.",
+      fix,
+    };
+  }
+  if (policy !== null && balance < policy.dailySpendCap) {
+    return {
+      id: "funding",
+      label,
+      state: "warn",
+      finding: `${formatMoney(balance, policy.currency)} on the account against a cap of ${formatMoney(policy.dailySpendCap, policy.currency)} a day, so the balance runs out before the cap does and the refusal names the balance rather than the limit you set.`,
+      fix,
+    };
+  }
+  return {
+    id: "funding",
+    label,
+    state: "pass",
+    finding: `${formatMoney(balance, policy?.currency ?? "USD")} on the account, which covers a full day at the cap.`,
+    fix,
+  };
+}
+
+/** The five checks, in the note's order: method, vendor, countries, human check, funding. */
+export function smsReadiness(input: SmsReadinessInput): SetupCheck[] {
+  return [
+    methodCheck(input.methodEnabled),
+    vendorCheck(input.delivery),
+    allowlistCheck(input.policy),
+    humanCheck(input.policy, input.attestationWired),
+    fundingCheck(input.policy, input.balanceCents),
+  ];
+}
+
+/** What is blocking, which is the failing checks and nothing else. */
+export function smsBlockers(checks: readonly SetupCheck[]): SetupCheck[] {
+  return checks.filter((check) => check.state === "fail");
+}
+
+/*
+ * Changing the cap, which is the one edit here that needs money beside it.
+ */
+
+export interface CapChange {
+  /** What is left today under the cap in force. */
+  remainingNow: number;
+  /** What would be left today under the typed one. */
+  remainingNext: number;
+  /** The typed cap is at or below what today has already spent. */
+  stopsNow: boolean;
+  /** The typed cap is the one in force. */
+  unchanged: boolean;
+}
+
+/**
+ * The before and after of a cap edit, against what today has already spent.
+ *
+ * The case worth naming is a cap set below the day's spend: it is legal, it takes effect
+ * on the next send, and it stops the channel for the rest of the UTC day. An operator
+ * lowering a cap to slow spending down is usually not asking for that, and a screen that
+ * only echoed the new number would not have said so.
+ */
+export function capChange(spentToday: number, currentCap: number, nextCap: number): CapChange {
+  return {
+    remainingNow: Math.max(0, currentCap - spentToday),
+    remainingNext: Math.max(0, nextCap - spentToday),
+    stopsNow: nextCap <= spentToday,
+    unchanged: nextCap === currentCap,
+  };
+}
+
+/** The instant the day's counters go back to nought, which is midnight UTC and not local. */
+export function nextUtcReset(now: Date): Date {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0),
+  );
+}
+
+/** How long until that, in the words a strip has room for: "in 7 hours". */
+export function untilReset(now: Date): string {
+  const minutes = Math.max(0, Math.round((nextUtcReset(now).getTime() - now.getTime()) / 60_000));
+  if (minutes < 60) return minutes <= 1 ? "in under a minute" : `in ${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  return hours === 1 ? "in an hour" : `in ${hours} hours`;
 }

@@ -16,7 +16,15 @@
  * adds up to. A screen that computed a token would show a plausible one that does not
  * exist, and the customer would paste it into their DNS and wait for a check that can
  * never pass.
+ *
+ * Two states, kept apart on purpose (notes/email-domains.md). Whether a domain is
+ * verified and whether it is the one sending are different questions with different
+ * answers, and a row that collapsed them would let a reader think verifying a domain had
+ * moved their From line. `verificationState` and `sendingState` are the two, and nothing
+ * on the screen may state one of them alone.
  */
+
+import type { BadgeTone } from "~/components/StatusBadge.vue";
 
 /*
  * The domain we own.
@@ -187,6 +195,182 @@ export function isReadyToSend(domain: SendingDomain): boolean {
 }
 
 /*
+ * The two states a row has to keep apart.
+ */
+
+export interface DomainState {
+  /** The word on the badge. */
+  label: string;
+  tone: BadgeTone;
+  /** The line under it, naming what the word was read off. */
+  detail: string;
+}
+
+/** Where the DNS stands. Never says anything about what the project sends from. */
+export function verificationState(domain: SendingDomain): DomainState {
+  if (domain.shared) {
+    return {
+      label: "Ours",
+      tone: "neutral",
+      detail: `SPF, DKIM and DMARC on ${SHARED_DOMAIN} are published by us and already correct.`,
+    };
+  }
+  const { found, required } = recordProgress(domain);
+  if (domain.status === "failed") {
+    return {
+      label: "Failed",
+      tone: "error",
+      detail: "The provider gave up on this identity. Remove it and add it again to start over.",
+    };
+  }
+  if (isReadyToSend(domain)) {
+    return {
+      label: "Verified",
+      tone: "success",
+      detail: `All ${required} required records found at your DNS provider.`,
+    };
+  }
+  return {
+    label: "Verifying",
+    tone: "warning",
+    detail: `${found} of ${required} required records found. The rest are not there yet.`,
+  };
+}
+
+/**
+ * Whether this domain carries the From line, and whether it could.
+ *
+ * "Ready" is the state the note exists for: a verified domain that is not the sender is
+ * a finished setup waiting on one deliberate act, and it must not read as either sending
+ * or broken.
+ */
+export function sendingState(domain: SendingDomain): DomainState {
+  if (domain.inUse) {
+    return {
+      label: "Sending from this",
+      tone: "success",
+      detail: `Every auth mail on this project leaves as ${fromAddress(domain.domain)}.`,
+    };
+  }
+  if (isReadyToSend(domain)) {
+    return {
+      label: "Ready",
+      tone: "neutral",
+      detail: "Verified and not the sender. Moving the From line to it is a separate step.",
+    };
+  }
+  return {
+    label: "Cannot send yet",
+    tone: "neutral",
+    detail: "A domain sends only once every required record resolves.",
+  };
+}
+
+/*
+ * The four steps, which are the shape of the setup rather than a decoration.
+ */
+
+export type SetupStage = "add" | "publish" | "verify" | "select";
+
+export const SETUP_STEPS: readonly { id: SetupStage; label: string }[] = [
+  { id: "add", label: "Add" },
+  { id: "publish", label: "Publish DNS" },
+  { id: "verify", label: "Verify" },
+  { id: "select", label: "Select sender" },
+];
+
+/**
+ * Which step a domain is on.
+ *
+ * "Publish" covers everything until every required record is found, because what the
+ * panel knows is what it saw and not what somebody pasted. "Verify" is the window where
+ * the records are in and the check has not caught up, which is a real state a customer
+ * sits in and the reason `Check records` exists at all.
+ */
+export function setupStage(domain: SendingDomain): SetupStage {
+  if (domain.inUse) return "select";
+  if (isReadyToSend(domain)) return domain.status === "verified" ? "select" : "verify";
+  return "publish";
+}
+
+/** A domain that is verified and sending: nothing left on this screen to do with it. */
+export function isSetupComplete(domain: SendingDomain): boolean {
+  return domain.inUse && isReadyToSend(domain);
+}
+
+/*
+ * One record, as a DNS console asks for it.
+ */
+
+/** What we ask for in the TTL column. Any value works; consoles default to something. */
+export const RECORD_TTL = "300";
+
+/** How often the check runs on its own, so `Check records` is a nudge and not the only way. */
+export const CHECK_EVERY_MINUTES = 5;
+
+/**
+ * The name to paste where a console appends the zone for you.
+ *
+ * Most of them do, and a fully qualified name pasted into one of those becomes
+ * `token._domainkey.acme.com.acme.com`: the record exists, the check never finds it, and
+ * nothing in either console says why. The apex answers `@`, which is what every console
+ * calls it.
+ */
+export function relativeHost(host: string, domain: string): string {
+  if (host === domain) return "@";
+  return host.endsWith(`.${domain}`) ? host.slice(0, -(domain.length + 1)) : host;
+}
+
+/**
+ * Which of the two names a console is asking for. Both are correct and they are correct
+ * in different consoles, so the record table offers the pair as one choice above it
+ * rather than printing the same caveat on every row.
+ */
+export type NameForm = "full" | "relative";
+
+/** The name to paste, in the form the reader's own console wants. */
+export function recordName(record: DnsRecord, domain: string, form: NameForm): string {
+  return form === "relative" ? relativeHost(record.host, domain) : record.host;
+}
+
+export interface RecordFinding {
+  state: RecordStatus;
+  label: string;
+  /** What was found, and for a miss, the thing to look at first. */
+  detail: string;
+}
+
+/** What the last check said about one record, in the reader's words. */
+export function recordFinding(record: DnsRecord): RecordFinding {
+  switch (record.status) {
+    case "found":
+      return {
+        state: "found",
+        label: RECORD_STATUS_LABELS.found,
+        detail: "Seen at your DNS provider, and it matches the value above.",
+      };
+    case "missing":
+      return {
+        state: "missing",
+        label: RECORD_STATUS_LABELS.missing,
+        detail:
+          "Not there when we last looked. Check the name for a stray space, and for your console adding the domain to it a second time.",
+      };
+    default:
+      return {
+        state: "pending",
+        label: RECORD_STATUS_LABELS.pending,
+        detail: `Not looked for yet. The check runs on its own about every ${CHECK_EVERY_MINUTES} minutes.`,
+      };
+  }
+}
+
+/** The required records still outstanding, which is what the setup foot counts down. */
+export function missingRecords(domain: SendingDomain): DnsRecord[] {
+  return requiredRecords(domain).filter((record) => record.status !== "found");
+}
+
+/*
  * Naming a domain.
  */
 
@@ -339,3 +523,101 @@ export function ratePercent(rate: number): string {
   const digits = percent > 0 && percent < 0.1 ? 3 : percent < 10 ? 2 : 1;
   return `${percent.toFixed(digits)}%`;
 }
+
+/*
+ * What the panel can honestly say about delivery.
+ *
+ * Sent is ours: the send is our own call and the meter behind it is what a customer is
+ * billed on. Delivered, bounced and complained are not. They are provider events, and the
+ * pipeline that records one is designed and not built (see `~/utils/suppressions`), so
+ * those three answer null rather than nought. Nought is a measurement, and a measured
+ * zero on this screen would be the page telling somebody their mail is healthy when
+ * nothing has ever looked (notes/email-domains.md P1, P2).
+ */
+
+export interface DeliveryCounts {
+  sent: number;
+  delivered: number;
+  bounced: number;
+  complained: number;
+}
+
+export interface DeliveryFigure {
+  id: string;
+  label: string;
+  /** Null where nothing measures it yet, which is a different fact from zero. */
+  value: number | null;
+  /** One line under the figure, as every tile in the panel carries. */
+  description: string;
+}
+
+/** The period every figure on this screen is read over, stated rather than implied. */
+export const DELIVERY_PERIOD = "Last 30 days";
+
+export function deliveryFigures(
+  counts: DeliveryCounts,
+  recorded: boolean,
+): readonly DeliveryFigure[] {
+  /* Each unmeasured tile says what it would have counted, so three dashes read as three
+     different unknowns rather than one sentence printed three times. */
+  const unknown = (would: string) => `Not measured yet. It would count ${would}.`;
+  return [
+    {
+      id: "sent",
+      label: "Sent",
+      value: counts.sent,
+      description: "Messages handed to the provider. Counted by the meter you are billed on.",
+    },
+    {
+      id: "delivered",
+      label: "Delivered",
+      value: recorded ? counts.delivered : null,
+      description: recorded
+        ? "Accepted by the receiving server. A delivery is not a read, and we count no opens."
+        : unknown("what a receiving server accepted, which is still not a read"),
+    },
+    {
+      id: "bounced",
+      label: "Bounced",
+      value: recorded ? counts.bounced : null,
+      description: recorded
+        ? "Rejected outright by the receiving server."
+        : unknown("what a receiving server rejected outright"),
+    },
+    {
+      id: "complained",
+      /* "Complaints" and not "Marked as spam": the tile capitalises its label, and
+         `Marked As Spam` is a sentence with a capital in the middle of it. */
+      label: "Complaints",
+      value: recorded ? counts.complained : null,
+      description: recorded
+        ? "The recipient pressed the spam button and their provider told us."
+        : unknown("the readers who pressed the spam button"),
+    },
+  ];
+}
+
+/** Where a threshold comes from, so a limit on screen is never read as ours to move. */
+export interface ReputationLimit {
+  id: string;
+  label: string;
+  limit: number;
+  source: string;
+}
+
+export const REPUTATION_LIMITS: readonly ReputationLimit[] = [
+  {
+    id: "bounced",
+    label: "Hard bounces",
+    limit: BOUNCE_LIMIT,
+    source:
+      "The provider reviews a sending account by hand above this, and the account under review is ours as well as yours.",
+  },
+  {
+    id: "complained",
+    label: "Marked as spam",
+    limit: COMPLAINT_LIMIT,
+    source:
+      "Weighted far more heavily than a bounce by every mailbox provider, and the one signal that gets a domain blocked outright.",
+  },
+];

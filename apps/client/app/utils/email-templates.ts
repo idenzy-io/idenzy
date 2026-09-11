@@ -188,6 +188,45 @@ export function variablesInScope(type: EmailTemplateType): readonly TemplateVari
   return [...ALWAYS_IN_SCOPE, ...(catalogueEntry(type)?.variables ?? [])];
 }
 
+/**
+ * What each variable holds, in one line for a completion list and one for the panel
+ * beside it.
+ *
+ * Written once here rather than beside each control, because the same sentence is read in
+ * three places: the editor's completion popup, the scope list on the workspace, and the
+ * insert menu. Three copies of it drift, and the one a customer reads while typing is the
+ * one that matters most.
+ */
+export const VARIABLE_HELP: Readonly<
+  Record<TemplateVariable, { summary: string; detail: string }>
+> = {
+  "project.name": {
+    summary: "Your project's name",
+    detail: "Read from the project record rather than typed into the copy, so a rename follows.",
+  },
+  "user.email": {
+    summary: "The address this mail is going to",
+    detail: "Not always the account's own: on an address change one mail goes to each of the two.",
+  },
+  expires_in: {
+    summary: "How long the reader has, written out",
+    detail: 'Rounded and in words, "10 minutes", never a count of seconds a reader cannot act on.',
+  },
+  otp: {
+    summary: "The one-time code",
+    detail: "A value like any other, so it is escaped and cannot carry markup.",
+  },
+  link: {
+    summary: "The signed, single-use URL",
+    detail:
+      "Pinned to a registered redirect target before it reaches the template, so a body cannot make an open redirect of it.",
+  },
+  new_email: {
+    summary: "The address the account is moving to",
+    detail: "Only on the two address-change messages, and never the address it is moving from.",
+  },
+};
+
 /*
  * The template language, mirrored from `@idenzy/templating/binding`.
  */
@@ -314,6 +353,117 @@ export function validateTemplate(
 
 export function hasIssues(issues: TemplateFieldIssues): boolean {
   return issues.subject.length > 0 || issues.html.length > 0 || issues.text.length > 0;
+}
+
+/*
+ * The same rules again, as positions rather than as a verdict.
+ *
+ * The list above answers "may this be saved". An editor has to answer "which characters
+ * are the problem", so it needs the offsets, and both answers have to come from one
+ * reading of the grammar or the field turns red while nothing under the cursor is marked.
+ */
+
+/** One braced run in a body, whether or not the grammar accepts it. */
+export interface PlaceholderMatch {
+  from: number;
+  to: number;
+  /** The variable named, or null where the braced run is not a placeholder at all. */
+  name: string | null;
+  text: string;
+}
+
+/**
+ * Every braced run in a body, in order, with the ones the grammar refuses marked.
+ *
+ * `BRACED` rather than `PLACEHOLDER`, deliberately: a screen that highlighted only what
+ * the grammar accepts would leave `{{#if x}}` looking like ordinary text, which is
+ * exactly what it becomes when the mail goes out and exactly what the author did not
+ * mean. Both kinds are found here and the caller decides how each is drawn.
+ */
+export function scanPlaceholders(source: string): PlaceholderMatch[] {
+  const found: PlaceholderMatch[] = [];
+  BRACED.lastIndex = 0;
+  for (const match of source.matchAll(BRACED)) {
+    const text = match[0];
+    const from = match.index ?? 0;
+    PLACEHOLDER.lastIndex = 0;
+    const parsed = PLACEHOLDER.exec(text);
+    found.push({
+      from,
+      to: from + text.length,
+      name: parsed !== null && parsed[0] === text ? (parsed[1] ?? null) : null,
+      text,
+    });
+  }
+  PLACEHOLDER.lastIndex = 0;
+  BRACED.lastIndex = 0;
+  return found;
+}
+
+/*
+ * Saved, sending, and the difference between them.
+ */
+
+/**
+ * What a message is doing for a reader right now.
+ *
+ * Four states rather than two, because saved and delivering are different things and the
+ * gap between them is a real window: a body is compiled off the request path, and until
+ * that has happened the renderer reads the row as absent and our built-in is what goes
+ * out. A screen that said only "Custom" through that window would be telling an operator
+ * their new copy is being sent when it is not.
+ */
+export type TemplateStatus = "active" | "compiling" | "built_in" | "unavailable";
+
+export const TEMPLATE_STATUS_LABELS: Record<TemplateStatus, string> = {
+  active: "Custom",
+  compiling: "Compiling",
+  built_in: "Built-in",
+  unavailable: "Unavailable",
+};
+
+export function statusOf(input: {
+  /** False for a type the protocol names and no flow sends yet. */
+  live: boolean;
+  /** Whose copy a send would resolve to for the language being previewed. */
+  source: TemplateSource;
+  /** Rows saved for this message and not yet compiled, across every language. */
+  compiling: number;
+}): TemplateStatus {
+  if (!input.live) return "unavailable";
+  if (input.compiling > 0) return "compiling";
+  return input.source === "yours" ? "active" : "built_in";
+}
+
+/**
+ * What one language of one message is doing, which is the state the workspace draws
+ * against each row of its language list.
+ *
+ * `draft` outranks everything, because unsaved work is the thing a reader most needs to
+ * see marked, and it is the state this screen exists to stop losing.
+ */
+export type LocaleStatus = "draft" | "compiling" | "active" | "none";
+
+export const LOCALE_STATUS_LABELS: Record<LocaleStatus, string> = {
+  draft: "Unsaved",
+  compiling: "Compiling",
+  active: "Sending",
+  none: "Built-in",
+};
+
+export function localeStatusOf(input: {
+  dirty: boolean;
+  stored: boolean;
+  compiled: boolean;
+}): LocaleStatus {
+  if (input.dirty) return "draft";
+  if (!input.stored) return "none";
+  return input.compiled ? "active" : "compiling";
+}
+
+/** Whether two drafts of the same message differ, which is what makes a language dirty. */
+export function bodiesEqual(a: TemplateBodies, b: TemplateBodies): boolean {
+  return a.subject === b.subject && a.html === b.html && a.text === b.text;
 }
 
 /*

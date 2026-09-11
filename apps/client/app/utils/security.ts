@@ -611,3 +611,160 @@ export function detectorCoverage(rules: Record<DetectorId, DetectorRule>): Detec
 export function watchingCount(coverage: readonly DetectorCoverage[]): number {
   return coverage.filter((entry) => entry.state !== "off").length;
 }
+
+/*
+ * Observed, configured, and enforced.
+ *
+ * The note's first finding is that this screen offered responses the deployment cannot
+ * carry out. A rule that says "ask for a second factor" over a gate that never consults a
+ * detector is a protection a customer believes they have, and the only place they will
+ * find out otherwise is an incident. So the three states are named separately: what the
+ * detector observes, what a project has chosen, and what actually happens today.
+ */
+
+export type EnforcementState = "enforced" | "unavailable";
+
+export interface ResponseEnforcement {
+  state: EnforcementState;
+  /** What happens today, in the reader's words. */
+  note: string;
+  /** Where the missing half is built or configured, when there is such a place. */
+  fix: { label: string; to: string } | null;
+}
+
+export const RESPONSE_ENFORCEMENT: Record<SignalResponse, ResponseEnforcement> = {
+  record: {
+    state: "enforced",
+    note: "The row is written here and in the audit log. Nothing else happens, and the sign-in is unaffected.",
+    fix: null,
+  },
+  notify: {
+    state: "unavailable",
+    note: "Nothing sends a notice from a detector yet: there is no sign-in notification template and no path from a rule to the mail pipeline. A rule set to this records the signal and sends nothing.",
+    fix: { label: "Email templates", to: "/email/templates" },
+  },
+  step_up: {
+    state: "unavailable",
+    note: "The MFA gate answers a sign-in with a challenge where an account owes one, but nothing raises a challenge from a detector: a rule cannot reach that decision today. A rule set to this records the signal and the sign-in completes as it would have.",
+    fix: { label: "Additional verification", to: "/mfa/step-up" },
+  },
+};
+
+/** Whether a project may choose that response and have it mean something. */
+export function responseAvailable(response: SignalResponse): boolean {
+  return RESPONSE_ENFORCEMENT[response].state === "enforced";
+}
+
+/**
+ * What actually happens when the rule fires, whatever it is set to.
+ *
+ * A configured response the deployment cannot carry out degrades to recording, because
+ * that is what the code does; the screen says so beside the setting rather than leaving
+ * the setting to be read as the behaviour.
+ */
+export function enforcedResponse(configured: SignalResponse): SignalResponse {
+  return responseAvailable(configured) ? configured : "record";
+}
+
+export interface DetectorStatus {
+  kind: SignalKind;
+  label: string;
+  icon: string;
+  /** Whether the detector is looking at all. Two of the six always are. */
+  observed: boolean;
+  /** Null for the two that are facts rather than settings. */
+  configured: SignalResponse | null;
+  enforced: SignalResponse;
+  /** Whether what is configured and what happens are the same thing. */
+  matches: boolean;
+}
+
+/** Every detector, with the three states the note asks to be kept apart. */
+export function detectorStatuses(rules: Record<DetectorId, DetectorRule>): DetectorStatus[] {
+  return SIGNAL_KINDS.map((kind) => {
+    const configurable = (DETECTOR_IDS as readonly SignalKind[]).includes(kind);
+    const rule = configurable ? rules[kind as DetectorId] : undefined;
+    const configured = rule?.response ?? null;
+    const enforced = configured === null ? "record" : enforcedResponse(configured);
+    return {
+      kind,
+      label: KIND_LABELS[kind],
+      icon: KIND_ICONS[kind],
+      observed: rule === undefined ? true : rule.enabled,
+      configured,
+      enforced,
+      matches: configured === null || configured === enforced,
+    };
+  });
+}
+
+/** How many rules are set to something the deployment cannot carry out. */
+export function unenforcedCount(statuses: readonly DetectorStatus[]): number {
+  return statuses.filter((status) => status.observed && !status.matches).length;
+}
+
+/*
+ * What a sign-in actually answers with.
+ *
+ * Mirrored from `authOutcomeSchema` in `@idenzy/protocol/schemas/mfa` rather than imported,
+ * for the reason `keys.ts` writes out the key kinds: the panel takes no dependency on that
+ * package until the management API client does. The values matter because a developer
+ * copies this: the union discriminates on `status` between `authenticated` and
+ * `mfa_required` (ADR-0010), and there is no `challenge` and no `reason` field. The screen
+ * said otherwise, and a client branching on the wrong literal fails on the one path this
+ * screen exists to describe (notes/security.md P1).
+ */
+export const AUTH_OUTCOME_STATUSES = ["authenticated", "mfa_required"] as const;
+
+export const MFA_REQUIRED_SAMPLE: readonly { name: string; value: string }[] = [
+  { name: "status", value: '"mfa_required"' },
+  { name: "challengeId", value: '"mfc_8f2c41a83e7b"' },
+  { name: "purpose", value: '"sign_in"' },
+  { name: "factors", value: '["totp", "passkey"]' },
+  { name: "expiresAt", value: '"2026-09-11T14:05:00.000Z"' },
+];
+
+/*
+ * The defences nobody configures, and which of them this deployment actually has.
+ *
+ * "Always" over infrastructure that is designed and not provisioned is the same claim the
+ * vendor states on the SMS screen were making: unfalsifiable from the panel, and only
+ * discovered during the incident it was supposed to cover (notes/security.md P1).
+ */
+export interface DeploymentDefence {
+  id: string;
+  label: string;
+  state: EnforcementState;
+  detail: string;
+}
+
+export const DEPLOYMENT_DEFENCES: readonly DeploymentDefence[] = [
+  {
+    id: "waf",
+    label: "Edge rate limits and WAF",
+    state: "unavailable",
+    detail:
+      "Cloud Armor at the edge with the OWASP rule set, per-address and per-project limits and adaptive protection for a layer-seven flood. It is the design and it is not provisioned on this deployment, so nothing is refused before a request reaches the application yet.",
+  },
+  {
+    id: "app_limits",
+    label: "Application rate limits",
+    state: "enforced",
+    detail:
+      "Per identifier, per address, per project and per endpoint, in Valkey, with exponential backoff. Sign-in fails open when the store is unreachable, so an outage is not a lockout; the SMS path fails closed for the opposite reason, because there the cost of allowing what we could not count is an invoice.",
+  },
+  {
+    id: "one_answer",
+    label: "One answer for a guess",
+    state: "enforced",
+    detail:
+      "A wrong password and an address with no account give one answer and cost the same Argon2 work, on a dummy hash where there is no user. It is why the refusal chart splits them and the API never will.",
+  },
+  {
+    id: "reuse",
+    label: "Refresh token reuse revokes the family",
+    state: "enforced",
+    detail:
+      "A refresh token presented twice ends every session descended from it (ADR-0007). The row here is a record of something already finished rather than a question, which is why it is never marked act now.",
+  },
+];

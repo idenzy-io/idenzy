@@ -32,7 +32,17 @@ export type SmsProviderId =
   | "whatsapp"
   | "logging";
 
-/** Whether the vendor carries traffic on this deployment today. */
+/**
+ * Whether the vendor carries traffic on this deployment today.
+ *
+ * `live` is reserved for an adapter that is actually wired and dispatching. Every vendor
+ * here is a port with no implementation behind it, so nothing is `live` and nothing may
+ * be drawn as though it were: the route table is what the router *would* choose, and the
+ * only thing that carries a message today is the logging transport
+ * (notes/sms-providers.md P1). A state that outran the deployment is the one claim this
+ * screen must not make, because it is unfalsifiable from the panel and a customer would
+ * only find out on somebody's sign-in.
+ */
 export type ProviderState = "live" | "planned" | "development";
 
 export const PROVIDER_STATE_LABELS: Record<ProviderState, string> = {
@@ -58,7 +68,7 @@ export const SMS_PROVIDERS: readonly SmsProviderInfo[] = [
     label: "Twilio Programmable SMS",
     icon: "material-symbols:cell-tower",
     role: "Primary, global reach",
-    state: "live",
+    state: "planned",
     note: "Reaches every country we sell into, which is why it is the default route and the one every other vendor is measured against on price. Programmable SMS only: we generate the code ourselves rather than paying about five cents a verification for Twilio Verify.",
   },
   {
@@ -66,7 +76,7 @@ export const SMS_PROVIDERS: readonly SmsProviderInfo[] = [
     label: "AWS End User Messaging",
     icon: "material-symbols:cloud-outline",
     role: "Secondary, failover and cost",
-    state: "live",
+    state: "planned",
     note: "The second route on most of the table. It is cheaper than Twilio in several regions and it is where traffic moves when Twilio's error rate rises, which is the only reason a project needs two vendors it never chose between.",
   },
   {
@@ -119,6 +129,25 @@ export function providerInfo(id: SmsProviderId): SmsProviderInfo | null {
 
 export function providerLabel(id: SmsProviderId): string {
   return PROVIDER_BY_ID.get(id)?.label ?? id;
+}
+
+/** The vendors that would carry traffic if any of them were wired. Never `logging`. */
+export const CARRIERS = SMS_PROVIDERS.filter((provider) => provider.state !== "development");
+
+/** What actually dispatches on this deployment. Null once a real adapter is registered. */
+export function liveTransport(): SmsProviderInfo | null {
+  return SMS_PROVIDERS.find((provider) => provider.state === "live") ?? null;
+}
+
+/**
+ * Whether anything on this deployment can hand a message to a carrier.
+ *
+ * False everywhere today, and the screen has to say so rather than drawing a route table
+ * that reads as a working one. It is a fact about the deployment and not about a project,
+ * so no setting on this screen changes it.
+ */
+export function transportWired(): boolean {
+  return liveTransport() !== null;
 }
 
 /*
@@ -543,3 +572,74 @@ export function withMode(state: SendingState, mode: SendingMode): SendingState {
   if (mode === "byo" && state.account === null) return state;
   return { ...state, mode };
 }
+
+/*
+ * Whether a country's route can actually carry, and what to do where it cannot.
+ *
+ * Two of the three answers belong to the project and one belongs to the deployment, so
+ * they are not reported together: the allowlist and the registration are what a row can
+ * usefully say, and "no adapter is wired" is true of every row at once and is stated
+ * above the table instead. A blocker repeated on two hundred rows is not information
+ * (notes/sms-providers.md P2).
+ */
+
+export type RouteState = "ready" | "not_allowed" | "registration";
+
+export interface RouteReadiness {
+  state: RouteState;
+  /** The word in the cell. */
+  label: string;
+  /** One line saying what was found. */
+  detail: string;
+  /** Where the gap is closed, and never a general guide (notes/sms-providers.md P2). */
+  fix: { label: string; to?: string; href?: string } | null;
+}
+
+const REGISTRATION_GUIDE = "https://idenzy.dev/docs/sms/registration";
+
+/** What stands between this project and a message to that country. */
+export function routeReadiness(route: SmsRoute, allowed: readonly string[]): RouteReadiness {
+  if (!isAllowed(route.country, allowed)) {
+    return {
+      state: "not_allowed",
+      label: "Not allowed",
+      detail:
+        "The country is not on this project's allowlist, so a send there is refused before it costs anything.",
+      fix: { label: "Allow it", to: "/sms/policy" },
+    };
+  }
+  const registration = REGISTRATIONS[route.registration];
+  if (registration.blocking) {
+    return {
+      state: "registration",
+      label: `Needs ${registration.label}`,
+      detail: registration.note,
+      fix: { label: `${registration.label} guide`, href: REGISTRATION_GUIDE },
+    };
+  }
+  return {
+    state: "ready",
+    label: "Ready",
+    detail: "Allowed, and nothing has to be filed before a message goes there.",
+    fix: null,
+  };
+}
+
+/** How the destinations table is narrowed. Allowed first is the default the note asks for. */
+export type DestinationFilter = "allowed_first" | "allowed_only" | "all";
+
+export const DESTINATION_FILTERS: readonly { value: DestinationFilter; label: string }[] = [
+  { value: "allowed_first", label: "Allowed first" },
+  { value: "allowed_only", label: "Allowed only" },
+  { value: "all", label: "All countries" },
+];
+
+/**
+ * Where the figures in the price column come from, said once rather than implied.
+ *
+ * They are the published regional wholesale plus our margin, held in this file. Nothing
+ * reads a live rate card yet, so a price here is an example of what a country costs and
+ * not a quote (notes/sms-providers.md P1).
+ */
+export const RATE_SOURCE =
+  "Rates are the published regional wholesale plus our margin, held in the panel rather than read from a live price feed. Treat them as examples of what a country costs, not as a quote.";

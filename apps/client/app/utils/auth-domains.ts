@@ -341,3 +341,248 @@ export const AUTH_DOMAIN_CAPABILITIES: readonly AuthDomainCapability[] = [
     errorCode: null,
   },
 ];
+
+/*
+ * The one derivation for every copyable value on this screen.
+ *
+ * The note's third finding is that the same endpoint is written four different ways across
+ * four screens. There is one host and it comes from the project's own domains, so anything
+ * a customer can copy is built from `apiBaseUrl` and nothing writes a host of its own. An
+ * illustrative value says so where it appears rather than looking like a configured one.
+ */
+
+/** The base URL a client is configured with, which is the host and nothing else. */
+export function apiBaseUrl(host: string): string {
+  return `https://${host}`;
+}
+
+/** The hostname a customer would use if they had one, for a sentence about the choice. */
+export const EXAMPLE_AUTH_HOST = "auth.example.com";
+
+/*
+ * What the transport can do, said as a state rather than as a refusal.
+ *
+ * "Cookie mode: Refused" and "Same-site with: Nothing" read as an incident report about a
+ * project that is working exactly as intended (notes/domains.md P2). Header mode on the
+ * shared host is a legitimate integration, so the shared-host answer names what a domain
+ * would buy and offers the setup, and a real failure is reserved for a domain that was
+ * added and did not verify.
+ */
+
+export type TransportState = "ready" | "available" | "setup" | "pending" | "failed";
+
+export interface TransportCapability {
+  state: TransportState;
+  label: string;
+  detail: string;
+  /** The words on the control that settles it, or null where there is nothing to settle. */
+  action: string | null;
+}
+
+/** Header mode, which needs nothing and has never needed anything. */
+export function headerModeState(): TransportCapability {
+  return {
+    state: "available",
+    label: "Available",
+    detail:
+      "The refresh token is handed to your client and held wherever your application puts it. This works on the shared host and always has, so a project can stop here.",
+    action: null,
+  };
+}
+
+/** Cookie mode, which is the whole of what a domain of your own buys. */
+export function cookieModeState(domains: readonly AuthDomain[]): TransportCapability {
+  const live = liveDomain(domains);
+  if (live !== null) {
+    return {
+      state: "ready",
+      label: "Ready",
+      detail: `A page under ${siteOf(live.domain)} is same-site with ${live.domain}, so the refresh token can live in a __Host- cookie the browser will not hand to script.`,
+      action: null,
+    };
+  }
+  const pending = domains.find((domain) => domain.status === "verifying");
+  if (pending !== undefined) {
+    return {
+      state: "pending",
+      label: "Waiting on DNS",
+      detail: `${pending.domain} is added and its records have still to be seen. Until a check finds them the host answers nothing, so cookie mode is not available yet.`,
+      action: "Finish setup",
+    };
+  }
+  const failed = domains.find((domain) => domain.status === "failed");
+  if (failed !== undefined) {
+    return {
+      state: "failed",
+      label: "Not verified",
+      detail: `${failed.domain} was added and did not verify. Its records are the place to look, and nothing changes for your clients until it does.`,
+      action: "Finish setup",
+    };
+  }
+  return {
+    state: "setup",
+    label: "Requires a custom domain",
+    detail:
+      "SameSite is a site rule, so a cookie our shared host sets for your pages is one the browser discards. A host on your own site is what makes the cookie same-site, and it is the only thing that does.",
+    action: "Add a domain",
+  };
+}
+
+/*
+ * Setting one up, which is five steps and only three of them are ours to see.
+ */
+
+export type AuthSetupStage = "host" | "dns" | "certificate" | "sdk" | "test";
+
+export const AUTH_SETUP_STEPS: readonly { id: AuthSetupStage; label: string }[] = [
+  { id: "host", label: "Host" },
+  { id: "dns", label: "DNS" },
+  { id: "certificate", label: "Certificate" },
+  { id: "sdk", label: "Update SDK" },
+  { id: "test", label: "Test" },
+];
+
+function recordOf(domain: AuthDomain, kind: AuthRecordKind): AuthDnsRecord | undefined {
+  return domain.records.find((record) => record.kind === kind);
+}
+
+/** Whether the CNAME has been seen, which is what makes the host resolve at all. */
+export function dnsFound(domain: AuthDomain): boolean {
+  return recordOf(domain, "cname")?.status === "found";
+}
+
+/** Whether the authorisation record has been seen, which is what issues the certificate. */
+export function certificateIssued(domain: AuthDomain): boolean {
+  return recordOf(domain, "cert")?.status === "found";
+}
+
+/**
+ * Which step a domain is on.
+ *
+ * It stops at `sdk` for a verified domain and never advances itself past it, because the
+ * two steps after verification are not ours to observe: whether a deployed client points
+ * at this host, and whether an application origin can actually reach it, are facts about
+ * somebody else's build (notes/domains.md P1). A screen that marked them done on a
+ * verified row would be reporting a migration that had not happened.
+ */
+export function authSetupStage(domain: AuthDomain, tested: boolean): AuthSetupStage {
+  if (!dnsFound(domain)) return "dns";
+  if (!certificateIssued(domain) || domain.status !== "verified") return "certificate";
+  return tested ? "test" : "sdk";
+}
+
+/** A verified host still has two steps left, and this is the one saying which. */
+export function authNextStep(domain: AuthDomain, tested: boolean): string {
+  switch (authSetupStage(domain, tested)) {
+    case "dns":
+      return "Publish the CNAME at your DNS provider. Until a check sees it the host resolves nowhere.";
+    case "certificate":
+      return "The authorisation record is what issues the certificate. A host without one answers a TLS error rather than a request.";
+    case "sdk":
+      return "Verified. Point your client's API base at this host and deploy: nothing about a deployed application changes on its own.";
+    default:
+      return "Verified, and a check has been run against it. What a check cannot see is your own build, so a pass here is not a deployed client.";
+  }
+}
+
+/*
+ * What `Verify setup` found, and — as importantly — what it could not look at.
+ */
+
+export interface SetupProbeLine {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface SetupProbe {
+  ok: boolean;
+  /** The host it was run against, so an edit to the domain list invalidates it. */
+  host: string;
+  /** The application origin it presented, or empty where none was named. */
+  origin: string;
+  at: string;
+  lines: SetupProbeLine[];
+}
+
+function resolveLine(host: string, ok: boolean): SetupProbeLine {
+  return {
+    label: "The name resolves",
+    ok,
+    detail: ok
+      ? `${host} points at our load balancer.`
+      : `${host} does not resolve, so nothing reached us to answer.`,
+  };
+}
+
+function certificateLine(ok: boolean): SetupProbeLine {
+  return {
+    label: "The certificate is served",
+    ok,
+    detail: ok
+      ? "A request over TLS is answered rather than refused at the handshake."
+      : "The authorisation record has not been seen, so no certificate has been issued for this host.",
+  };
+}
+
+function answersLine(host: string, ok: boolean): SetupProbeLine {
+  return {
+    label: "The project answers on it",
+    ok,
+    detail: ok
+      ? `A request to ${apiBaseUrl(host)} resolved to this project by Host alone.`
+      : "The host is not verified, so a request to it is refused as an unknown project rather than as a domain that is nearly ready.",
+  };
+}
+
+/**
+ * The one line the check cannot finish.
+ *
+ * It can say a browser on that origin would be answered with the headers it needs. It
+ * cannot say a deployed client is calling this host, because that is a fact about somebody
+ * else's build: verification and client migration are two steps and only one of them is
+ * ours (notes/domains.md P1).
+ */
+function originLine(origin: string, allowed: boolean): SetupProbeLine {
+  if (origin === "") {
+    return {
+      label: "An application origin to test",
+      ok: false,
+      detail:
+        "Name the origin your application is served from and the check will say whether a browser on it is allowed to call this host.",
+    };
+  }
+  return {
+    label: `${origin} may call it`,
+    ok: allowed,
+    detail: allowed
+      ? "That origin is on the CORS allowlist, so a browser on it is answered with the headers it needs. Whether your deployed client points at this host is not something this check can see."
+      : "That origin is not on the CORS allowlist, so a browser on it gets an ordinary answer with no Access-Control-Allow-Origin, and the refusal is the browser's.",
+  };
+}
+
+/** Reads a domain as a probe would find it, so the check is tested rather than trusted. */
+export function setupProbe(
+  domain: AuthDomain | null,
+  origin: string,
+  originAllowed: boolean,
+): SetupProbe {
+  const host = domain?.domain ?? "";
+  const named = origin.trim();
+  const resolves = domain !== null && dnsFound(domain);
+  const certificate = domain !== null && certificateIssued(domain);
+  const answers = domain?.status === "verified";
+  const lines = [
+    resolveLine(host, resolves),
+    certificateLine(certificate),
+    answersLine(host, answers),
+    originLine(named, originAllowed),
+  ];
+  return {
+    ok: lines.every((line) => line.ok),
+    host,
+    origin: named,
+    at: new Date().toISOString(),
+    lines,
+  };
+}

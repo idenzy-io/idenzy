@@ -2,26 +2,34 @@
  * Recovery codes as the server issues and spends them, and the small amount of arithmetic
  * the screen does over them.
  *
- * A sheet is ten single-use codes, issued when the account confirms its first second
- * factor and deleted when the last one is removed (`apps/auth-api/src/mfa`). Almost
- * nothing here is configurable, and that is the point: the length is what makes a
- * SHA-256 digest defensible, the count is what makes losing a few survivable, and both
- * are decisions the server has already taken. The screen states them rather than
- * offering them, in the same way the passkey ceremony is stated on its own screen.
+ * A set is ten single-use codes, issued when the account confirms its first second factor
+ * and deleted when the last one is removed (`apps/auth-api/src/mfa`). Almost nothing here
+ * is configurable, and that is the point: the length is what makes a SHA-256 digest
+ * defensible, the count is what makes losing a few survivable, and both are decisions the
+ * server has already taken. The screen states them rather than offering them, in the same
+ * way the passkey ceremony is stated on its own screen.
  *
- * What the panel does decide is one line: at how few codes a sheet counts as low. That is
- * a threshold for this dashboard and the security centre, never a rule the server reads,
- * and the row that sets it says so.
+ * The words matter here more than usual. A customer reads "recovery codes"; a "sheet" is
+ * our word for the ten of them together and it made a support screen read like a
+ * printing-press manual, so the noun is a *set* and every label says codes
+ * (`notes/mfa-recovery.md` P2). The state a reader acts on is written out in full, never
+ * carried by a colour: "No codes remaining" and "Never generated" are different answers
+ * that both read as zero to the server.
+ *
+ * What the panel does decide is one line: at how few codes an account is flagged as
+ * running low. That is a threshold for this dashboard and the security centre, never a
+ * rule the server reads, and the row that sets it says so.
  *
  * What is shared with the authenticator screen is read from `utils/mfa.ts` rather than
  * written again here: the count of codes, the attempt cap and the challenge's lifetime
- * are one fact each, and two files stating them is two files that can disagree.
+ * are one fact each.
  */
 
 import { FACTOR_ROLES, type FactorRole, type MfaFactorKind, TOTP } from "./mfa";
+import { plural } from "./setup-check";
 
-/** How a sheet is made, from `@idenzy/crypto/mfa/recovery-codes`. */
-export const SHEET = {
+/** How a set is made, from `@idenzy/crypto/mfa/recovery-codes`. */
+export const CODE_SET = {
   /** `RECOVERY_CODE_COUNT`. Enough to lose a few and still have a way in. */
   codes: TOTP.recoveryCodes,
   groups: 4,
@@ -44,9 +52,12 @@ export const ROUTES = {
   factors: "GET v1/auth/mfa/factors",
 } as const;
 
+/** The SDK call an owner's own screen makes to replace a set. */
+export const REGENERATE_CALL = "mfa.regenerateRecoveryCodes()";
+
 /**
- * What a sheet is a fallback from. A sheet exists only because one of these was enrolled,
- * and both are named in the factor family the authenticator screen draws from.
+ * What a set is a fallback from. A set exists only because one of these was enrolled, and
+ * both are named in the factor family the authenticator screen draws from.
  */
 export type FallbackFactor = Extract<MfaFactorKind, "totp" | "passkey">;
 
@@ -56,17 +67,41 @@ export function roleOf(kind: MfaFactorKind): FactorRole | null {
 }
 
 /**
- * One account's sheet as the panel sees it.
- *
- * `remaining` is the only number the server publishes about a sheet: `countUnused` on
- * the recovery repository, which is what `recoveryCodesRemaining` in the factor list is.
- * A sheet nobody holds and a sheet spent to the last code both read as zero here,
- * because they read the same way to the server too.
+ * The factor's name as a table cell can carry it. The family's own labels are written for
+ * a settings row ("Authenticator app"), and two of those joined do not fit a column.
  */
-export interface RecoverySheet {
+const FACTOR_WORDS: Record<FallbackFactor, string> = {
+  totp: "Authenticator",
+  passkey: "passkey",
+};
+
+/** Stable, so two accounts holding the same pair read identically. */
+const FACTOR_ORDER: readonly FallbackFactor[] = ["totp", "passkey"];
+
+/**
+ * "Authenticator + passkey": what the account can be challenged with, and therefore what
+ * it can still sign in with while its codes are gone.
+ */
+export function factorLabel(set: RecoverySet): string {
+  const held = FACTOR_ORDER.filter((factor) => set.factors.includes(factor));
+  if (held.length === 0) return "None";
+  const words = held.map((factor) => FACTOR_WORDS[factor]);
+  const first = words[0] ?? "";
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...words.slice(1)].join(" + ");
+}
+
+/**
+ * One account's recovery codes as the panel sees them.
+ *
+ * `remaining` is the only number the server publishes about a set: `countUnused` on the
+ * recovery repository, which is what `recoveryCodesRemaining` in the factor list is. A set
+ * nobody holds and a set spent to the last code both read as zero here, because they read
+ * the same way to the server too.
+ */
+export interface RecoverySet {
   /** The public user id, as every API surface names a user. */
   userId: string;
-  /** Null when the account holds no sheet at all: never issued, or cleared. */
+  /** Null when the account holds no codes at all: never generated, or cleared. */
   issuedAt: string | null;
   remaining: number;
   /** When a code was last spent to get back in. */
@@ -75,32 +110,33 @@ export interface RecoverySheet {
   factors: readonly FallbackFactor[];
 }
 
-export type SheetState = "healthy" | "low" | "none";
+export type RecoveryState = "healthy" | "low" | "none";
 
-export const STATE_LABELS: Record<SheetState, string> = {
+/** The state written out, because a colour is not a state and this one has to be read. */
+export const STATE_LABELS: Record<RecoveryState, string> = {
   healthy: "Healthy",
-  low: "Low",
-  none: "None left",
+  low: "Running low",
+  none: "No codes left",
 };
 
 /**
- * What the state is worth saying in colour: green while there is a sheet to fall back on,
- * amber as it runs down, red once there is nothing left. The pips and the word beside them
+ * What the state is worth saying in colour: green while there are codes to fall back on,
+ * amber as they run down, red once there is nothing left. The pips and the word beside them
  * read it from here, so a bar and its label cannot disagree.
  */
-export const STATE_FILL: Record<SheetState, string> = {
+export const STATE_FILL: Record<RecoveryState, string> = {
   healthy: "bg-success",
   low: "bg-warning",
   none: "bg-error",
 };
 
-export const STATE_TEXT: Record<SheetState, string> = {
+export const STATE_TEXT: Record<RecoveryState, string> = {
   healthy: "text-success",
   low: "text-warning",
   none: "text-error",
 };
 
-/** At how few codes this dashboard calls a sheet low. Never read by the server. */
+/** At how few codes this dashboard flags an account. Never read by the server. */
 export const LOW_THRESHOLD_MIN = 1;
 export const LOW_THRESHOLD_MAX = 9;
 export const DEFAULT_LOW_THRESHOLD = 3;
@@ -118,52 +154,117 @@ export const THRESHOLD_ISSUE = {
   integer: "A whole number of codes.",
 } as const;
 
-export function stateOf(sheet: RecoverySheet, lowThreshold: number): SheetState {
-  if (sheet.remaining === 0) return "none";
-  return sheet.remaining <= lowThreshold ? "low" : "healthy";
+export function stateOf(set: RecoverySet, lowThreshold: number): RecoveryState {
+  if (set.remaining === 0) return "none";
+  return set.remaining <= lowThreshold ? "low" : "healthy";
 }
 
 /** An account with a second factor and nothing to fall back on. The list's whole reason. */
-export function isAtRisk(sheet: RecoverySheet): boolean {
-  return sheet.remaining === 0;
+export function isAtRisk(set: RecoverySet): boolean {
+  return set.remaining === 0;
 }
 
-export type SheetFilter = "risk" | "low" | "all";
+/**
+ * How many codes are left, in words.
+ *
+ * Three answers and not two: a set nobody ever generated is not a set spent to its last
+ * code, and "0 of 10" would claim ten codes that do not exist. The server cannot tell them
+ * apart, the panel can, and the reader is the one who has to.
+ */
+export function remainingLabel(set: RecoverySet): string {
+  if (set.issuedAt === null) return "Never generated";
+  if (set.remaining === 0) return "No codes remaining";
+  return `${set.remaining} of ${CODE_SET.codes}`;
+}
+
+/**
+ * The safe next step for one account, which is the whole point of the queue.
+ *
+ * Nothing an operator can do restores a way back in: the codes are returned once and only
+ * digests are kept. What resolves this is the owner making a new set from inside a session,
+ * so the sentence names the factor they still hold and what it lets them do.
+ */
+export function nextStepFor(set: RecoverySet): string {
+  const factors = factorLabel(set).toLowerCase();
+  if (set.remaining === 0) {
+    return `They can still sign in with their ${factors}, so they can make a new set themselves today. If that goes before they do, nothing here can let them back in.`;
+  }
+  if (set.remaining <= LOW_THRESHOLD_MAX) {
+    return `They still have codes, so there is no hurry: a new set replaces whatever is left of this one, and their ${factors} keeps working either way.`;
+  }
+  return `Nothing to do. Their ${factors} answers a challenge and the codes are the fallback if it goes.`;
+}
+
+/**
+ * What to tell the owner, in the order they do it. Plain text on purpose: an operator
+ * pastes this into a ticket or an email, so it carries no markup and names the call a
+ * customer's own screen makes rather than a screen of ours, because there is none.
+ */
+export const REPLACEMENT_STEPS: readonly string[] = [
+  "Sign in as usual, answering the challenge with the second factor you still have.",
+  `Open the recovery-codes screen in your application, which calls ${REGENERATE_CALL}.`,
+  "Save or print the new codes there and then. They are shown once, and every earlier code stops working the moment they appear.",
+];
+
+/** The same steps as one block of text, for the clipboard. */
+export function replacementText(): string {
+  return REPLACEMENT_STEPS.map((step, index) => `${index + 1}. ${step}`).join("\n");
+}
+
+export type RecoveryFilter = "risk" | "low" | "all";
 
 export function matchesFilter(
-  sheet: RecoverySheet,
-  filter: SheetFilter,
+  set: RecoverySet,
+  filter: RecoveryFilter,
   lowThreshold: number,
 ): boolean {
   if (filter === "all") return true;
-  const state = stateOf(sheet, lowThreshold);
+  const state = stateOf(set, lowThreshold);
   return filter === "risk" ? state === "none" : state === "low";
 }
 
-export interface SheetCounts {
+export interface RecoveryCounts {
   all: number;
   risk: number;
   low: number;
 }
 
-export function countByState(sheets: readonly RecoverySheet[], lowThreshold: number): SheetCounts {
+export function countByState(sets: readonly RecoverySet[], lowThreshold: number): RecoveryCounts {
   let risk = 0;
   let low = 0;
-  for (const sheet of sheets) {
-    const state = stateOf(sheet, lowThreshold);
+  for (const set of sets) {
+    const state = stateOf(set, lowThreshold);
     if (state === "none") risk += 1;
     else if (state === "low") low += 1;
   }
-  return { all: sheets.length, risk, low };
+  return { all: sets.length, risk, low };
 }
 
 /**
- * How the project's sheets are spread, for the panel beside the list.
+ * The finding, for the heading over the list.
  *
- * Buckets rather than a count per number, because ten bars of one figure each is a table
- * and the question this answers is "how much of the project is near the edge".
+ * A section heading that says "Recovery codes" a second time tells a reader nothing they
+ * did not get from the title. What they came for is whether anybody is stuck, so the
+ * heading answers that and the segments below it carry the counts.
  */
-export interface SheetBucket {
+export function queueHeading(counts: RecoveryCounts): string {
+  if (counts.all === 0) return "No account here holds a second factor yet";
+  if (counts.risk > 0) {
+    return `${plural(counts.risk, "account has", "accounts have")} no codes left`;
+  }
+  if (counts.low > 0) {
+    return `${plural(counts.low, "account is", "accounts are")} running low`;
+  }
+  return "Every account has codes to fall back on";
+}
+
+/**
+ * How the project's sets are spread, for the strip under the list.
+ *
+ * Buckets rather than a count per number, because ten figures is a table and the question
+ * this answers is "how much of the project is near the edge".
+ */
+export interface RemainingBucket {
   id: string;
   label: string;
   /** Inclusive, over the codes left. */
@@ -173,7 +274,7 @@ export interface SheetBucket {
   tone: string;
 }
 
-const EMPTY_BUCKET: SheetBucket = {
+const EMPTY_BUCKET: RemainingBucket = {
   id: "none",
   label: "None left",
   from: 0,
@@ -181,7 +282,7 @@ const EMPTY_BUCKET: SheetBucket = {
   tone: "text-error",
 };
 
-export const BUCKETS: readonly SheetBucket[] = [
+export const BUCKETS: readonly RemainingBucket[] = [
   { id: "full", label: "Untouched", from: 10, to: 10, tone: "" },
   { id: "most", label: "7 to 9 left", from: 7, to: 9, tone: "" },
   { id: "half", label: "4 to 6 left", from: 4, to: 6, tone: "" },
@@ -189,7 +290,7 @@ export const BUCKETS: readonly SheetBucket[] = [
   EMPTY_BUCKET,
 ];
 
-export function bucketOf(remaining: number): SheetBucket {
+export function bucketOf(remaining: number): RemainingBucket {
   // Every count from 0 to 10 falls in a bucket above. A number outside that range is one
   // the server could not have produced, and it reads as the emptiest rather than as none.
   return (
@@ -197,19 +298,19 @@ export function bucketOf(remaining: number): SheetBucket {
   );
 }
 
-export interface BucketTally extends SheetBucket {
+export interface BucketTally extends RemainingBucket {
   count: number;
-  /** Of the sheets counted, rounded, for the bar. */
+  /** Of the sets counted, rounded. */
   share: number;
 }
 
-export function tallyBuckets(sheets: readonly RecoverySheet[]): BucketTally[] {
+export function tallyBuckets(sets: readonly RecoverySet[]): BucketTally[] {
   const counts = new Map<string, number>();
-  for (const sheet of sheets) {
-    const bucket = bucketOf(sheet.remaining);
+  for (const set of sets) {
+    const bucket = bucketOf(set.remaining);
     counts.set(bucket.id, (counts.get(bucket.id) ?? 0) + 1);
   }
-  const total = sheets.length;
+  const total = sets.length;
   return BUCKETS.map((bucket) => {
     const count = counts.get(bucket.id) ?? 0;
     return { ...bucket, count, share: total === 0 ? 0 : Math.round((count / total) * 100) };

@@ -103,6 +103,12 @@ export interface AuditEvent {
   targetName: string | null;
   ip: string | null;
   ua: string | null;
+  /**
+   * The request that produced the entry, for correlating it with a customer's own logs
+   * and with a support ticket. Null for an entry the relay wrote from a background job,
+   * which had no request behind it.
+   */
+  requestId: string | null;
   metadata: Record<string, unknown>;
   prevHash: string;
   entryHash: string;
@@ -423,6 +429,7 @@ function haystack(event: AuditEvent): string {
     event.targetName ?? "",
     event.target ?? "",
     event.ip ?? "",
+    event.requestId ?? "",
     ...Object.entries(event.metadata).flatMap(([key, value]) => [key, String(value)]),
   ]
     .join(" ")
@@ -567,7 +574,7 @@ export function actorsIn(events: readonly AuditEvent[]): {
  * they were about to paste into a ticket.
  */
 export function auditCsv(events: readonly AuditEvent[]): string {
-  const header = ["when", "who", "what", "action", "target", "ip", "entry_hash"];
+  const header = ["when", "who", "what", "action", "target", "request_id", "ip", "entry_hash"];
   const rows = orderBySeq(events).map((event) =>
     [
       event.createdAt,
@@ -575,6 +582,7 @@ export function auditCsv(events: readonly AuditEvent[]): string {
       phraseFor(event),
       event.action,
       event.targetName ?? event.target ?? "",
+      event.requestId ?? "",
       event.ip ?? "",
       event.entryHash,
     ]
@@ -594,3 +602,147 @@ export const RETENTION_YEARS = { standard: 1, hipaa: 6 } as const;
  * seconds from existing.
  */
 export const RELAY_INTERVAL_SECONDS = 5;
+
+/*
+ * Who can have done what.
+ *
+ * A service credential cannot sign in to a dashboard and cannot join a project: those are
+ * things a person does with a browser, and an API key is a string in somebody's server.
+ * The trail said otherwise, and an audit story that has a CI deploy key signing in to the
+ * dashboard undermines the role model it exists to evidence (notes/audit.md P1). So each
+ * action names the actors that can perform it, the fixtures pick an actor that can, and a
+ * test asserts no entry breaks it.
+ */
+
+const HUMAN_ONLY: readonly ActorType[] = ["member"];
+const STAFF_ONLY: readonly ActorType[] = ["staff"];
+const OPERATORS: readonly ActorType[] = ["member", "api_key", "staff", "system"];
+
+export const ACTION_ACTORS: Record<string, readonly ActorType[]> = {
+  /* A browser session on the dashboard. A key has no browser and no password. */
+  "member.signed_in": HUMAN_ONLY,
+  /* Accepting an invitation, which is a person following a link in their mail. */
+  "member.joined": HUMAN_ONLY,
+  "member.invited": HUMAN_ONLY,
+  "member.removed": HUMAN_ONLY,
+  "member.role_changed": HUMAN_ONLY,
+  /* Ours, and granted to a person rather than taken by one. */
+  "staff.access_granted": STAFF_ONLY,
+  /* A credential cannot mint or revoke a credential of its own class here. */
+  "key.created": HUMAN_ONLY,
+  "key.revoked": HUMAN_ONLY,
+};
+
+/** Whether that actor could have performed that action at all. */
+export function canPerform(action: string, actor: ActorType): boolean {
+  return (ACTION_ACTORS[action] ?? OPERATORS).includes(actor);
+}
+
+/** The actions an actor of that kind can be the author of, for building a trail. */
+export function actionsFor(actor: ActorType, actions: readonly string[]): string[] {
+  return actions.filter((action) => canPerform(action, actor));
+}
+
+/*
+ * What "sensitive" means, said rather than implied.
+ *
+ * The flag used to be called "worth reading", which reads as an editorial judgement about
+ * the rest of the trail: everything here is worth reading, and a filter that says
+ * otherwise is one an auditor cannot trust (notes/audit.md P2). "Sensitive" is a category
+ * with a rule behind it, and the rule is on the screen next to the control.
+ */
+export const SENSITIVE_LABEL = "Sensitive";
+
+export const SENSITIVE_CRITERION =
+  "An entry is marked sensitive when it changes who can reach this project or what they can reach: membership and roles, API keys, a second factor removed from an account, a session revoked, an erasure completed, or support being let in. Nothing else is judged, and an unmarked entry is not a less important one.";
+
+/*
+ * What the panel can honestly claim about integrity.
+ *
+ * The runtime role holds INSERT and SELECT and no UPDATE or DELETE, and every entry links
+ * to the one before it. That means no code path in the product can change an entry and
+ * that a change made underneath it is detectable. It does not mean nobody with direct
+ * access to the database can alter storage, and a screen that said so would be making a
+ * promise the architecture does not make (notes/audit.md P2).
+ */
+export const INTEGRITY_CLAIMS: readonly { id: string; label: string; detail: string }[] = [
+  {
+    id: "append",
+    label: "Entries cannot be edited through the product",
+    detail:
+      "The runtime role holds INSERT and SELECT on the table and no UPDATE or DELETE at all, so no control in this panel and no code path we could add here can change an entry after it is written.",
+  },
+  {
+    id: "chain",
+    label: "A change made underneath it is detectable",
+    detail:
+      "Every entry carries a digest of itself and of the one before it, so an alteration made with direct access to the database breaks the chain from that point on and can be found by verifying it. Detectable is not the same as impossible: somebody with that access can still write to storage.",
+  },
+  {
+    id: "outside",
+    label: "Two fields sit outside the digest",
+    detail:
+      "The address and the user agent are the two a lawful erasure may pseudonymise, so they are not covered by the chain. A compliant erasure would otherwise read as tampering. Who did what to whom and when is covered.",
+  },
+];
+
+/*
+ * What an export actually covers.
+ *
+ * The button says "Export filtered view", so the file has to be the filtered view and the
+ * reader has to be able to check that before it lands on their disk: the scope, the
+ * period, the project, and whether their own users' activity is in it or out of it
+ * (notes/audit.md). An export whose contents disagree with the summary on screen is the
+ * one thing an auditor cannot use.
+ */
+
+export interface AuditScopeLine {
+  label: string;
+  value: string;
+}
+
+export function auditScope(
+  filters: AuditFilters,
+  projectName: string,
+  rows: number,
+  windowLabel: string,
+): AuditScopeLine[] {
+  const lines: AuditScopeLine[] = [
+    { label: "Project", value: projectName },
+    { label: "Period", value: windowLabel },
+    { label: "Entries", value: `${rows.toLocaleString("en")} on screen` },
+    {
+      label: "Your users' activity",
+      value: filters.includeEndUsers ? "Included" : "Excluded",
+    },
+  ];
+  if (filters.text.trim() !== "") lines.push({ label: "Search", value: filters.text.trim() });
+  if (filters.actorId !== null) lines.push({ label: "Actor", value: "One actor only" });
+  if (filters.actors.length > 0) {
+    lines.push({
+      label: "Actor kinds",
+      value: filters.actors.map((actor) => ACTOR_LABELS[actor]).join(", "),
+    });
+  }
+  if (filters.categories.length > 0) {
+    lines.push({
+      label: "Categories",
+      value: filters.categories.map((category) => CATEGORY_LABELS[category]).join(", "),
+    });
+  }
+  if (filters.notableOnly) {
+    lines.push({ label: "Marked", value: `${SENSITIVE_LABEL} changes only` });
+  }
+  return lines;
+}
+
+/**
+ * What the file does not carry, said before it is downloaded.
+ *
+ * The two fields outside the digest are in it, because an export is for reading rather
+ * than for verifying; what is not in it is anything this view was narrowed away from, and
+ * a reader who exports a filtered view and later treats it as the whole trail has made the
+ * mistake this line exists to stop.
+ */
+export const EXPORT_CAVEAT =
+  "The file holds exactly the entries on screen, in the order they are shown. It is a copy of a narrowed view and not the whole trail: the management API is the authoritative export.";

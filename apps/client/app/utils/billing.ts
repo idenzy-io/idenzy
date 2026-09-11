@@ -1,12 +1,16 @@
 /**
- * What the account has to spend, what it is spending it on, and how it is paid for
+ * What the organisation has to spend, what it is spending it on, and how it is paid for
  * (PROJECT.md 5.1, `orgs.billing_customer_id`).
+ *
+ * The wallet is the organisation's and never a project's. One `billing_customer_id` sits
+ * on `orgs`, so two projects under one organisation draw on one balance, and a screen
+ * that scoped the figure to a project would show a third of a bill and call it the bill.
  *
  * Money is in cents everywhere, the way the billing API hands it over, and the panel
  * never does arithmetic on a float. A dollar figure is produced at the last moment, for
  * display, by one function.
  *
- * The rule this page exists to state is what a balance at zero does, and the answer is
+ * The rule this file exists to state is what a balance at zero does, and the answer is
  * that it never stops a sign-in. This is an authentication product: refusing to
  * authenticate somebody because an invoice is unpaid takes a customer's own product down
  * and takes their users with it, and no amount owed is worth that. What does stop is the
@@ -17,6 +21,79 @@
  * provider; what this panel holds is a token, a brand and four digits, which is all that
  * can be shown and all that is worth storing.
  */
+
+/*
+ * Whether a charge can happen at all.
+ */
+
+export interface PaymentCapability {
+  running: boolean;
+  /** Why not, in the reader's words, for the strip that says so. */
+  reason: string;
+}
+
+/**
+ * Nothing charges anything yet, and every action that would need a payment reads this.
+ *
+ * Stripe is not integrated: `orgs.billing_customer_id` is the only billing column in the
+ * schema, there is no wallet, credit, payment-method or invoice table, `management-api`
+ * registers a health controller and nothing else, and no worker consumes a payment
+ * webhook. So a top-up cannot be started, the credit below is granted rather than bought,
+ * and the invoices are raised from closed usage periods rather than issued by anybody.
+ *
+ * The note's first finding is that a changed local balance must never read as proof of a
+ * payment (notes/settings-billing.md P1). This is how that is kept true: the store
+ * refuses the write instead of adding cents to a ref.
+ */
+export const PAYMENTS: PaymentCapability = {
+  running: false,
+  reason:
+    "No payment provider is connected yet, so nothing here can charge a card. The balance is credit granted to the account rather than money anybody has paid, and adding credit is unavailable rather than simulated.",
+};
+
+/**
+ * The states a real checkout passes through, named now so the screen is built against
+ * them rather than against a boolean.
+ *
+ * A card payment is not one step. It can need the cardholder present for a 3-D Secure
+ * challenge, it can be abandoned on the provider's page, and it can fail after being
+ * accepted. A dialog that only knew "busy" would report success for all three, which is
+ * the failure the note asks to design against.
+ */
+export type CheckoutState =
+  | "unavailable"
+  | "idle"
+  | "processing"
+  | "requires_action"
+  | "confirmed"
+  | "failed"
+  | "cancelled";
+
+export const CHECKOUT_STATE_LABELS: Record<CheckoutState, string> = {
+  unavailable: "Unavailable",
+  idle: "Not started",
+  processing: "Processing",
+  requires_action: "Confirm with your bank",
+  confirmed: "Added",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+export const CHECKOUT_STATE_NOTES: Record<CheckoutState, string> = {
+  unavailable: PAYMENTS.reason,
+  idle: "Nothing has been charged.",
+  processing: "The provider has the charge. Leaving this page does not cancel it.",
+  requires_action:
+    "Your bank wants to check it is you. The credit arrives once that is answered, and not before.",
+  confirmed: "The provider confirmed the charge and the credit is on the account.",
+  failed: "The charge was refused. Nothing was taken and the balance is unchanged.",
+  cancelled: "Nothing was charged and the balance is unchanged.",
+};
+
+/** Which states mean a charge is still in flight, so a second submission is refused. */
+export function isCheckoutPending(state: CheckoutState): boolean {
+  return state === "processing" || state === "requires_action";
+}
 
 /*
  * Money.
@@ -45,8 +122,8 @@ export interface Balance {
  * How long the balance lasts at the month's rate, in days.
  *
  * The figure a prepaid account is actually read for. Infinity where nothing is being
- * spent, because a project inside the free tier has no runway to run out of and a number
- * there would be an invented worry.
+ * spent, because an organisation inside the free tier has no runway to run out of and a
+ * number there would be an invented worry.
  */
 export function runwayDays(balance: Balance): number {
   if (balance.projectedMonthCents <= 0) return Number.POSITIVE_INFINITY;
@@ -81,6 +158,132 @@ export function runwayWords(balance: Balance): string {
   if (days < 1) return "Under a day left";
   if (days > RUNWAY_HORIZON_DAYS) return "More than a year left";
   return `About ${Math.floor(days)} ${Math.floor(days) === 1 ? "day" : "days"} left`;
+}
+
+/*
+ * What the balance is made of.
+ */
+
+export type CreditKind = "purchased" | "promotional";
+
+export const CREDIT_KIND_LABELS: Record<CreditKind, string> = {
+  purchased: "Purchased",
+  promotional: "Promotional",
+};
+
+/** A chart slot each, because these are two nominal values and neither is an outcome. */
+export const CREDIT_KIND_TONES: Record<CreditKind, string> = {
+  purchased: "chart-1",
+  promotional: "chart-3",
+};
+
+export const CREDIT_KIND_NOTES: Record<CreditKind, string> = {
+  purchased: "Paid for. It stays on the account until it is drawn down.",
+  promotional:
+    "Granted rather than paid for, and it expires. What is left on the day it expires is lost, which is why it is drawn down before anything else.",
+};
+
+/**
+ * One grant of credit, purchased or promotional.
+ *
+ * The balance is the sum of these rather than a number of its own, because "what is my
+ * balance" and "how much of it disappears next Tuesday" are the same question asked
+ * twice, and a single figure can only answer the first.
+ */
+export interface CreditGrant {
+  id: string;
+  kind: CreditKind;
+  /** What it was worth when it was granted, in cents. */
+  amountCents: number;
+  /** What is left of it, in cents. */
+  remainingCents: number;
+  grantedAt: string;
+  /** Promotional credit ends; purchased credit does not, and null says so. */
+  expiresAt: string | null;
+  /** Why it exists: a top-up, a trial, a credit raised by support. */
+  note: string;
+}
+
+/** Inside this and an expiry is worth saying out loud rather than filing in a column. */
+export const EXPIRY_SOON_DAYS = 14;
+
+export function isGrantExpired(grant: CreditGrant, now: Date): boolean {
+  return grant.expiresAt !== null && Date.parse(grant.expiresAt) <= now.getTime();
+}
+
+export function isGrantExpiringSoon(grant: CreditGrant, now: Date): boolean {
+  if (grant.expiresAt === null || isGrantExpired(grant, now)) return false;
+  const days = (Date.parse(grant.expiresAt) - now.getTime()) / 86_400_000;
+  return days <= EXPIRY_SOON_DAYS;
+}
+
+/** What a grant has left that can still be spent. Expired credit is worth nothing. */
+export function spendableCents(grant: CreditGrant, now: Date): number {
+  if (isGrantExpired(grant, now)) return 0;
+  return Math.max(0, grant.remainingCents);
+}
+
+/** The grants with something left on them that has not expired, for a list to show. */
+export function liveGrants(grants: readonly CreditGrant[], now: Date): CreditGrant[] {
+  return grants.filter((grant) => spendableCents(grant, now) > 0);
+}
+
+/**
+ * The order credit is drawn down in: promotional first, and inside each kind the
+ * soonest to expire first.
+ *
+ * Spend what would otherwise be lost before spending what keeps. Drawn down the other
+ * way round, an account holding both would watch a promotional grant expire unused while
+ * its purchased credit paid the bill, and the customer would be right to call that a
+ * charge they should not have had.
+ */
+export function drawOrder(grants: readonly CreditGrant[], now: Date): CreditGrant[] {
+  const rank = (grant: CreditGrant) => (grant.kind === "promotional" ? 0 : 1);
+  const ends = (grant: CreditGrant) =>
+    grant.expiresAt === null ? Number.POSITIVE_INFINITY : Date.parse(grant.expiresAt);
+  return liveGrants(grants, now).sort(
+    (left, right) => rank(left) - rank(right) || ends(left) - ends(right),
+  );
+}
+
+export interface Wallet {
+  /** Everything spendable, in cents. This is the balance. */
+  totalCents: number;
+  purchasedCents: number;
+  promotionalCents: number;
+  /** What expires inside `EXPIRY_SOON_DAYS`, in cents. */
+  expiringSoonCents: number;
+  /** When the next thing expires, or null where nothing does. */
+  nextExpiryAt: string | null;
+}
+
+/** What the account holds, split the way the reader asks about it. */
+export function walletOf(grants: readonly CreditGrant[], now: Date): Wallet {
+  const live = liveGrants(grants, now);
+  const sum = (kind: CreditKind) =>
+    live
+      .filter((grant) => grant.kind === kind)
+      .reduce((total, grant) => total + spendableCents(grant, now), 0);
+
+  const expiring = live.filter((grant) => isGrantExpiringSoon(grant, now));
+  const next = drawOrder(grants, now).find((grant) => grant.expiresAt !== null) ?? null;
+
+  return {
+    totalCents: live.reduce((total, grant) => total + spendableCents(grant, now), 0),
+    purchasedCents: sum("purchased"),
+    promotionalCents: sum("promotional"),
+    expiringSoonCents: expiring.reduce((total, grant) => total + spendableCents(grant, now), 0),
+    nextExpiryAt: next?.expiresAt ?? null,
+  };
+}
+
+/** How a grant's end reads on its row: "Expires in 9 days", "Does not expire". */
+export function expiryWords(grant: CreditGrant, now: Date): string {
+  if (grant.expiresAt === null) return "Does not expire";
+  if (isGrantExpired(grant, now)) return "Expired";
+  const days = Math.floor((Date.parse(grant.expiresAt) - now.getTime()) / 86_400_000);
+  if (days < 1) return "Expires today";
+  return `Expires in ${days} ${days === 1 ? "day" : "days"}`;
 }
 
 /*
@@ -129,16 +332,43 @@ export const MIN_TOPUP_CENTS = 1000;
 
 export const TOPUP_PRESETS_CENTS: readonly number[] = [2000, 5000, 10_000, 25_000];
 
-export type TopUpIssue = "amount_too_small" | "amount_invalid";
+/** The one currency the account is held in. Set at the provider and not from here. */
+export const BILLING_CURRENCY = "USD";
+
+export type TopUpIssue = "amount_too_small" | "amount_invalid" | "no_method" | "unavailable";
 
 export const TOPUP_ISSUE_LABELS: Record<TopUpIssue, string> = {
   amount_invalid: "An amount to add, in whole dollars.",
   amount_too_small: `The smallest top-up is ${formatCents(MIN_TOPUP_CENTS)}. Below that the card fee is most of the transaction.`,
+  no_method: "A payment method has to be on the account before anything can charge one.",
+  unavailable: PAYMENTS.reason,
 };
 
 export function validateTopUp(cents: number): TopUpIssue | null {
   if (!Number.isFinite(cents) || cents <= 0 || !Number.isInteger(cents)) return "amount_invalid";
   return cents < MIN_TOPUP_CENTS ? "amount_too_small" : null;
+}
+
+/**
+ * What a top-up actually asks for: an amount, the method it charges and the account it
+ * lands on.
+ *
+ * The method is named in the request rather than assumed to be the default, because the
+ * dialog offers a choice and a charge made to a different card from the one the reader
+ * picked is the one mistake here nobody would forgive.
+ */
+export interface TopUpRequest {
+  amountCents: number;
+  currency: string;
+  methodId: string | null;
+}
+
+/** Whether a top-up could be attempted at all, in the order the reader can act on. */
+export function validateTopUpRequest(request: TopUpRequest): TopUpIssue | null {
+  const amount = validateTopUp(request.amountCents);
+  if (amount !== null) return amount;
+  if (request.methodId === null) return "no_method";
+  return PAYMENTS.running ? null : "unavailable";
 }
 
 export interface AutoTopUp {
@@ -147,22 +377,25 @@ export interface AutoTopUp {
   thresholdCents: number;
   /** How much to add, in cents. */
   amountCents: number;
+  /** Which method it charges. Null falls back to the default, and says so. */
+  methodId: string | null;
 }
 
-export type AutoTopUpIssue = "no_card" | "amount_below_threshold" | "amount_too_small";
+export type AutoTopUpIssue =
+  | "no_card"
+  | "amount_below_threshold"
+  | "amount_too_small"
+  | "method_expired";
 
 export const AUTO_TOPUP_ISSUE_LABELS: Record<AutoTopUpIssue, string> = {
-  no_card: "A card has to be on file before this can charge one.",
+  no_card: "A payment method has to be on the account before this can charge one.",
   amount_below_threshold:
     "The top-up has to be at least the threshold, or the balance lands back under it and charges again straight away.",
   amount_too_small: TOPUP_ISSUE_LABELS.amount_too_small,
+  method_expired:
+    "The method this would charge has expired. A declined charge and an empty balance fail together and quietly.",
 };
 
-/**
- * Whether an auto top-up would work. The threshold rule is the one worth enforcing: an
- * amount smaller than the trigger charges the card in a loop, and every one of those is a
- * fee.
- */
 /**
  * How often an automatic top-up would fire at the month's rate, in days. Infinity where
  * nothing is being spent, because a rule that never fires has no interval.
@@ -186,6 +419,11 @@ export function topUpEveryWords(amountCents: number, projectedMonthCents: number
   return `About once every ${whole} ${whole === 1 ? "day" : "days"} at this month's rate.`;
 }
 
+/**
+ * Whether an auto top-up would work. The threshold rule is the one worth enforcing: an
+ * amount smaller than the trigger charges the card in a loop, and every one of those is a
+ * fee.
+ */
 export function validateAutoTopUp(setting: AutoTopUp, hasCard: boolean): AutoTopUpIssue | null {
   if (!setting.enabled) return null;
   if (!hasCard) return "no_card";
@@ -193,8 +431,30 @@ export function validateAutoTopUp(setting: AutoTopUp, hasCard: boolean): AutoTop
   return setting.amountCents < setting.thresholdCents ? "amount_below_threshold" : null;
 }
 
+/**
+ * Whether the rule would fire the moment it is saved, and what that costs.
+ *
+ * The note asks for this by name: somebody setting a threshold above the balance they
+ * already hold has written a charge, not a safety net, and the dialog has to say so
+ * before the write rather than after it.
+ */
+export interface AutoTopUpEffect {
+  /** The balance is already under the threshold, so saving charges straight away. */
+  firesNow: boolean;
+  /** What the balance would be afterwards, in cents. */
+  balanceAfterCents: number;
+}
+
+export function autoTopUpEffect(setting: AutoTopUp, balanceCents: number): AutoTopUpEffect {
+  const firesNow = setting.enabled && balanceCents < setting.thresholdCents;
+  return {
+    firesNow,
+    balanceAfterCents: firesNow ? balanceCents + setting.amountCents : balanceCents,
+  };
+}
+
 /*
- * The card.
+ * Payment methods.
  */
 
 export type CardBrand = "visa" | "mastercard" | "amex" | "discover" | "other";
@@ -216,6 +476,18 @@ export interface PaymentCard {
   /** Who added it, for the audit trail's sake as much as the reader's. */
   addedBy: string;
   addedAt: string;
+}
+
+/**
+ * A card on the account, of which there may be several and exactly one is the default.
+ *
+ * The default is the one anything automatic charges, so it is a property of the set
+ * rather than of a card: two defaults is an argument about which one an unattended
+ * charge used, and none is an automatic top-up that silently cannot fire.
+ */
+export interface PaymentMethod extends PaymentCard {
+  id: string;
+  isDefault: boolean;
 }
 
 /**
@@ -258,6 +530,76 @@ export function isCardExpiringSoon(card: PaymentCard, now: Date): boolean {
 
 export function cardExpiryWords(card: PaymentCard): string {
   return `${String(card.expiryMonth).padStart(2, "0")}/${String(card.expiryYear).slice(-2)}`;
+}
+
+/** The default, or null on an account holding none. */
+export function defaultMethodOf(methods: readonly PaymentMethod[]): PaymentMethod | null {
+  return methods.find((method) => method.isDefault) ?? null;
+}
+
+/**
+ * Makes one the default and the rest not, in a single change.
+ *
+ * One act rather than a clear and a set, for the same reason ownership moves by transfer
+ * on the members screen: there is never a moment with two defaults and never one with
+ * none, including the moment in the middle.
+ */
+export function withDefaultMethod(methods: readonly PaymentMethod[], id: string): PaymentMethod[] {
+  if (!methods.some((method) => method.id === id)) return [...methods];
+  return methods.map((method) => ({ ...method, isDefault: method.id === id }));
+}
+
+/**
+ * Takes one off, and promotes another where the one removed was the default.
+ *
+ * An account left holding cards and no default is one where an automatic top-up stops
+ * firing without anybody switching it off, so the promotion is part of the removal
+ * rather than a thing to remember afterwards.
+ */
+export function withoutMethod(methods: readonly PaymentMethod[], id: string): PaymentMethod[] {
+  const remaining = methods.filter((method) => method.id !== id);
+  if (remaining.length === 0 || remaining.some((method) => method.isDefault)) return remaining;
+  const first = remaining[0];
+  return first ? withDefaultMethod(remaining, first.id) : remaining;
+}
+
+/** Adds one, and makes it the default when it is the first the account has held. */
+export function withMethod(
+  methods: readonly PaymentMethod[],
+  method: PaymentMethod,
+): PaymentMethod[] {
+  const next = [...methods, { ...method, isDefault: method.isDefault || methods.length === 0 }];
+  return method.isDefault ? withDefaultMethod(next, method.id) : next;
+}
+
+export type MethodRemovalIssue = "last_method_with_auto" | "not_found";
+
+export const METHOD_REMOVAL_ISSUE_LABELS: Record<MethodRemovalIssue, string> = {
+  last_method_with_auto:
+    "This is the only method on the account and automatic top-up is on. Removing it would leave a rule that cannot fire, so switch the rule off first or add another method.",
+  not_found: "That method is not on this account.",
+};
+
+/** Whether a method may be removed, and why not when it may not. */
+export function methodRemovalIssue(
+  methods: readonly PaymentMethod[],
+  id: string,
+  auto: AutoTopUp,
+): MethodRemovalIssue | null {
+  if (!methods.some((method) => method.id === id)) return "not_found";
+  if (methods.length === 1 && auto.enabled) return "last_method_with_auto";
+  return null;
+}
+
+/** What an automatic rule would actually charge: its own method, or the default. */
+export function methodForAuto(
+  setting: AutoTopUp,
+  methods: readonly PaymentMethod[],
+): PaymentMethod | null {
+  if (setting.methodId !== null) {
+    return methods.find((method) => method.id === setting.methodId) ?? null;
+  }
+  return defaultMethodOf(methods);
 }
 
 /*
@@ -307,6 +649,22 @@ export function outstandingCents(invoices: readonly Invoice[]): number {
   return invoices
     .filter((invoice) => invoice.status === "open" || invoice.status === "past_due")
     .reduce((total, invoice) => total + invoice.totalCents, 0);
+}
+
+/**
+ * What a failed payment replaces the normal status with.
+ *
+ * The note is explicit that a past-due invoice takes the place of the runway rather than
+ * sitting beside it: a repair action is what the reader needs, and an optimistic estimate
+ * of how long the credit lasts is noise on top of a bill nobody paid.
+ */
+export function paymentRepair(invoices: readonly Invoice[]): string {
+  const due = invoices.filter(isPastDue);
+  if (due.length === 0) return "";
+  const total = formatCents(due.reduce((sum, invoice) => sum + invoice.totalCents, 0));
+  return due.length === 1
+    ? `${due[0]?.number} is past due at ${total}. Settle it in the billing portal.`
+    : `${due.length} invoices are past due, ${total} in total. Settle them in the billing portal.`;
 }
 
 /*

@@ -49,14 +49,18 @@ export const useOtpStore = defineStore("otp", () => {
       prj_personal: {
         email: { enabled: true, allowSignUp: true },
         sms: { enabled: false, allowSignUp: true },
-        magicLink: { enabled: false, redirectUris: [] },
+        magicLink: { enabled: false, allowSignUp: true, redirectUris: [] },
       },
       prj_acme: {
         email: { enabled: true, allowSignUp: true },
         sms: { enabled: true, allowSignUp: false },
         magicLink: {
           enabled: true,
-          redirectUris: ["https://app.acme.com/auth/link", "https://staging.acme.com/auth/link"],
+          allowSignUp: true,
+          redirectUris: [
+            "https://app.acme.com/auth/callback",
+            "https://staging.acme.com/auth/callback",
+          ],
         },
       },
     };

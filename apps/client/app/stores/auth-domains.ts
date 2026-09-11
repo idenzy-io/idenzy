@@ -18,17 +18,23 @@ import {
   type AuthDomainStatus,
   normalizeDomain,
   recordsFor,
+  type SetupProbe,
+  setupProbe,
 } from "~/utils/auth-domains";
 
 const PLACEHOLDER_LATENCY = 700;
 const WRITE_LATENCY = 700;
 /** How long the placeholder pretends a DNS check takes to see a published record. */
 const VERIFY_LATENCY = 6000;
+/** How long the placeholder pretends a request to the host takes to come back. */
+const PROBE_LATENCY = 1100;
 
 export const useAuthDomainsStore = defineStore("auth-domains", () => {
   const domains = ref<Record<string, AuthDomain[]>>({});
   const loading = ref(true);
   const lastChanged = ref<Record<string, string>>({});
+  /** The last setup probe per project. Never a claim about a deployed client. */
+  const probes = ref<Record<string, SetupProbe>>({});
 
   setTimeout(() => {
     domains.value = {
@@ -134,6 +140,30 @@ export const useAuthDomainsStore = defineStore("auth-domains", () => {
     touch(projectId);
   }
 
+  /**
+   * Asks the host to answer, from here.
+   *
+   * The reading is `setupProbe`, which is pure and lives with the rest of the model; what
+   * the store adds is the wait and holding the answer. Nothing is written by a probe: it
+   * is a check on the domain and never a claim about somebody else's deployment.
+   */
+  async function checkSetup(
+    projectId: string,
+    id: string,
+    origin: string,
+    originAllowed: boolean,
+  ): Promise<SetupProbe> {
+    await new Promise((resolve) => setTimeout(resolve, PROBE_LATENCY));
+    const row = forProject(projectId).find((held) => held.id === id) ?? null;
+    const probe = setupProbe(row, origin, originAllowed);
+    probes.value = { ...probes.value, [projectId]: probe };
+    return probe;
+  }
+
+  function probeFor(projectId: string): SetupProbe | null {
+    return probes.value[projectId] ?? null;
+  }
+
   function replace(projectId: string, id: string, change: (row: AuthDomain) => AuthDomain) {
     const rows = forProject(projectId);
     const at = rows.findIndex((row) => row.id === id);
@@ -158,5 +188,16 @@ export const useAuthDomainsStore = defineStore("auth-domains", () => {
     return rows.find((row) => row.status === "verified")?.status ?? rows[0]?.status ?? null;
   }
 
-  return { domains, loading, forProject, add, recheck, remove, lastChangedAt, statusFor };
+  return {
+    domains,
+    loading,
+    forProject,
+    add,
+    recheck,
+    remove,
+    checkSetup,
+    probeFor,
+    lastChangedAt,
+    statusFor,
+  };
 });

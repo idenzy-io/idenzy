@@ -12,9 +12,24 @@
  * renderer rather than sent as an empty mail (PROJECT.md 11.3). The panel shows that
  * window as a state of its own, because a template that looks saved and is not yet
  * sending is the one thing an operator would otherwise have no way to see.
+ *
+ * **Unsaved work lives here too, and that is deliberate.** A draft is held per project,
+ * message and language, so switching language, walking back to the catalogue and coming
+ * in again all preserve it: the editor used to reload its bodies on a language change and
+ * lose whatever had been typed, which is the finding `notes/email-templates.md` opens
+ * with. Holding it in the store rather than in the workspace component is what makes the
+ * catalogue able to say a message has unpublished copy in it, and what stops the drafts
+ * dying on a route change. They do not survive a reload; nothing is written to browser
+ * storage, because a draft is a customer's unpublished copy and this panel is opened on
+ * shared machines.
  */
 
-import type { EmailTemplateType, TemplateBodies } from "~/utils/email-templates";
+import {
+  bodiesEqual,
+  type EmailTemplateType,
+  startingPoint,
+  type TemplateBodies,
+} from "~/utils/email-templates";
 
 export interface StoredTemplate extends TemplateBodies {
   type: EmailTemplateType;
@@ -115,6 +130,100 @@ export const useEmailTemplatesStore = defineStore("emailTemplates", () => {
     return forProject(projectId).find((row) => row.type === type && row.locale === locale) ?? null;
   }
 
+  /*
+   * Unsaved copy, per project, message and language.
+   *
+   * Keyed as one flat map rather than nested, because every question asked of it is asked
+   * with all three parts in hand and a nested shape would only add three lookups and a
+   * pile of empty objects to reap.
+   */
+  const drafts = ref<Record<string, TemplateBodies>>({});
+
+  const keyOf = (projectId: string, type: EmailTemplateType, locale: string) =>
+    `${projectId}|${type}|${locale}`;
+
+  /**
+   * The copy a language starts from: the project's own row, or our built-in.
+   *
+   * This is what a draft is compared against to decide whether anything is unsaved, and
+   * what the editor opens on for a language nobody has written yet. A blank page would be
+   * a worse starting point than a working message somebody can edit down.
+   */
+  function baseline(projectId: string, type: EmailTemplateType, locale: string): TemplateBodies {
+    const row = find(projectId, type, locale);
+    if (row === null) return startingPoint(type);
+    return { subject: row.subject, html: row.html, text: row.text };
+  }
+
+  function draftFor(
+    projectId: string,
+    type: EmailTemplateType,
+    locale: string,
+  ): TemplateBodies | null {
+    return drafts.value[keyOf(projectId, type, locale)] ?? null;
+  }
+
+  /** What the editor shows: the draft where there is one, the baseline where there is not. */
+  function bodiesFor(projectId: string, type: EmailTemplateType, locale: string): TemplateBodies {
+    return draftFor(projectId, type, locale) ?? baseline(projectId, type, locale);
+  }
+
+  function setDraft(
+    projectId: string,
+    type: EmailTemplateType,
+    locale: string,
+    bodies: TemplateBodies,
+  ) {
+    drafts.value = { ...drafts.value, [keyOf(projectId, type, locale)]: { ...bodies } };
+  }
+
+  function clearDraft(projectId: string, type: EmailTemplateType, locale: string) {
+    const { [keyOf(projectId, type, locale)]: _dropped, ...rest } = drafts.value;
+    drafts.value = rest;
+  }
+
+  /**
+   * Whether a language has work in it that is not saved.
+   *
+   * A draft against no stored row is always unsaved, even where it matches our built-in
+   * word for word: saving it creates the project's own copy of the message, which is a
+   * change whatever the bytes say. Adding a language and publishing it unedited is a real
+   * thing to want, because it pins the copy against a later change to our built-in.
+   */
+  function isDirty(projectId: string, type: EmailTemplateType, locale: string): boolean {
+    const draft = draftFor(projectId, type, locale);
+    if (draft === null) return false;
+    const row = find(projectId, type, locale);
+    if (row === null) return true;
+    return !bodiesEqual(draft, { subject: row.subject, html: row.html, text: row.text });
+  }
+
+  /** Every language of one message that has unsaved work, in the order a list shows them. */
+  function dirtyLocales(projectId: string, type: EmailTemplateType): string[] {
+    return draftLocales(projectId, type).filter((locale) => isDirty(projectId, type, locale));
+  }
+
+  /** Every language a draft is held for, saved or not, so a new one appears in the list. */
+  function draftLocales(projectId: string, type: EmailTemplateType): string[] {
+    const prefix = `${projectId}|${type}|`;
+    return Object.keys(drafts.value)
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  /** Messages on this project with unsaved copy in them, which the catalogue marks. */
+  function typesWithDrafts(projectId: string): Set<EmailTemplateType> {
+    const found = new Set<EmailTemplateType>();
+    for (const key of Object.keys(drafts.value)) {
+      const [project, type, locale] = key.split("|");
+      if (project !== projectId || type === undefined || locale === undefined) continue;
+      if (isDirty(projectId, type as EmailTemplateType, locale))
+        found.add(type as EmailTemplateType);
+    }
+    return found;
+  }
+
   /**
    * Writes one type and locale whole.
    *
@@ -145,6 +254,9 @@ export const useEmailTemplatesStore = defineStore("emailTemplates", () => {
     );
     templates.value = { ...templates.value, [projectId]: [...rest, row] };
     lastSaved.value = { ...lastSaved.value, [projectId]: row.updatedAt };
+    /* The draft has become the row, so what is held is no longer unsaved. Dropped after
+       the write and not before, so a failed save leaves the reader's work where it was. */
+    clearDraft(projectId, type, locale);
     setTimeout(() => markCompiled(projectId, type, locale, row.version), COMPILE_LATENCY);
   }
 
@@ -173,6 +285,7 @@ export const useEmailTemplatesStore = defineStore("emailTemplates", () => {
    */
   async function revert(projectId: string, type: EmailTemplateType, locale: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    clearDraft(projectId, type, locale);
     templates.value = {
       ...templates.value,
       [projectId]: forProject(projectId).filter(
@@ -186,5 +299,24 @@ export const useEmailTemplatesStore = defineStore("emailTemplates", () => {
     return lastSaved.value[projectId] ?? null;
   }
 
-  return { templates, loading, forProject, localesFor, find, save, revert, lastSavedAt };
+  return {
+    templates,
+    drafts,
+    loading,
+    forProject,
+    localesFor,
+    find,
+    baseline,
+    bodiesFor,
+    draftFor,
+    draftLocales,
+    setDraft,
+    clearDraft,
+    isDirty,
+    dirtyLocales,
+    typesWithDrafts,
+    save,
+    revert,
+    lastSavedAt,
+  };
 });

@@ -40,7 +40,6 @@ export const useProjectSettingsStore = defineStore("project-settings", () => {
     return {
       id: projectId,
       name,
-      orgName: projectId === "prj_acme" ? "Acme Inc." : "Hasan's org",
       cellCode: cell?.code ?? "eu-west-1",
       tier,
       plan: tier === "hipaa" ? "enterprise" : random() < 0.5 ? "free" : "pro",

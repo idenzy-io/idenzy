@@ -15,44 +15,16 @@
  * legacy hash is gone. The gap between them is what is still riding on the old format.
  */
 
-import type { ImportAnalysis, ImportFormat, ImportSource, Issue } from "~/utils/import";
+import type {
+  ImportAnalysis,
+  ImportError,
+  ImportFormat,
+  ImportJob,
+  ImportSource,
+  Issue,
+} from "~/utils/import";
 import { BLOCKING_ISSUES, ISSUE_LABELS } from "~/utils/import";
 import { DURATIONS } from "~/utils/time";
-
-export type ImportStatus = "queued" | "running" | "done" | "failed";
-
-export interface ImportError {
-  line: number;
-  email: string | null;
-  reason: string;
-}
-
-export interface ImportJob {
-  id: string;
-  projectId: string;
-  source: ImportSource;
-  fileName: string;
-  format: ImportFormat;
-  /** A rehearsal: everything checked, nothing written. */
-  dryRun: boolean;
-  rows: number;
-  imported: number;
-  /** Rows left out on purpose: a duplicate of an earlier row. */
-  skipped: number;
-  /** Rows refused: no identifier, or one that is not an address. */
-  failed: number;
-  passwordsKept: number;
-  passwordsDropped: number;
-  /** How many of the kept passwords have since been rehashed on a sign-in. */
-  passwordsUpgraded: number;
-  status: ImportStatus;
-  /** 0 to 1 while running. */
-  progress: number;
-  startedAt: string;
-  finishedAt: string | null;
-  startedBy: string;
-  errors: ImportError[];
-}
 
 export interface ImportPlan {
   projectId: string;
@@ -126,11 +98,17 @@ export const useImportsStore = defineStore("imports", () => {
    * The outcome is decided by the analysis and revealed by the clock: the counts climb
    * with the progress figure, so a screen watching the job sees rows land rather than a
    * bar that fills and then a number that appears.
+   *
+   * The figure is the ticker's own. `patch` replaces the row with a new object, so the
+   * one this closure was handed keeps whatever progress it started with: read from it
+   * and the bar stalls a tenth of the way along and the job never finishes.
    */
   function run(job: ImportJob, analysis: ImportAnalysis) {
     const outcome = outcomeOf(analysis);
+    let done = job.progress;
     const timer = setInterval(() => {
-      const progress = Math.min(1, job.progress + 0.05 + Math.random() * 0.12);
+      const progress = Math.min(1, done + 0.05 + Math.random() * 0.12);
+      done = progress;
       patch(job.id, {
         progress,
         imported: Math.round(outcome.imported * progress),

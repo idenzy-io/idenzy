@@ -16,9 +16,13 @@ import {
   afterAccountSaved,
   type ByoAccount,
   type ByoDraft,
+  type ByoVendor,
+  byoVendorInfo,
+  isByoKey,
   type SendingMode,
   type SendingState,
   type SmsProviderId,
+  transportWired,
   withMode,
 } from "~/utils/sms-providers";
 
@@ -35,13 +39,34 @@ export interface SmsTraffic {
   byProvider: { id: SmsProviderId; count: number }[];
 }
 
+/**
+ * What presenting the credentials to the vendor answered.
+ *
+ * A check and not a send: the real one asks the vendor who the credentials belong to,
+ * which costs nothing and reaches nobody. It exists because a credential set saved
+ * without one fails at the carrier on somebody's sign-in, hours later, after the message
+ * has already been paid for (notes/sms-providers.md P1).
+ */
+export interface AccountCheck {
+  ok: boolean;
+  /** What the vendor answered, in the reader's words. */
+  finding: string;
+  /** The key the answer is about, so a later edit invalidates it. */
+  key: string;
+  vendor: ByoVendor;
+  at: string;
+}
+
 const PLACEHOLDER_LATENCY = 700;
 const SAVE_LATENCY = 600;
+const CHECK_LATENCY = 900;
 
 export const useSmsProvidersStore = defineStore("sms-providers", () => {
   const states = ref<Record<string, SendingState>>({});
   const loading = ref(true);
   const lastSaved = ref<Record<string, string>>({});
+  /** The last answer the vendor gave, per project. Never a stored credential. */
+  const checks = ref<Record<string, AccountCheck>>({});
 
   setTimeout(() => {
     states.value = {
@@ -108,6 +133,43 @@ export const useSmsProvidersStore = defineStore("sms-providers", () => {
     );
   }
 
+  /**
+   * Presents the credentials to the vendor and reports what it said.
+   *
+   * The placeholder refuses a secret too short to be one and accepts anything else; the
+   * real call is a server-side request to the vendor's own account endpoint, which is why
+   * the secret is sent here and never held. Nothing is written by a check: activating is
+   * a separate act, so a refused credential set cannot switch delivery underneath a
+   * project (notes/sms-providers.md acceptance checks).
+   */
+  async function verifyAccount(projectId: string, draft: ByoDraft): Promise<AccountCheck> {
+    await new Promise((resolve) => setTimeout(resolve, CHECK_LATENCY));
+    const vendor = byoVendorInfo(draft.vendor);
+    const label = vendor?.label ?? draft.vendor;
+    const secret = draft.secret.trim();
+    const held = accountFor(projectId);
+    const keeps = held !== null && held.vendor === draft.vendor && held.secretSet;
+    const shaped = isByoKey(draft.vendor, draft.key);
+    const answered = shaped && (secret.length >= 8 || (secret === "" && keeps));
+    const check: AccountCheck = {
+      ok: answered,
+      finding: answered
+        ? `${label} recognised the credentials and answered for the account.`
+        : shaped
+          ? `${label} refused the credentials. The ${vendor?.secretLabel.toLowerCase() ?? "secret"} is the half that is usually wrong, and it is the half we cannot show you.`
+          : `${label} was not asked: that is not the shape of a ${vendor?.keyLabel.toLowerCase() ?? "key"}, so it would have been refused.`,
+      key: draft.key.trim(),
+      vendor: draft.vendor,
+      at: new Date().toISOString(),
+    };
+    checks.value = { ...checks.value, [projectId]: check };
+    return check;
+  }
+
+  function checkFor(projectId: string): AccountCheck | null {
+    return checks.value[projectId] ?? null;
+  }
+
   /** Hands the project back to our routing. Nothing stops sending. */
   async function removeAccount(projectId: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
@@ -118,7 +180,17 @@ export const useSmsProvidersStore = defineStore("sms-providers", () => {
     return lastSaved.value[projectId] ?? null;
   }
 
+  /**
+   * What the meter counted over the last thirty days.
+   *
+   * Nought everywhere while no vendor adapter is wired, which is every deployment today.
+   * A figure here is a message somebody was handed, and drawing eighteen thousand of them
+   * against a router that cannot dispatch is the claim `notes/sms-providers.md` P1 is
+   * about: unfalsifiable from the panel, and only discovered on somebody's sign-in. The
+   * fixtures stay behind the check so they come back with the adapter.
+   */
   function traffic(projectId: string): SmsTraffic {
+    if (!transportWired()) return NO_TRAFFIC;
     return projectId === "prj_acme" ? ACME_TRAFFIC : PERSONAL_TRAFFIC;
   }
 
@@ -129,6 +201,8 @@ export const useSmsProvidersStore = defineStore("sms-providers", () => {
     modeFor,
     accountFor,
     setMode,
+    verifyAccount,
+    checkFor,
     saveAccount,
     removeAccount,
     lastSavedAt,
@@ -175,6 +249,9 @@ function trafficFrom(
     })),
   };
 }
+
+/** Nothing carried, which is what a deployment with no adapter has to show. */
+const NO_TRAFFIC: SmsTraffic = trafficFrom(daily(7, 0, 0), 0, 0, []);
 
 const PERSONAL_TRAFFIC = trafficFrom(daily(7, 0, 0), 0, 0, []);
 

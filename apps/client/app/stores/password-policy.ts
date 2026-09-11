@@ -10,7 +10,11 @@
  * sending and keeps a refused value on screen with the reason rather than sending it.
  */
 
-import { DEFAULT_PASSWORD_POLICY, type PasswordPolicy } from "~/utils/password-policy";
+import {
+  DEFAULT_PASSWORD_POLICY,
+  type PasswordPolicy,
+  type StoredCounts,
+} from "~/utils/password-policy";
 
 export interface PasswordStats {
   /** Over the last thirty days, oldest day first. */
@@ -18,10 +22,21 @@ export interface PasswordStats {
   signInsDaily: number[];
   /** Accounts holding a password hash, whatever its format. */
   accounts: number;
+  /**
+   * Of those, the ones with no other way in: no passkey, no provider, no one-time code.
+   * The figure the disable dialog is really about, because for them turning the method
+   * off is the account.
+   */
+  passwordOnly: number;
+  /** Those same accounts by the format the hash is in, which is what a migration moves. */
+  stored: StoredCounts;
   breachedRefused: number;
   breachedDaily: number[];
   resets: number;
   resetsDaily: number[];
+  /** The same two windows one period back, so a tile can say which way they moved. */
+  signInsPrevious: number;
+  resetsPrevious: number;
 }
 
 const PLACEHOLDER_LATENCY = 700;
@@ -92,27 +107,43 @@ const sum = (values: readonly number[]) => values.reduce((total, value) => total
 const PERSONAL_SIGN_INS = daily(3, 96, 40);
 const PERSONAL_BREACHED = daily(5, 1.2, 2);
 const PERSONAL_RESETS = daily(7, 2.4, 3);
+/* The window before, seeded apart from it, so the movement holds still between renders. */
+const PERSONAL_SIGN_INS_BEFORE = daily(23, 88, 40);
+const PERSONAL_RESETS_BEFORE = daily(29, 2.1, 3);
 
+/* A project that never imported anything: every hash was written here. */
 const PERSONAL_STATS: PasswordStats = {
   signIns: sum(PERSONAL_SIGN_INS),
   signInsDaily: PERSONAL_SIGN_INS,
   accounts: 84,
+  passwordOnly: 31,
+  stored: { current: 84, legacy: { bcrypt: 0, scrypt: 0, argon2: 0, pbkdf2: 0 } },
   breachedRefused: sum(PERSONAL_BREACHED),
   breachedDaily: PERSONAL_BREACHED,
   resets: sum(PERSONAL_RESETS),
   resetsDaily: PERSONAL_RESETS,
+  signInsPrevious: sum(PERSONAL_SIGN_INS_BEFORE),
+  resetsPrevious: sum(PERSONAL_RESETS_BEFORE),
 };
 
 const ACME_SIGN_INS = daily(11, 1840, 600);
 const ACME_BREACHED = daily(13, 9, 8);
 const ACME_RESETS = daily(17, 31, 20);
+const ACME_SIGN_INS_BEFORE = daily(31, 1710, 600);
+const ACME_RESETS_BEFORE = daily(37, 34, 20);
 
+/* A project part-way through an import: most accounts have signed in since and been
+   rehashed, and the tail is people who have not been back yet. */
 const ACME_STATS: PasswordStats = {
   signIns: sum(ACME_SIGN_INS),
   signInsDaily: ACME_SIGN_INS,
   accounts: 2614,
+  passwordOnly: 1204,
+  stored: { current: 1998, legacy: { bcrypt: 487, scrypt: 92, argon2: 0, pbkdf2: 37 } },
   breachedRefused: sum(ACME_BREACHED),
   breachedDaily: ACME_BREACHED,
   resets: sum(ACME_RESETS),
   resetsDaily: ACME_RESETS,
+  signInsPrevious: sum(ACME_SIGN_INS_BEFORE),
+  resetsPrevious: sum(ACME_RESETS_BEFORE),
 };

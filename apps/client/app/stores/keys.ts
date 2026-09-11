@@ -1,15 +1,19 @@
 /**
- * Each project's API keys, and the two things that can be done to them.
+ * Each project's API keys, and what can be done to them: make one, start a rotation on one,
+ * and revoke one.
  *
- * The store never holds a plaintext key. `create` returns one and forgets it in the same
- * breath, exactly as the server does: the row it writes carries a digest, and the value
+ * The store never holds a plaintext key. `create` and `rotate` return one and forget it in
+ * the same breath, exactly as the server does: the row carries a digest, and the value
  * exists only in the reply. Keeping it here so the screen could show it twice would rebuild,
  * in a Pinia store, the retrievable-key design the schema went out of its way to avoid.
  *
- * The rows themselves are a placeholder until the management API answers, seeded off the
- * project id so a key holds still between visits and two projects differ. Keys made and
- * revoked this session are kept beside the derivation rather than folded into it, so an
- * action survives a project switch and back.
+ * `createdBy` is who the audit trail's `key.created` entry names, and `replaces` is the
+ * proposed column that makes a rotation explicit. Both model what the management API will
+ * answer with, like every placeholder in the panel; neither is a label kept only here.
+ *
+ * The rows are seeded off the project id so a key holds still between visits. Keys made and
+ * revoked this session are kept beside the derivation, so an action survives a project
+ * switch and back.
  */
 
 import {
@@ -21,35 +25,20 @@ import {
 } from "~/utils/keys";
 import { DURATIONS } from "~/utils/time";
 
-export interface KeyStats {
-  /** Keys that would resolve a request right now. */
-  live: number;
-  /** Live keys nothing has ever called. */
-  unused: number;
-  /** Calls that presented a key, over the window. */
-  calls: number;
-  callsDaily: number[];
-  /** Calls refused because the key was unknown or revoked (`invalid_api_key`). */
-  refused: number;
-  refusedDaily: number[];
-}
-
 const WORK_LATENCY = 700;
-const WINDOW_DAYS = 30;
 
 export const useKeysStore = defineStore("keys", () => {
+  const account = useAccountStore();
+
   /** Rows the operator made this session, by project. They carry no plaintext either. */
   const made = ref<Record<string, ProjectApiKey[]>>({});
   /** Ids revoked this session, and when, by project. */
   const revoked = ref<Record<string, Record<string, string>>>({});
 
   const loading = ref(true);
-
-  /* One tick, so the list arrives the way it will when a request is behind it. */
-  const ready = new Promise<void>((resolve) => setTimeout(resolve, 400));
-  void ready.then(() => {
+  setTimeout(() => {
     loading.value = false;
-  });
+  }, 400);
 
   /** Every key on the project, newest first. */
   function keysFor(projectId: string): ProjectApiKey[] {
@@ -63,16 +52,10 @@ export const useKeysStore = defineStore("keys", () => {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  /**
-   * Issues a key and hands back the only copy of it.
-   *
-   * The value is returned rather than stored, which is the whole shape of this call: the
-   * server keeps `sha256(key)` under a unique index, so there is nothing to read back and
-   * nothing here worth keeping either.
-   */
-  async function create(
+  async function issue(
     projectId: string,
     kind: ApiKeyKind,
+    replaces: string | null,
   ): Promise<{ key: ProjectApiKey; secret: string }> {
     await new Promise((resolve) => setTimeout(resolve, WORK_LATENCY));
     const secret = `${KEY_KIND_PREFIXES[kind]}${randomBody()}`;
@@ -84,9 +67,27 @@ export const useKeysStore = defineStore("keys", () => {
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
       revokedAt: null,
+      createdBy: account.profile.name,
+      replaces,
     };
     made.value = { ...made.value, [projectId]: [...(made.value[projectId] ?? []), key] };
     return { key, secret };
+  }
+
+  /**
+   * Issues a key and hands back the only copy of it. A second live key of a kind is just a
+   * second key: nothing here marks either of them as replacing the other.
+   */
+  function create(projectId: string, kind: ApiKeyKind) {
+    return issue(projectId, kind, null);
+  }
+
+  /**
+   * Starts a rotation: a key of the same kind that names the one it replaces. The old key is
+   * untouched and keeps working, which is the whole point; it goes when somebody revokes it.
+   */
+  function rotate(projectId: string, old: ProjectApiKey) {
+    return issue(projectId, old.kind, old.id);
   }
 
   /**
@@ -103,23 +104,16 @@ export const useKeysStore = defineStore("keys", () => {
     };
   }
 
-  function stats(projectId: string): KeyStats {
-    const keys = keysFor(projectId);
-    const live = keys.filter(isLive);
-    const seed = seedOf(projectId);
-    const callsDaily = walk(seed + 11, WINDOW_DAYS, live.length === 0 ? 0 : 4200, 1400);
-    const refusedDaily = sprinkle(seed + 13, live.length === 0 ? 0 : 9);
+  /** Live keys of each kind, for the create dialog's "this does not replace" line. */
+  function liveOf(projectId: string): Record<ApiKeyKind, ProjectApiKey[]> {
+    const live = keysFor(projectId).filter(isLive);
     return {
-      live: live.length,
-      unused: live.filter((key) => key.lastUsedAt === null).length,
-      calls: sum(callsDaily),
-      callsDaily,
-      refused: sum(refusedDaily),
-      refusedDaily,
+      publishable: live.filter((key) => key.kind === "publishable"),
+      secret: live.filter((key) => key.kind === "secret"),
     };
   }
 
-  return { loading, keysFor, create, revoke, stats };
+  return { loading, keysFor, create, rotate, revoke, liveOf };
 });
 
 /*
@@ -172,72 +166,88 @@ function seedOf(id: string): number {
   return hash >>> 0;
 }
 
-const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
-
-function walk(seed: number, days: number, base: number, swing: number): number[] {
-  if (base === 0) return Array.from({ length: days }, () => 0);
-  const random = seeded(seed);
-  let level = base;
-  return Array.from({ length: days }, () => {
-    level += (random() - 0.5) * swing;
-    level = Math.max(base * 0.3, Math.min(base * 1.8, level));
-    return Math.round(level);
-  });
-}
-
-/** A month's worth of a rare event, scattered over its days. */
-function sprinkle(seed: number, total: number): number[] {
-  const random = seeded(seed);
-  const days = Array.from({ length: WINDOW_DAYS }, () => 0);
-  for (let event = 0; event < total; event += 1) {
-    const day = Math.floor(random() * days.length);
-    days[day] = (days[day] ?? 0) + 1;
-  }
-  return days;
+interface Seed {
+  kind: ApiKeyKind;
+  createdDaysAgo: number;
+  /** Minutes since it was last presented, or null for never. */
+  usedMinutesAgo: number | null;
+  revokedDaysAgo?: number;
+  /** Null where the `key.created` entry is older than the audit trail keeps (a year). */
+  createdBy: string | null;
+  /** Index of the key in the same list this one replaces. */
+  replaces?: number;
 }
 
 /**
- * A project's keys.
- *
- * Shaped like a project that has been running a while rather than one that was made this
- * morning: one publishable key in the bundle, a secret key the backend uses, an older secret
- * key that was rotated out and revoked, and on some projects a second live secret key,
- * because a half-finished rotation is the state this screen exists to make visible.
+ * Shaped like projects that have been running a while. The personal one has a second live
+ * secret key that nobody has used and nothing names as a replacement: two keys, not a
+ * rotation, which is exactly the case the old screen misread (notes/keys.md P1). Acme is in
+ * two rotations somebody started: a secret key whose replacement is deployed while the old
+ * one is still being presented, and a publishable key whose replacement has not been
+ * deployed at all, which the page must never call finished.
  */
+const SEEDS: Record<string, readonly Seed[]> = {
+  prj_personal: [
+    { kind: "publishable", createdDaysAgo: 402, usedMinutesAgo: 3, createdBy: null },
+    {
+      kind: "secret",
+      createdDaysAgo: 402,
+      usedMinutesAgo: 96 * 24 * 60,
+      revokedDaysAgo: 96,
+      createdBy: null,
+    },
+    { kind: "secret", createdDaysAgo: 97, usedMinutesAgo: 2, createdBy: "Ana Rodríguez" },
+    { kind: "secret", createdDaysAgo: 2, usedMinutesAgo: null, createdBy: "Pieter de Vries" },
+  ],
+  prj_acme: [
+    { kind: "publishable", createdDaysAgo: 380, usedMinutesAgo: 1, createdBy: null },
+    {
+      kind: "secret",
+      createdDaysAgo: 400,
+      usedMinutesAgo: 311 * 24 * 60,
+      revokedDaysAgo: 310,
+      createdBy: null,
+    },
+    { kind: "secret", createdDaysAgo: 310, usedMinutesAgo: 40, createdBy: "Ana Rodríguez" },
+    { kind: "secret", createdDaysAgo: 3, usedMinutesAgo: 5, createdBy: "Mei Tanaka", replaces: 2 },
+    {
+      kind: "publishable",
+      createdDaysAgo: 1,
+      usedMinutesAgo: null,
+      createdBy: "Mei Tanaka",
+      replaces: 0,
+    },
+  ],
+};
+
 function placeholderKeys(projectId: string): ProjectApiKey[] {
   const random = seeded(seedOf(projectId));
   const now = Date.now();
+  const seeds = SEEDS[projectId] ?? [];
 
-  const at = (daysAgo: number) => new Date(now - daysAgo * DURATIONS.DAY).toISOString();
-  const build = (
-    kind: ApiKeyKind,
-    createdDaysAgo: number,
-    lastUsed: string | null,
-    revokedAt: string | null = null,
-  ): ProjectApiKey => {
+  const keys = seeds.map((seed): ProjectApiKey => {
     const body = seededBody(random);
     return {
       id: `key_${body.slice(0, 16)}`,
-      kind,
-      prefix: `${KEY_KIND_PREFIXES[kind]}${body}`.slice(0, KEY_FORMAT.prefixLength),
+      kind: seed.kind,
+      prefix: `${KEY_KIND_PREFIXES[seed.kind]}${body}`.slice(0, KEY_FORMAT.prefixLength),
       scopes: [],
-      createdAt: at(createdDaysAgo),
-      lastUsedAt: lastUsed,
-      revokedAt,
+      createdAt: new Date(now - seed.createdDaysAgo * DURATIONS.DAY).toISOString(),
+      lastUsedAt:
+        seed.usedMinutesAgo === null
+          ? null
+          : new Date(now - seed.usedMinutesAgo * DURATIONS.MINUTE).toISOString(),
+      revokedAt:
+        seed.revokedDaysAgo === undefined
+          ? null
+          : new Date(now - seed.revokedDaysAgo * DURATIONS.DAY).toISOString(),
+      createdBy: seed.createdBy,
+      replaces: null,
     };
-  };
+  });
 
-  const keys: ProjectApiKey[] = [
-    build("publishable", 402, new Date(now - 3 * DURATIONS.MINUTE).toISOString()),
-    /* Last used when it was taken away, which is what a finished rotation leaves behind. */
-    build("secret", 402, at(96), at(96)),
-    build("secret", 97, new Date(now - 2 * DURATIONS.MINUTE).toISOString()),
-  ];
-
-  /* Half-finished rotations are common and invisible, so some projects are shown in one. */
-  if (random() < 0.6) {
-    keys.push(build("secret", 2, null));
-  }
-
-  return keys;
+  return keys.map((key, index) => {
+    const target = seeds[index]?.replaces;
+    return target === undefined ? key : { ...key, replaces: keys[target]?.id ?? null };
+  });
 }

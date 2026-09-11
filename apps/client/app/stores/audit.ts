@@ -19,7 +19,7 @@
  * A placeholder until the management client exists, like every store here.
  */
 
-import { type ActorType, type AuditEvent, CHAIN_GENESIS } from "~/utils/audit";
+import { type ActorType, type AuditEvent, CHAIN_GENESIS, canPerform } from "~/utils/audit";
 import { nameOf, type ProjectUser } from "~/utils/users";
 
 export const useAuditStore = defineStore("audit", () => {
@@ -183,6 +183,23 @@ const END_USER_ACTIONS: readonly { action: string; weight: number }[] = [
   { action: "session.reuse_detected", weight: 1 },
 ];
 
+/**
+ * The same draw, over the actions that actor could actually have performed.
+ *
+ * An API key has no browser and no password, so it cannot sign in to the dashboard or
+ * accept an invitation; drawing from the whole table put exactly that in the trail, and an
+ * audit story with a CI deploy key signing in undermines the role model it is evidence for
+ * (notes/audit.md P1).
+ */
+function weightedFor(
+  next: () => number,
+  actor: ActorType,
+  table: readonly { action: string; weight: number }[],
+): string {
+  const allowed = table.filter((entry) => canPerform(entry.action, actor));
+  return weighted(next, allowed.length > 0 ? allowed : table);
+}
+
 function weighted(
   next: () => number,
   table: readonly { action: string; weight: number }[],
@@ -204,6 +221,22 @@ const SETTINGS_FIELDS = [
   "the claim template",
   "the passkey relying party",
 ];
+
+/**
+ * What a settings change moved, so the entry can show a before and an after.
+ *
+ * The note asks for those to lead the detail: "changed the idle timeout" is the headline
+ * and the two values are the answer to the question that follows it, and an auditor
+ * reading a month of changes is reading for the values rather than for the field names.
+ */
+const SETTINGS_CHANGES: Record<string, { from: string; to: string }> = {
+  "the access token lifetime": { from: "5m", to: "10m" },
+  "the idle timeout": { from: "14d", to: "7d" },
+  "the SMS spend cap": { from: "$10.00", to: "$25.00" },
+  "the password policy": { from: "8 characters", to: "12 characters" },
+  "the claim template": { from: "2 claims", to: "3 claims" },
+  "the passkey relying party": { from: "example.com", to: "acme.com" },
+};
 
 const IPS = ["203.0.113.7", "198.51.100.42", "192.0.2.15", "203.0.113.88", "198.51.100.9"];
 
@@ -256,8 +289,18 @@ function targetFor(
 }
 
 function metadataFor(action: string, next: () => number): Record<string, unknown> {
-  const meta: Record<string, unknown> = { requestId: `req_${digest(next).slice(0, 16)}` };
-  if (action === "project.settings_updated") meta.field = pick(next, SETTINGS_FIELDS);
+  /* The request id is a column of its own now, so it is not repeated here: an entry that
+     said the same thing twice would leave a reader wondering which one was authoritative. */
+  const meta: Record<string, unknown> = {};
+  if (action === "project.settings_updated") {
+    const field = pick(next, SETTINGS_FIELDS);
+    const change = SETTINGS_CHANGES[field];
+    meta.field = field;
+    if (change !== undefined) {
+      meta.from = change.from;
+      meta.to = change.to;
+    }
+  }
   if (action === "session.created") {
     meta.method = pick(next, ["password", "passkey", "email_otp", "oauth:google"]);
   }
@@ -280,7 +323,9 @@ function eventFrom(
 ): AuditEvent {
   const team = next() < 0.18;
   const actor: Actor = team ? pick(next, TEAM) : subject(next, cast.signedIn);
-  const action = weighted(next, team ? TEAM_ACTIONS : END_USER_ACTIONS);
+  const action = team
+    ? weightedFor(next, actor.type, TEAM_ACTIONS)
+    : weighted(next, END_USER_ACTIONS);
   const target = targetFor(action, next, cast, team ? null : actor);
 
   return {
@@ -295,6 +340,7 @@ function eventFrom(
     targetName: target.name,
     ip: pick(next, IPS),
     ua: actor.type === "api_key" ? (AGENTS[3] ?? null) : pick(next, AGENTS.slice(0, 3)),
+    requestId: `req_${digest(next).slice(0, 20)}`,
     metadata: metadataFor(action, next),
     prevHash,
     entryHash: digest(next),

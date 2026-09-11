@@ -1,34 +1,34 @@
 /**
- * Each project's recovery sheets, the one threshold the dashboard keeps about them, and
- * the figures the recovery screen shows beside both.
+ * Each project's recovery codes, the one threshold the dashboard keeps about them, and the
+ * figures the recovery screen shows beside both.
  *
- * A sheet is rows of `mfa_recovery_codes` and the only number the server publishes about
- * one is how many are unspent, so that is all this holds. It will come from the
+ * A set is rows of `mfa_recovery_codes` and the only number the server publishes about one
+ * is how many are unspent, so that is all this holds. It will come from the
  * management API; until then it is derived from the users the users store already has,
- * because the accounts with a second factor are the accounts with a sheet and two
+ * because the accounts with a second factor are the accounts with a set and two
  * independent sets of made-up people would disagree the moment somebody compared the two
- * screens. The derivation is seeded by the user id, so a sheet holds still between
+ * screens. The derivation is seeded by the user id, so a set holds still between
  * visits.
  *
  * There is no regenerate here, and its absence is deliberate rather than unfinished. The
  * codes come back exactly once and only digests are kept, so an operator who could
  * regenerate would either be handed ten working credentials for somebody else's account
- * or would silently invalidate a sheet the owner is holding. Clearing one is the action
+ * or would silently invalidate a set the owner is holding. Clearing one is the action
  * that can be taken safely: it hands nobody anything.
  */
 
 import {
+  CODE_SET,
   DEFAULT_RECOVERY_SETTINGS,
   type FallbackFactor,
+  type RecoverySet,
   type RecoverySettings,
-  type RecoverySheet,
-  SHEET,
 } from "~/utils/recovery";
 import { DURATIONS } from "~/utils/time";
 
 export interface RecoveryStats {
   /** Accounts holding at least one unspent code. */
-  withSheet: number;
+  withCodes: number;
   /** Accounts with a second factor and no code left to fall back on. */
   exhausted: number;
   /** Over the last thirty days, oldest day first. */
@@ -45,7 +45,7 @@ export const useRecoveryStore = defineStore("recovery", () => {
 
   const settings = ref<Record<string, RecoverySettings>>({});
   const lastSaved = ref<Record<string, string>>({});
-  /** Sheets an operator has cleared this session, so the list shows what it did. */
+  /** Sets an operator has cleared this session, so the list shows what it did. */
   const cleared = ref<Record<string, string[]>>({});
 
   const loading = computed(() => users.loading);
@@ -55,19 +55,19 @@ export const useRecoveryStore = defineStore("recovery", () => {
   }
 
   /**
-   * Every sheet on the project, in the order the users arrive.
+   * Every set on the project, in the order the users arrive.
    *
-   * An account holds a sheet exactly while it holds a second factor: the server issues
-   * one when the first factor is confirmed and deletes it with the last, so the two
-   * cannot come apart. A tombstone is left out, because its factors went with the rest
+   * An account holds recovery codes exactly while it holds a second factor: the server
+   * issues them when the first factor is confirmed and deletes them with the last, so the
+   * two cannot come apart. A tombstone is left out, because its factors went with the rest
    * of it.
    */
-  function sheetsFor(projectId: string): RecoverySheet[] {
+  function setsFor(projectId: string): RecoverySet[] {
     const clearedHere = cleared.value[projectId] ?? [];
     return users
       .forProject(projectId)
       .filter((user) => user.mfaEnabled && user.deletedAt === null)
-      .map((user) => sheetFor(user.id, user.createdAt, clearedHere.includes(user.id)));
+      .map((user) => setFor(user.id, user.createdAt, clearedHere.includes(user.id)));
   }
 
   function stamp(projectId: string) {
@@ -91,7 +91,7 @@ export const useRecoveryStore = defineStore("recovery", () => {
    * server runs when the last factor is removed. The account keeps its authenticator and
    * can still sign in; what it loses is the way back if that authenticator goes.
    */
-  async function clearSheet(projectId: string, userId: string): Promise<void> {
+  async function clearCodes(projectId: string, userId: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const already = cleared.value[projectId] ?? [];
     if (!already.includes(userId)) {
@@ -105,14 +105,14 @@ export const useRecoveryStore = defineStore("recovery", () => {
   }
 
   function stats(projectId: string): RecoveryStats {
-    const sheets = sheetsFor(projectId);
+    const sets = setsFor(projectId);
     // Both are rare enough that a daily average would round to nothing, so a month's
     // worth is scattered over the thirty days instead of drawn per day.
-    const spentDaily = sprinkle(seedOf(projectId), Math.round(sheets.length * 0.3));
-    const regeneratedDaily = sprinkle(seedOf(projectId) + 7, Math.round(sheets.length * 0.12));
+    const spentDaily = sprinkle(seedOf(projectId), Math.round(sets.length * 0.3));
+    const regeneratedDaily = sprinkle(seedOf(projectId) + 7, Math.round(sets.length * 0.12));
     return {
-      withSheet: sheets.filter((sheet) => sheet.remaining > 0).length,
-      exhausted: sheets.filter((sheet) => sheet.remaining === 0).length,
+      withCodes: sets.filter((set) => set.remaining > 0).length,
+      exhausted: sets.filter((set) => set.remaining === 0).length,
       spent: sum(spentDaily),
       spentDaily,
       regenerated: sum(regeneratedDaily),
@@ -124,18 +124,18 @@ export const useRecoveryStore = defineStore("recovery", () => {
     settings,
     loading,
     settingsFor,
-    sheetsFor,
+    setsFor,
     patch,
-    clearSheet,
+    clearCodes,
     lastSavedAt,
     stats,
   };
 });
 
 /*
- * The placeholder. Seeded off the user id so a sheet holds still, and shaped like the
- * real thing: most accounts have never spent a code, a few are part way down, and a
- * couple are out.
+ * The placeholder. Seeded off the user id so a set holds still, and shaped like the real
+ * thing: most accounts have never spent a code, a few are part way down, and a couple are
+ * out.
  */
 
 function seeded(seed: number): () => number {
@@ -149,7 +149,7 @@ function seeded(seed: number): () => number {
   };
 }
 
-/** A stable number from a public id, so the same user gets the same sheet every visit. */
+/** A stable number from a public id, so the same user gets the same set every visit. */
 function seedOf(id: string): number {
   let hash = 2166136261;
   for (let index = 0; index < id.length; index += 1) {
@@ -177,29 +177,29 @@ function sprinkle(seed: number, total: number): number[] {
 const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
 
 /**
- * How much of a sheet is left.
+ * How much of a set is left.
  *
- * Weighted the way a real project is: most sheets are printed and never touched, a few
- * have had one or two codes spent by somebody who keeps losing a phone, and a small tail
- * is at or near the end. The tail is the whole reason this screen has a list.
+ * Weighted the way a real project is: most sets are printed and never touched, a few have
+ * had one or two codes spent by somebody who keeps losing a phone, and a small tail is at
+ * or near the end. The tail is the whole reason this screen has a list.
  */
 function remainingFor(random: () => number): number {
   const roll = random();
-  if (roll < 0.55) return SHEET.codes;
-  if (roll < 0.75) return SHEET.codes - (1 + Math.floor(random() * 3));
-  if (roll < 0.84) return SHEET.codes - (4 + Math.floor(random() * 3));
-  if (roll < 0.9) return SHEET.codes - (7 + Math.floor(random() * 3));
+  if (roll < 0.55) return CODE_SET.codes;
+  if (roll < 0.75) return CODE_SET.codes - (1 + Math.floor(random() * 3));
+  if (roll < 0.84) return CODE_SET.codes - (4 + Math.floor(random() * 3));
+  if (roll < 0.9) return CODE_SET.codes - (7 + Math.floor(random() * 3));
   return 0;
 }
 
 /**
  * How many codes are left, and what the account can be challenged with.
  *
- * The distribution is the shape a real project has: a sheet is printed and then not
- * touched for months, so most are untouched, and the ones that are spent are spent one
- * at a time by somebody who keeps losing their phone.
+ * The distribution is the shape a real project has: a set is printed and then not touched
+ * for months, so most are untouched, and the ones that are spent are spent one at a time
+ * by somebody who keeps losing their phone.
  */
-function sheetFor(userId: string, createdAt: string, wasCleared: boolean): RecoverySheet {
+function setFor(userId: string, createdAt: string, wasCleared: boolean): RecoverySet {
   const random = seeded(seedOf(userId));
   const factors: FallbackFactor[] = ["totp"];
   if (random() < 0.35) factors.push("passkey");
@@ -214,7 +214,7 @@ function sheetFor(userId: string, createdAt: string, wasCleared: boolean): Recov
   const now = Date.now();
   const issuedAt = new Date(created + random() * Math.max(0, now - created) * 0.4);
   const lastUsedAt =
-    remaining === SHEET.codes
+    remaining === CODE_SET.codes
       ? null
       : new Date(issuedAt.getTime() + random() * Math.max(DURATIONS.DAY, now - issuedAt.getTime()));
 

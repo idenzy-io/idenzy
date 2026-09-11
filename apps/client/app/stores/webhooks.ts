@@ -1,17 +1,29 @@
 /**
- * Each project's webhook endpoints and what happened when we called them.
+ * Each project's webhook endpoints, and the deliveries made to them.
  *
- * The signing secret goes one way. `webhooks.secret_hash` is a digest, so the value
- * exists on the wire once, at the moment it is made or rolled, and the store hands it to
- * the caller then and never keeps it. A placeholder that held the secret would be a
- * placeholder teaching the panel a habit the real client cannot have.
+ * Endpoints are saved like any setting. Deliveries are a different matter: nothing sends one
+ * yet (`WEBHOOK_DELIVERY`), so `deliveriesFor` answers nothing, and a test event or a retry
+ * does nothing, rather than the sample attempts kept below. An attempt on this screen would
+ * be a claim that we called somebody's URL, and the note's acceptance check is that an
+ * unavailable pipeline makes no such claim. The samples stay for the day it runs, and for
+ * flipping the flag to see the workspace populated.
+ *
+ * The signing secret goes one way: the store hands it to the caller when it is made or
+ * rotated and never keeps it.
  *
  * A placeholder until the management client exists, like every store here.
  */
 
 import {
   ALL_EVENTS,
-  isSuccessStatus,
+  type DeliveryAttempt,
+  type DeliveryOutcome,
+  MAX_ATTEMPTS,
+  nextRetrySeconds,
+  ROTATION_OVERLAP_HOURS,
+  samplePayload,
+  TEST_EVENT,
+  WEBHOOK_DELIVERY,
   type WebhookDelivery,
   type WebhookEndpoint,
 } from "~/utils/webhooks";
@@ -19,18 +31,20 @@ import {
 const PLACEHOLDER_LATENCY = 700;
 const SAVE_LATENCY = 600;
 
-/** How long a rolled secret's predecessor keeps being accepted. */
-const OVERLAP_HOURS = 24;
+export type EndpointDraft = Pick<
+  WebhookEndpoint,
+  "url" | "description" | "events" | "allEvents" | "enabled"
+>;
 
 export const useWebhooksStore = defineStore("webhooks", () => {
+  const account = useAccountStore();
   const endpoints = ref<Record<string, WebhookEndpoint[]>>({});
   const deliveries = ref<Record<string, WebhookDelivery[]>>({});
   const loading = ref(true);
-  const lastSaved = ref<Record<string, string>>({});
 
   setTimeout(() => {
     endpoints.value = { prj_personal: [], prj_acme: acmeEndpoints() };
-    deliveries.value = { prj_personal: [], prj_acme: acmeDeliveries() };
+    deliveries.value = WEBHOOK_DELIVERY.running ? { prj_acme: sampleDeliveries(ACME_IDS) } : {};
     loading.value = false;
   }, PLACEHOLDER_LATENCY);
 
@@ -39,32 +53,34 @@ export const useWebhooksStore = defineStore("webhooks", () => {
   }
 
   function deliveriesFor(projectId: string): WebhookDelivery[] {
+    if (!WEBHOOK_DELIVERY.running) return [];
     return deliveries.value[projectId] ?? [];
-  }
-
-  function stamp(projectId: string) {
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
   }
 
   function write(projectId: string, next: WebhookEndpoint[]) {
     endpoints.value = { ...endpoints.value, [projectId]: next };
-    stamp(projectId);
   }
 
-  /**
-   * Creates the endpoint and hands back its signing secret, which is the only moment
-   * anybody can have it. Disabled endpoints are not created: an endpoint made and left
-   * off is one somebody meant to finish.
-   */
+  function writeDeliveries(projectId: string, next: WebhookDelivery[]) {
+    deliveries.value = { ...deliveries.value, [projectId]: next };
+  }
+
+  async function settle() {
+    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+  }
+
+  /** Creates the endpoint and hands back its signing secret, the only moment anybody has it. */
   async function add(
     projectId: string,
-    draft: Omit<WebhookEndpoint, "id" | "createdAt" | "rolledAt" | "previousSecretUntil">,
+    draft: EndpointDraft,
   ): Promise<{ endpoint: WebhookEndpoint; secret: string }> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    await settle();
+    const now = new Date().toISOString();
     const endpoint: WebhookEndpoint = {
       ...draft,
       id: `whk_${randomHex(16)}`,
-      createdAt: new Date().toISOString(),
+      disabled: draft.enabled ? null : { kind: "paused", at: now, by: account.profile.name },
+      createdAt: now,
       rolledAt: null,
       previousSecretUntil: null,
     };
@@ -72,12 +88,12 @@ export const useWebhooksStore = defineStore("webhooks", () => {
     return { endpoint, secret: newSecret() };
   }
 
-  async function patch(
+  async function update(
     projectId: string,
     id: string,
-    change: Partial<WebhookEndpoint>,
+    change: Partial<Omit<WebhookEndpoint, "id">>,
   ): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    await settle();
     write(
       projectId,
       forProject(projectId).map((endpoint) =>
@@ -86,14 +102,29 @@ export const useWebhooksStore = defineStore("webhooks", () => {
     );
   }
 
+  /** Off by a person's hand, which the row names. Nothing queues while it is paused. */
+  function pause(projectId: string, id: string) {
+    return update(projectId, id, {
+      enabled: false,
+      disabled: { kind: "paused", at: new Date().toISOString(), by: account.profile.name },
+    });
+  }
+
+  /** On again. What happened while it was off is not replayed. */
+  function resume(projectId: string, id: string) {
+    return update(projectId, id, { enabled: true, disabled: null });
+  }
+
   /**
-   * Replaces the secret and keeps the old one working for a day, so a customer can deploy
-   * the new one without dropping the deliveries that arrive in between. A roll that
-   * invalidated the old secret at once would be an outage the panel had caused.
+   * Replaces the secret. The previous one keeps signing beside it until the deadline, so a
+   * receiver can deploy the new one without a delivery in between failing verification.
    */
-  async function rollSecret(projectId: string, id: string): Promise<string> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    const until = new Date(Date.now() + OVERLAP_HOURS * 3600_000).toISOString();
+  async function rotateSecret(
+    projectId: string,
+    id: string,
+  ): Promise<{ secret: string; until: string }> {
+    await settle();
+    const until = new Date(Date.now() + ROTATION_OVERLAP_HOURS * 3_600_000).toISOString();
     write(
       projectId,
       forProject(projectId).map((endpoint) =>
@@ -102,57 +133,79 @@ export const useWebhooksStore = defineStore("webhooks", () => {
           : endpoint,
       ),
     );
-    return newSecret();
+    return { secret: newSecret(), until };
   }
 
   async function remove(projectId: string, id: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    await settle();
     write(
       projectId,
       forProject(projectId).filter((endpoint) => endpoint.id !== id),
     );
-    deliveries.value = {
-      ...deliveries.value,
-      [projectId]: deliveriesFor(projectId).filter((entry) => entry.endpointId !== id),
-    };
+    writeDeliveries(
+      projectId,
+      (deliveries.value[projectId] ?? []).filter((entry) => entry.endpointId !== id),
+    );
   }
 
-  /** Sends the same event again, as a fresh attempt with its own delivery id. */
-  async function redeliver(projectId: string, delivery: WebhookDelivery): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    const retried: WebhookDelivery = {
-      ...delivery,
-      id: `dlv_${randomHex(12)}`,
+  /** A new delivery of the test event. Does nothing while delivery is not running. */
+  async function sendTest(projectId: string, endpointId: string): Promise<void> {
+    if (!WEBHOOK_DELIVERY.running) return;
+    await settle();
+    const id = `dlv_${randomHex(6)}`;
+    const at = new Date().toISOString();
+    const test: WebhookDelivery = {
+      id,
+      endpointId,
+      event: TEST_EVENT,
       outcome: "delivered",
-      status: 200,
-      error: null,
-      attempt: 1,
-      durationMs: 120 + Math.floor(Math.random() * 300),
-      at: new Date().toISOString(),
+      attempts: [{ n: 1, at, status: 200, error: null, durationMs: 140, response: '{"ok":true}' }],
+      nextRetryAt: null,
+      payload: samplePayload(TEST_EVENT, id, at),
+      createdAt: at,
+      test: true,
     };
-    deliveries.value = {
-      ...deliveries.value,
-      [projectId]: [retried, ...deliveriesFor(projectId)],
-    };
-    stamp(projectId);
+    writeDeliveries(projectId, [test, ...(deliveries.value[projectId] ?? [])]);
   }
 
-  function lastSavedAt(projectId: string): string | null {
-    return lastSaved.value[projectId] ?? null;
+  /** The same delivery again, same id, as one more attempt. Nothing while delivery is off. */
+  async function retry(projectId: string, deliveryId: string): Promise<void> {
+    if (!WEBHOOK_DELIVERY.running) return;
+    await settle();
+    writeDeliveries(
+      projectId,
+      (deliveries.value[projectId] ?? []).map((entry) => {
+        if (entry.id !== deliveryId) return entry;
+        const attempt: DeliveryAttempt = {
+          n: entry.attempts.length + 1,
+          at: new Date().toISOString(),
+          status: 200,
+          error: null,
+          durationMs: 160,
+          response: '{"received":true}',
+        };
+        return {
+          ...entry,
+          outcome: "delivered",
+          attempts: [...entry.attempts, attempt],
+          nextRetryAt: null,
+        };
+      }),
+    );
   }
 
   return {
-    endpoints,
-    deliveries,
     loading,
     forProject,
     deliveriesFor,
     add,
-    patch,
-    rollSecret,
+    update,
+    pause,
+    resume,
+    rotateSecret,
     remove,
-    redeliver,
-    lastSavedAt,
+    sendTest,
+    retry,
   };
 });
 
@@ -168,7 +221,7 @@ function randomHex(bytes: number): string {
   return out;
 }
 
-/** The shape a signing secret arrives in, prefixed the way every key we mint is. */
+/** The shape a signing secret arrives in, prefixed the way every credential we mint is. */
 function newSecret(): string {
   return `whsec_${randomHex(24)}`;
 }
@@ -185,6 +238,8 @@ function pick<T>(next: () => number, values: readonly T[]): T {
   return values[Math.floor(next() * values.length)] ?? (values[0] as T);
 }
 
+const ACME_IDS = ["whk_a1b2c3d4e5f60718", "whk_9f8e7d6c5b4a3021", "whk_1122334455667788"];
+
 function acmeEndpoints(): WebhookEndpoint[] {
   return [
     {
@@ -192,6 +247,7 @@ function acmeEndpoints(): WebhookEndpoint[] {
       url: "https://api.acme.com/hooks/idenzy",
       description: "Provisioning and account sync",
       enabled: true,
+      disabled: null,
       events: [...ALL_EVENTS],
       allEvents: true,
       createdAt: "2026-06-11T09:20:00.000Z",
@@ -203,6 +259,7 @@ function acmeEndpoints(): WebhookEndpoint[] {
       url: "https://ops.acme.com/alerts/idenzy-security",
       description: "Pages the on-call for a token reuse",
       enabled: true,
+      disabled: null,
       events: ["security.refresh_token_reused", "security.staff_access_granted", "mfa.removed"],
       allEvents: false,
       createdAt: "2026-07-02T11:45:00.000Z",
@@ -212,8 +269,9 @@ function acmeEndpoints(): WebhookEndpoint[] {
     {
       id: "whk_1122334455667788",
       url: "https://acme-staging.example.dev/hooks/idenzy",
-      description: "Staging, switched off after a redeploy",
+      description: "Staging, paused while it is redeployed",
       enabled: false,
+      disabled: { kind: "paused", at: "2026-09-03T08:15:00.000Z", by: "Mei Tanaka" },
       events: ["user.created", "user.updated", "session.created"],
       allEvents: false,
       createdAt: "2026-08-19T16:10:00.000Z",
@@ -223,55 +281,82 @@ function acmeEndpoints(): WebhookEndpoint[] {
   ];
 }
 
-const EVENTS_SEEN = [
-  "user.created",
-  "user.updated",
-  "session.created",
-  "session.revoked",
-  "email.bounced",
-  "mfa.enrolled",
-  "security.refresh_token_reused",
-];
+const EVENTS_SEEN = ["user.created", "user.updated", "session.created", "session.revoked"];
 
 const FAILURES = [
-  { status: 500, error: null },
-  { status: 502, error: null },
-  { status: 404, error: null },
-  { status: null, error: "Timed out after 10s" },
-  { status: null, error: "Connection refused" },
+  {
+    status: 500,
+    error: null,
+    response: "<html><head><title>500 Internal Server Error</title></head></html>",
+  },
+  { status: 502, error: null, response: "<html><body><h1>502 Bad Gateway</h1></body></html>" },
+  { status: 404, error: null, response: "Cannot POST /hooks/idenzy" },
+  { status: null, error: "Timed out after 10s", response: "" },
+  { status: null, error: "Connection refused", response: "" },
 ];
 
-const ENDPOINT_IDS = ["whk_a1b2c3d4e5f60718", "whk_9f8e7d6c5b4a3021", "whk_1122334455667788"];
-
-/** One attempt. Most land; the ones that do not are split between a retry and a give-up. */
-function deliveryFrom(next: () => number, at: number): WebhookDelivery {
-  const roll = next();
-  const failed = roll > 0.86;
-  const failure = pick(next, FAILURES);
-  const status = failed ? failure.status : 200;
-
-  return {
-    id: `dlv_${randomHex(12)}`,
-    endpointId: next() < 0.7 ? (ENDPOINT_IDS[0] ?? "") : pick(next, ENDPOINT_IDS.slice(1)),
-    event: pick(next, EVENTS_SEEN),
-    outcome: failed ? (roll > 0.94 ? "failed" : "pending") : "delivered",
-    status,
-    error: failed ? failure.error : null,
-    attempt: failed ? 1 + Math.floor(next() * 3) : 1,
-    durationMs: Math.round(60 + next() * (isSuccessStatus(status) ? 340 : 9000)),
-    at: new Date(at).toISOString(),
-  };
+function outcomeFrom(roll: number): DeliveryOutcome {
+  if (roll > 0.9) return "failed";
+  return roll > 0.8 ? "pending" : "delivered";
 }
 
-/** Two days of attempts across the three endpoints, newest first. */
-function acmeDeliveries(): WebhookDelivery[] {
-  const next = seeded(37);
-  const out: WebhookDelivery[] = [];
-  let at = Date.now() - 2 * 24 * 3600_000;
+function triesFor(outcome: DeliveryOutcome, next: () => number): number {
+  if (outcome === "failed") return MAX_ATTEMPTS;
+  return outcome === "pending" ? 2 + Math.floor(next() * 3) : 1;
+}
 
-  for (let index = 0; index < 60; index += 1) {
-    at += Math.round(next() * 55 * 60_000) + 60_000;
-    out.push(deliveryFrom(next, Math.min(at, Date.now() - 30_000)));
-  }
-  return out.reverse();
+/** Every try of one delivery, the gaps from the schedule, only the last of a delivered one landing. */
+function attemptsFor(
+  next: () => number,
+  outcome: DeliveryOutcome,
+  created: number,
+  now: number,
+): DeliveryAttempt[] {
+  const tries = triesFor(outcome, next);
+  const failure = pick(next, FAILURES);
+  let at = created;
+  return Array.from({ length: tries }, (_, index): DeliveryAttempt => {
+    if (index > 0) at += (nextRetrySeconds(index) ?? 0) * 1000;
+    const landed = outcome === "delivered" && index === tries - 1;
+    return {
+      n: index + 1,
+      at: new Date(Math.min(at, now)).toISOString(),
+      status: landed ? 200 : failure.status,
+      error: landed ? null : failure.error,
+      durationMs: Math.round(landed ? 80 + next() * 300 : 400 + next() * 9000),
+      response: landed ? '{"received":true}' : failure.response,
+    };
+  });
+}
+
+/** A week of deliveries, only loaded while `WEBHOOK_DELIVERY.running` is true. */
+function sampleDeliveries(endpointIds: readonly string[]): WebhookDelivery[] {
+  const next = seeded(37);
+  const now = Date.now();
+  return Array.from({ length: 36 }, (): WebhookDelivery => {
+    const created = now - Math.round(next() * 6 * 86_400_000) - 60_000;
+    const outcome = outcomeFrom(next());
+    const attempts = attemptsFor(next, outcome, created, now);
+    const tries = attempts.length;
+    const id = `dlv_${Math.floor(next() * 0xffffffffffff)
+      .toString(16)
+      .padStart(12, "0")}`;
+    const event = pick(next, EVENTS_SEEN);
+    const delay = nextRetrySeconds(tries);
+    return {
+      id,
+      endpointId: next() < 0.7 ? (endpointIds[0] ?? "") : pick(next, endpointIds.slice(1)),
+      event,
+      outcome,
+      attempts,
+      nextRetryAt:
+        outcome === "pending" && delay !== null ? new Date(now + delay * 1000).toISOString() : null,
+      payload: samplePayload(event, id, new Date(created).toISOString()).replace(
+        '"id": "usr_2f9c41e0b7d84a63"',
+        '"id": "usr_2f9c41e0b7d84a63",\n    "email": "ana@acme.com"',
+      ),
+      createdAt: new Date(created).toISOString(),
+      test: false,
+    };
+  });
 }

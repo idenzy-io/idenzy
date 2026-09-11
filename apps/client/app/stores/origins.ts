@@ -11,7 +11,12 @@
  * A placeholder until the management client exists, like every store here.
  */
 
-import { type AllowedOrigin, type OriginSource, sortOrigins } from "~/utils/origins";
+import {
+  type AllowedOrigin,
+  ORIGIN_TELEMETRY,
+  type OriginSource,
+  sortOrigins,
+} from "~/utils/origins";
 import { normaliseOrigin } from "~/utils/passkeys";
 
 /** An origin the API answered for and did not allow. Not an attack, usually a typo. */
@@ -61,7 +66,17 @@ export const useOriginsStore = defineStore("origins", () => {
     return sortOrigins(origins.value[projectId] ?? []);
   }
 
+  /**
+   * The origins the API answered for and did not allow.
+   *
+   * Empty while nothing records them, which is every deployment today. The fixtures stay
+   * behind the check so they come back with the pipeline; drawing them now would be the
+   * screen telling an operator it had watched for blocked calls when nothing is watching,
+   * and on this list a false "nothing was refused" is the most expensive answer there is
+   * (notes/domains-origins.md, acceptance checks).
+   */
   function unknownFor(projectId: string): UnknownOrigin[] {
+    if (!ORIGIN_TELEMETRY) return [];
     const held = unknown.value[projectId] ?? [];
     const allowed = forProject(projectId).map((entry) => entry.origin);
     /* One that has since been allowed drops off rather than lingering as a warning about

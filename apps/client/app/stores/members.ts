@@ -1,6 +1,12 @@
 /**
- * The project's team, its pending invitations, and whether the dashboard demands a second
- * factor of them.
+ * The organisation's team, its pending invitations, and whether the dashboard demands a
+ * second factor of them.
+ *
+ * Keyed by organisation and never by project. A person is invited to an organisation and
+ * reaches every project under it, which is what the schema says by hanging `org_id` off
+ * `projects`, and it is the answer to the scope P1 the members note raises: a removal has
+ * to name what access actually ends, and "this project" would be a lie on an organisation
+ * holding three.
  *
  * The names here are the ones the audit log's placeholder writes about, deliberately: two
  * screens inventing two teams would be two screens nobody could read against each other,
@@ -37,23 +43,23 @@ export const useMembersStore = defineStore("members", () => {
   const currentId = "mem_hasan";
 
   setTimeout(() => {
-    members.value = { prj_personal: [soloTeam()], prj_acme: acmeTeam() };
-    invitations.value = { prj_personal: [], prj_acme: acmeInvitations() };
-    requireMfa.value = { prj_personal: false, prj_acme: true };
+    members.value = { org_hasan: [soloTeam()], org_acme: acmeTeam() };
+    invitations.value = { org_hasan: [], org_acme: acmeInvitations() };
+    requireMfa.value = { org_hasan: false, org_acme: true };
     loading.value = false;
   }, PLACEHOLDER_LATENCY);
 
-  function forProject(projectId: string): Member[] {
-    return members.value[projectId] ?? [];
+  function forOrg(orgId: string): Member[] {
+    return members.value[orgId] ?? [];
   }
 
-  function invitationsFor(projectId: string): Invitation[] {
-    return invitations.value[projectId] ?? [];
+  function invitationsFor(orgId: string): Invitation[] {
+    return invitations.value[orgId] ?? [];
   }
 
   /** Who is reading the page. Falls back to the owner, so a rule always has an actor. */
-  function currentMember(projectId: string): Member | null {
-    const team = forProject(projectId);
+  function currentMember(orgId: string): Member | null {
+    const team = forOrg(orgId);
     return (
       team.find((member) => member.id === currentId) ??
       team.find((member) => member.role === "owner") ??
@@ -61,51 +67,51 @@ export const useMembersStore = defineStore("members", () => {
     );
   }
 
-  function mfaRequired(projectId: string): boolean {
-    return requireMfa.value[projectId] ?? false;
+  function mfaRequired(orgId: string): boolean {
+    return requireMfa.value[orgId] ?? false;
   }
 
-  function stamp(projectId: string) {
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
+  function stamp(orgId: string) {
+    lastSaved.value = { ...lastSaved.value, [orgId]: new Date().toISOString() };
   }
 
-  function write(projectId: string, next: Member[]) {
-    members.value = { ...members.value, [projectId]: next };
-    stamp(projectId);
+  function write(orgId: string, next: Member[]) {
+    members.value = { ...members.value, [orgId]: next };
+    stamp(orgId);
   }
 
-  async function setRole(projectId: string, id: string, role: MemberRole): Promise<void> {
+  async function setRole(orgId: string, id: string, role: MemberRole): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    write(projectId, withRole(forProject(projectId), id, role));
+    write(orgId, withRole(forOrg(orgId), id, role));
   }
 
-  async function remove(projectId: string, id: string): Promise<void> {
+  async function remove(orgId: string, id: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    write(projectId, withoutMember(forProject(projectId), id));
+    write(orgId, withoutMember(forOrg(orgId), id));
   }
 
   /** One act: the new owner is promoted and the old one becomes an admin together. */
-  async function transfer(projectId: string, toId: string): Promise<void> {
+  async function transfer(orgId: string, toId: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    write(projectId, afterTransfer(forProject(projectId), toId));
+    write(orgId, afterTransfer(forOrg(orgId), toId));
   }
 
-  async function setMfaRequired(projectId: string, required: boolean): Promise<void> {
+  async function setMfaRequired(orgId: string, required: boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    requireMfa.value = { ...requireMfa.value, [projectId]: required };
-    stamp(projectId);
+    requireMfa.value = { ...requireMfa.value, [orgId]: required };
+    stamp(orgId);
   }
 
-  function writeInvites(projectId: string, next: Invitation[]) {
-    invitations.value = { ...invitations.value, [projectId]: next };
-    stamp(projectId);
+  function writeInvites(orgId: string, next: Invitation[]) {
+    invitations.value = { ...invitations.value, [orgId]: next };
+    stamp(orgId);
   }
 
-  async function invite(projectId: string, email: string, role: MemberRole): Promise<void> {
+  async function invite(orgId: string, email: string, role: MemberRole): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const invitedAt = new Date();
-    const by = currentMember(projectId)?.name ?? "Somebody on the team";
-    writeInvites(projectId, [
+    const by = currentMember(orgId)?.name ?? "Somebody on the team";
+    writeInvites(orgId, [
       {
         id: `inv_${randomHex(10)}`,
         email: email.trim().toLowerCase(),
@@ -114,17 +120,17 @@ export const useMembersStore = defineStore("members", () => {
         invitedAt: invitedAt.toISOString(),
         expiresAt: inviteExpiresAt(invitedAt),
       },
-      ...invitationsFor(projectId),
+      ...invitationsFor(orgId),
     ]);
   }
 
   /** Sends it again and restarts the week, because an expired link is the usual reason. */
-  async function resend(projectId: string, id: string): Promise<void> {
+  async function resend(orgId: string, id: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const at = new Date();
     writeInvites(
-      projectId,
-      invitationsFor(projectId).map((invitation) =>
+      orgId,
+      invitationsFor(orgId).map((invitation) =>
         invitation.id === id
           ? { ...invitation, invitedAt: at.toISOString(), expiresAt: inviteExpiresAt(at) }
           : invitation,
@@ -132,16 +138,16 @@ export const useMembersStore = defineStore("members", () => {
     );
   }
 
-  async function revoke(projectId: string, id: string): Promise<void> {
+  async function revoke(orgId: string, id: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     writeInvites(
-      projectId,
-      invitationsFor(projectId).filter((invitation) => invitation.id !== id),
+      orgId,
+      invitationsFor(orgId).filter((invitation) => invitation.id !== id),
     );
   }
 
-  function lastSavedAt(projectId: string): string | null {
-    return lastSaved.value[projectId] ?? null;
+  function lastSavedAt(orgId: string): string | null {
+    return lastSaved.value[orgId] ?? null;
   }
 
   return {
@@ -149,7 +155,7 @@ export const useMembersStore = defineStore("members", () => {
     invitations,
     loading,
     currentId,
-    forProject,
+    forOrg,
     invitationsFor,
     currentMember,
     mfaRequired,
@@ -180,7 +186,7 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString();
 }
 
-/** A project one person made and nobody else has been added to. */
+/** A personal organisation: one member, which is what makes it personal rather than a team. */
 function soloTeam(): Member {
   return {
     id: "mem_hasan",

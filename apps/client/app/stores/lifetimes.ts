@@ -18,7 +18,11 @@
  * bug the moment somebody compares this one with a session's expiry column.
  */
 
-import { DEFAULT_LIFETIME_SETTINGS, type LifetimeSettings } from "~/utils/lifetimes";
+import {
+  DEFAULT_LIFETIME_SETTINGS,
+  type LifetimeSettings,
+  REVOCATION_POLL_SECONDS,
+} from "~/utils/lifetimes";
 
 const PLACEHOLDER_LATENCY = 700;
 const SAVE_LATENCY = 600;
@@ -39,6 +43,21 @@ export const useLifetimesStore = defineStore("lifetimes", () => {
     polled.value = { prj_acme: new Date(Date.now() - 4_000).toISOString() };
     loading.value = false;
   }, PLACEHOLDER_LATENCY);
+
+  /*
+   * A poller that is polling keeps polling. Without this the seeded read ages while the
+   * panel is open and a connected project drifts into the stale state, which is the one
+   * thing the revocation screen has to be able to tell apart from a real one. Goes with
+   * the rest of the placeholder when the management client lands.
+   */
+  if (import.meta.client) {
+    setInterval(() => {
+      const at = new Date().toISOString();
+      const moved: Record<string, string> = {};
+      for (const projectId of Object.keys(polled.value)) moved[projectId] = at;
+      if (Object.keys(moved).length > 0) polled.value = moved;
+    }, REVOCATION_POLL_SECONDS * 1000);
+  }
 
   function settingsFor(projectId: string): LifetimeSettings {
     return settings.value[projectId] ?? { ...DEFAULT_LIFETIME_SETTINGS };

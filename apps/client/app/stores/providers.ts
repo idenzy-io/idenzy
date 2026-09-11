@@ -1,13 +1,14 @@
 /**
- * Each project's social providers, its linking rule, and the figures the providers
- * screen shows beside them.
+ * Each project's social providers, the return URLs they all share, its linking rule, and
+ * the figures the providers screen shows beside them.
  *
  * A provider is a row of `oauth_providers`, one per project and provider, read and
- * written through the management API; the linking rule lives in the project's settings.
- * This store is both as the panel sees them, with a placeholder until that client
- * exists. A change is written the moment it is made, as on the passwords and passkeys
- * screens, and the client secret goes one way: the panel is told that one is stored and
- * when, never what it is.
+ * written through the management API; the return URLs are rows of `redirect_uris` under
+ * the `oauth` kind and belong to the project rather than to any one provider; the linking
+ * rule lives in the project's settings. This store is all three as the panel sees them,
+ * with a placeholder until that client exists. A change is written the moment it is made,
+ * as on the passwords and passkeys screens, and the client secret goes one way: the panel
+ * is told that one is stored and when, never what it is.
  */
 
 import {
@@ -31,17 +32,19 @@ export interface LinkingSettings {
 export const DEFAULT_LINKING: LinkingSettings = { autoLink: true };
 
 export interface ProviderStats {
-  /** Over the last thirty days, oldest day first. */
+  /** Over the last thirty days. */
   signIns: number;
+  /** The same, by day and oldest first, for the overview's stacked chart. */
   signInsDaily: number[];
+  /** The same figure over the thirty days before that, for the tile's comparison. */
+  signInsPrevious: number;
   /** Accounts created by a social sign-in, rather than joined to an existing one. */
   newAccounts: number;
-  newAccountsDaily: number[];
   /** Accounts holding at least one social identity. */
   linked: number;
   /** Sign-ins that matched an address nobody proved, answered `linking_requires_verification`. */
   refused: number;
-  refusedDaily: number[];
+  refusedPrevious: number;
   /** Sign-ins by provider over the same window. */
   byProvider: { id: ProviderName; count: number }[];
 }
@@ -51,21 +54,34 @@ export type ProviderConfigs = Partial<Record<ProviderName, ProviderConfig>>;
 
 const PLACEHOLDER_LATENCY = 700;
 const SAVE_LATENCY = 600;
+/** How long the placeholder pretends a setup check takes. */
+const TEST_LATENCY = 900;
 
 export const useProvidersStore = defineStore("providers", () => {
   const configs = ref<Record<string, ProviderConfigs>>({});
+  const returnUris = ref<Record<string, string[]>>({});
   const linking = ref<Record<string, LinkingSettings>>({});
   const loading = ref(true);
   const lastSaved = ref<Record<string, string>>({});
 
   setTimeout(() => {
     configs.value = { prj_personal: PERSONAL_PROVIDERS, prj_acme: {} };
+    returnUris.value = { prj_personal: [...PERSONAL_RETURN_URIS], prj_acme: [] };
     linking.value = { prj_personal: { autoLink: true }, prj_acme: { autoLink: true } };
     loading.value = false;
   }, PLACEHOLDER_LATENCY);
 
   function forProject(projectId: string): ProviderConfigs {
     return configs.value[projectId] ?? {};
+  }
+
+  /**
+   * Where a finished exchange sends the browser, for every provider on the project. One
+   * list rather than one per provider: the code is ours and the same route receives it
+   * whichever provider minted the identity behind it.
+   */
+  function returnUrisFor(projectId: string): readonly string[] {
+    return returnUris.value[projectId] ?? [];
   }
 
   /** Null for a provider this project has never set up, which is not the same as off. */
@@ -135,7 +151,45 @@ export const useProvidersStore = defineStore("providers", () => {
       scopes: draft.customScopes ? parseScopes(draft.scopes) : [],
       settings: settingsOf(draft),
       storeTokens: draft.storeTokens,
+      /* A credential change is a new thing to check, so the stamp goes with the old one. */
+      testedAt: null,
     });
+  }
+
+  /**
+   * Stamps a provider as checked. The verdict is not stored: it is derived from the
+   * configuration every time the screen asks, so a row cannot say "passing" about a
+   * client id somebody changed afterwards.
+   */
+  async function recordTest(projectId: string, id: ProviderName): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, TEST_LATENCY));
+    const current = configFor(projectId, id);
+    if (current === null) return;
+    configs.value = {
+      ...configs.value,
+      [projectId]: {
+        ...forProject(projectId),
+        [id]: { ...current, testedAt: new Date().toISOString() },
+      },
+    };
+  }
+
+  /** Adding one already registered is a no-op rather than a second row. */
+  async function addReturnUri(projectId: string, uri: string): Promise<void> {
+    const held = returnUrisFor(projectId);
+    if (held.includes(uri)) return;
+    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    returnUris.value = { ...returnUris.value, [projectId]: [...held, uri] };
+    stamp(projectId);
+  }
+
+  async function removeReturnUri(projectId: string, uri: string): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    returnUris.value = {
+      ...returnUris.value,
+      [projectId]: returnUrisFor(projectId).filter((entry) => entry !== uri),
+    };
+    stamp(projectId);
   }
 
   /**
@@ -176,14 +230,19 @@ export const useProvidersStore = defineStore("providers", () => {
 
   return {
     configs,
+    returnUris,
     linking,
     loading,
     forProject,
+    returnUrisFor,
     configFor,
     configured,
     linkingFor,
     patch,
     save,
+    recordTest,
+    addReturnUri,
+    removeReturnUri,
     remove,
     setLinking,
     lastSavedAt,
@@ -207,8 +266,9 @@ function settingsOf(draft: ProviderDraft): Record<string, string> {
 }
 
 /*
- * The placeholder project. Google and GitHub on their own credentials, Apple half set
- * up and switched off, Discord on our shared app because somebody is trying it locally.
+ * The placeholder project, chosen so the screen shows one provider in each state it can
+ * be in: Google ready and checked, GitHub complete and never checked, Apple missing its
+ * signing key, Discord on our shared app because somebody is trying it locally.
  */
 const PERSONAL_PROVIDERS: ProviderConfigs = {
   google: {
@@ -220,6 +280,7 @@ const PERSONAL_PROVIDERS: ProviderConfigs = {
     scopes: [],
     settings: {},
     storeTokens: false,
+    testedAt: "2026-09-08T08:41:00.000Z",
   },
   github: {
     enabled: true,
@@ -230,16 +291,18 @@ const PERSONAL_PROVIDERS: ProviderConfigs = {
     scopes: ["read:user", "user:email"],
     settings: {},
     storeTokens: true,
+    testedAt: null,
   },
   apple: {
     enabled: false,
     mode: "custom",
     clientId: "com.example.web",
-    secretSet: true,
-    secretUpdatedAt: "2026-08-28T11:05:00.000Z",
+    secretSet: false,
+    secretUpdatedAt: null,
     scopes: [],
-    settings: { teamId: "9QJ4TZ2P8L", keyId: "K7D2M4XR9V" },
+    settings: { teamId: "9QJ4TZ2P8L", keyId: "" },
     storeTokens: false,
+    testedAt: null,
   },
   discord: {
     enabled: true,
@@ -250,8 +313,15 @@ const PERSONAL_PROVIDERS: ProviderConfigs = {
     scopes: [],
     settings: {},
     storeTokens: false,
+    testedAt: null,
   },
 };
+
+/** The routes the placeholder project's own application receives a sign-in on. */
+const PERSONAL_RETURN_URIS: readonly string[] = [
+  "https://app.example.com/auth/callback",
+  "http://localhost:3000/auth/callback",
+];
 
 /** Accounts on the placeholder project whose only sign-in is that provider. */
 const PERSONAL_ONLY: Partial<Record<ProviderName, number>> = {
@@ -286,17 +356,15 @@ function daily(seed: number, base: number, swing: number): number[] {
 const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
 
 const PERSONAL_SIGN_INS = daily(31, 74, 34);
-const PERSONAL_NEW = daily(33, 5.5, 6);
-const PERSONAL_REFUSED = daily(35, 0.7, 2);
 
 const PERSONAL_STATS: ProviderStats = {
   signIns: sum(PERSONAL_SIGN_INS),
   signInsDaily: PERSONAL_SIGN_INS,
-  newAccounts: sum(PERSONAL_NEW),
-  newAccountsDaily: PERSONAL_NEW,
+  signInsPrevious: sum(daily(41, 68, 34)),
+  newAccounts: sum(daily(33, 5.5, 6)),
   linked: 468,
-  refused: sum(PERSONAL_REFUSED),
-  refusedDaily: PERSONAL_REFUSED,
+  refused: sum(daily(35, 0.7, 2)),
+  refusedPrevious: sum(daily(45, 1.4, 2)),
   byProvider: [
     { id: "google", count: 1284 },
     { id: "github", count: 486 },
@@ -304,15 +372,13 @@ const PERSONAL_STATS: ProviderStats = {
   ],
 };
 
-const ZEROES = Array.from({ length: 30 }, () => 0);
-
 const ACME_STATS: ProviderStats = {
   signIns: 0,
-  signInsDaily: ZEROES,
+  signInsDaily: Array.from({ length: 30 }, () => 0),
+  signInsPrevious: 0,
   newAccounts: 0,
-  newAccountsDaily: ZEROES,
   linked: 0,
   refused: 0,
-  refusedDaily: ZEROES,
+  refusedPrevious: 0,
   byProvider: [],
 };

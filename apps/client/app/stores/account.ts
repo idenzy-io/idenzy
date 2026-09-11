@@ -15,6 +15,8 @@ import {
   type AccountFactor,
   type AccountProfile,
   type AccountSession,
+  type EmailChange,
+  emailChangeExpiresAt,
 } from "~/utils/account";
 import { DURATIONS } from "~/utils/time";
 
@@ -88,6 +90,9 @@ export const useAccountStore = defineStore("account", () => {
     },
   ]);
 
+  /** An address change that has been asked for and not finished. */
+  const emailChange = ref<EmailChange | null>(null);
+
   const lastSaved = ref<string | null>(null);
 
   const loading = ref(true);
@@ -103,6 +108,35 @@ export const useAccountStore = defineStore("account", () => {
   async function patch(change: Partial<AccountProfile>): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     profile.value = { ...profile.value, ...change };
+    stamp();
+  }
+
+  /**
+   * Starts an address change and moves nothing.
+   *
+   * The live address stays the live address until both sides have confirmed, so this
+   * writes a pending record beside the profile rather than over it. Writing the new one
+   * straight onto the profile with `emailVerified: false` is what the note calls out: it
+   * reads as a move that happened, on an account whose owner can still only reach the old
+   * mailbox.
+   */
+  async function startEmailChange(email: string): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    const requestedAt = new Date();
+    emailChange.value = {
+      email: email.trim().toLowerCase(),
+      requestedAt: requestedAt.toISOString(),
+      expiresAt: emailChangeExpiresAt(requestedAt),
+      currentConfirmed: false,
+      newConfirmed: false,
+    };
+    stamp();
+  }
+
+  /** Abandons it. The address on the account never moved, so there is nothing to undo. */
+  async function cancelEmailChange(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    emailChange.value = null;
     stamp();
   }
 
@@ -173,10 +207,13 @@ export const useAccountStore = defineStore("account", () => {
   return {
     loading,
     profile,
+    emailChange,
     factors: allFactors,
     sessions,
     lastSaved,
     patch,
+    startEmailChange,
+    cancelEmailChange,
     changePassword,
     removeFactor,
     revokeSession,

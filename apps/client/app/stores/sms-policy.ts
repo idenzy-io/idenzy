@@ -15,6 +15,11 @@
 
 import { SMS_POLICY_DEFAULTS, type SmsPolicy } from "~/utils/sms-policy";
 
+/** What `Set up SMS` settles in one write: where, how much, and whether a human is asked. */
+export type SmsPolicyDraft = Partial<
+  Pick<SmsPolicy, "allowedCountries" | "dailySpendCap" | "attestationRequired">
+>;
+
 const PLACEHOLDER_LATENCY = 700;
 const SAVE_LATENCY = 600;
 
@@ -46,11 +51,24 @@ export const useSmsPolicyStore = defineStore("sms-policy", () => {
     return policies.value[projectId] ?? null;
   }
 
-  /** Today's `usage_daily.sms_cost`, in the policy's currency. */
+  /** Today's `usage_daily.sms_cost`, in the policy's currency. This is what the cap reads. */
   function spentToday(projectId: string): number {
     const held = spend.value[projectId];
     if (held !== undefined) return held;
     return projectId === "prj_acme" ? 6.42 : 0;
+  }
+
+  /**
+   * The part of today's spend that is a reservation nobody has settled.
+   *
+   * A reservation is taken before the message goes out and settled against what the
+   * carrier actually charged; a dispatch that threw may still have put a message on the
+   * wire, so an unsettled one stands rather than being released. It is shown apart from
+   * the rest because the two are different facts: the cap is measured against the whole
+   * ledger, and only the settled part is a message somebody was handed.
+   */
+  function reservedToday(projectId: string): number {
+    return projectId === "prj_acme" ? 0.41 : 0;
   }
 
   /**
@@ -82,19 +100,26 @@ export const useSmsPolicyStore = defineStore("sms-policy", () => {
   }
 
   /**
-   * Creates the row for a project that has none, with the column defaults.
+   * Creates the row for a project that has none, with the column defaults under whatever
+   * the setup dialog chose.
    *
-   * The allowlist is still empty afterwards and the project still sends nothing, which is
-   * the honest result: creating a policy is not the same as deciding where to send, and a
-   * screen that quietly allowed somewhere would be choosing a country on the customer's
-   * behalf.
+   * Nothing is allowed unless the caller says so. Creating a policy is not the same as
+   * deciding where to send, and a store that quietly allowed somewhere would be choosing a
+   * country on the customer's behalf; what changed is that `Set up SMS` asks for the
+   * choice first and writes the whole row once, rather than leaving a row that exists and
+   * still sends nothing (notes/sms-policy.md P1).
    */
-  async function create(projectId: string): Promise<void> {
+  async function create(projectId: string, chosen: SmsPolicyDraft = {}): Promise<void> {
     if (policyFor(projectId) !== null) return;
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     policies.value = {
       ...policies.value,
-      [projectId]: { ...SMS_POLICY_DEFAULTS, allowedCountries: [], senderId: null },
+      [projectId]: {
+        ...SMS_POLICY_DEFAULTS,
+        allowedCountries: [],
+        senderId: null,
+        ...chosen,
+      },
     };
     lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
   }
@@ -108,6 +133,7 @@ export const useSmsPolicyStore = defineStore("sms-policy", () => {
     loading,
     policyFor,
     spentToday,
+    reservedToday,
     countersToday,
     attestationWired,
     patch,

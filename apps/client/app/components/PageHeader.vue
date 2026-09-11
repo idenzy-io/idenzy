@@ -4,47 +4,36 @@
  *
  * One component rather than a heading each page styles for itself, so every screen
  * opens at the same size and the same distance from the bar, with its actions on the
- * same line. The glyph is the one the drawer uses for the screen, so the place a person
- * clicked and the place they arrived share a mark.
+ * same line. A screen carries no glyph of its own: the drawer already marks where the
+ * reader is, and a tile repeating it here only moves the title off the page's edge.
  *
  * Actions are a slot because they are the page's; the header only puts them where they
  * go, centred on the title block, and under the text on a screen too narrow for the
  * row. The description is a slot as well as a prop, for the sentence that has to carry
  * a link.
  *
- * `mark` replaces the glyph tile where a screen is about one thing rather than one topic:
- * a person's picture stands where the drawer's icon would, at the same size and in the
- * same place, so a detail page opens like every other page. `badge` sits beside the title
- * for the state that thing is in.
+ * `mark` is for a screen about one thing rather than one topic: a person's picture
+ * stands before the title, which is the one case a glyph here says something the drawer
+ * does not. `badge` sits beside the title for the state that thing is in.
  */
 withDefaults(
   defineProps<{
     title: string;
-    /** A drawer glyph, written out in full so @nuxt/icon finds it. */
-    icon?: string;
     description?: string;
   }>(),
-  { icon: "", description: "" },
+  { description: "" },
 );
 </script>
 
 <template>
   <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex min-w-0 items-center gap-3.5">
-      <slot name="mark">
-        <span
-          v-if="icon"
-          aria-hidden="true"
-          class="flex size-10 flex-none items-center justify-center rounded-(--idenzy-radius-small) border border-line bg-surface text-ink/70"
-        >
-          <Icon :name="icon" class="text-xl" />
-        </span>
-      </slot>
+      <slot name="mark" />
 
       <div class="flex min-w-0 flex-col gap-1">
         <!-- `m-0` on both: nothing here resets a heading's browser margins, and theme.css
-             hands a paragraph's back, so without it the two sit 36px apart and the pair
-             no longer centres on the tile. -->
+             hands a paragraph's back, so without it the two sit 36px apart and the block
+             no longer centres on a mark or on the actions beside it. -->
         <div class="flex min-w-0 items-center gap-2.5">
           <h1 class="m-0 truncate text-2xl leading-tight font-semibold tracking-tight">
             {{ title }}

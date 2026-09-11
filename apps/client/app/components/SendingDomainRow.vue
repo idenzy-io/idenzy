@@ -1,19 +1,27 @@
 <script setup lang="ts">
 /**
- * One sending domain in the list: the name, where its verification stands, and what can
- * be done with it.
+ * One sending domain in the list: the name, where its DNS stands, whether it is the
+ * sender, when it was last looked at, and the way in.
  *
- * The row says found-of-required rather than a status word alone, because those are two
- * different facts and a provider will call an identity verified while the bounce route
- * is still missing. The shared domain is a row like the others so a reader can see what
- * they are sending from without knowing whether they ever added one, and it carries no
- * actions at all: it cannot be removed, and it is already what a project falls back to.
+ * Verification and sending are two columns and never one badge. A provider will call an
+ * identity verified while the bounce route is missing, and a verified domain that is not
+ * the sender is a finished setup rather than a working one; collapsing either pair is how
+ * a reader comes to believe their mail already carries their own name.
+ *
+ * The shared domain is a row like the others, so somebody who has never added a domain
+ * can still see what they send from. It carries no destructive action: it cannot be
+ * removed, and it is what every project falls back to.
+ *
+ * A row on `RecordTable`, so the track widths live in the table's own columns and the
+ * stacked arrangement below 900px comes from `data-label` rather than from a second grid
+ * kept in step by hand. The list and the record table in the setup dialog are then the
+ * same table.
  */
 import {
-  DOMAIN_STATUS_LABELS,
-  isReadyToSend,
   recordProgress,
   type SendingDomain,
+  sendingState,
+  verificationState,
 } from "~/utils/sending-domains";
 import { relativeTimeWords } from "~/utils/time";
 
@@ -23,20 +31,18 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  records: [];
-  use: [];
+  open: [];
   remove: [];
 }>();
 
 const now = useNow({ interval: 30_000 });
 
+const verification = computed(() => verificationState(props.domain));
+const sending = computed(() => sendingState(props.domain));
 const progress = computed(() => recordProgress(props.domain));
-const ready = computed(() => isReadyToSend(props.domain));
 
-const tone = computed(() => {
-  if (props.domain.status === "failed") return "error" as const;
-  return ready.value ? ("success" as const) : ("warning" as const);
-});
+/** Set up or Manage: one control saying which of the two things it is for. */
+const openLabel = computed(() => (sending.value.label === "Cannot send yet" ? "Set up" : "Manage"));
 
 const checkedAgo = computed(() => {
   const at = props.domain.checkedAt;
@@ -47,124 +53,96 @@ const checkedAgo = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5">
-    <span
-      :class="domain.inUse ? 'border-primary/40 bg-primary/8 text-primary' : 'border-line bg-canvas text-ink/70'"
-      class="flex size-9 flex-none items-center justify-center rounded-(--idenzy-radius-x-small) border"
-    >
-      <Icon
-        :name="domain.shared ? 'material-symbols:cloud-outline' : 'material-symbols:language'"
-        aria-hidden="true"
-        class="text-lg"
-      />
+  <li class="record-row">
+    <span class="record-cell record-cell--primary flex min-w-0 items-center gap-3">
+      <span
+        :class="
+          domain.inUse
+            ? 'border-primary/40 bg-primary/8 text-primary'
+            : 'border-line bg-ink/4 text-ink/70'
+        "
+        class="flex size-7 flex-none items-center justify-center rounded-(--idenzy-radius-x-small) border"
+      >
+        <Icon
+          :name="domain.shared ? 'material-symbols:cloud-outline' : 'material-symbols:language'"
+          aria-hidden="true"
+          class="text-sm"
+        />
+      </span>
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="font-mono text-xs break-all text-ink">{{ domain.domain }}</span>
+        <span class="text-[11px] leading-4 break-words text-ink/50">
+          {{ domain.shared ? "Ours, and always here" : domain.mailFrom }}
+        </span>
+      </span>
     </span>
 
-    <div class="flex min-w-0 flex-1 basis-64 flex-col gap-1">
-      <div class="flex min-w-0 flex-wrap items-center gap-2">
-        <span class="truncate font-mono text-sm text-ink">{{ domain.domain }}</span>
-        <span
-          v-if="domain.inUse"
-          class="rounded-full border border-primary/40 bg-primary/8 px-1.5 text-[10px] leading-4 font-medium whitespace-nowrap text-primary"
+    <span
+      class="record-cell record-cell--half flex flex-col items-start gap-1"
+      data-label="Verification"
+    >
+      <StatusBadge :label="verification.label" :tone="verification.tone" />
+      <span v-if="!domain.shared" class="text-[10px] leading-4 text-ink/45">
+        <span class="font-mono tabular-nums">{{ progress.found }}/{{ progress.required }}</span>
+        records
+      </span>
+    </span>
+
+    <span class="record-cell record-cell--half flex flex-col items-start" data-label="Sending">
+      <StatusBadge :label="sending.label" :tone="sending.tone" />
+    </span>
+
+    <span class="record-cell record-cell--half text-[11px] text-ink/60" data-label="Last check">
+      <template v-if="domain.shared">Ours to keep</template>
+      <template v-else-if="checkedAgo">{{ checkedAgo }}</template>
+      <template v-else>Not yet</template>
+    </span>
+
+    <span
+      class="record-cell record-cell--action record-cell--end flex flex-none items-center justify-end gap-1"
+    >
+      <template v-if="!domain.shared">
+        <v-btn
+          :loading="busy"
+          class="text-xs font-medium text-ink/70"
+          color="neutral"
+          size="small"
+          variant="text"
+          @click="emit('open')"
         >
-          Sending from this
-        </span>
-        <StatusBadge
-          v-if="domain.shared"
-          label="Ours"
-          tone="neutral"
-        />
-        <StatusBadge v-else :label="DOMAIN_STATUS_LABELS[domain.status]" :tone="tone" />
-      </div>
+          {{ openLabel }}
+        </v-btn>
 
-      <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink/55">
-        <template v-if="domain.shared">
-          <span class="flex items-center gap-1.5">
-            <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:verified-user-outline" />
-            SPF, DKIM and DMARC are ours and already published
-          </span>
-          <span class="flex items-center gap-1.5">
-            <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:groups-outline" />
-            Reputation shared with every project on it
-          </span>
-        </template>
-        <template v-else>
-          <span class="flex items-center gap-1.5">
-            <Icon
-              :class="ready ? 'text-success' : ''"
-              :name="ready ? 'material-symbols:check-circle-outline' : 'material-symbols:pending-outline'"
-              aria-hidden="true"
-              class="flex-none text-xs"
+        <v-menu :offset="4" location="bottom end">
+          <template #activator="{ props: activator }">
+            <button
+              v-bind="activator"
+              :aria-label="`Actions for ${domain.domain}`"
+              class="inline-flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/55 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              type="button"
+            >
+              <Icon aria-hidden="true" class="text-base" name="material-symbols:more-horiz" />
+            </button>
+          </template>
+
+          <v-list density="compact" min-width="220" nav>
+            <v-list-item
+              prepend-icon="material-symbols:dns-outline"
+              title="DNS records"
+              @click="emit('open')"
             />
-            <span class="font-mono tabular-nums">{{ progress.found }}/{{ progress.required }}</span>
-            records found
-          </span>
-          <span class="flex min-w-0 items-center gap-1.5">
-            <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:u-turn-left" />
-            <span class="truncate font-mono">{{ domain.mailFrom }}</span>
-          </span>
-          <span v-if="checkedAgo" class="flex items-center gap-1.5">
-            <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:schedule-outline" />
-            Checked {{ checkedAgo }}
-          </span>
-        </template>
-      </div>
-    </div>
-
-    <div class="ml-auto flex flex-none items-center gap-2">
-      <v-btn
-        v-if="!domain.shared && !ready"
-        :loading="busy"
-        class="text-xs font-medium"
-        color="neutral"
-        prepend-icon="material-symbols:dns-outline"
-        size="small"
-        variant="outlined"
-        @click="emit('records')"
-      >
-        Records
-      </v-btn>
-
-      <v-btn
-        v-if="!domain.inUse && ready"
-        :loading="busy"
-        class="text-xs font-medium"
-        color="primary"
-        size="small"
-        variant="tonal"
-        @click="emit('use')"
-      >
-        Send from this
-      </v-btn>
-
-      <v-menu v-if="!domain.shared" :offset="4" location="bottom end">
-        <template #activator="{ props: activator }">
-          <button
-            v-bind="activator"
-            :aria-label="`Actions for ${domain.domain}`"
-            class="inline-flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/55 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            type="button"
-          >
-            <Icon aria-hidden="true" class="text-base" name="material-symbols:more-horiz" />
-          </button>
-        </template>
-
-        <v-list density="compact" min-width="220" nav>
-          <v-list-item
-            prepend-icon="material-symbols:dns-outline"
-            title="DNS records"
-            @click="emit('records')"
-          />
-          <v-divider class="my-1" />
-          <v-list-item
-            class="sending-domain-row__danger"
-            prepend-icon="material-symbols:link-off"
-            title="Remove from project"
-            @click="emit('remove')"
-          />
-        </v-list>
-      </v-menu>
-    </div>
-  </div>
+            <v-divider class="my-1" />
+            <v-list-item
+              class="sending-domain-row__danger"
+              prepend-icon="material-symbols:link-off"
+              title="Remove from project"
+              @click="emit('remove')"
+            />
+          </v-list>
+        </v-menu>
+      </template>
+    </span>
+  </li>
 </template>
 
 <style scoped>

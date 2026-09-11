@@ -51,7 +51,7 @@ const to = computed(() => rpId.value.trim().toLowerCase());
 const rpIdIssue = computed(() => {
   if (to.value === "") return "";
   if (!isRpId(to.value)) return RP_ISSUE_LABELS.rp_id_invalid;
-  if (to.value === props.from) return "That is the RP ID the project has now.";
+  if (to.value === props.from) return "That is the domain the project uses now.";
   return "";
 });
 const rpIdReady = computed(() => to.value !== "" && rpIdIssue.value === "");
@@ -93,7 +93,7 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
     <v-card border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Change the RP ID</h2>
+          <h2 class="m-0 text-sm font-medium text-ink">Change the passkey domain</h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
             The registrable domain the passkeys are bound to. It is
             <span class="font-mono text-ink/80">{{ from }}</span> now.
@@ -101,7 +101,7 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
         </header>
 
         <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink" for="rp-id-next">New RP ID</label>
+          <label class="text-xs font-medium text-ink" for="rp-id-next">New passkey domain</label>
           <v-text-field
             id="rp-id-next"
             ref="rpIdField"
@@ -110,11 +110,12 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
             autocomplete="off"
             class="font-mono"
             hide-details
+            name="idenzy-passkey-domain"
             placeholder="example.org"
             variant="filled"
           />
           <p class="m-0 text-[11px]" :class="rpIdIssue ? 'text-error' : 'text-ink/50'">
-            {{ rpIdIssue || "A domain with no scheme, port or path. Every origin has to sit on it." }}
+            {{ rpIdIssue || "A domain with no scheme, port or path. Every application URL has to sit on it." }}
           </p>
         </div>
 
@@ -136,7 +137,7 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
             <li
               v-for="origin in dropped"
               :key="origin"
-              class="flex items-center gap-2 rounded-md border border-line bg-canvas px-2.5 py-1.5 font-mono text-xs text-ink/50 line-through"
+              class="flex items-center gap-2 rounded-md bg-ink/4 ring-1 ring-ink/6 ring-inset px-2.5 py-1.5 font-mono text-xs text-ink/50 line-through"
             >
               <Icon aria-hidden="true" class="flex-none text-sm" name="material-symbols:language" />
               <span class="truncate">{{ origin }}</span>
@@ -148,7 +149,7 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
         </section>
 
         <div v-if="needsOrigin" class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink" for="rp-move-origin">First origin on {{ to }}</label>
+          <label class="text-xs font-medium text-ink" for="rp-move-origin">First application URL on {{ to }}</label>
           <v-text-field
             id="rp-move-origin"
             v-model="firstOrigin"
@@ -157,10 +158,11 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
             autocomplete="off"
             class="font-mono"
             hide-details
+            name="idenzy-passkey-url"
             variant="filled"
           />
           <p class="m-0 text-[11px]" :class="firstOriginIssue ? 'text-error' : 'text-ink/50'">
-            {{ firstOriginIssue || "A party with no origin refuses every ceremony, so one goes in with the id." }}
+            {{ firstOriginIssue || "A project with no URL refuses every ceremony, so one goes in with the domain." }}
           </p>
         </div>
 
@@ -181,7 +183,7 @@ const count = computed(() => props.enrolled.toLocaleString("en"));
             type="submit"
             variant="flat"
           >
-            Change the RP ID
+            Change domain
           </v-btn>
         </footer>
       </form>

@@ -82,7 +82,7 @@ function confirm() {
 
         <p
           v-if="changed"
-          class="m-0 flex items-start gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas p-3 text-[11px] leading-4 text-ink/70"
+          class="m-0 flex items-start gap-2 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset p-3 text-[11px] leading-4 text-ink/70"
         >
           <Icon
             aria-hidden="true"

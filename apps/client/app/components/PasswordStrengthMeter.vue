@@ -4,9 +4,11 @@
  * first keystroke: what makes a good password is worth reading before typing one, and a
  * block that appears mid-form pushes the rest of it down as you go.
  *
- * The list is guidance, not a gate. Only the length item is a rule the server enforces
- * (PROJECT.md 4.5 sets no composition requirements), so it is the only one marked, and
- * nothing here decides whether the form can be submitted.
+ * The list is in two parts, and that is the point. Only the length is a rule the server
+ * enforces (PROJECT.md 4.5 sets no composition requirements), so it is the only thing
+ * under "Required"; the rest is advice and says so. One list headed "must contain"
+ * announced a policy nothing checks, which is how a project ends up with a screen
+ * demanding a capital letter and a server that does not care.
  */
 const props = defineProps<{ password: string }>();
 
@@ -20,6 +22,15 @@ const strength = computed(() => measurePasswordStrength(props.password));
 const strengthColor = computed(() => `rgb(var(--v-theme-${strength.value.color}))`);
 
 const segments = [1, 2, 3, 4];
+
+/*
+ * The list is split rather than headed "must contain", which announced a policy the
+ * server does not have: the only thing it enforces is the length, and everything else
+ * here is advice. A form that lists advice as a requirement teaches people to read
+ * requirements as advice.
+ */
+const required = computed(() => strength.value.requirements.filter((rule) => rule.required));
+const suggested = computed(() => strength.value.requirements.filter((rule) => !rule.required));
 </script>
 
 <template>
@@ -42,14 +53,14 @@ const segments = [1, 2, 3, 4];
       />
     </div>
 
-    <p class="mt-1 text-xs opacity-60">Must contain at least;</p>
-    
+    <p class="mt-1 text-xs opacity-60">Required</p>
+
     <ul class="flex list-none flex-col gap-1 ps-0">
       <li
-        v-for="requirement in strength.requirements"
+        v-for="requirement in required"
         :key="requirement.id"
-        class="flex items-center gap-1.5 text-xs"
         :class="requirement.met ? '' : 'opacity-60'"
+        class="flex items-center gap-1.5 text-xs"
       >
         <Icon
           :name="requirement.met ? 'lucide:circle-check' : 'lucide:circle'"
@@ -57,7 +68,24 @@ const segments = [1, 2, 3, 4];
           class="shrink-0 text-sm"
         />
         <span>{{ requirement.label }}</span>
-        <span v-if="requirement.required" class="opacity-60">(required)</span>
+      </li>
+    </ul>
+
+    <p class="mt-1 text-xs opacity-60">Stronger with</p>
+
+    <ul class="flex list-none flex-col gap-1 ps-0">
+      <li
+        v-for="requirement in suggested"
+        :key="requirement.id"
+        :class="requirement.met ? '' : 'opacity-60'"
+        class="flex items-center gap-1.5 text-xs"
+      >
+        <Icon
+          :name="requirement.met ? 'lucide:circle-check' : 'lucide:circle'"
+          :style="requirement.met ? { color: 'rgb(var(--v-theme-success))' } : undefined"
+          class="shrink-0 text-sm"
+        />
+        <span>{{ requirement.label }}</span>
       </li>
     </ul>
   </div>

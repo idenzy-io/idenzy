@@ -1,199 +1,147 @@
 <script setup lang="ts">
 /**
- * One auth domain: the hostname, where it has got to, and the two records that get it
- * there.
+ * One auth domain in the list: the hostname, the two things that have to be true about
+ * it, when they were last looked at, and the way in.
  *
- * The records are always visible rather than folded behind the status, because the only
- * reason to open this screen while a domain is pending is to copy them, and a fold would
- * put a click in front of the one thing the visit is for. Each carries its own status, so
- * "waiting on DNS" says which half is missing instead of leaving a customer to guess.
+ * DNS and the certificate are two columns and never one status. They fail separately and
+ * they are fixed by two different records, so a row that collapsed them would leave a
+ * customer with "waiting on DNS" and no way to tell which half is missing. The records
+ * themselves are in the setup dialog, which is where somebody working with a DNS console
+ * open actually reads them.
  *
- * A record's value is shown exactly as it arrived on the row. Nothing here builds one: a
- * computed token would be a plausible value that does not exist, pasted into DNS and
- * waited on for a check that can never pass.
+ * A row on `RecordTable`, so the track widths live in the table's own columns and the
+ * stacked arrangement below 900px comes from `data-label` rather than a second grid kept
+ * in step by hand.
  */
 import {
   AUTH_DOMAIN_STATUS_LABELS,
   AUTH_DOMAIN_STATUS_TONES,
-  AUTH_RECORD_INFO,
   type AuthDomain,
-  RECORD_STATUS_LABELS,
-  siteOf,
+  certificateIssued,
+  dnsFound,
 } from "~/utils/auth-domains";
-import { formatDateTime, relativeTime } from "~/utils/time";
+import { relativeTime } from "~/utils/time";
 
-defineProps<{
+const props = defineProps<{
   domain: AuthDomain;
   now: Date;
   busy: boolean;
 }>();
 
 const emit = defineEmits<{
-  recheck: [];
+  open: [];
   remove: [];
 }>();
 
-const { copy } = useClipboard();
+const resolves = computed(() => dnsFound(props.domain));
+const certificate = computed(() => certificateIssued(props.domain));
 
-const copied = ref("");
-
-async function copyValue(text: string, what: string) {
-  await copy(text);
-  copied.value = what;
-  setTimeout(() => {
-    if (copied.value === what) copied.value = "";
-  }, 1400);
-}
-
-const RECORD_TONE: Record<string, string> = {
-  found: "bg-success",
-  pending: "bg-warning",
-  missing: "bg-error",
-};
+/** Set up while something is missing, Manage once nothing is: one control, two jobs. */
+const openLabel = computed(() =>
+  resolves.value && certificate.value && props.domain.status === "verified" ? "Manage" : "Set up",
+);
 </script>
 
 <template>
-  <div class="flex flex-col">
-    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3.5">
-      <div class="flex min-w-0 flex-col gap-1">
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <span class="truncate font-mono text-sm text-ink">{{ domain.domain }}</span>
-          <StatusBadge
-            :label="AUTH_DOMAIN_STATUS_LABELS[domain.status]"
-            :tone="AUTH_DOMAIN_STATUS_TONES[domain.status]"
-          />
-        </div>
-        <p class="m-0 text-[11px] leading-4 text-ink/55">
-          <template v-if="domain.status === 'verified'">
-            Cookie mode works for your pages under
-            <span class="font-mono text-ink/75">{{ siteOf(domain.domain) }}</span
-            >. Point your SDK's API base at this host.
-          </template>
+  <li class="record-row">
+    <span class="record-cell record-cell--primary flex min-w-0 items-center gap-3">
+      <span
+        :class="
+          domain.status === 'verified'
+            ? 'border-primary/40 bg-primary/8 text-primary'
+            : 'border-line bg-ink/4 text-ink/70'
+        "
+        class="flex size-7 flex-none items-center justify-center rounded-(--idenzy-radius-x-small) border"
+      >
+        <Icon aria-hidden="true" class="text-sm" name="material-symbols:language" />
+      </span>
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="font-mono text-xs break-all text-ink">{{ domain.domain }}</span>
+        <span class="text-[11px] leading-4 break-words text-ink/50">
+          <template v-if="domain.status === 'verified'">Answering for this project</template>
           <template v-else>
-            Publish both records below. Until a check sees them this host answers nothing,
-            and a request to it is refused as an unknown project rather than as pending.
+            Refused as an unknown project until both records are found
           </template>
-        </p>
-      </div>
+        </span>
+      </span>
+    </span>
 
-      <div class="flex flex-none items-center gap-1">
-        <v-btn
-          :disabled="busy"
-          class="text-xs font-medium"
-          color="neutral"
-          prepend-icon="material-symbols:refresh"
-          size="small"
-          variant="text"
-          @click="emit('recheck')"
-        >
-          Check now
-        </v-btn>
-        <v-tooltip location="top" text="Remove this domain">
-          <template #activator="{ props: tip }">
-            <button
-              v-bind="tip"
-              :disabled="busy"
-              aria-label="Remove this domain"
-              class="inline-flex size-8 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/50 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-40"
-              type="button"
-              @click="emit('remove')"
-            >
-              <Icon aria-hidden="true" class="text-base" name="material-symbols:delete-outline" />
-            </button>
-          </template>
-        </v-tooltip>
-      </div>
-    </div>
+    <span class="record-cell record-cell--half flex flex-col items-start gap-1" data-label="DNS">
+      <StatusBadge
+        :label="resolves ? 'Found' : 'Not found'"
+        :tone="resolves ? 'success' : 'warning'"
+      />
+      <span class="text-[10px] leading-4 text-ink/45">CNAME</span>
+    </span>
 
-    <ul class="m-0 list-none divide-y divide-line border-t border-line p-0">
-      <li v-for="record in domain.records" :key="record.kind" class="flex flex-col gap-2 px-4 py-3">
-        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <span class="flex items-center gap-2">
-            <span
-              :class="RECORD_TONE[record.status]"
-              aria-hidden="true"
-              class="size-1.5 flex-none rounded-full"
-            />
-            <span class="text-xs font-medium text-ink">
-              {{ AUTH_RECORD_INFO[record.kind].label }}
-            </span>
-            <span
-              class="rounded-full border border-line px-1.5 font-mono text-[10px] leading-4 text-ink/55"
-            >
-              {{ AUTH_RECORD_INFO[record.kind].type }}
-            </span>
-          </span>
-          <span class="text-[11px] text-ink/55">{{ RECORD_STATUS_LABELS[record.status] }}</span>
-        </div>
-
-        <div class="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-[10px] leading-4 text-ink/45">Name</span>
-            <button
-              class="group/n inline-flex max-w-full items-center gap-1 rounded-(--idenzy-radius-x-small) text-left font-mono text-[11px] text-ink/80 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              :title="`Copy ${record.name}`"
-              type="button"
-              @click="copyValue(record.name, `${record.kind}-name`)"
-            >
-              <span class="truncate">{{ record.name }}</span>
-              <Icon
-                :class="
-                  copied === `${record.kind}-name`
-                    ? 'text-success opacity-100'
-                    : 'opacity-0 group-hover/n:opacity-60'
-                "
-                :name="
-                  copied === `${record.kind}-name`
-                    ? 'material-symbols:check'
-                    : 'material-symbols:content-copy-outline'
-                "
-                aria-hidden="true"
-                class="flex-none text-xs transition-opacity duration-150"
-              />
-            </button>
-          </div>
-          <div class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-[10px] leading-4 text-ink/45">Points at</span>
-            <button
-              class="group/v inline-flex max-w-full items-center gap-1 rounded-(--idenzy-radius-x-small) text-left font-mono text-[11px] text-ink/80 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              :title="`Copy ${record.value}`"
-              type="button"
-              @click="copyValue(record.value, `${record.kind}-value`)"
-            >
-              <span class="truncate">{{ record.value }}</span>
-              <Icon
-                :class="
-                  copied === `${record.kind}-value`
-                    ? 'text-success opacity-100'
-                    : 'opacity-0 group-hover/v:opacity-60'
-                "
-                :name="
-                  copied === `${record.kind}-value`
-                    ? 'material-symbols:check'
-                    : 'material-symbols:content-copy-outline'
-                "
-                aria-hidden="true"
-                class="flex-none text-xs transition-opacity duration-150"
-              />
-            </button>
-          </div>
-        </div>
-
-        <p class="m-0 text-[11px] leading-4 text-ink/55">
-          {{ AUTH_RECORD_INFO[record.kind].purpose }}
-        </p>
-      </li>
-    </ul>
-
-    <p
-      v-if="domain.checkedAt"
-      class="m-0 border-t border-line px-4 py-2 text-[11px] leading-4 text-ink/50"
+    <span
+      class="record-cell record-cell--half flex flex-col items-start gap-1"
+      data-label="Certificate"
     >
-      <v-tooltip :text="formatDateTime(domain.checkedAt)" location="top">
-        <template #activator="{ props: tip }">
-          <span v-bind="tip">Last checked {{ relativeTime(domain.checkedAt, now) }}</span>
+      <StatusBadge
+        :label="certificate ? 'Issued' : 'Waiting'"
+        :tone="certificate ? 'success' : 'warning'"
+      />
+      <span class="text-[10px] leading-4 text-ink/45">
+        {{ AUTH_DOMAIN_STATUS_LABELS[domain.status] }}
+      </span>
+    </span>
+
+    <span class="record-cell record-cell--half text-[11px] text-ink/60" data-label="Last checked">
+      <template v-if="domain.checkedAt">{{ relativeTime(domain.checkedAt, now) }}</template>
+      <template v-else>Not yet</template>
+    </span>
+
+    <span
+      class="record-cell record-cell--action record-cell--end flex flex-none items-center justify-end gap-1"
+    >
+      <v-btn
+        :loading="busy"
+        class="text-xs font-medium text-ink/70"
+        color="neutral"
+        size="small"
+        variant="text"
+        @click="emit('open')"
+      >
+        {{ openLabel }}
+      </v-btn>
+
+      <v-menu :offset="4" location="bottom end">
+        <template #activator="{ props: activator }">
+          <button
+            v-bind="activator"
+            :aria-label="`Actions for ${domain.domain}`"
+            class="inline-flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/55 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            type="button"
+          >
+            <Icon aria-hidden="true" class="text-base" name="material-symbols:more-horiz" />
+          </button>
         </template>
-      </v-tooltip>
-    </p>
-  </div>
+
+        <v-list density="compact" min-width="220" nav>
+          <v-list-item
+            prepend-icon="material-symbols:dns-outline"
+            title="DNS records"
+            @click="emit('open')"
+          />
+          <v-divider class="my-1" />
+          <v-list-item
+            class="auth-domain-row__danger"
+            prepend-icon="material-symbols:delete-outline"
+            title="Remove domain"
+            @click="emit('remove')"
+          />
+        </v-list>
+      </v-menu>
+    </span>
+  </li>
 </template>
+
+<style scoped>
+/* Outranks the nav list's own ink, which is three classes deep in theme.css. The scoped
+   attribute survives the teleport into the overlay, so the rule reaches the item. */
+.v-list--nav .v-list-item.auth-domain-row__danger,
+.v-list--nav .v-list-item.auth-domain-row__danger:hover {
+  color: rgb(var(--v-theme-error));
+}
+</style>

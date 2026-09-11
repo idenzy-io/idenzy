@@ -51,7 +51,7 @@ function confirm() {
     <v-card border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Add an origin</h2>
+          <h2 class="m-0 text-sm font-medium text-ink">Add an application URL</h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
             A page allowed to run a ceremony. Scheme, host and port, matched exactly, on
             <span class="font-mono text-ink/80">{{ rpId }}</span> or a subdomain of it.
@@ -59,7 +59,7 @@ function confirm() {
         </header>
 
         <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink" for="origin-next">Origin</label>
+          <label class="text-xs font-medium text-ink" for="origin-next">Application URL</label>
           <v-text-field
             id="origin-next"
             ref="field"
@@ -69,6 +69,7 @@ function confirm() {
             autocomplete="off"
             class="font-mono"
             hide-details
+            name="idenzy-passkey-url"
             variant="filled"
           />
           <p class="m-0 text-[11px]" :class="issue ? 'text-error' : 'text-ink/50'">
@@ -81,7 +82,7 @@ function confirm() {
             Cancel
           </v-btn>
           <v-btn :disabled="!ready" class="text-xs font-medium" color="primary" size="small" type="submit" variant="flat">
-            Add origin
+            Add URL
           </v-btn>
         </footer>
       </form>

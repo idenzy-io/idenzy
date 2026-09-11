@@ -1,17 +1,22 @@
 <script setup lang="ts">
 /**
- * The right-hand end of the app bar: what the account has to spend, and the ways to
- * spend it, read up, ask, and be told.
+ * The right-hand end of the app bar: what the organisation has to spend, and the ways to
+ * read up, ask, and be told.
  *
- * Ordered by what each thing is. Top up is the one action here and sits at the edge,
- * where a primary control belongs; Docs and Help are words beside it; the bell is the
- * one thing that speaks first rather than when asked; and the balance is a figure, not
- * a control, so it stands apart behind a rule.
+ * The balance is the organisation's, because the wallet is: two projects under one
+ * organisation draw on one balance, and a figure scoped to the project in the corner
+ * would disagree with the billing screen the moment somebody switched project.
  *
- * The figure is the billing screen's, read from the same store, and Top up goes there
- * rather than opening anything of its own. Two places showing a balance is one place too
- * many for them to disagree in, and the checkout when there is one is the payment
- * provider's page, so there is nothing for this button to open here anyway.
+ * There is no Top up button here any more, and its absence is the point. A funding action
+ * in the bar competes with the billing screen's own, which is what
+ * notes/settings-billing.md asks to remove, and at 390px it and the balance crowded out
+ * the one thing the bar has to keep: which project is being read
+ * (notes/shared-experience.md). The figure links to Billing instead, so funding is one
+ * click away and lives in one place.
+ *
+ * The figure itself is desktop only. On a phone the breadcrumb needs the whole row, and a
+ * balance is something somebody goes to Billing for rather than something they need while
+ * reading a user's sessions.
  */
 import { formatCents } from "~/utils/billing";
 
@@ -19,10 +24,11 @@ const { mdAndUp } = useDisplay();
 const projects = useProjectStore();
 const billing = useBillingStore();
 
-/* The same figure the billing screen shows, read from the same store. In cents, the way
-   the billing API hands it over: a float would round the wrong way, and a bar quoting a
-   different balance from the page it links to is worse than a bar quoting none. */
-const balance = computed(() => formatCents(billing.balanceFor(projects.current.id)));
+/* The same figure the billing screen shows, read from the same store and keyed by the
+   same organisation. In cents, the way the billing API hands it over: a float would round
+   the wrong way, and a bar quoting a different balance from the page it links to is worse
+   than a bar quoting none. */
+const balance = computed(() => formatCents(billing.balanceFor(projects.currentOrg.id)));
 
 /** The docs shell on the landing site (PROJECT.md 10.1). The host is a placeholder. */
 const DOCS_URL = "https://idenzy.dev/docs";
@@ -30,13 +36,20 @@ const DOCS_URL = "https://idenzy.dev/docs";
 
 <template>
   <div class="flex items-center gap-1">
-    <!-- Monospaced and tabular so the digits sit still as the figure changes, and a
-         shade quieter for the word than for the number, which is the part that matters. -->
-    <p class="mr-2 flex items-baseline gap-1.5 text-xs">
-      <span class="text-ink/55">Balance</span>
-      <span class="font-mono text-ink tabular-nums">{{ balance }}</span>
-    </p>
-    <span aria-hidden="true" class="mr-1 h-4 w-px bg-shell-line" />
+    <template v-if="mdAndUp">
+      <!-- Monospaced and tabular so the digits sit still as the figure changes, and a
+           shade quieter for the word than for the number, which is the part that matters.
+           A link rather than a figure alone, because the next thing somebody wants after
+           reading a low balance is the screen that does something about it. -->
+      <NuxtLink
+        class="mr-2 flex items-baseline gap-1.5 rounded-(--idenzy-radius-x-small) px-1 py-0.5 text-xs no-underline transition-colors duration-150 hover:bg-ink/6 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        to="/billing"
+      >
+        <span class="text-ink/55">Balance</span>
+        <span class="font-mono text-ink tabular-nums">{{ balance }}</span>
+      </NuxtLink>
+      <span aria-hidden="true" class="mr-1 h-4 w-px bg-shell-line" />
+    </template>
 
     <v-btn
       aria-label="Notifications"
@@ -79,10 +92,5 @@ const DOCS_URL = "https://idenzy.dev/docs";
         </v-menu>
       </v-btn>
     </template>
-
-    <FancyButton class="ml-1" @click="navigateTo('/settings/billing')">
-      <Icon aria-hidden="true" class="text-base" name="carbon:purchase" />
-      Top up
-    </FancyButton>
   </div>
 </template>

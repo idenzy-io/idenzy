@@ -11,9 +11,10 @@
  * of the chart slots sit under 3:1 on white and this is 11px text. Three parts tone to
  * two of ink keeps the hue and buys the contrast in both themes off one number.
  *
- * Not `StatusBadge`. That one is an outlined pill with a coloured dot, for a column where
- * every row is the same shape and the dot is the only thing that varies. A tag colours
- * the whole word, which is what a list of unlike values wants.
+ * Not `StatusBadge`. That one is an outlined pill with a coloured dot, for the state a
+ * section or a page is in. A tag colours the whole word, which is what a list of unlike
+ * values wants, and it is what a session's status wears in both tables that list one: the
+ * project's and one account's own.
  */
 withDefaults(
   defineProps<{

@@ -11,6 +11,10 @@
  *
  * A stage's backstop hangs off it on a dashed rail of its own, because the durable path
  * is not the next step: it is what happens instead, when that step is lost.
+ *
+ * A conditional stage is drawn on a dashed node and a dashed rail into it, because it is
+ * not a step we perform: the last one runs where a customer has attached a cache and not
+ * otherwise, and a solid rail into it is a promise the deployment cannot keep on its own.
  */
 import type { RevocationStage } from "~/utils/revocation";
 
@@ -26,20 +30,38 @@ defineProps<{
            last stage does not draw. -->
       <div aria-hidden="true" class="flex flex-none flex-col items-center">
         <span
-          class="flex size-6 flex-none items-center justify-center rounded-full border border-line bg-canvas font-mono text-[10px] leading-none font-medium text-ink/70 tabular-nums"
+          :class="stage.conditional ? 'border-dashed text-ink/45' : 'text-ink/70'"
+          class="flex size-6 flex-none items-center justify-center rounded-full bg-ink/4 ring-1 ring-ink/6 ring-inset font-mono text-[10px] leading-none font-medium tabular-nums"
         >
           {{ index + 1 }}
         </span>
-        <span v-if="index < stages.length - 1" class="w-px flex-1 bg-line" />
+        <span
+          v-if="index < stages.length - 1"
+          :class="
+            stages[index + 1]?.conditional
+              ? 'border-l border-dashed border-line'
+              : 'w-px bg-line'
+          "
+          class="flex-1"
+        />
       </div>
 
       <div :class="index < stages.length - 1 ? 'pb-5' : ''" class="flex min-w-0 flex-col gap-1">
         <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <h3 class="m-0 text-sm font-medium text-ink">{{ stage.title }}</h3>
+          <h3
+            :class="stage.conditional ? 'text-ink/70' : 'text-ink'"
+            class="m-0 text-sm font-medium"
+          >
+            {{ stage.title }}
+          </h3>
           <span
+            :class="stage.conditional ? 'border-dashed' : ''"
             class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium whitespace-nowrap text-ink/55"
           >
             {{ stage.cost }}
+          </span>
+          <span v-if="stage.conditional" class="text-[10px] leading-4 text-ink/45">
+            Yours to run
           </span>
         </div>
         <p class="m-0 text-xs leading-5 text-ink/60">{{ stage.detail }}</p>

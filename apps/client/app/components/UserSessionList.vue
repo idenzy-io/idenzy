@@ -21,13 +21,13 @@ import {
   deviceLabel,
   endedBy,
   endsAt,
-  isSecurityEvent,
   matchesSessionQuery,
   REASON_LABELS,
   SESSION_STATUS_LABELS,
   type SessionRow,
   type SessionStatus,
   sessionStatus,
+  sessionTone,
 } from "~/utils/sessions";
 import { applyDirection, type TableSort } from "~/utils/table-sort";
 import { formatDateTime, relativeTime } from "~/utils/time";
@@ -86,22 +86,6 @@ const shown = computed(() => {
     .filter((session) => matchesSessionQuery(session, query.value))
     .sort((a, b) => applyDirection(compare?.(a, b, props.now) ?? 0, active.value.direction));
 });
-
-/* The theme colour the status tag wears. Neutral is ink in both themes, which is what an
-   expiry is: the session ran its course and nobody decided anything. */
-const TONES: Record<SessionStatus, string> = {
-  active: "success",
-  expired: "neutral",
-  revoked: "warning",
-};
-
-/* A session ended by reuse detection is not the same news as one somebody signed out of. */
-function tone(session: SessionRow): string {
-  const status = sessionStatus(session, props.now);
-  return status === "revoked" && isSecurityEvent(endedBy(session, props.now))
-    ? "error"
-    : TONES[status];
-}
 
 function live(session: SessionRow): boolean {
   return sessionStatus(session, props.now) === "active";
@@ -190,7 +174,10 @@ function endedLabel(session: SessionRow): string {
         </span>
 
         <span class="record-cell record-cell--half" data-label="Status">
-          <Tag :label="SESSION_STATUS_LABELS[sessionStatus(session, now)]" :tone="tone(session)" />
+          <Tag
+            :label="SESSION_STATUS_LABELS[sessionStatus(session, now)]"
+            :tone="sessionTone(session, now)"
+          />
         </span>
 
         <span class="record-cell record-cell--action record-cell--end">

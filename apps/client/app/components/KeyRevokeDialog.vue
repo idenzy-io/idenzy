@@ -1,31 +1,39 @@
 <script setup lang="ts">
 /**
- * Takes a key out of service, and is exactly as loud as the key deserves.
+ * Takes a key out of service, and makes the operator look at it first (notes/keys.md).
  *
- * `resolve_project_by_key_hash` filters on `revoked_at` with nothing cached in front of it,
- * so a revocation lands on the next request rather than at the end of some window. There is
- * no grace period to offer and the dialog does not pretend there is one: what it offers
- * instead is the evidence for whether this key is still carrying traffic.
+ * The dialog names the exact key, what was last observed of it and over what window, the
+ * rotation it belongs to, and what the next request does, then asks about its consumers
+ * every time. It used to skip the question for a key silent for a day, and that is the weekly
+ * job the note's finding is about: an observation is not a census.
  *
- * Which is why there are two versions of this dialog and the data picks between them. A key
- * that has been silent for a day is the tail of a rotation somebody has already finished in
- * practice, and asking them to tick a box about it teaches them to tick boxes. A key that
- * answered a request four minutes ago is production, and that one gets the box and the
- * amber. The rule lives in `isQuiet`, so the list and this dialog cannot disagree about
- * which case a key is in.
+ * `compromised` is the other procedure, revoke first and deploy after, so it asks about the
+ * breakage instead of the consumers: the honest answer to "has everything moved" is no.
  *
- * The sharpest case is neither: the last live key of its kind. Revoking that does not break
- * one deployment, it stops that whole way of reaching the project, and the dialog says which
- * one in the words a customer would use rather than in the name of a header.
+ * Mounted by the page only while open and closed by it once the write lands, so a failure
+ * keeps the dialog up and says the key still works.
  */
-import { isQuiet, KEY_KIND_LABELS, maskedKey, type ProjectApiKey, QUIET_HOURS } from "~/utils/keys";
-import { formatDateTime, relativeTimeWords } from "~/utils/time";
+import {
+  KEY_KIND_LABELS,
+  keyName,
+  maskedKey,
+  OBSERVATION_LIMIT,
+  observationWords,
+  type ProjectApiKey,
+  type Rotation,
+} from "~/utils/keys";
+import { formatDate, formatDateTime } from "~/utils/time";
 
 const props = defineProps<{
-  keyRow: ProjectApiKey | null;
+  keyRow: ProjectApiKey;
+  reason: "retire" | "compromised";
+  /** Which half of an unfinished rotation the key is, if either. */
+  role: { role: "old" | "replacement"; rotation: Rotation } | null;
   /** Nothing else of this kind would be live afterwards. */
   lastOfKind: boolean;
+  projectName: string;
   busy: boolean;
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -35,176 +43,159 @@ const emit = defineEmits<{
 }>();
 
 const now = useNow({ interval: 30_000 });
-
+const titleId = `${useId()}-title`;
 const acknowledged = ref(false);
 
-watch(open, (showing) => {
-  if (showing) acknowledged.value = false;
-});
+const urgent = computed(() => props.reason === "compromised");
 
-/* Built here rather than assembled in the template, where the space between a label and a
-   value ends up on either side of the full stop that follows them. */
-const subject = computed(() =>
-  props.keyRow === null ? "" : `${KEY_KIND_LABELS[props.keyRow.kind]} ${maskedKey(props.keyRow)}`,
+/** What stops, in the words a customer would use rather than the name of a header. */
+const stops = computed(() =>
+  props.keyRow.kind === "publishable"
+    ? "every call your application makes from a browser"
+    : "every call your backend makes to the management API",
 );
 
-/** Silent long enough that revoking should break nothing anybody is running. */
-const quiet = computed(() => props.keyRow !== null && isQuiet(props.keyRow, now.value));
-
-const lastUsed = computed(() => {
-  const at = props.keyRow?.lastUsedAt;
-  return at === undefined || at === null ? null : relativeTimeWords(at, now.value);
+const created = computed(() => {
+  const { createdBy, createdAt } = props.keyRow;
+  return createdBy
+    ? `Made by ${createdBy} on ${formatDate(createdAt)}`
+    : `Made on ${formatDate(createdAt)}, by an entry older than the audit trail keeps`;
 });
 
-/* An acknowledgement is asked for where it means something: a key still answering, or the
-   last way in of its kind. Everywhere else it would be a box to tick past. */
-const needsAcknowledgement = computed(() => !quiet.value || props.lastOfKind);
-const ready = computed(() => !needsAcknowledgement.value || acknowledged.value);
+/** What the rotation it belongs to says about revoking it now. */
+const rotation = computed(() => {
+  const role = props.role;
+  if (role === null) return null;
+  const { old, replacement, replacementObserved, oldObservedSince } = role.rotation;
+  if (role.role === "replacement") {
+    return {
+      warn: false,
+      words: `This is the replacement in a rotation from ${old.prefix}…, which keeps working. Revoking it abandons the rotation.`,
+    };
+  }
+  if (!replacementObserved) {
+    return {
+      warn: true,
+      words: `Its replacement ${replacement.prefix}… has not been observed, so nothing is known to be deployed with it. Whatever still presents this key has nothing to fall back to.`,
+    };
+  }
+  if (oldObservedSince) {
+    return {
+      warn: true,
+      words: `Its replacement ${replacement.prefix}… has been observed, and so has this key since the replacement was made. Something still holds this one.`,
+    };
+  }
+  return {
+    warn: false,
+    words: `Its replacement ${replacement.prefix}… has been observed, and this key has not been since the replacement was made.`,
+  };
+});
 
-/** What stops working, said the way a customer would say it. */
-const stops = computed(() =>
-  props.keyRow?.kind === "publishable"
-    ? "your application's sign-in calls from the browser"
-    : "every server call your backend makes",
+const acknowledgement = computed(() =>
+  urgent.value
+    ? `Everything still using ${props.keyRow.prefix}… fails from the next request until a replacement is deployed.`
+    : `Every consumer of ${props.keyRow.prefix}… has moved off it, including jobs that run less often than daily.`,
 );
 
 function confirm() {
-  if (!ready.value) return;
-  emit("confirm");
+  if (acknowledged.value) emit("confirm");
 }
-
-/* Closes on the write landing rather than on the click. */
-watch(
-  () => props.busy,
-  (busy, was) => {
-    if (was && !busy) open.value = false;
-  },
-);
 </script>
 
 <template>
-  <v-dialog v-model="open" max-width="480">
-    <v-card v-if="keyRow" border flat>
+  <v-dialog v-model="open" :aria-labelledby="titleId" max-width="520" scrollable>
+    <v-card border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Revoke this key</h2>
+          <h2 :id="titleId" class="m-0 text-base font-medium text-ink">
+            {{ urgent ? "Revoke a compromised key" : `Revoke ${keyName(keyRow)}` }}
+          </h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
-            <span class="font-medium text-ink">{{ subject }}</span>. It stops working on the
-            very next request: there is no grace window here, because the check that reads it
-            has no cache in front of it.
+            It stops working for <span class="font-medium text-ink">{{ projectName }}</span> on
+            the very next request: the check reads the revocation with no cache in front of it,
+            so there is no grace period.
           </p>
         </header>
 
         <div
-          :class="
-            quiet && !lastOfKind
-              ? 'border-line bg-canvas'
-              : 'border-warning/30 bg-warning/6'
-          "
-          class="flex items-start gap-2.5 rounded-(--idenzy-radius-small) border px-3 py-2.5"
+          class="flex flex-col gap-3 rounded-(--idenzy-radius-small) bg-ink/4 p-3 ring-1 ring-ink/6 ring-inset"
         >
-          <Icon
-            :class="quiet && !lastOfKind ? 'text-ink/40' : 'text-warning'"
-            aria-hidden="true"
-            class="mt-0.5 flex-none text-base"
-            :name="
-              quiet && !lastOfKind
-                ? 'material-symbols:check-circle-outline'
-                : 'material-symbols:warning-outline'
-            "
-          />
-          <div class="flex min-w-0 flex-col gap-0.5 text-[11px] leading-4">
-            <p v-if="lastUsed === null" class="m-0 font-medium text-ink">
-              Nothing has ever called with this key.
-            </p>
-            <p v-else class="m-0 font-medium text-ink">
-              Last used
-              <v-tooltip
-                v-if="keyRow.lastUsedAt"
-                :text="formatDateTime(keyRow.lastUsedAt)"
-                location="top"
-              >
-                <template #activator="{ props: tip }">
-                  <span v-bind="tip" class="underline decoration-dotted decoration-ink/30">
-                    {{ lastUsed }}
-                  </span>
-                </template>
-              </v-tooltip>
-              <span v-else>{{ lastUsed }}</span>
-            </p>
-            <p class="m-0 text-ink/65">
-              <template v-if="lastUsed === null">
-                Either it was never deployed, or it was deployed somewhere that has not been
-                called yet. The first is safe to revoke; the second is worth checking.
-              </template>
-              <template v-else-if="quiet">
-                Silent for more than {{ QUIET_HOURS }} hours, which is what this panel treats
-                as finished. Revoking should break nothing anybody is running.
-              </template>
-              <template v-else>
-                Still carrying traffic. Whatever holds it will start failing the moment this
-                is done, and the fix is a deployment rather than an undo.
-              </template>
-            </p>
+          <div class="flex flex-col gap-0.5">
+            <span class="text-[11px] leading-4 text-ink/50">{{ KEY_KIND_LABELS[keyRow.kind] }}</span>
+            <span class="truncate font-mono text-xs text-ink">{{ maskedKey(keyRow) }}</span>
+            <span class="text-[11px] leading-4 text-ink/50">{{ created }}</span>
+          </div>
+          <div class="flex flex-col gap-0.5 border-t border-ink/6 pt-3">
+            <span class="text-[11px] leading-4 text-ink/50">Last observed use</span>
+            <span class="text-xs text-ink">
+              {{ observationWords(keyRow, now) }}
+              <span v-if="keyRow.lastUsedAt" class="text-ink/50">
+                · {{ formatDateTime(keyRow.lastUsedAt) }}
+              </span>
+            </span>
+            <span class="text-[11px] leading-4 text-ink/50">{{ OBSERVATION_LIMIT }}</span>
           </div>
         </div>
 
-        <ul class="m-0 flex list-none flex-col gap-2 p-0 text-xs leading-5 text-ink/75">
+        <p
+          v-if="rotation"
+          class="m-0 flex items-start gap-2 text-xs leading-5 text-ink/75"
+        >
+          <span
+            :class="rotation.warn ? 'bg-warning' : 'bg-ink/30'"
+            aria-hidden="true"
+            class="mt-2 size-1.5 flex-none rounded-full"
+          />
+          <span>{{ rotation.words }}</span>
+        </p>
+
+        <p
+          v-if="urgent"
+          class="m-0 flex items-start gap-2 text-xs leading-5 text-ink/75"
+        >
+          <Icon aria-hidden="true" class="mt-0.5 flex-none text-sm text-error" name="material-symbols:bolt" />
+          <span>
+            Revoke first and deploy after. A few minutes of failed requests is a smaller problem
+            than a live credential in somebody else's hands.
+          </span>
+        </p>
+
+        <ul class="m-0 flex list-none flex-col gap-2 p-0 text-xs leading-5 text-ink/70">
           <li v-if="lastOfKind" class="flex items-start gap-2">
-            <Icon
-              aria-hidden="true"
-              class="mt-0.5 flex-none text-sm text-error"
-              name="material-symbols:block"
-            />
+            <Icon aria-hidden="true" class="mt-0.5 flex-none text-sm text-error" name="material-symbols:block" />
             <span>
-              This is the last live {{ KEY_KIND_LABELS[keyRow.kind].toLowerCase() }} on the
-              project. Revoking it stops {{ stops }} until a new one is made and deployed.
+              It is the last live {{ KEY_KIND_LABELS[keyRow.kind].toLowerCase() }} on the
+              project: {{ stops }} stops until a new one is made and deployed.
             </span>
           </li>
           <li class="flex items-start gap-2">
-            <Icon
-              aria-hidden="true"
-              class="mt-0.5 flex-none text-sm text-ink/40"
-              name="material-symbols:undo"
-            />
+            <Icon aria-hidden="true" class="mt-0.5 flex-none text-sm text-ink/40" name="material-symbols:undo" />
             <span>
-              There is no undo. The value was never stored, so a revoked key cannot be put
-              back; what replaces it is a new key and a deployment.
+              There is no undo. The value was never stored, so a revoked key cannot be put back;
+              what replaces it is a new key and a deployment.
             </span>
           </li>
           <li class="flex items-start gap-2">
-            <Icon
-              aria-hidden="true"
-              class="mt-0.5 flex-none text-sm text-ink/40"
-              name="material-symbols:history"
-            />
+            <Icon aria-hidden="true" class="mt-0.5 flex-none text-sm text-ink/40" name="material-symbols:history" />
             <span>
               The row stays, revoked, so a log line naming
-              <span class="font-mono text-ink">{{ keyRow.prefix }}</span> next year still has
-              something to point at. Recorded in the audit log against your name.
+              <span class="font-mono text-ink">{{ keyRow.prefix }}…</span> still has something
+              to point at. Recorded in the audit log against your name.
             </span>
           </li>
         </ul>
 
-        <label
-          v-if="needsAcknowledgement"
-          class="flex cursor-pointer items-start gap-2 text-xs text-ink"
-        >
+        <label class="flex cursor-pointer items-start gap-2 text-xs leading-5 text-ink">
           <v-checkbox-btn
             v-model="acknowledged"
-            class="-mt-1.5 -ml-1.5"
+            class="-mt-1 -ml-1.5 flex-none"
             color="error"
             density="compact"
           />
-          <span class="pt-px">
-            <template v-if="lastOfKind">
-              I understand {{ stops }} will stop until a new key is deployed.
-            </template>
-            <template v-else>
-              I understand whatever is using this key will start failing now.
-            </template>
-          </span>
+          <span class="pt-0.5">{{ acknowledgement }}</span>
         </label>
+
+        <p v-if="error" class="m-0 text-xs leading-5 text-error" role="alert">{{ error }}</p>
 
         <footer class="flex items-center justify-end gap-2">
           <v-btn
@@ -214,10 +205,10 @@ watch(
             variant="text"
             @click="open = false"
           >
-            Keep it
+            Cancel
           </v-btn>
           <v-btn
-            :disabled="!ready"
+            :disabled="!acknowledged"
             :loading="busy"
             class="text-xs font-medium"
             color="error"
@@ -225,7 +216,7 @@ watch(
             type="submit"
             variant="flat"
           >
-            Revoke the key
+            {{ urgent ? "Revoke key now" : "Revoke key" }}
           </v-btn>
         </footer>
       </form>
@@ -234,6 +225,8 @@ watch(
 </template>
 
 <style scoped>
+/* Vuetify grows a selection control to fill its flex row, which would push the sentence to
+   the far end of the dialog. Same rule the other acknowledgement dialogs carry. */
 :deep(.v-selection-control) {
   --v-selection-control-size: 28px;
 

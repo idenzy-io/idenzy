@@ -31,6 +31,7 @@ import {
   FIELDS_OUTSIDE_DIGEST,
   isGenesis,
   phraseFor,
+  SENSITIVE_LABEL,
   shortHash,
 } from "~/utils/audit";
 import { formatDateTime, relativeTimeWords } from "~/utils/time";
@@ -86,10 +87,26 @@ const isPerson = computed(
   () => props.event.actorType === "member" || props.event.actorType === "end_user",
 );
 
+/**
+ * What the entry moved, where it moved anything.
+ *
+ * Before and after lead the detail, because that is the question the sentence above
+ * raises: "changed the idle timeout" is the headline and the two values are the answer
+ * (notes/audit.md). Absent on an action that changes no value, rather than drawn as two
+ * empty cells.
+ */
+const change = computed(() => {
+  const from = props.event.metadata.from;
+  const to = props.event.metadata.to;
+  if (typeof from !== "string" || typeof to !== "string") return null;
+  return { from, to };
+});
+
 const fields = computed(() => [
   { label: "Happened", value: exact.value, mono: false, outside: false },
   { label: "Sequence", value: String(props.event.seq), mono: true, outside: false },
   { label: "Action", value: props.event.action, mono: true, outside: false },
+  { label: "Request", value: props.event.requestId ?? "No request", mono: true, outside: false },
   { label: "Actor id", value: props.event.actorId ?? "None", mono: true, outside: false },
   { label: "Target id", value: props.event.target ?? "None", mono: true, outside: false },
   { label: "Entry id", value: props.event.id, mono: true, outside: false },
@@ -97,6 +114,9 @@ const fields = computed(() => [
   { label: "User agent", value: props.event.ua ?? "None", mono: false, outside: true },
 ]);
 
+/* Empty rather than "{}" for an action that carries nothing: a block with two braces in
+   it is a block somebody reads twice before deciding it said nothing. */
+const hasMetadata = computed(() => Object.keys(props.event.metadata).length > 0);
 const metadata = computed(() => JSON.stringify(props.event.metadata, null, 2));
 </script>
 
@@ -114,7 +134,7 @@ const metadata = computed(() => JSON.stringify(props.event.metadata, null, 2));
         :class="
           event.actorType === 'staff'
             ? 'border-warning/40 bg-warning/10 text-warning'
-            : 'border-line bg-canvas text-ink/70'
+            : 'border-line bg-ink/4 text-ink/70'
         "
         aria-hidden="true"
         class="flex size-8 flex-none items-center justify-center rounded-full border text-[11px] font-medium"
@@ -140,7 +160,7 @@ const metadata = computed(() => JSON.stringify(props.event.metadata, null, 2));
         aria-hidden="true"
         class="hidden flex-none rounded-full border border-warning/40 bg-warning/8 px-1.5 text-[10px] leading-4 font-medium text-warning sm:inline"
       >
-        Worth reading
+        {{ SENSITIVE_LABEL }}
       </span>
 
       <span
@@ -164,6 +184,20 @@ const metadata = computed(() => JSON.stringify(props.event.metadata, null, 2));
       :class="flush ? 'px-0' : 'px-4'"
       class="flex flex-col gap-5 border-t border-line/60 py-5"
     >
+      <!-- What it moved, first, because that is the question the sentence above raises. -->
+      <div v-if="change" class="flex min-w-0 flex-col gap-1.5">
+        <span class="text-xs text-ink/45">What changed</span>
+        <p class="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[13px]">
+          <span class="text-ink/45 line-through">{{ change.from }}</span>
+          <Icon
+            aria-hidden="true"
+            class="flex-none text-sm text-ink/40"
+            name="material-symbols:arrow-forward"
+          />
+          <span class="text-ink">{{ change.to }}</span>
+        </p>
+      </div>
+
       <!-- The entry as the table holds it. Two columns of label over value, on the row's
            own ground: nothing here needs a frame to be told apart from what is beside it. -->
       <dl class="m-0 grid gap-x-10 gap-y-4 sm:grid-cols-2">
@@ -195,11 +229,16 @@ const metadata = computed(() => JSON.stringify(props.event.metadata, null, 2));
         </div>
       </dl>
 
-      <div class="flex min-w-0 flex-col gap-1.5">
+      <div v-if="hasMetadata" class="flex min-w-0 flex-col gap-1.5">
         <span class="text-xs text-ink/45">Metadata</span>
-        <pre
-          class="m-0 overflow-x-auto rounded-(--idenzy-radius-x-small) bg-ink/4 p-3 font-mono text-[13px] leading-6 text-ink ring-1 ring-ink/6 ring-inset"
-        >{{ metadata }}</pre>
+        <!-- Shiki, through the panel's own palette, so a payload here reads the way one
+             does everywhere else in the panel. `CodeBlock` renders it plain until the
+             highlighter has loaded rather than suspending the row. -->
+        <div
+          class="overflow-x-auto rounded-(--idenzy-radius-x-small) bg-ink/4 p-3 ring-1 ring-ink/6 ring-inset"
+        >
+          <CodeBlock :code="metadata" lang="json" />
+        </div>
       </div>
 
       <!-- The chain, as two lines and a sentence. The hashes are the point, so they are

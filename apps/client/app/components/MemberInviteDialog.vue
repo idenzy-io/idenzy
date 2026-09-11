@@ -95,7 +95,7 @@ function confirm() {
               :class="
                 role === option
                   ? 'border-primary/50 bg-primary/8'
-                  : 'border-line bg-canvas hover:border-ink/20'
+                  : 'border-line bg-ink/4 hover:border-ink/20'
               "
               class="flex cursor-pointer items-start gap-2.5 rounded-(--idenzy-radius-small) border px-3 py-2.5 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               type="button"

@@ -1,30 +1,30 @@
 <script setup lang="ts">
 /**
- * A sheet drawn as what it is: ten codes, the spent ones crossed off. The bar is what a
- * column of these is scanned by, and the figure beside it is what is read once a row has
+ * A set drawn as what it is: ten codes, the spent ones crossed off. The bar is what a
+ * column of these is scanned by, and the words beside it are what is read once a row has
  * been picked out, so the pips carry no number of their own and are hidden from a screen
- * reader, which is given the count instead.
+ * reader, which is given the count in writing instead.
  *
- * The tone comes from the state rather than from the count, so the line at which a sheet
+ * The tone comes from the state rather than from the count, so the line at which a set
  * turns amber is the project's own threshold and not a number baked in here.
  */
-import type { SheetState } from "~/utils/recovery";
-import { SHEET, STATE_FILL } from "~/utils/recovery";
+import type { RecoveryState } from "~/utils/recovery";
+import { CODE_SET, STATE_FILL } from "~/utils/recovery";
 
 const props = withDefaults(
   defineProps<{
     remaining: number;
-    state: SheetState;
-    /** The row's own count, in case a sheet ever holds another number of codes. */
+    state: RecoveryState;
+    /** The row's own count, in case a set ever holds another number of codes. */
     total?: number;
   }>(),
-  { total: SHEET.codes },
+  { total: CODE_SET.codes },
 );
 
-/* The spent codes are the same colour worn thin, so the bar reads as one sheet part used
-   rather than as two things side by side. A sheet spent to the last code has no filled pip
+/* The spent codes are the same colour worn thin, so the bar reads as one set part used
+   rather than as two things side by side. A set spent to the last code has no filled pip
    to carry the tone, which is why the empties carry it too. */
-const SPENT: Record<SheetState, string> = {
+const SPENT: Record<RecoveryState, string> = {
   healthy: "bg-success/20",
   low: "bg-warning/25",
   none: "bg-error/25",

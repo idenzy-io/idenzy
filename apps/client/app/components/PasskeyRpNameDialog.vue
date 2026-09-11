@@ -27,7 +27,7 @@ watch(open, (value) => {
 const issue = computed(() => {
   const text = name.value.trim();
   if (text === "") return RP_ISSUE_LABELS.rp_name_missing;
-  if (text === props.current) return "That is the name the project has now.";
+  if (text === props.current) return "That is the name the project shows now.";
   return "";
 });
 
@@ -45,14 +45,14 @@ function confirm() {
     <v-card border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Rename the relying party</h2>
+          <h2 class="m-0 text-sm font-medium text-ink">Edit the product name</h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
             What the authenticator shows when it asks. Passkeys already enrolled keep working.
           </p>
         </header>
 
         <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink" for="rp-name-next">RP name</label>
+          <label class="text-xs font-medium text-ink" for="rp-name-next">Product name</label>
           <v-text-field
             id="rp-name-next"
             ref="field"
@@ -60,11 +60,12 @@ function confirm() {
             :error="name.trim() === ''"
             autocomplete="off"
             hide-details
+            name="idenzy-passkey-product-name"
             placeholder="Your product's name"
             variant="filled"
           />
           <p class="m-0 text-[11px]" :class="name.trim() === '' ? 'text-error' : 'text-ink/50'">
-            {{ name.trim() === "" ? issue : "The customer's product, as its users know it." }}
+            {{ name.trim() === "" ? issue : "Your product, as its users know it." }}
           </p>
         </div>
 
@@ -73,7 +74,7 @@ function confirm() {
             Cancel
           </v-btn>
           <v-btn :disabled="!ready" class="text-xs font-medium" color="primary" size="small" type="submit" variant="flat">
-            Rename
+            Save name
           </v-btn>
         </footer>
       </form>

@@ -90,7 +90,7 @@ const id = useId();
 
         <!-- What is in it, which is the difference between an experiment and production. -->
         <div
-          class="flex flex-wrap gap-x-6 gap-y-2 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3.5 py-3"
+          class="flex flex-wrap gap-x-6 gap-y-2 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset px-3.5 py-3"
         >
           <span v-for="count in counts" :key="count.label" class="flex items-baseline gap-1.5">
             <span class="font-mono text-base leading-none font-medium text-ink tabular-nums">
@@ -136,7 +136,7 @@ const id = useId();
 
         <p
           v-else
-          class="m-0 flex items-start gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3 py-2.5 text-[11px] leading-4 text-ink/65"
+          class="m-0 flex items-start gap-2 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset px-3 py-2.5 text-[11px] leading-4 text-ink/65"
         >
           <Icon
             aria-hidden="true"

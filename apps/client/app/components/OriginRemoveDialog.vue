@@ -45,7 +45,7 @@ function confirm() {
           </p>
         </header>
 
-        <div class="flex flex-col gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas p-3">
+        <div class="flex flex-col gap-2 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset p-3">
           <p class="m-0 text-[11px] font-medium text-ink/70">What that page sees afterwards</p>
           <p class="m-0 font-mono text-[11px] text-ink">{{ after.status }}</p>
           <p

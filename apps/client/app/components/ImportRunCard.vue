@@ -7,26 +7,32 @@
  * that read like the real thing is one that gets run twice.
  */
 import type { BadgeTone } from "~/components/StatusBadge.vue";
-import type { ImportJob, ImportStatus } from "~/stores/imports";
-import { sourceInfo } from "~/utils/import";
+import {
+  IMPORT_OUTCOME_LABELS,
+  type ImportJob,
+  type ImportOutcome,
+  importOutcome,
+  sourceInfo,
+} from "~/utils/import";
 import { formatDateTime } from "~/utils/time";
 
 const props = defineProps<{
   job: ImportJob;
 }>();
 
-const STATUS: Record<ImportStatus, { label: string; tone: BadgeTone }> = {
-  queued: { label: "Queued", tone: "neutral" },
-  running: { label: "Running", tone: "warning" },
-  done: { label: "Done", tone: "success" },
-  failed: { label: "Failed", tone: "error" },
+/* The label is the history table's; only the colour is this card's. */
+const TONES: Record<ImportOutcome, BadgeTone> = {
+  queued: "neutral",
+  running: "warning",
+  done: "success",
+  failed: "error",
+  "dry-run": "neutral",
 };
 
-const status = computed(() =>
-  props.job.dryRun && props.job.status === "done"
-    ? { label: "Dry run", tone: "neutral" as BadgeTone }
-    : STATUS[props.job.status],
-);
+const status = computed(() => {
+  const outcome = importOutcome(props.job);
+  return { label: IMPORT_OUTCOME_LABELS[outcome], tone: TONES[outcome] };
+});
 
 const percent = computed(() => Math.round(props.job.progress * 100));
 const verb = computed(() => (props.job.dryRun ? "would be" : "were"));
@@ -119,7 +125,7 @@ function report() {
       <div
         v-for="figure in figures"
         :key="figure.label"
-        class="flex flex-col gap-1 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3 py-2.5"
+        class="flex flex-col gap-1 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset px-3 py-2.5"
       >
         <dt class="text-[11px] text-ink/55">{{ figure.label }}</dt>
         <dd :class="figure.tone || 'text-ink'" class="m-0 font-mono text-lg leading-none font-medium tabular-nums">

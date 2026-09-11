@@ -27,6 +27,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  open: [];
   acknowledge: [];
   reopen: [];
   dismiss: [];
@@ -53,6 +54,13 @@ const decided = computed(() => props.signal.state !== "open");
     </template>
 
     <v-list density="compact" min-width="248" nav>
+      <!-- The same thing clicking the row does, for a reader who came to the menu first. -->
+      <v-list-item
+        prepend-icon="material-symbols:frame-inspect"
+        title="Open signal"
+        @click="emit('open')"
+      />
+      <v-divider class="my-1" />
       <v-list-item
         v-if="!decided"
         prepend-icon="material-symbols:check"

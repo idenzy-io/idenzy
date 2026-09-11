@@ -29,7 +29,15 @@ withDefaults(
     :class="disabled ? 'opacity-45' : ''"
     class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-4 transition-opacity duration-150 first:pt-0 last:pb-0"
   >
-    <div class="flex min-w-0 flex-1 flex-col gap-1">
+    <!--
+      `basis-48` and not the implicit zero: with `flex-1 min-w-0` the text column shrinks to
+      nothing rather than letting the row wrap, so a wide control beside it, a segmented
+      control of four options, squeezed a paragraph into one word per line on a phone. A
+      floor of 12rem is what makes `flex-wrap` above fire instead. It is chosen against the
+      two ends: a switch still sits beside the text in a card at 390px, and anything the
+      width of a segmented control drops under it. On a desktop every row fits as before.
+    -->
+    <div class="flex min-w-0 flex-1 basis-48 flex-col gap-1">
       <div class="flex items-center justify-between gap-4">
         <component
           :is="controlId ? 'label' : 'span'"

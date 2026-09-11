@@ -1,33 +1,30 @@
 <script setup lang="ts">
 /**
- * The one time a key is ever visible.
+ * The one time a key is ever visible (notes/keys.md, notes/dialogs.md P1).
  *
- * Everything about this dialog follows from the storage: the server keeps
- * `sha256(key)` under a unique index, so there is no decrypt path and no second showing to
- * fall back on. That makes a stray click expensive in a way almost nothing else in the panel
- * is, so the dialog is `persistent`: it does not close on the scrim, on Escape, or on
- * anything but the button that says the reader is finished.
+ * Persistent: not the scrim and not Escape. The way out is Done, or Close without copying for
+ * somebody who could not copy it, and that exit says what it leaves behind rather than asking
+ * anybody to claim they stored the value. The value is one line that scrolls sideways instead
+ * of wrapping, so what is read is what is pasted, with a labelled Copy beside it. Below `lg`
+ * it is a full-height sheet.
  *
- * The value is shown whole rather than behind a reveal toggle. A masked field with an eye on
- * it is the right shape for a secret being displayed *again*, where hiding it protects
- * against a shoulder; here the reader opened this dialog for exactly one reason and hiding
- * the answer behind a second click only adds a way to miss it.
- *
- * Under the key is the line they are actually going to paste, because a key on its own still
- * leaves somebody guessing at a variable name, and the name differs per framework in a way
- * only the prefix does.
- *
- * The acknowledgement is on the secret key and not the publishable one. Losing a publishable
- * key costs a rotation of a value that was public by construction; losing a secret key at the
- * wrong moment costs a deployment. Asking for a tick on both would teach the reader to tick.
+ * The value is shown alone, without configuration lines around it: it is the one thing this
+ * dialog is for. A secret key gets one line saying where it may never go.
  */
-import { ENV_NAMES, KEY_FORMAT, KEY_KIND_LABELS, type ProjectApiKey } from "~/utils/keys";
+import {
+  type ApiKeyKind,
+  KEY_FORMAT,
+  KEY_KIND_LABELS,
+  type ProjectApiKey,
+  PUBLIC_PREFIXES,
+} from "~/utils/keys";
 
 const props = defineProps<{
-  /** The row that was written. Null closes the dialog down to nothing. */
-  keyRow: ProjectApiKey | null;
+  keyRow: ProjectApiKey;
   /** The only copy of the value. Held by the page, dropped when this closes. */
   secret: string;
+  /** The key this one replaces, when it was made by Rotate. */
+  replacing: ProjectApiKey | null;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -36,177 +33,143 @@ const emit = defineEmits<{
   done: [];
 }>();
 
+const { lgAndUp } = useDisplay();
 const { copy, copied } = useClipboard({ copiedDuring: 2000, legacy: true });
 
-const acknowledged = ref(false);
+const titleId = `${useId()}-title`;
+const valueId = `${useId()}-value`;
 
-watch(open, (showing) => {
-  if (showing) acknowledged.value = false;
-});
+/** Set by the Copy beside the value, which is what the second exit is about. */
+const copiedOnce = ref(false);
 
-const isSecret = computed(() => props.keyRow?.kind === "secret");
+function copyKey() {
+  void copy(props.secret);
+  copiedOnce.value = true;
+}
 
-/**
- * The line to paste. The publishable one carries a framework prefix and this shows it
- * without one, because the prefix is the framework's and the docs name it; what is worth
- * showing here is which variable, and that a secret key has no public spelling at all.
- */
-const envLine = computed(() =>
-  isSecret.value
-    ? `${ENV_NAMES.secret}=${props.secret}`
-    : `${ENV_NAMES.publishable}=${props.secret}`,
-);
+const kind = computed<ApiKeyKind>(() => props.keyRow.kind);
 
-const ready = computed(() => !isSecret.value || acknowledged.value);
-
-function done() {
-  if (!ready.value) return;
+function finish() {
   emit("done");
   open.value = false;
 }
 </script>
 
 <template>
-  <v-dialog v-model="open" max-width="560" persistent>
-    <v-card v-if="keyRow" border flat>
-      <div class="flex flex-col gap-5 p-5">
-        <header class="flex flex-col gap-1">
-          <h2 class="m-0 flex items-center gap-2 text-sm font-medium text-ink">
+  <v-dialog
+    v-model="open"
+    :aria-labelledby="titleId"
+    :fullscreen="!lgAndUp"
+    :max-width="lgAndUp ? 600 : undefined"
+    :transition="lgAndUp ? undefined : 'dialog-bottom-transition'"
+    persistent
+    scrollable
+    width="100%"
+  >
+    <v-card border flat>
+      <div :class="lgAndUp ? 'max-h-[86vh]' : 'h-full'" class="flex flex-col">
+        <header class="flex flex-none flex-col gap-1 border-b border-line p-5">
+          <h2 :id="titleId" class="m-0 flex items-center gap-2 text-base font-medium text-ink">
             <Icon
               aria-hidden="true"
-              class="text-base text-success"
+              class="text-lg text-success"
               name="material-symbols:check-circle-outline"
             />
-            {{ KEY_KIND_LABELS[keyRow.kind] }} created
+            {{ KEY_KIND_LABELS[kind] }} created
           </h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
-            Copy it now. We keep only its {{ KEY_FORMAT.digest }} digest, so this screen is
-            the one place the value has ever existed outside your clipboard and it will not
-            be shown again.
+            Copy it now. Only its {{ KEY_FORMAT.digest }} digest is kept, so this is the one
+            time the value is shown.
           </p>
         </header>
 
-        <div class="flex flex-col gap-2">
-          <div
-            class="flex items-start gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas p-3"
-          >
-            <code class="min-w-0 flex-1 font-mono text-[13px] leading-5 break-all text-ink">
-              {{ secret }}
-            </code>
-            <v-tooltip :text="copied ? 'Copied' : 'Copy the key'" location="top">
-              <template #activator="{ props: tip }">
-                <button
-                  v-bind="tip"
-                  aria-label="Copy the key"
-                  class="inline-flex size-7 flex-none items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/55 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                  type="button"
-                  @click="copy(secret)"
-                >
-                  <Icon
-                    :class="copied ? 'text-success' : ''"
-                    :name="
-                      copied ? 'material-symbols:check' : 'material-symbols:content-copy-outline'
-                    "
-                    aria-hidden="true"
-                    class="text-base"
-                  />
-                </button>
-              </template>
-            </v-tooltip>
+        <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
+          <div class="flex flex-col gap-2">
+            <span :id="valueId" class="text-xs font-medium text-ink">Key value</span>
+            <div class="flex items-stretch gap-2">
+              <div
+                :aria-labelledby="valueId"
+                class="min-w-0 flex-1 overflow-x-auto rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset"
+                role="group"
+                tabindex="0"
+              >
+                <code class="block px-3 py-2.5 font-mono text-[13px] leading-5 whitespace-nowrap text-ink">
+                  {{ secret }}
+                </code>
+              </div>
+              <v-btn
+                :prepend-icon="copied ? 'material-symbols:check' : 'material-symbols:content-copy-outline'"
+                class="h-auto! flex-none text-xs font-medium"
+                color="neutral"
+                variant="outlined"
+                @click="copyKey"
+              >
+                {{ copied ? "Copied" : "Copy key" }}
+              </v-btn>
+            </div>
+            <p class="m-0 text-[11px] leading-4 text-ink/50">
+              Afterwards it is <span class="font-mono text-ink">{{ keyRow.prefix }}…</span> in the
+              list, in your logs and in the audit trail.
+            </p>
           </div>
 
-          <CopyField
-            :label="`Copy the ${isSecret ? 'server' : 'environment'} variable line`"
-            :value="envLine"
-            dense
-          />
-        </div>
+          <p
+            v-if="replacing"
+            class="m-0 rounded-(--idenzy-radius-small) bg-ink/4 p-3 text-xs leading-5 text-ink/75 ring-1 ring-ink/6 ring-inset"
+          >
+            It replaces <span class="font-mono text-ink">{{ replacing.prefix }}…</span>, which
+            keeps working. Deploy this one everywhere the old one is set; the rotation stays open
+            on the keys screen, with what has been observed of both, until you revoke the old key.
+          </p>
 
-        <ul class="m-0 flex list-none flex-col gap-2 p-0 text-xs leading-5 text-ink/75">
-          <li v-if="isSecret" class="flex items-start gap-2">
+          <p v-if="kind === 'secret'" class="m-0 flex items-start gap-2 text-xs leading-5 text-ink/65">
             <Icon
               aria-hidden="true"
               class="mt-0.5 flex-none text-sm text-warning"
               name="material-symbols:warning-outline"
             />
             <span>
-              Server-side only. There is no public spelling of this variable on purpose: a
-              browser bundle is a published artefact, and a key that reaches one is spent.
+              Server-side only, and never under {{ PUBLIC_PREFIXES.join(", ") }}. A browser
+              bundle is a published artefact, and a key that reaches one is spent.
             </span>
-          </li>
-          <li v-else class="flex items-start gap-2">
-            <Icon
-              aria-hidden="true"
-              class="mt-0.5 flex-none text-sm text-success"
-              name="material-symbols:check-circle-outline"
-            />
-            <span>
-              Safe in a browser bundle. That is what it is for: it names your project and can
-              do nothing else, so shipping it is the intended use rather than a leak.
-            </span>
-          </li>
-          <li class="flex items-start gap-2">
-            <Icon
-              aria-hidden="true"
-              class="mt-0.5 flex-none text-sm text-ink/40"
-              name="material-symbols:key-outline"
-            />
-            <span>
-              Afterwards this key is
-              <span class="font-mono text-ink">{{ keyRow.prefix }}</span> in the list, in your
-              logs and in the audit trail. That is what to match it by.
-            </span>
-          </li>
-          <li class="flex items-start gap-2">
-            <Icon
-              aria-hidden="true"
-              class="mt-0.5 flex-none text-sm text-ink/40"
-              name="material-symbols:history"
-            />
-            <span>Recorded in the audit log against your name, like every action here.</span>
-          </li>
-        </ul>
+          </p>
+        </div>
 
-        <label v-if="isSecret" class="flex cursor-pointer items-start gap-2 text-xs text-ink">
-          <v-checkbox-btn
-            v-model="acknowledged"
-            class="-mt-1.5 -ml-1.5"
-            color="primary"
-            density="compact"
-          />
-          <span class="pt-px">
-            I have stored this key somewhere my servers can read it.
-          </span>
-        </label>
-
-        <footer class="flex items-center justify-end">
-          <v-btn
-            :disabled="!ready"
-            class="text-xs font-medium"
-            color="primary"
-            size="small"
-            variant="flat"
-            @click="done"
-          >
-            Done
-          </v-btn>
+        <!-- The sentence takes the left and grows; the buttons keep the right edge, and stay
+             on it when a narrow sheet wraps them under the sentence. -->
+        <footer
+          class="flex flex-none flex-wrap items-center gap-x-4 gap-y-2 border-t border-line p-4"
+        >
+          <p class="m-0 min-w-0 flex-1 basis-60 text-[11px] leading-4 text-ink/55">
+            <template v-if="copiedOnce">It will not be shown again.</template>
+            <template v-else>
+              Closed without copying, the key stays live and nobody holds its value. Revoke it
+              from its menu and make another.
+            </template>
+          </p>
+          <div class="ml-auto flex flex-none items-center gap-2">
+            <v-btn
+              v-if="!copiedOnce"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="finish"
+            >
+              Close without copying
+            </v-btn>
+            <v-btn
+              class="text-xs font-medium"
+              color="primary"
+              size="small"
+              variant="flat"
+              @click="finish"
+            >
+              Done
+            </v-btn>
+          </div>
         </footer>
       </div>
     </v-card>
   </v-dialog>
 </template>
-
-<style scoped>
-/* Vuetify grows a selection control to fill its flex row, which would push the label to
-   the far end of the dialog. Same rule the other acknowledgement dialogs carry. */
-:deep(.v-selection-control) {
-  --v-selection-control-size: 28px;
-
-  flex: none;
-  min-height: 0;
-}
-
-:deep(.v-selection-control__input > .v-icon) {
-  font-size: 1.125rem;
-}
-</style>

@@ -33,10 +33,11 @@ function initials(address: string): string {
 }
 
 /** The address, the password and the factors the signed-in person holds, none of which
-    belongs to a project. Its own route rather than a panel, because it is a screen
-    somebody links a colleague to. */
+    belongs to a project. A tab of the settings screen rather than a route of its own,
+    so the three things a person changes sit together, and still a URL somebody can be
+    linked to. */
 function openAccount() {
-  void navigateTo("/account");
+  void navigateTo("/settings/account");
 }
 
 function signOut() {

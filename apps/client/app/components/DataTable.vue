@@ -323,10 +323,23 @@ function display(value: unknown): string {
   if (value === null || value === undefined || value === "") return "–";
   return String(value);
 }
+
+/*
+ * How wide the visible part of the table is, which is what the empty state is centred
+ * on. Vuetify owns the scrolling element, so it is found rather than referenced, and
+ * measured rather than read off the columns: what the reader sees is the card's width
+ * and the columns can total more than that.
+ */
+const root = useTemplateRef<HTMLElement>("root");
+const scroller = computed(
+  () => root.value?.querySelector<HTMLElement>(".v-table__wrapper") ?? null,
+);
+const { width: visible } = useElementSize(scroller);
+const emptyStyle = computed(() => (visible.value > 0 ? { width: `${visible.value}px` } : {}));
 </script>
 
 <template>
-  <div class="relative">
+  <div ref="root" class="relative">
     <!-- Laid over the head rather than above the table, so selecting a row moves nothing:
          a bar that pushed the rows down would put a different row under the pointer
          that had just clicked one. It starts past the select column, which keeps the
@@ -492,16 +505,24 @@ function display(value: unknown): string {
         </tr>
       </template>
   
+      <!-- The empty state is centred on what the reader can see, not on the table. A
+           table whose columns are wider than its card scrolls sideways, and a state
+           centred on that full width sits half outside the card with a scrollbar under
+           it. Sticking it to the wrapper's left edge at the wrapper's own width is the
+           same trick the pinned columns use, and it needs the measurement because only
+           the browser knows how wide the visible part is. -->
       <template #no-data>
-        <slot name="empty">
-          <div class="flex flex-col items-center gap-1 px-4 py-14 text-center">
-            <Icon aria-hidden="true" class="mb-1 text-2xl text-ink/25" name="material-symbols:search-off" />
-            <p class="m-0 text-sm font-medium text-ink">{{ emptyTitle }}</p>
-            <p v-if="emptyDescription" class="m-0 max-w-sm text-xs text-ink/55">
-              {{ emptyDescription }}
-            </p>
-          </div>
-        </slot>
+        <div :style="emptyStyle" class="sticky left-0">
+          <slot name="empty">
+            <div class="flex flex-col items-center gap-1 px-4 py-14 text-center">
+              <Icon aria-hidden="true" class="mb-1 text-2xl text-ink/25" name="material-symbols:search-off" />
+              <p class="m-0 text-sm font-medium text-ink">{{ emptyTitle }}</p>
+              <p v-if="emptyDescription" class="m-0 max-w-sm text-xs text-ink/55">
+                {{ emptyDescription }}
+              </p>
+            </div>
+          </slot>
+        </div>
       </template>
   
       <!-- Always overridden, empty included: left to Vuetify the slot falls back to its

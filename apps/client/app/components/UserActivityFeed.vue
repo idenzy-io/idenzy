@@ -21,6 +21,7 @@ import {
   CATEGORY_LABELS,
   CATEGORY_SLOTS,
   phraseFor,
+  SENSITIVE_LABEL,
 } from "~/utils/audit";
 import { applyDirection, cycleSort, directionOf, type TableSort } from "~/utils/table-sort";
 import { formatDateTime, relativeTime } from "~/utils/time";
@@ -183,7 +184,7 @@ function timestamp(iso: string): string {
             </span>
             <span class="activity-feed__event">
               <span class="activity-feed__action"><span :style="{ background: dotColour(event) }" class="activity-feed__dot" aria-hidden="true" />{{ event.action }}</span>
-              <span class="activity-feed__phrase">{{ phraseFor(event) }}<span v-if="actionInfo(event.action).notable" class="text-warning"> · Worth reading</span></span>
+              <span class="activity-feed__phrase">{{ phraseFor(event) }}<span v-if="actionInfo(event.action).notable" class="text-warning"> · {{ SENSITIVE_LABEL }}</span></span>
             </span>
             <span class="activity-feed__actor"><span>{{ event.actorName }}</span><span>{{ ACTOR_LABELS[event.actorType] }}</span></span>
             <span class="activity-feed__category"><CategoryTag :category="actionInfo(event.action).category" /></span>

@@ -1,23 +1,33 @@
 <script setup lang="ts">
 /**
- * One provider a project has set up: the mark, what it is, and the switch that decides
- * whether anybody can sign in with it.
+ * One provider a project has set up: the mark, what state it is actually in, and the two
+ * controls that change it.
  *
- * The three things under the name are the three a support question is usually about.
- * Which credentials are in use, because instant mode works on localhost and nowhere
- * else. What it asserts about an address, because that is why a sign-in did or did not
- * find an existing account. And which scopes are requested, because a consent screen
- * that asks for too much is a conversion problem the customer sees before we do.
+ * The state is the point of the row. A provider can be off, missing a field, running on
+ * our shared app, complete but never checked, or taking sign-ins, and those are five
+ * different answers to "why can nobody sign in with Google". The badge names one of them
+ * and the line under it says what that means for a user right now, so the row never
+ * reports a bare "On" over a credential set that cannot finish an exchange.
+ *
+ * The primary action is a button on the row rather than an item in the ellipsis, and it
+ * is named after the state: a provider missing a field says Finish setup, one on our
+ * shared app says Use your own app, and everything else says Manage. Hiding the only
+ * thing most visits are for behind a menu is what the ellipsis is not for.
  *
  * The switch writes on the spot, as everything on this screen does. Turning a provider
- * off leaves the credentials and the identities alone: it is a door closed, not a door
- * removed, which is what the menu's last item is for.
+ * off leaves the credentials and the identities alone: a door closed, not a door removed,
+ * which is what the menu's last item is for.
  */
+import type { BadgeTone } from "~/components/StatusBadge.vue";
 import {
   ASSERTION_LOOK,
   MODE_LABELS,
+  missingFor,
   type ProviderConfig,
   type ProviderInfo,
+  type ProviderReadiness,
+  READINESS,
+  readinessOf,
   scopesOf,
 } from "~/utils/providers";
 import { relativeTimeWords } from "~/utils/time";
@@ -32,74 +42,97 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggle: [value: boolean];
-  configure: [];
+  manage: [];
   "copy-callback": [];
   remove: [];
 }>();
 
 const now = useNow({ interval: 60_000 });
 
+const TONES: Record<ProviderReadiness, BadgeTone> = {
+  incomplete: "warning",
+  off: "neutral",
+  development: "warning",
+  untested: "neutral",
+  ready: "success",
+};
+
+const state = computed(() => readinessOf(props.info, props.config));
+const look = computed(() => READINESS[state.value]);
+const missing = computed(() => missingFor(props.info, props.config));
+
 const scopes = computed(() => scopesOf(props.info, props.config));
 const assertion = computed(() => ASSERTION_LOOK[props.info.email]);
-
-/** The mode's own word, and the warning that comes with the shared app. */
 const mode = computed(() => MODE_LABELS[props.config.mode]);
 
-const secretAge = computed(() =>
-  props.config.secretUpdatedAt === null
-    ? ""
-    : relativeTimeWords(props.config.secretUpdatedAt, now.value),
+const checked = computed(() =>
+  props.config.testedAt === null ? "" : relativeTimeWords(props.config.testedAt, now.value),
 );
+
+/**
+ * The line under the name. What is missing outranks everything else, because it is the
+ * only one of these that has to be acted on before the rest mean anything.
+ */
+const summary = computed(() => {
+  if (missing.value.length > 0) return `Missing ${missing.value.join(" and ")}.`;
+  return look.value.detail;
+});
 </script>
 
 <template>
   <div
-    :class="config.enabled ? '' : 'opacity-60'"
-    class="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 transition-opacity duration-150"
+    :class="config.enabled ? '' : 'opacity-70'"
+    class="grid grid-cols-[2.25rem_minmax(0,1fr)] items-start gap-x-3.5 gap-y-3 px-4 py-3.5 transition-opacity duration-150 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto]"
   >
-    <span class="flex size-9 flex-none items-center justify-center text-ink">
+    <span aria-hidden="true" class="flex size-9 flex-none items-center justify-center text-ink">
       <Icon
         :class="[info.monochrome ? '[.v-theme--dark_&]:invert' : '', info.tint ?? '']"
         :name="info.icon"
-        aria-hidden="true"
         class="text-[26px]"
       />
     </span>
 
-    <div class="flex min-w-0 flex-1 basis-64 flex-col gap-1">
+    <div class="flex min-w-0 flex-col gap-1">
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <span class="truncate text-sm font-medium text-ink">{{ info.label }}</span>
+        <StatusBadge :label="look.label" :tone="TONES[state]" />
         <span
           class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium whitespace-nowrap text-ink/55"
         >
           {{ info.protocol === "oidc" ? "OIDC" : "OAuth 2" }}
         </span>
+      </div>
+
+      <p
+        :class="missing.length > 0 ? 'text-warning' : 'text-ink/60'"
+        class="m-0 text-xs leading-5"
+      >
+        {{ summary }}
+      </p>
+
+      <!-- The four facts a support question is usually about: whose app, what it says
+           about an address, what the consent screen asks for, and when this was last
+           checked. Each is one line high, so a row of them stays one line. -->
+      <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink/55">
         <v-tooltip :text="mode.detail" location="top" max-width="280">
           <template #activator="{ props: tip }">
-            <span
-              v-bind="tip"
-              :class="
-                config.mode === 'instant'
-                  ? 'border-warning/40 bg-warning/8 text-warning'
-                  : 'border-line text-ink/55'
-              "
-              class="rounded-full border px-1.5 text-[10px] leading-4 font-medium whitespace-nowrap"
-            >
-              {{ mode.label }}
+            <span v-bind="tip" class="flex min-w-0 items-center gap-1.5">
+              <Icon
+                :name="
+                  config.mode === 'instant'
+                    ? 'material-symbols:bolt'
+                    : 'material-symbols:key-outline'
+                "
+                aria-hidden="true"
+                class="flex-none text-xs"
+              />
+              <span v-if="config.mode === 'custom' && config.clientId" class="max-w-56 truncate font-mono text-ink/70">
+                {{ config.clientId }}
+              </span>
+              <span v-else>{{ mode.label === "Instant" ? "Our shared app" : "Your own app" }}</span>
             </span>
           </template>
         </v-tooltip>
-      </div>
-
-      <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink/55">
-        <span v-if="config.mode === 'custom'" class="flex min-w-0 items-center gap-1.5">
-          <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:key-outline" />
-          <span class="max-w-56 truncate font-mono text-ink/70">{{ config.clientId }}</span>
-        </span>
-        <span v-else class="flex items-center gap-1.5">
-          <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:bolt" />
-          Our shared app
-        </span>
 
         <v-tooltip :text="info.emailNote" location="top" max-width="300">
           <template #activator="{ props: tip }">
@@ -116,37 +149,32 @@ const secretAge = computed(() =>
         </v-tooltip>
 
         <v-tooltip
-          :text="scopes.length === 0 ? 'Notion takes no scopes.' : scopes.join(' ')"
+          :text="scopes.length === 0 ? `${info.label} takes no scopes.` : scopes.join(' ')"
           location="top"
           max-width="300"
         >
           <template #activator="{ props: tip }">
             <span v-bind="tip" class="flex items-center gap-1.5">
-              <Icon
-                aria-hidden="true"
-                class="flex-none text-xs"
-                name="material-symbols:tune"
-              />
+              <Icon aria-hidden="true" class="flex-none text-xs" name="material-symbols:tune" />
               {{ scopes.length === 0 ? "No scopes" : `${scopes.length} scopes` }}
-              <span v-if="config.scopes.length > 0" class="text-ink/40">· yours</span>
+              <span v-if="config.scopes.length > 0" class="text-ink/40">&middot; yours</span>
             </span>
           </template>
         </v-tooltip>
 
         <v-tooltip
-          v-if="secretAge"
           location="top"
-          max-width="280"
-          text="Stored envelope encrypted under this project's data key. It cannot be read back, here or anywhere."
+          max-width="300"
+          text="Read from this project's own configuration, so it answers the moment something changes. Nothing here signs anybody in."
         >
           <template #activator="{ props: tip }">
             <span v-bind="tip" class="flex items-center gap-1.5">
               <Icon
                 aria-hidden="true"
                 class="flex-none text-xs"
-                name="material-symbols:lock-outline"
+                name="material-symbols:fact-check-outline"
               />
-              Secret written {{ secretAge }}
+              {{ checked ? `Checked ${checked}` : "Never checked" }}
             </span>
           </template>
         </v-tooltip>
@@ -162,7 +190,7 @@ const secretAge = computed(() =>
       </div>
     </div>
 
-    <div class="ml-auto flex flex-none items-center gap-3">
+    <div class="col-start-2 flex flex-none flex-wrap items-center gap-x-3 gap-y-2 sm:col-start-3">
       <v-tooltip location="top" text="Sign-ins in the last 30 days">
         <template #activator="{ props: tip }">
           <span v-bind="tip" class="font-mono text-xs text-ink/70 tabular-nums">
@@ -183,12 +211,23 @@ const secretAge = computed(() =>
         @update:model-value="emit('toggle', $event === true)"
       />
 
+      <v-btn
+        :class="state === 'incomplete' ? 'text-warning' : ''"
+        class="text-xs font-medium"
+        color="neutral"
+        size="small"
+        variant="outlined"
+        @click="emit('manage')"
+      >
+        {{ look.action }}
+      </v-btn>
+
       <v-menu :offset="4" location="bottom end">
         <template #activator="{ props: activator }">
           <button
             v-bind="activator"
-            :aria-label="`Actions for ${info.label}`"
-            class="provider-row__trigger inline-flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/55 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            :aria-label="`More actions for ${info.label}`"
+            class="inline-flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/55 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             type="button"
           >
             <Icon aria-hidden="true" class="text-base" name="material-symbols:more-horiz" />
@@ -197,16 +236,10 @@ const secretAge = computed(() =>
 
         <v-list density="compact" min-width="232" nav>
           <v-list-item
-            prepend-icon="material-symbols:tune"
-            title="Credentials and scopes"
-            @click="emit('configure')"
-          />
-          <v-list-item
             prepend-icon="material-symbols:content-copy-outline"
             title="Copy callback URL"
             @click="emit('copy-callback')"
           />
-          <v-divider class="my-1" />
           <v-list-item
             :href="info.console.href"
             :title="info.console.label"
@@ -233,11 +266,6 @@ const secretAge = computed(() =>
         </v-list>
       </v-menu>
     </div>
-
-    <p v-if="config.mode === 'instant'" class="basis-full text-[11px] leading-4 text-warning sm:pl-13">
-      Our shared OAuth app shows our name on the consent screen and is refused anywhere but
-      localhost and preview domains. Move to your own before this project meets a user.
-    </p>
   </div>
 </template>
 

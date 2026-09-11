@@ -45,14 +45,15 @@ function confirm() {
           <h2 class="m-0 text-sm font-medium text-ink">Remove this domain</h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
             <span class="font-mono text-ink/80">{{ domain.domain }}</span> comes off the
-            project and we stop checking its records. The records themselves stay in your
-            DNS, and adding the domain again picks up where this leaves off.
+            project and we stop checking its records. Nothing is removed from your DNS: the
+            records stay exactly where you published them, which is yours to tidy up, and
+            adding the domain again picks up where this leaves off.
           </p>
         </header>
 
         <div
           v-if="inUse"
-          class="flex flex-col gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas p-3"
+          class="flex flex-col gap-2 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset p-3"
         >
           <p class="m-0 text-xs leading-5 text-ink/80">
             This is the domain the project sends from, so the From line moves back to ours
@@ -66,6 +67,7 @@ function confirm() {
           <p class="m-0 text-[11px] leading-4 text-ink/55">
             Mail keeps sending. What changes is the name your users see on it, and a sender
             that changes without warning is the kind of thing a mailbox treats as new.
+            Anything already handed to the provider goes out as it was.
           </p>
         </div>
 

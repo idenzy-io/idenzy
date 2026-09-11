@@ -1,26 +1,29 @@
 <script setup lang="ts">
 /**
- * Deletes an account's sheet, which is the one thing an operator can safely do to it.
+ * Invalidates an account's recovery codes, which is the one thing an operator can safely
+ * do to them.
  *
- * The dialog spends most of its room saying what this is not. It is not a regeneration:
- * the codes come back exactly once, so a new sheet made from here would either be shown
- * to staff, which is ten working credentials for somebody else's account, or be
- * generated and shown to nobody, which is the same as this and slower. And it is not
- * turning the second factor off: the authenticator stays and the account still signs in
- * with it. What goes is the way back if that authenticator is lost, which is why the
- * acknowledgement is worded as the owner's problem rather than the operator's.
+ * The dialog spends most of its room saying what this is not. It is not a replacement: the
+ * codes come back exactly once, so a new set made from here would either be shown to
+ * staff, which is ten working credentials for somebody else's account, or be generated and
+ * shown to nobody, which is the same as this and slower. And it is not turning the second
+ * factor off: the authenticator stays enrolled and the account still signs in with it.
+ * What goes is the way back if that factor is lost, which is why the acknowledgement is
+ * worded as the owner's problem rather than the operator's.
  *
- * A sheet with nothing unspent left is the one case with nothing to acknowledge. The
- * account was already down to its second factor, so clearing tidies the spent rows away
- * and changes nothing, and asking somebody to tick a box about a loss that already
- * happened teaches them to tick boxes.
+ * An account with nothing unspent left is the one case with nothing to acknowledge, and
+ * the one case that has to be told plainly that this repairs nothing: it was already down
+ * to its second factor, which is why it is on the list this was opened from. Asking
+ * somebody to tick a box about a loss that already happened teaches them to tick boxes.
  */
 import { nameOf, type ProjectUser } from "~/utils/users";
 
 const props = defineProps<{
   user: ProjectUser | null;
-  /** Codes the sheet still holds, which is what is being thrown away. */
+  /** Codes still unspent, which is what is being thrown away. */
   remaining: number;
+  /** What the account can still be challenged with, already written. */
+  factors: string;
   busy: boolean;
 }>();
 
@@ -30,6 +33,8 @@ const emit = defineEmits<{
   confirm: [];
 }>();
 
+const titleId = `${useId()}-title`;
+
 const acknowledged = ref(false);
 
 watch(open, (showing) => {
@@ -38,11 +43,7 @@ watch(open, (showing) => {
 
 const person = computed(() => (props.user ? nameOf(props.user) : ""));
 
-/**
- * A sheet with nothing unspent on it is tidied rather than taken away, so there is
- * nothing to acknowledge: the account was already down to its second factor, which is
- * why it is on the list this dialog was opened from.
- */
+/** Nothing unspent: the codes are tidied rather than taken away. */
 const spent = computed(() => props.remaining === 0);
 const ready = computed(() => spent.value || acknowledged.value);
 
@@ -61,20 +62,22 @@ watch(
 </script>
 
 <template>
-  <v-dialog v-model="open" max-width="460">
+  <v-dialog v-model="open" :aria-labelledby="titleId" max-width="480">
     <v-card v-if="user" border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Clear the recovery sheet</h2>
+          <h2 :id="titleId" class="m-0 text-sm font-medium text-ink">
+            {{ spent ? "Clear the spent recovery codes" : "Invalidate remaining recovery codes" }}
+          </h2>
           <p v-if="spent" class="m-0 text-xs leading-5 text-ink/60">
             Deletes what is left of <span class="font-medium text-ink">{{ person }}</span
-            >'s sheet. Every code on it has been spent already, so this takes away nothing
+            >'s codes. Every one of them has been spent already, so this takes away nothing
             they could still use.
           </p>
           <p v-else class="m-0 text-xs leading-5 text-ink/60">
-            Deletes every code on <span class="font-medium text-ink">{{ person }}</span
-            >'s sheet, the
-            <span class="font-mono tabular-nums text-ink">{{ remaining }}</span>
+            Deletes every code <span class="font-medium text-ink">{{ person }}</span> holds,
+            the
+            <span class="font-mono text-ink tabular-nums">{{ remaining }}</span>
             unspent {{ remaining === 1 ? "one" : "ones" }} included.
           </p>
         </header>
@@ -87,8 +90,9 @@ watch(
               name="material-symbols:check-circle-outline"
             />
             <span>
-              The second factor stays. They keep signing in with their authenticator, and
-              nothing about the account changes for them today.
+              Their second factor stays enrolled. They keep signing in with their
+              {{ factors.toLowerCase() }}, and nothing about the account changes for them
+              today.
             </span>
           </li>
           <li class="flex items-start gap-2">
@@ -99,12 +103,12 @@ watch(
               name="material-symbols:key-off-outline"
             />
             <span v-if="spent">
-              They already have nothing to fall back on, which is why the account is on this
-              list. Clearing the spent codes does not change that either way.
+              This restores nothing. They already have no codes to fall back on, which is why
+              the account is on the list, and only they can make a new set.
             </span>
             <span v-else>
-              Until they make a new sheet from your application, the only way past their
-              second factor is that factor. Lose it, and the account needs you.
+              Until they make a new set from your application, the only way past their second
+              factor is that factor. Lose it, and the account needs you.
             </span>
           </li>
           <li class="flex items-start gap-2">
@@ -117,10 +121,13 @@ watch(
           </li>
         </ul>
 
-        <p class="m-0 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3 py-2.5 text-[11px] leading-4 text-ink/60">
-          There is no "generate a new sheet for them" here, and there will not be. Codes are
-          shown once and stored as digests, so making a sheet from this screen would mean
-          handing an operator ten working credentials for somebody else's account.
+        <p
+          class="m-0 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset px-3 py-2.5 text-[11px] leading-4 text-ink/60"
+        >
+          There is no "generate a new set for them" here, and there will not be. Codes are
+          shown once and stored as digests, so making a set from this screen would mean
+          handing an operator ten working credentials for somebody else's account. Replacements
+          are the owner's to make, signed in.
         </p>
 
         <label v-if="!spent" class="flex cursor-pointer items-start gap-2 text-xs text-ink">
@@ -131,7 +138,8 @@ watch(
             density="compact"
           />
           <span class="pt-px">
-            I understand {{ person }} loses their fallback until they make a new sheet.
+            I understand {{ person }} loses their fallback until they make a new set
+            themselves.
           </span>
         </label>
 
@@ -143,7 +151,7 @@ watch(
             variant="text"
             @click="open = false"
           >
-            Keep the sheet
+            Cancel
           </v-btn>
           <v-btn
             :color="spent ? 'primary' : 'error'"
@@ -154,7 +162,7 @@ watch(
             type="submit"
             variant="flat"
           >
-            Clear the sheet
+            {{ spent ? "Clear spent codes" : `Invalidate ${remaining} codes` }}
           </v-btn>
         </footer>
       </form>

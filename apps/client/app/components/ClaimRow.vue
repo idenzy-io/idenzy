@@ -1,5 +1,5 @@
 <script lang="ts">
-/** What the sample user makes of this mapping, for the line under the row. */
+/** What the chosen sample user makes of this mapping, for the line under the row. */
 export type ClaimRowOutcome =
   | { kind: "present"; value: unknown; bytes: number }
   | { kind: "absent" }
@@ -9,19 +9,26 @@ export type ClaimRowOutcome =
 
 <script setup lang="ts">
 /**
- * One mapping, editable in place and read as a sentence: the name the token will carry,
- * then where it comes from, then whether a token without it is worth issuing.
+ * One mapping in the draft, read as a sentence: the name the token will carry, where it
+ * reads from, and whether a token without it is worth issuing.
  *
- * Under the sentence is the one line that makes the row honest: what this claim turns
- * into for the sample user, in bytes, or why it does not. A row whose name the server
- * would refuse says so here too, in the same place, so the reason a save is disabled is
- * never further away than the row that caused it.
+ * The name and the source are opened in the dialog rather than typed in the row. Four
+ * controls fighting for one line is what put a claim's name in a 12rem field that wrapped
+ * under its own source at every width the panel is actually read at; a row that states
+ * the mapping and hands editing to the form that created it stays one line and stays
+ * legible. Required is the exception and stays here, because it is the one field on this
+ * screen that can refuse a sign-in and it must be visible without opening anything.
+ *
+ * Under the sentence is the line that makes the row honest: what this claim becomes for
+ * the sample user, in bytes, or why it does not, and what being required costs. A row
+ * whose name the server would refuse says so in the same place, so the reason publishing
+ * is blocked is never further away than the row that caused it.
  */
 import {
   CLAIM_ISSUE_LABELS,
   type ClaimIssue,
   type ClaimMapping,
-  type ClaimSource,
+  claimPathText,
   sourceInfo,
 } from "~/utils/claims";
 
@@ -29,123 +36,120 @@ const props = defineProps<{
   mapping: ClaimMapping;
   issues: readonly ClaimIssue[];
   outcome: ClaimRowOutcome;
-  /** Stable across edits, so the name field keeps focus while it is typed into. */
+  /** Stable across edits, so a row keeps its identity while the draft is reordered. */
   rowId: string;
+  /** What the outcome line is about, named so a reader knows which user refused. */
+  sampleLabel: string;
 }>();
 
 const emit = defineEmits<{
+  edit: [];
   update: [change: Partial<ClaimMapping>];
   remove: [];
 }>();
 
-const nameIssue = computed(() =>
-  props.issues.find((issue) => issue.startsWith("name_")),
-);
-const pathIssue = computed(() =>
-  props.issues.find((issue) => issue.startsWith("path_")),
-);
-
-/* Whether the row publishes what a browser could not see, said on the outcome line. */
-const publishes = computed(() => sourceInfo(props.mapping.source).publishes);
-
-function changeSource(source: ClaimSource, path: string) {
-  emit("update", { source, path });
-}
+const issue = computed(() => props.issues[0]);
+const source = computed(() => sourceInfo(props.mapping.source));
+const name = computed(() => props.mapping.name.trim());
 
 const outcomeText = computed(() => {
   const outcome = props.outcome;
-  if (outcome.kind === "present") return JSON.stringify(outcome.value);
-  if (outcome.kind === "absent") return "Left out of this user's token: nothing to carry.";
+  if (outcome.kind === "absent") return `Nothing to carry for ${props.sampleLabel}, so it is left out.`;
   if (outcome.kind === "refused") {
-    return "This user could not sign in: the claim is required and there is nothing to carry.";
+    return `Required, and ${props.sampleLabel} has nothing to carry: their sign-in is refused.`;
   }
   return "";
 });
 </script>
 
 <template>
-  <li class="flex flex-col gap-2 px-4 py-3.5">
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+  <li
+    class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]"
+  >
+    <!-- The mapping, as one sentence: what the token calls it, then where it reads from. -->
+    <button
+      :aria-label="`Edit the ${name || 'unnamed'} claim`"
+      class="group -mx-2 flex min-w-0 items-center gap-2 rounded-(--idenzy-radius-x-small) px-2 py-1 text-left transition-colors duration-150 hover:bg-ink/4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      type="button"
+      @click="emit('edit')"
+    >
+      <span
+        :class="issue ? 'font-mono text-error' : 'font-mono text-ink'"
+        class="truncate text-[13px] font-medium"
+      >
+        {{ name || "unnamed" }}
+      </span>
+      <Icon
+        aria-hidden="true"
+        class="flex-none text-sm text-ink/30"
+        name="material-symbols:arrow-right-alt"
+      />
       <span class="flex min-w-0 items-center gap-1.5">
         <Icon
+          :class="source.publishes ? 'text-warning' : 'text-ink/45'"
+          :name="source.icon"
           aria-hidden="true"
-          class="flex-none text-base text-ink/40"
-          name="material-symbols:data-object"
+          class="flex-none text-sm"
         />
-        <v-text-field
-          :id="`${rowId}-name`"
-          :error="nameIssue !== undefined"
-          :model-value="mapping.name"
-          aria-label="Claim name"
-          autocomplete="off"
-          class="claim-name font-mono"
-          density="compact"
-          hide-details
-          placeholder="claim_name"
-          spellcheck="false"
-          variant="filled"
-          @update:model-value="emit('update', { name: String($event) })"
-        />
-      </span>
-
-      <ClaimSourcePicker
-        :id="rowId"
-        :invalid="pathIssue !== undefined"
-        :path="mapping.path"
-        :source="mapping.source"
-        @change="changeSource"
-        @update:path="emit('update', { path: $event })"
-      />
-
-      <span class="ml-auto flex flex-none items-center gap-2">
-        <v-tooltip
-          location="top"
-          max-width="280"
-          text="A token without this claim is not issued: the sign-in is refused instead. For a claim your authorisation code branches on, where absent and false would read the same."
+        <span
+          :class="source.publishes ? 'text-warning' : 'text-ink/65'"
+          class="truncate font-mono text-[11px]"
         >
-          <template #activator="{ props: tip }">
-            <label
-              v-bind="tip"
-              :for="`${rowId}-required`"
-              class="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink/70"
-            >
-              Required
-              <v-switch
-                :id="`${rowId}-required`"
-                :model-value="mapping.required"
-                color="primary"
-                density="compact"
-                hide-details
-                inset
-                @update:model-value="emit('update', { required: $event === true })"
-              />
-            </label>
-          </template>
-        </v-tooltip>
-        <v-tooltip location="top" text="Remove this claim">
-          <template #activator="{ props: tip }">
-            <button
-              v-bind="tip"
-              :aria-label="`Remove the ${mapping.name || 'unnamed'} claim`"
-              class="inline-flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/50 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              type="button"
-              @click="emit('remove')"
-            >
-              <Icon aria-hidden="true" class="text-base" name="material-symbols:close" />
-            </button>
-          </template>
-        </v-tooltip>
+          {{ claimPathText(mapping) }}
+        </span>
       </span>
-    </div>
+      <Icon
+        aria-hidden="true"
+        class="ml-0.5 flex-none text-sm text-ink/0 transition-colors duration-150 group-hover:text-ink/50 group-focus-visible:text-ink/50"
+        name="material-symbols:edit-outline"
+      />
+    </button>
 
-    <p v-if="nameIssue || pathIssue" class="m-0 flex items-start gap-1.5 text-[11px] leading-4 text-error">
-      <Icon aria-hidden="true" class="mt-px flex-none text-sm" name="material-symbols:error-outline" />
-      <span>{{ CLAIM_ISSUE_LABELS[nameIssue ?? pathIssue ?? "name_empty"] }}</span>
+    <!-- Required keeps the words beside it: a switch alone in a row of claims is a state
+         nobody can name, and this is the one that decides whether a sign-in happens. -->
+    <label
+      :for="`${rowId}-required`"
+      class="col-start-1 row-start-2 flex w-fit cursor-pointer items-center gap-1.5 text-[11px] font-medium sm:col-start-2 sm:row-start-1"
+    >
+      <v-switch
+        :id="`${rowId}-required`"
+        :model-value="mapping.required"
+        color="primary"
+        density="compact"
+        hide-details
+        inset
+        @update:model-value="emit('update', { required: $event === true })"
+      />
+      <span :class="mapping.required ? 'text-ink' : 'text-ink/50'">
+        {{ mapping.required ? "Required" : "Optional" }}
+      </span>
+    </label>
+
+    <button
+      :aria-label="`Remove the ${name || 'unnamed'} claim`"
+      class="col-start-2 row-start-1 inline-flex size-7 items-center justify-center justify-self-end rounded-(--idenzy-radius-x-small) text-ink/45 transition-colors duration-150 hover:bg-ink/6 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:col-start-3"
+      type="button"
+      @click="emit('remove')"
+    >
+      <Icon aria-hidden="true" class="text-base" name="material-symbols:close" />
+      <v-tooltip activator="parent" location="top" text="Remove from the draft" />
+    </button>
+
+    <p
+      v-if="issue"
+      class="col-span-full m-0 flex items-start gap-1.5 text-[11px] leading-4 text-error"
+    >
+      <Icon
+        aria-hidden="true"
+        class="mt-px flex-none text-sm"
+        name="material-symbols:error-outline"
+      />
+      <span>{{ CLAIM_ISSUE_LABELS[issue] }}</span>
     </p>
     <p
       v-else
       :class="outcome.kind === 'refused' ? 'text-error' : 'text-ink/55'"
-      class="m-0 flex items-start gap-1.5 text-[11px] leading-4"
+      class="col-span-full m-0 flex items-start gap-1.5 text-[11px] leading-4"
     >
       <Icon
         :name="
@@ -159,9 +163,11 @@ const outcomeText = computed(() => {
         class="mt-px flex-none text-sm"
       />
       <span v-if="outcome.kind === 'present'" class="min-w-0 truncate">
-        <span class="font-mono"><span class="text-ink/60">"{{ mapping.name.trim() }}"</span><span class="text-ink/40">: </span><span class="text-primary">{{ outcomeText }}</span></span>
+        <span class="font-mono"><span class="text-ink/60">"{{ name }}"</span><span class="text-ink/40">: </span><span class="text-primary">{{ JSON.stringify(outcome.value) }}</span></span>
         <span class="text-ink/45"> · {{ outcome.bytes }} bytes</span>
-        <span v-if="publishes" class="text-warning"> · publishes private metadata</span>
+        <span v-if="mapping.required" class="text-ink/45">
+          · required, so an account without it cannot sign in</span>
+        <span v-if="source.publishes" class="text-warning"> · publishes private metadata</span>
       </span>
       <span v-else>{{ outcomeText }}</span>
     </p>
@@ -169,15 +175,8 @@ const outcomeText = computed(() => {
 </template>
 
 <style scoped>
-.claim-name {
-  width: 12rem;
-}
-
-.claim-name :deep(.v-field__input) {
-  font-size: 12px;
-  min-height: 28px;
-}
-
+/* Vuetify's selection control is a grid item with a name and grows to fill a flex row;
+   neither is wanted in a label of two words. */
 :deep(.v-selection-control) {
   --v-selection-control-size: 28px;
 

@@ -1,96 +1,106 @@
 <script setup lang="ts">
 /**
- * Takes an endpoint off the project. What makes this worth a dialog is what a webhook is:
- * a notification and never a log. Nothing queues while an endpoint is gone and nothing is
- * replayed when one comes back, so the events that happen in between are not delayed,
- * they simply never reach anybody.
+ * Takes an endpoint off the project, and offers pausing it first (notes/webhooks.md).
  *
- * Switching it off has the same effect and keeps the URL, the event list and the secret,
- * which is almost always what somebody pausing a deploy actually wants. The dialog offers
- * it, because a removal made for that reason is one that has to be set up again from
- * nothing.
+ * The two differ in what survives, and the dialog says both halves. Removing ends the URL, the
+ * event list and the secret, and adding the URL again makes a new endpoint with a new secret.
+ * Pausing keeps all three. Neither queues anything: a webhook is a notification and never a
+ * log, so events while it is gone or paused reach nobody, and resuming replays nothing.
  */
 import type { WebhookEndpoint } from "~/utils/webhooks";
 
 const props = defineProps<{
-  endpoint: WebhookEndpoint | null;
+  endpoint: WebhookEndpoint;
   busy: boolean;
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
 
 const emit = defineEmits<{
   confirm: [];
-  disable: [];
+  pause: [];
 }>();
 
+const titleId = `${useId()}-title`;
+
 function confirm() {
-  if (props.busy) return;
-  emit("confirm");
+  if (!props.busy) emit("confirm");
 }
 </script>
 
 <template>
-  <v-dialog v-model="open" max-width="480">
-    <v-card v-if="endpoint" border flat>
+  <v-dialog v-model="open" :aria-labelledby="titleId" max-width="500">
+    <v-card border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Remove this endpoint</h2>
-          <p class="m-0 text-xs leading-5 text-ink/60">
-            <span class="font-mono text-ink/80">{{ endpoint.url }}</span> stops being
-            called, and its signing secret stops being valid. Neither can be recovered:
-            adding the URL again makes a new endpoint with a new secret.
+          <h2 :id="titleId" class="m-0 text-base font-medium text-ink">Remove endpoint</h2>
+          <p class="m-0 text-xs leading-5 break-all text-ink/60">
+            <span class="font-mono text-ink/80">{{ endpoint.url }}</span>
           </p>
         </header>
 
-        <p
-          class="m-0 flex items-start gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas p-3 text-[11px] leading-4 text-ink/70"
-        >
-          <Icon
-            aria-hidden="true"
-            class="mt-0.5 flex-none text-sm text-ink/50"
-            name="material-symbols:info-outline"
-          />
-          <span>
-            A webhook is a notification and never a log. Nothing queues while this is gone
-            and nothing is replayed afterwards, so events between now and whenever it comes
-            back reach nobody.
-          </span>
-        </p>
+        <ul class="m-0 flex list-none flex-col gap-2 p-0 text-xs leading-5 text-ink/75">
+          <li class="flex items-start gap-2">
+            <Icon aria-hidden="true" class="mt-0.5 flex-none text-sm text-ink/40" name="material-symbols:link-off" />
+            <span>
+              It stops being called and its signing secret stops being valid. Neither comes
+              back: adding the URL again makes a new endpoint with a new secret.
+            </span>
+          </li>
+          <li class="flex items-start gap-2">
+            <Icon aria-hidden="true" class="mt-0.5 flex-none text-sm text-ink/40" name="material-symbols:history" />
+            <span>
+              Deliveries waiting for a retry are dropped, and no event is kept for it from now
+              on. A webhook is a notification and never a log.
+            </span>
+          </li>
+          <li v-if="endpoint.enabled" class="flex items-start gap-2">
+            <Icon
+              aria-hidden="true"
+              class="mt-0.5 flex-none text-sm text-ink/40"
+              name="material-symbols:pause-circle-outline"
+            />
+            <span>
+              Pausing is the safer choice for a redeploy: it keeps the URL, the events and the
+              secret. While paused nothing is queued, and resuming replays nothing.
+            </span>
+          </li>
+        </ul>
 
-        <footer class="flex flex-wrap items-center justify-between gap-2">
+        <p v-if="error" class="m-0 text-xs leading-5 text-error" role="alert">{{ error }}</p>
+
+        <footer class="flex flex-wrap items-center justify-end gap-2">
           <v-btn
             v-if="endpoint.enabled"
-            :loading="busy"
-            class="text-xs font-medium"
+            :disabled="busy"
+            class="mr-auto text-xs font-medium"
             color="neutral"
             size="small"
             variant="outlined"
-            @click="emit('disable')"
+            @click="emit('pause')"
           >
-            Switch it off instead
+            Pause endpoint
           </v-btn>
-          <span class="ml-auto flex items-center gap-2">
-            <v-btn
-              class="text-xs font-medium"
-              color="neutral"
-              size="small"
-              variant="text"
-              @click="open = false"
-            >
-              Keep it
-            </v-btn>
-            <v-btn
-              :loading="busy"
-              class="text-xs font-medium"
-              color="error"
-              size="small"
-              type="submit"
-              variant="flat"
-            >
-              Remove endpoint
-            </v-btn>
-          </span>
+          <v-btn
+            class="text-xs font-medium"
+            color="neutral"
+            size="small"
+            variant="text"
+            @click="open = false"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            :loading="busy"
+            class="text-xs font-medium"
+            color="error"
+            size="small"
+            type="submit"
+            variant="flat"
+          >
+            Remove endpoint
+          </v-btn>
         </footer>
       </form>
     </v-card>

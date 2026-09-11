@@ -65,6 +65,38 @@ watch(
 
     <v-divider class="my-2" />
 
-    <SidebarNavGroup :group="NAV_PROJECT" :rail="rail" />
+    <!-- Settings is one item here and three tabs inside the page. The rail on that screen
+         is what moves between them, so listing its children in the drawer as well would
+         be the same three destinations offered twice. Billing is its own item because it
+         is the organisation's money rather than a project's configuration. -->
+    <v-list-item
+      :aria-label="rail ? NAV_SETTINGS.title : undefined"
+      :prepend-icon="NAV_SETTINGS.icon"
+      :title="NAV_SETTINGS.title"
+      to="/settings"
+    >
+      <v-tooltip
+        v-if="rail"
+        :text="NAV_SETTINGS.title"
+        activator="parent"
+        location="end"
+        open-delay="300"
+      />
+    </v-list-item>
+
+    <v-list-item
+      :aria-label="rail ? NAV_BILLING.title : undefined"
+      :prepend-icon="NAV_BILLING.icon"
+      :title="NAV_BILLING.title"
+      :to="NAV_BILLING.to"
+    >
+      <v-tooltip
+        v-if="rail"
+        :text="NAV_BILLING.title"
+        activator="parent"
+        location="end"
+        open-delay="300"
+      />
+    </v-list-item>
   </v-list>
 </template>

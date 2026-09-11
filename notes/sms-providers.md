@@ -23,8 +23,9 @@ SMS delivery providers
                                  [Connect account / Manage]
 [Destinations: Allowed first v] [Search country..............]
 [Country | Price per segment | Route ready? | Registration | Action]
-[Delivery failures / account health]
 [Vendor catalogue and rate assumptions v]
+
+  ... delivery health is a figures strip and leads the page, under the title.
 ```
 
 Make delivery mode a clear two-option comparison instead of an unexplained segmented switch. Put Connect account inside the own-account panel. Managed delivery shows actual availability and billing ownership. The country table filters to the project's allowed destinations first; missing registration gets a specific setup link.
@@ -66,6 +67,39 @@ SmsAccountDialog: vendor-specific labels, stored-secret replacement behavior, â€
 ## Acceptance checks
 
 Compare managed versus own-account costs without concluding SMS is free. An unsupported vendor never appears operational. Change credentials with invalid input and receive a useful error without silently switching delivery.
+
+## Settled while implementing
+
+- **The two arrangements are two panels, not a segmented switch.** They are not two
+  settings of one thing: the estimate, the billing owner and the readiness are three
+  answers that differ between them, and a toggle offers no way to compare three answers.
+  Each panel carries its own state and its own action, `Connect account` and `Manage` live
+  inside the own-account one, and the panel in force wears a ring and an `In use` badge.
+- **Nothing reads as carrying traffic, because nothing does.** Every vendor adapter is a
+  port with no implementation, so `twilio` and `aws` are `planned` and `transportWired()`
+  answers false. The managed panel says so under Availability, the meter reads nought
+  rather than drawing eighteen thousand messages nobody sent, and the route column is
+  renamed `Intended route` and hidden behind the columns menu: what the router *would*
+  choose is not what it does, and only one of those is safe to draw as a table.
+- **The unit is per segment everywhere.** The column is `Price per segment`, the panel's
+  estimate says `per segment` under the figure, and the foot repeats what a segment is.
+  `RATE_SOURCE` says once where the numbers come from, so a price reads as an example of
+  what a country costs and never as a quote.
+- **The table opens on the project's own destinations.** `Allowed first` is the default of
+  three, with a search beside it, and `routeReadiness` gives every row a verdict and the
+  one thing standing in its way: the allowlist first, because it is the project's own and
+  free to change, then the registration. The deployment-wide gap is stated once above the
+  table rather than repeated on two hundred rows. Every Action goes to the setup flow that
+  settles it and never to a general guide.
+- **Delivery health leads the page.** The mockup puts it last, under the table; read that
+  way, the one thing an operator glances at on arrival was three screens down. It is a
+  figures strip, so it goes where every figures strip on this panel goes, and the tiles are
+  the honest kind: a faint wave and `No data` in words rather than a chart of nothing.
+- **Connecting an account is two acts.** `Verify account` presents the credentials to the
+  vendor and reports what it said; only then does the footer become `Use this account`.
+  Editing either half makes the answer stale and the footer goes back. A refusal keeps the
+  vendor and the key, clears the secret because it is the half that is usually wrong and
+  the half nobody can read back, and switches nothing.
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 

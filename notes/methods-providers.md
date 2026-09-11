@@ -59,6 +59,36 @@ Each provider card explains email assertions at length, and another section repe
 
 “Join accounts on a verified address” is meaningful but abstract. Show examples for verified match, unverified match and no email, preserving proof requirements. Explain that a relay address can be a different identity without calling it a failure.
 
+## Settled while implementing
+
+**The test is a real sign-in, and it is recorded as run rather than as passed.** "Test the
+callback before calling it ready" cannot be a check we compute: whether the provider console
+holds our redirect URI is settled at their consent screen, before we are called at all, and
+where the sign-in ends is the customer's own return page rather than ours. So the last step
+states that out loud beside the four checks it *can* run, and starts a real one. A project on
+a custom auth domain gets a button that opens the consent screen in a new tab, because a
+top-level navigation resolves a project by `Host` alone; a project on the shared API host
+cannot be sent there at all and gets the SDK call to run from its own application instead.
+`readinessOf` therefore keeps `untested` between complete and ready, at a neutral tone: a
+statement rather than a fault.
+
+**Return URLs are a card on the page as well as step three.** The list belongs to the project
+and every provider shares it, so a per-provider wizard is the wrong and only home for it; the
+blocker and the check both need somewhere to send a reader. The dialog's step and the page's
+card write the same `redirect_uris` rows under the `oauth` kind, and both offer the origin as
+a separate tick (ADR-0006). Those return URLs now also feed the Allowed origins screen's
+suggestions, which took a third source: `suggestionsFrom` is keyed by source rather than
+taking a run of positional lists.
+
+**A provider that is on and incomplete is a page-level blocker, not a row's problem.** It
+fails after the user has already agreed at the provider, which is the one failure nobody can
+see from either end, so it is raised at the top of the screen and names the missing field.
+
+**No right rail.** The mockup is a single column and this is an integration screen:
+prerequisites, setup, test. The four figures moved into a `Statistic` strip under the setup
+check, and the per-provider sign-in count moved onto each row, where the question it answers
+is being asked.
+
 ## Proposed page
 
 Configured providers with readiness and primary Manage action → searchable Add provider → guided callback, credentials, return destination and test → account-linking policy.
@@ -75,7 +105,10 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md). 
 
 ## Implementation references
 
+- [ProviderRow.vue](../apps/client/app/components/ProviderRow.vue)
+- [ProviderCatalogue.vue](../apps/client/app/components/ProviderCatalogue.vue)
 - [ProviderSetupDialog.vue](../apps/client/app/components/ProviderSetupDialog.vue)
+- [ProviderReturnUrlDialog.vue](../apps/client/app/components/ProviderReturnUrlDialog.vue)
 - [ProviderRemoveDialog.vue](../apps/client/app/components/ProviderRemoveDialog.vue)
 - [providers.ts](../apps/client/app/stores/providers.ts)
 - [providers.ts](../apps/client/app/utils/providers.ts)

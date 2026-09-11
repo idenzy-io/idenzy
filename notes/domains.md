@@ -67,10 +67,44 @@ AuthDomainAddDialog should contain one hostname field, a concrete subdomain exam
 
 Configure a host with partial DNS and understand which check failed. After verification, identify exactly what changes in the SDK. Removing a domain does not promise that existing cookie-based clients seamlessly switch to header mode.
 
+## Settled while implementing
+
+- **The host in force leads, and the two capabilities under it are states.** The copy field
+  is the value somebody came for, and the strip beneath says what the transport can do with
+  it: header mode `Available`, cookie mode `Ready` or `Requires a custom domain` with the
+  control that starts it, and the site the cookie would work across. "Refused" and
+  "Nothing" described a project working exactly as intended as though it were an incident.
+- **Setup is a dialog off a row**, the way the sending-domain and revocation setups open,
+  with the note's five steps. It opens on the step with work in it, and a verified host may
+  always walk to the test: gating the last step on the SDK would make the check unreachable
+  for exactly the domain it is for, because whether a client shipped is not ours to see.
+- **`Update SDK` and `Test` exist because verification is not migration.** A verified host
+  changes no deployed base URL and makes no unrelated origin same-site. So step four hands
+  over the exact URL and says nothing has happened until it ships, and `authNextStep` never
+  claims otherwise; a test asserts the wording.
+- **`setupProbe` names what the check covers, line by line, and where it stops.** Three
+  lines are ours to observe: the name resolves, the certificate is served, the project
+  answers by Host. The fourth is the application origin the operator names, which we can
+  say is on the CORS allowlist and never that their build is calling this host. It is a
+  pure function so the honesty is tested rather than trusted.
+- **Everything copyable is `apiBaseUrl` over the project's own domains.** One derivation, so
+  the endpoint written here is the endpoint written on every other screen, and the SDK
+  snippet is marked `Illustrative` rather than reading as configured.
+- **Connected applications is a figures strip with nothing in it, and says so.** Requests
+  are not metered per host, so the tiles draw the stand-in wave and `No data` in words. The
+  question is a real one and the honest answer is a shape with no series in it; what is
+  registered rather than observed is the CORS allowlist, and the line under the strip links
+  to it and to sending domains.
+- **The empty state leads with the choice.** "Use `auth.example.com` for authentication
+  requests", then what it buys and what it costs in DNS access, then that everything already
+  works without one. The architecture (load balancers, JSON twins, SameSite) is folded into
+  `What a domain changes` below.
+
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
+- [AuthDomainSetupDialog.vue](../apps/client/app/components/AuthDomainSetupDialog.vue)
 - [AuthDomainAddDialog.vue](../apps/client/app/components/AuthDomainAddDialog.vue)
 - [AuthDomainRemoveDialog.vue](../apps/client/app/components/AuthDomainRemoveDialog.vue)
 - [auth-domains.ts](../apps/client/app/stores/auth-domains.ts)

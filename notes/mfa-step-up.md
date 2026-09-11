@@ -64,6 +64,51 @@ Protection coverage summary → freshness window with user-visible example → a
 
 No page-specific dialog. The window can remain an inline choice with local saved/error feedback. Copy example: “Ask for another verification when the last successful factor check is older than 15 minutes.”
 
+## Settled while implementing
+
+The screen and the drawer are both called "Additional verification", and the title carries no
+parenthetical. `PageHeader` truncates its one line, so the mockup's "(Step-up)" was what got
+cut at 390px; the spec's own word opens the description instead, where it also reaches the
+reader who searched for it. `notes/shared-experience.md` asks for this label by name, so the
+navigation entry, the breadcrumb and the title now agree, and the two screens that pointed
+here by the old name were updated with it.
+
+The action matrix is three columns and not four. The setup link sits as the last line of
+"What happens today" rather than in a column of its own: two of the five rows have no link,
+and a fourth column mostly empty would have pushed the behaviour text into a width where it
+scrolls sideways inside the card.
+
+It has five rows rather than four, because "asking for the password again" is a row. It is
+the honest fix for the accounts the coverage strip counts, and a screen that mentions it only
+in prose invites the reading the note warns about; as a row marked `Not available` it cannot
+be mistaken for something that exists.
+
+The impossible-travel disagreement is resolved by naming the difference rather than by
+softening either page. A detector rule answers the *sign-in* with a challenge, which is the
+MFA gate and lives in the security centre; a step-up is a check inside a session that already
+exists, and nothing raises one. The row says both halves and links to the screen that owns
+the first.
+
+The server half of the paired example is written against the project's own window, so the
+number an operator just chose is the number in the code. Both halves say what their null
+means, and the client's is checked with `!== null` rather than assumed.
+
+"What a user runs into" is one person's afternoon and not a table of ages. Four rows of
+"verified N minutes ago" against the window was the same fact said twice, and a reader could
+check the arithmetic and still not know what the person on the other end sees. `walkthrough`
+returns the sequence instead: the proof, an action inside the window, the same action past it,
+and the answer that puts them back where they started, with the line the window draws rendered
+between the second step and the third. Every age is derived from the window and every step's
+freshness comes from `isProofFresh`, the same rule the server applies, so the story moves with
+the control and cannot drift from the check it illustrates. The panel's foot carries the
+coverage caveat again, because that is the one step a user without a factor never reaches.
+
+One shared component changed: `SettingRow`'s text column now has a `basis-48` floor. With no
+floor it shrank to nothing rather than letting the row wrap, so the four-option segmented
+control this screen needs squeezed its own description into one word per line on a phone. The
+floor is chosen against both ends: a switch still sits beside its text at 390px, and every
+desktop row is unchanged.
+
 ## Acceptance checks
 
 Compare an account with a factor to one without. Identify exactly which first-party action is enforced today. Ensure dashboard copy and the client/server examples do not recommend treating a missing proof as sufficient.
@@ -72,6 +117,8 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
+- [SettingRow.vue](../apps/client/app/components/SettingRow.vue)
 - [mfa.ts](../apps/client/app/stores/mfa.ts)
 - [otp.ts](../apps/client/app/utils/otp.ts)
 - [step-up.ts](../apps/client/app/utils/step-up.ts)
+- [users.ts](../apps/client/app/utils/users.ts)

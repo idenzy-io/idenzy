@@ -41,7 +41,7 @@ No real credentials, payment charges, message deliveries, provider changes or de
 | Management API is not a completed dashboard control plane | [Application module](../apps/management-api/src/app.module.ts), client stores linked in page notes | [Architecture](architecture.md) |
 | Account password form does not pass entered credentials into a real change operation | [Account page](../apps/client/app/pages/account.vue), [password dialog](../apps/client/app/components/AccountPasswordDialog.vue), [store](../apps/client/app/stores/account.ts) | [Account](account.md) |
 | API-key rotation guidance infers old/replacement roles from last use | [Key utilities](../apps/client/app/utils/keys.ts) | [Keys](keys.md) |
-| Email edit state can be overwritten or dismissed | [Email template dialog](../apps/client/app/components/EmailTemplateDialog.vue) | [Templates](email-templates.md) |
+| Email edit state can be overwritten or dismissed (fixed: the dialog is now a workspace with per-language drafts) | [Workspace](../apps/client/app/pages/email/templates/[type].vue), [store](../apps/client/app/stores/email-templates.ts) | [Templates](email-templates.md) |
 | Requested security/infrastructure behavior exceeds documented delivery status | [Service inventory](../docs/services.md), [delivery status](../todo.md), affected pages/stores | [Security](security.md), [SMS providers](sms-providers.md), [Settings](settings.md) |
 | Recovery-code destination is missing from the page inventory | [Second-factor page](../apps/client/app/pages/auth/two-factor.vue), [client pages](../apps/client/app/pages) | [Second factor](auth-two-factor.md) |
 

@@ -68,6 +68,28 @@ DataRequestLogDialog: distinguish logging from executing; show proposed due date
 
 Log a request received several days ago and check the correct due date. Refuse only with recorded grounds. Fail an export job and retain an open actionable request; expiry of a download must not erase completion evidence.
 
+## Settled while implementing
+
+- **Two rules, not one.** "Model the applicable rule" needs more than one rule to be a model,
+  so `RULE_INFO` holds GDPR (one calendar month, Art. 12(3), extendable by up to two further
+  months) and CCPA (45 days, extendable once by 45). Weekend and public-holiday roll-forward
+  is deliberately not applied, so a computed date is never later than the rule's own, and the
+  screen says which rule applies is the privacy owner's decision.
+- **The counters are the view control.** The mockup lists counters and a queue separately;
+  built that way the figures were decoration above a list that ignored them. Overdue, Due
+  within 7 days, Open and Closed are toggles over the queue itself.
+- **The request detail is a dialog, not a block under the queue.** Same finding as `/hooks`:
+  a selected record built inline reads as a second section below the fold. It is capped from
+  `lg` up, a full-height sheet below, and named in `?request=`.
+- **Record response and Close request stayed two steps**, as the mockup's list of next
+  actions has them. Recording the answer is evidence; closing is the decision that the
+  request is finished, and a reader who has just recorded one may not be ready to make the
+  other.
+- **Stage is derived, never stored.** `stageSummary` and `stagesOf` read the records on a
+  request, so a stage cannot disagree with the evidence under it.
+- **Exports and overdue paging are switched off with the reason shown.** Neither is built on
+  this deployment, so the screen says so before the queue implies otherwise.
+
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references

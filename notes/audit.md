@@ -67,10 +67,43 @@ The page owns event expansion rather than a named dialog. Give each row a clear 
 
 Find a user's sign-in after seeing the default administrative view. Explain why an event is marked sensitive. Export a filtered result and confirm its scope matches the visible filter summary.
 
+## Settled while implementing
+
+- **The exclusion is a chip in the filter row, not a switch in a rail.** It carries the
+  count and its own way off, and the period control's last option is `All time` rather than
+  `All`, which read as "the complete trail" over a view that sets the end-user activity
+  aside. An exclusion an auditor cannot see is one they will not account for.
+- **An actor can only have done what that actor can do.** `ACTION_ACTORS` says which kinds
+  may author an action and the fixtures draw from that, so a service credential no longer
+  signs in to the dashboard or joins the project. A trail that contradicts the role model is
+  a trail that undermines the thing it is evidence for.
+- **"Worth reading" is now `Sensitive`, and the rule is next to the control.**
+  `SENSITIVE_CRITERION` names what earns the mark — membership and roles, keys, a second
+  factor removed, a session revoked, an erasure completed, support let in — and ends by
+  saying an unmarked entry is not a less important one.
+- **The integrity claim stops where the guarantee stops.** The header says entries cannot be
+  edited through the product and that a change underneath is detectable. `INTEGRITY_CLAIMS`
+  carries the three halves in a folded card, and the second of them says in as many words
+  that detectable is not the same as impossible.
+- **The detail leads with what moved, then the request, then the chain.** A settings entry
+  carries `from` and `to` and the row draws them as a before and an after; `requestId` is a
+  column of its own rather than a line in the metadata, and it is searchable. The hashes are
+  last, under "Tamper evidence".
+- **The metadata is Shiki-highlighted**, in the panel's own palette through `CodeBlock`, so
+  a payload here reads the way one does on the claims and webhooks screens. It renders plain
+  until the highlighter loads rather than suspending the row, and an action with no metadata
+  draws no block at all instead of a pair of braces.
+- **Export is reviewed before it is taken.** The button says `Export filtered view` and
+  `AuditExportDialog` states the project, the period, the count, every filter in force and —
+  the line that matters — whether the customer's own users' activity is in the file. An
+  empty result is drawn as an answer about the filters rather than as a failure.
+
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
+- [AuditEntryRow.vue](../apps/client/app/components/AuditEntryRow.vue)
+- [AuditExportDialog.vue](../apps/client/app/components/AuditExportDialog.vue)
 - [audit.ts](../apps/client/app/stores/audit.ts)
 - [audit.ts](../apps/client/app/utils/audit.ts)
 - [filters.ts](../apps/client/app/utils/filters.ts)

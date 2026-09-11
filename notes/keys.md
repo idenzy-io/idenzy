@@ -69,6 +69,34 @@ Create a replacement that is not deployed yet; the page must not recommend delet
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+- **Purpose is shown as a proposed field, once, above the list,** rather than as a column of
+  "Not recorded". `api_keys` has no column for it and no management endpoint serves keys yet,
+  so the create dialog does not ask for one either. Adding the column is backend work.
+- **Created by is read off the audit trail,** the actor on `key.created`. A key older than the
+  trail's retention reads "Not recorded", which is true rather than blank.
+- **The explicit rotation needs a `replaces` field on the replacement.** The panel models it the
+  way it models every management API reply; the server does not store it yet.
+- **The tabs are All keys, Publishable keys, Secret keys and Revoked, with their counts,** and
+  the tab is kept in the query. All keys was added at the user's request and is the default: it
+  lists the live keys of both kinds and every rotation, and a live secret key is set apart there
+  in its own colour. A kind tab shows the rotations of its kind, and the header badge says a
+  rotation is open when the reader is on a tab that does not show it.
+- **Show revoked, a checkbox beside the tabs, adds revoked keys to the other tabs.** Also at the
+  user's request; off by default and remembered per viewer. The Revoked tab stays.
+- **The figures rail and the key-age tally are gone.** Neither is in the arrangement above, and
+  shared-experience.md names the right-hand metrics block as the pattern to avoid.
+- **Revoke asks about consumers every time,** and compromise is its own menu item with its own
+  acknowledgement, so the urgent path never passes through the rotation.
+- **Placement guidance is not on the page or in the reveal,** at the user's request: the page is
+  the keys and their rotation, and the reveal is the value and its Copy. A key's detail keeps the
+  variable names for its kind, copying the name rather than `pk_4fQ2x9a…`, which would be a
+  shortened value (layout blueprint, rule 7).
+- **The create dialog's footer leads with Rotate on the newest live key of the kind,** in place
+  of a paragraph saying a second key does not replace the first. The tooltip carries that
+  sentence.
+
 ## Implementation references
 
 - [KeyCreateDialog.vue](../apps/client/app/components/KeyCreateDialog.vue)

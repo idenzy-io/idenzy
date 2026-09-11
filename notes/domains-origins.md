@@ -66,10 +66,39 @@ OriginAddDialog: “Application origin,” example https://app.example.com, clea
 
 Paste a URL containing a path and understand the required origin form. Confirm a suggestion does not auto-add other grants. Verify an empty result is not presented as proof that nobody attempted a blocked call when telemetry is unavailable.
 
+## Settled while implementing
+
+- **Observed use leads, and every tile reads no data.** Nothing records the `Origin` on a
+  request, so the four figures draw the stand-in wave and say so in words. The line under
+  them is the one this screen cannot do without: read an empty answer as nobody counting
+  rather than as nobody being blocked, because a refusal is invisible from here by
+  construction. `unknownFor` returns nothing while `ORIGIN_TELEMETRY` is false, fixtures and
+  all, for the same reason.
+- **`Last observed use` is a column that says "Not recorded".** It is the first question
+  asked of a list like this, and an absent column reads as an answer nobody thought to give.
+- **The checker is what makes this a diagnosis screen.** A whole application URL goes in,
+  the answer shows it reducing to an origin before it offers anything, and only then names
+  the verdict. `checkOrigin` has four: allowed, blocked and addable, refusable by a rule this
+  list holds (http, loopback, a wildcard), and a URL with no origin at all such as
+  `myapp://callback`. Watching the path and the query fall away is most of what it teaches.
+- **The empty state names who is affected rather than claiming nobody can sign in.** A server
+  calling the API sends no `Origin` and is unaffected; a page on localhost is allowed by the
+  deployment while it runs in development. What is broken is the browser origins a customer
+  deploys to, and the state says that and no more.
+- **A suggestion is one row, one source, one sentence about what it grants.**
+  `ORIGIN_SOURCE_FROM` phrases the source as the screen it came from — "From passkey
+  settings", "From a provider return URL" — and the URL it was read off is not repeated,
+  because the same origin arrives from several of them and a list that said so three times
+  read as three decisions.
+- **The response-versus-preflight reference is folded.** Origin syntax, the exact match and
+  the development loopback lead; the lookup, the timing and where CORS is enforced sit in
+  the expandable with the two sample responses, which is the one thing prose cannot carry.
+
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
+- [OriginRow.vue](../apps/client/app/components/OriginRow.vue)
 - [OriginAddDialog.vue](../apps/client/app/components/OriginAddDialog.vue)
 - [OriginRemoveDialog.vue](../apps/client/app/components/OriginRemoveDialog.vue)
 - [origins.ts](../apps/client/app/stores/origins.ts)

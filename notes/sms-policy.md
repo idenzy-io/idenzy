@@ -67,10 +67,42 @@ SmsCountriesDialog: search, selected count, explicit empty selection and the eff
 
 Set up a blank project and identify every remaining blocker. Lower the cap below current usage and understand the hard stop. Search/select countries with keyboard and verify the saved selection survives a failed request.
 
+## Settled while implementing
+
+- **Readiness is five checks over four screens, and the header badge is read off all of
+  them.** `smsReadiness` in `app/utils/sms-policy.ts` is pure and reads what the panel
+  already holds, so the answer changes the moment a setting elsewhere does: the method on
+  `/methods/otp`, the carrier on `/sms/providers`, the countries and the human check here,
+  the balance on `/settings/billing`. A row that is not settled here names the screen it is
+  settled on. `Test setup` is a re-read with a visible wait rather than a request.
+- **`Set up SMS` writes one policy, and `Create a policy` is gone.** The old button created
+  the row with its column defaults and left the project exactly as unable to send as
+  before. `SmsSetupDialog` asks for the countries, the cap and the human check, shows what
+  delivery is doing without asking anything about it, and writes the row once. Countries
+  is first because it is the only one with no safe default.
+- **The cap is a draft with its own Save, not a dialog.** It is typed, so saving the "2" of
+  a "20" would refuse every send on the project until the "0" landed; and a cap set at or
+  below the day's spend stops the channel until midnight UTC, which has to be readable
+  before the write rather than after it. `capChange` computes the before, the after and
+  that case, and the strip above the button says all three.
+- **Today sits beside the controls it constrains**, seven columns and five, so a cap is
+  changed against what the day has already cost rather than against a distant panel. It
+  separates the reserved and unsettled part of the spend from the whole, because the cap
+  reads the ledger and only the settled part is a message somebody was handed, and it
+  states the reset in both clocks a reader holds.
+- **Nothing draws a meter without a cap.** A project with no policy has no cap, and
+  `capShare` answers 1 for a cap of nought, so the bar was full and red at nought spent:
+  the opposite of the truth. The meter is drawn only against a policy and the sentence
+  under it says why nought is a refusal rather than a quiet day.
+- **What nobody configures is folded at the foot**, in two cards: the eight-stage order,
+  which is the design and worth reading once, and the fixed guard behaviour. Neither is
+  worth eight cards above the two controls this screen exists for.
+
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
+- [SmsSetupDialog.vue](../apps/client/app/components/SmsSetupDialog.vue)
 - [SmsCountriesDialog.vue](../apps/client/app/components/SmsCountriesDialog.vue)
 - [NumberDialog.vue](../apps/client/app/components/NumberDialog.vue)
 - [sms-policy.ts](../apps/client/app/stores/sms-policy.ts)

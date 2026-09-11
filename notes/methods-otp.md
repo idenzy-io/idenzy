@@ -65,6 +65,19 @@ Choose Email code / SMS code / Magic link → readiness checklist → allow sign
 
 MagicLinkRedirectDialog: field “Application return URL,” example https://app.example.com/auth/callback, exact-match validation and action “Add return URL.” Explain that adding a URL does not implement the receiving route or permit CORS automatically.
 
+## Settled while implementing
+
+The mockup's `Save channel settings` is not built, and deliberately. Everything a channel
+holds is a switch or a list edit, which the [layout blueprint](layout-blueprint.md) says
+writes immediately, and it also says a page with independent inline saves must not offer a
+misleading Save everything. What the note wanted from that button is the summary, so the
+summary is permanent: the channel's foot states the sign-in and sign-up behaviour in a
+sentence and counts what is still blocking delivery, beside Template and Integration guide.
+
+Magic links gained an `allowSignUp` of their own, so all three channels answer the same two
+questions. WhatsApp is a fourth tab rather than a row inside SMS, because a channel somebody
+is looking for has to be findable before it can be explained.
+
 ## Acceptance checks
 
 Enable a channel with missing prerequisites and receive a clear setup path. Add a magic-link URL and identify where the confirmation screen belongs. Check sign-up-disabled copy distinguishes code delivery from permission to create an account.

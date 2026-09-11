@@ -69,6 +69,27 @@ Verify the documented sample end-to-end, including malformed signatures. Add/tes
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+- **Delivery is not running, and the page leads with that.** No worker consumes the webhook
+  topic and the stored digest cannot sign. So no attempt is shown, health is "Not measured", and
+  Send test event and Retry delivery are disabled with the reason beside them. The sample
+  attempts stay behind `WEBHOOK_DELIVERY`, for the day it runs.
+- **Event groups are an accordion,** at the user's request: the first group open, any number
+  open at once, a line per group, a group checkbox, and a count on each folded header.
+- **A new endpoint starts off unless somebody ticks otherwise,** which is the initial enabled
+  state above: a test event should come before real ones.
+- **A rotation asks first and names its deadline,** in a dialog of its own; the secret dialog
+  repeats it and has a safe exit. Custody is stated as unsettled rather than promised.
+- **A row is a delivery, with its attempts in the detail.** The table shows each delivery's latest
+  attempt, the latest fifty in the period, with no pager.
+- **Not in the schema yet:** the description, the all-events choice, why an endpoint is off, the
+  rotation fields, and an attempt's duration, answer and next retry. The panel models them as the
+  management API would answer.
+- **Observed delivery leads as a figures strip,** at the user's request, as on the allowed origins
+  screen: deliveries, delivered, failed and waiting to retry over seven days, each reading No data
+  while nothing is delivered.
+
 ## Implementation references
 
 - [WebhookEndpointDialog.vue](../apps/client/app/components/WebhookEndpointDialog.vue)

@@ -63,6 +63,43 @@ Risk queue → selected account's factor/recovery context → safe instructions 
 
 RecoveryClearDialog already adapts acknowledgement to remaining codes; preserve that. Use “Invalidate remaining recovery codes,” name the account and count, and explain that the authenticator remains enrolled. NumberDialog changes the warning threshold only.
 
+## Settled while implementing
+
+The vocabulary change went past the labels and into the code. "Sheet" was the noun in
+`utils/recovery.ts`, the store and the user detail page, and a screen whose copy says one
+thing while its source says another drifts back within two releases: the type is
+`RecoverySet`, the facts are `CODE_SET`, and the store answers `setsFor` and `clearCodes`.
+The UI says "recovery codes" throughout and uses "set" only where the ten of them need a
+noun.
+
+The selected-account detail is a component rather than a route, mounted twice: inline under
+the list from `lg` up, and in a full-height dialog below it, which is what the note's two
+arrangements ask for. `useDisplay()` decides, so a phone never renders both and a desktop
+never opens the sheet.
+
+The queue's base order is fewest codes first, then the name, and the first row is picked on
+arrival with its action reading "Viewing". Without the order the panel opened on whichever
+account the store happened to yield first, which read as arbitrary; without the mark, the
+panel and the row it belongs to were only related by coincidence.
+
+The row's own action is View and nothing else, so `RecoveryRowActions` is gone. Copying an
+id belongs beside the identity, which is what Open user is for, and a clear in a row menu is
+the thing the note moved to the far side of an Advanced fold.
+
+`Notify user` is drawn switched off with one line under the row saying why, rather than
+being left out: an operator looks for it, and a queue that silently lacks the obvious action
+reads as a missing feature nobody explained. If a send is ever built it needs a recipient, a
+channel and an audit entry before that button does anything.
+
+The clear dialog's final action is `Invalidate N codes`, and for an account with nothing
+unspent it becomes `Clear spent codes` with the acknowledgement dropped and a line stating
+that this restores nothing. Two variants of one dialog, because the two cases are different
+decisions with the same mechanics.
+
+The figures are three tiles and a spread of five counts, both under the queue. The spread is
+counts and shares rather than bars: the passkeys screen tried a row of bars and rejected it,
+and a bar of 1 beside a bar of 13 is a dot beside a rule.
+
 ## Acceptance checks
 
 Locate an exhausted set, identify the safe next step and avoid clearing it as a supposed repair. For a set with remaining codes, the confirmation states what is lost. No workflow reveals another user's codes.
@@ -72,7 +109,9 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 ## Implementation references
 
 - [NumberDialog.vue](../apps/client/app/components/NumberDialog.vue)
+- [RecoveryAccountCard.vue](../apps/client/app/components/RecoveryAccountCard.vue)
 - [RecoveryClearDialog.vue](../apps/client/app/components/RecoveryClearDialog.vue)
+- [RecoveryPips.vue](../apps/client/app/components/RecoveryPips.vue)
 - [recovery.ts](../apps/client/app/stores/recovery.ts)
 - [users.ts](../apps/client/app/stores/users.ts)
 - [mfa.ts](../apps/client/app/utils/mfa.ts)

@@ -68,6 +68,27 @@ Explain the bill for a user who only signs in on sign-up day. Reconcile total wi
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+- **The chart's control is a range, 1d, 7d and 30d, in place of Daily | Cumulative.** Asked for
+  by name. Active users are drawn as the billed level, which is the cumulative reading and the
+  one that reconciles with the bill; emails and SMS segments are drawn per bucket. The card's
+  table view lists every value in either case.
+- **The comparison is the same dates a month before, not the window immediately before.**
+  Active users are a level that starts again on the 1st, so the seven days before the 7th of a
+  month straddle the reset and compare nothing with anything. The tiles compare with the same
+  point last month for an open period and with the whole month before for a closed one.
+- **Projections are per meter, at the last seven complete days' average.** Dividing the dollars
+  by the month's progress projected a domain fee twice over and nothing at all for active users
+  still under the allowance. Every projected figure says "At the current average rate".
+- **Logging stays in the line items as unmetered**, with no quantity, no charge and no price.
+  The proposed rate is gone: a price for something that does not exist is the unverified quote
+  this note warns about.
+- **Security features are a line of their own at $0.00, marked Included**, which is the "keep
+  visibility of zero-cost included features" above.
+- **Invoices are raised from closed usage periods in the placeholder**, so the invoice total,
+  Billing's draw-down and this screen's total are the same cents by construction.
+
 ## Implementation references
 
 - [usage.ts](../apps/client/app/stores/usage.ts)

@@ -64,6 +64,38 @@ Enrollment availability and coverage → app-label preview/editor → user enrol
 
 TotpIssuerDialog: label the project-name fallback, explain which future enrollments change, and use “Save authenticator name.” Keep the sample secret clearly marked as an example. Account MFA belongs on Account, not this page.
 
+## Settled while implementing
+
+The name change is inline, so `TotpIssuerDialog` is gone rather than renamed. The mockup
+draws the editor with `[Use project name] / [Custom name….]` and `[Cancel] [Save name]`
+under it, which is a draft with two save buttons and not a dialog; keeping a dialog beside
+that would have been two ways to write one field. The two states are a segmented control,
+because following the project's name is a choice and not a blank field: null carries a
+later rename of the project along, and a typed name holds still.
+
+The editor and its preview are one card rather than two. Desktop wants them side by side
+and mobile wants "preview immediately after its field", and two cards would have put the
+save row between them on a phone.
+
+The disable dialog's action is `Turn off authenticator apps`, not the note's `Disable
+authenticator requirement`. The screen's whole P1 is that available is not required, so
+naming the button after a requirement would put the misreading back on the one control
+that must not carry it. The dialog keeps the note's order: count, effect, what is left,
+then the named action.
+
+The scenario matrix is six rows and it replaced two cards, not one: the old "Answering a
+challenge" card and the "What holding one means" row said the same thing in our words.
+Its foot carries the two facts no row can: that the answer is one gate's for every flow,
+and, while the method is off, that no row applies today.
+
+There is no setup check. Passkeys and one-time codes have one because their prerequisites
+live on other screens; an authenticator needs nothing but a session, so a check card here
+would only re-read the switch above it.
+
+`Coverage summary` is a section of `Statistic` tiles and the breakdown is one card per
+factor, following the passkeys screen where a row of bars and a bar chart were both tried
+and rejected. A bar of 3 against a bar of 214 is a rule and a dot.
+
 ## Acceptance checks
 
 A customer explains whether every user must enroll after seeing the header. Rename the issuer and identify whether old entries change. Disable with enrolled users and see the precise effect before saving.
@@ -72,7 +104,7 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
-- [TotpIssuerDialog.vue](../apps/client/app/components/TotpIssuerDialog.vue)
+- [TotpDisableDialog.vue](../apps/client/app/components/TotpDisableDialog.vue)
 - [mfa.ts](../apps/client/app/stores/mfa.ts)
 - [mfa.ts](../apps/client/app/utils/mfa.ts)
 - [otp.ts](../apps/client/app/utils/otp.ts)

@@ -71,6 +71,43 @@ Configure a deliberately unreachable endpoint and see a failed test without enab
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+- **Nothing calls a hook, and the page leads with that.** `FlowHooks.beforeSignIn` is bound to
+  `NullFlowHooks`, and the other four hooks have no call point. So nothing can be enabled, the
+  figures read No data, the failure rate is "Not measured", and the call half of a check is "Not
+  run". The fixtures that read as live stay behind `HOOK_CALLS`.
+- **Validate configuration is a check, and part of it runs today.** The address, the secret and
+  the budget are checked in the panel; the signed call and the wrongly signed one wait on a
+  caller. An unreachable name such as `.invalid` saves and fails its check, which is the first
+  acceptance check.
+- **One hook secret per project, and it is not a webhook secret.** Made with the first endpoint
+  and shown once; rotated in the Signing fold with a 24-hour overlap. Where it is kept is stated
+  as unsettled, as for webhooks.
+- **A new URL on an enabled hook is validated first,** and replaces the live one only if it
+  passes.
+- **A hook's configuration opens in a dialog,** at the user's request, rather than under the
+  list as the mockup draws it: capped from `lg` up, and below it the full-height view the mobile
+  arrangement asks for. The endpoint, deadline, enable and turn-off dialogs stack over it, so the
+  reader returns to it to validate and enable.
+- **Where it runs is a rail of evenly spaced steps,** asked for after the chips it started as
+  wrapped a step onto a line of its own inside the dialog. Columns from `sm` up, so all seven
+  steps of a sign-in fit at any dialog width, and a vertical rail below.
+- **The figures lead the list,** as on the SMS providers and webhooks screens, rather than
+  following the selected hook as this note orders it. The latency against the deadline, which is
+  the evidence per hook, sits in the hook's deadline block and in the deadline dialog.
+- **The deadline has a dialog of its own,** not `NumberDialog`: it needs the unit, the range,
+  the observed latency and the budget before and after, and it closes only once the write lands.
+- **The long explanation moved.** Each row has one purpose line; placement is the selected hook's
+  pipeline; failure, retries and the hook or webhook comparison share one fold. "What a hook
+  never does" is gone as a card, and its one live fact, that a gate never sees a credential, is
+  the note under the request sample.
+- **Customize claims is described as running at every token mint, refresh included,** because a
+  claim added at sign-in and dropped at the next refresh would be broken. Confirm it when the
+  hook is built.
+- **Not in the schema yet:** there is no hooks table. Endpoints, deadlines, checks and the secret
+  are modelled as the management API would answer.
+
 ## Implementation references
 
 - [HookEndpointDialog.vue](../apps/client/app/components/HookEndpointDialog.vue)

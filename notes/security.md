@@ -68,11 +68,49 @@ SignalDismissDialog should keep its reason choices and identify the specific sig
 
 Trace a signal to the relevant person and session. Dismiss it without implying a detector was disabled. Every selectable automated response has an implemented enforcement path, and counts reconcile within the chosen scope.
 
+## Settled while implementing
+
+- **Investigating and configuring are two tabs.** They competed for one long page, and they
+  are not the same job: a queue is worked down and a detector is changed once. The tab is in
+  the query so a screen somebody is asked to look at can be linked to, replaced rather than
+  pushed.
+- **The counts are the queue's own rows.** The strip said twenty-two open over a list of ten
+  because the figures came from the project's totals and the list came from the window. One
+  source now: `Act now / Review / Recorded`, computed from exactly the rows on screen, with
+  "in this view, last 30 days" beside them.
+- **Observed, configured and enforced are three columns.** `RESPONSE_ENFORCEMENT` says what
+  each response actually does today — only `Record it` is carried out — and `detectorStatuses`
+  reports the three separately. A rule set to something the deployment cannot do says so on
+  its own row, in the warning ink, with a link to where the missing half is built. A badge
+  counts them.
+- **The sample is the protocol's own union.** It said `status: "challenge"` with a `reason`
+  field, and neither exists: `authOutcomeSchema` discriminates between `authenticated` and
+  `mfa_required` (ADR-0010) and the challenge carries `challengeId`, `purpose`, `factors` and
+  `expiresAt`. Mirrored into `utils/security.ts` with the source named, the way `keys.ts`
+  mirrors the key kinds, and pinned by a test.
+- **"Always" is gone from the defences that are not running.** Cloud Armor is designed and
+  not provisioned, so it reads `Not provisioned` beside the three that read `Running`. An
+  unfalsifiable claim about the edge is one that is only tested during the incident it was
+  meant to cover.
+- **The queue is the panel's list surface and the detail is a dialog over it.** The mockup
+  draws a five-column queue beside a seven-column panel; built, five columns left nowhere to
+  put the account a row is about, which is the column an operator traces a signal by. So the
+  table has the page — sorting, paging, the column menu, the arrangement a reader keeps — and
+  reading one signal is `SignalDetailDialog`, the way every other detail in this panel opens.
+  The signal cell is the way in, as a person's name is on the users list, and the ellipsis
+  keeps the less frequent actions.
+- **Inside the detail: evidence, then what else it could be, then the person and their
+  sessions and the audit log, then what has already been decided, then the actions.** The
+  evidence and the uncertainty are set at the same size and in that order, because a panel
+  that led with the finding and put the innocent explanation in small print would be making
+  the opposite argument in the layout.
+
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Implementation references
 
 - [NumberDialog.vue](../apps/client/app/components/NumberDialog.vue)
+- [SignalDetailDialog.vue](../apps/client/app/components/SignalDetailDialog.vue)
 - [SignalDismissDialog.vue](../apps/client/app/components/SignalDismissDialog.vue)
 - [security.ts](../apps/client/app/stores/security.ts)
 - [users.ts](../apps/client/app/stores/users.ts)

@@ -60,7 +60,15 @@ Integration health → what revocation means now → SDK setup/test steps → pr
 
 ## Dialogs and interactions
 
-No page-specific modal is needed. A future connection test should use an explicitly created test session and show expected/observed timing. Do not add a fake toggle claiming it enables every external verifier.
+The connection test uses an explicitly created test session and shows expected/observed timing. Do not add a fake toggle claiming it enables every external verifier.
+
+### Settled while implementing
+
+**The setup steps are a dialog, not a card on the page.** This note originally said no page-specific modal was needed. Built inline, the three steps were a card among five and the header's primary action had nowhere to go but a scroll to it, which is a dead click on a folded card and a jump the reader did not ask for. `RevocationSetupDialog` is the same shape `ProviderSetupDialog` already uses for the same kind of work: ordered steps, copy fields, one action, over a page that stops competing with it. The step rail is tabs once a test has run, so somebody re-testing after a deploy does not walk past a step they are not changing.
+
+**Confirming enforcement leaves the dialog up.** It records a statement rather than saving a form, so dismissing on the click would hide the one thing the reader came to see land. The footer then offers Confirm again beside Done.
+
+**The page opens on the history, under a figures strip.** The findings below are about what leads, and the strip is what answers them without a card having to: the exposure at the customer's verifier, our own API's answer, the last observed read and its state, what is in the set, what has been revoked, and the retention. Everything else on the page is a folded card, because each is read once by somebody who has just met a question it answers.
 
 ## Acceptance checks
 
@@ -77,3 +85,6 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 - [otp.ts](../apps/client/app/utils/otp.ts)
 - [revocation.ts](../apps/client/app/utils/revocation.ts)
 - [sessions.ts](../apps/client/app/utils/sessions.ts)
+- [RevocationSetupDialog.vue](../apps/client/app/components/RevocationSetupDialog.vue)
+- [RevocationPath.vue](../apps/client/app/components/RevocationPath.vue)
+- [CodeBlock.vue](../apps/client/app/components/CodeBlock.vue)

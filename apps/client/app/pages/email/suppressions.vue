@@ -1,43 +1,43 @@
 <script setup lang="ts">
 /**
- * Suppressions: the addresses this project must never send to again (PROJECT.md 11.1,
- * 11.2, `packages/persistence/src/schema/messaging.ts`).
+ * Blocked email addresses: why one customer is not getting mail, and whether sending to
+ * them can safely resume (notes/email-suppressions.md).
  *
- * The screen is shaped by one decision in the schema. `target_hash` holds a digest and no
- * table anywhere holds the address, so that a customer's suppression list is not a
- * harvestable list of every address that ever bounced for them. Every other vendor's
- * suppressions page is a searchable table of addresses; this one cannot be, and pretending
- * otherwise would mean asking the server to keep the very thing it deliberately does not.
+ * The screen is a lookup and not a list, and the schema is why. `suppressions.target_hash`
+ * holds a digest and no table anywhere holds the address, so a customer's block list is
+ * not a harvestable list of every address that ever bounced for them. Every other vendor's
+ * suppressions page is a searchable table of addresses; this one cannot be, so the address
+ * is hashed in the browser and only the digest goes looking. The digest is shown back
+ * because it is the proof: what left the machine was sixty-four hex characters and not the
+ * address of the person who rang.
  *
- * So the primary control is a lookup rather than a search: an address is hashed in the
- * browser and only the digest goes looking. That is a real privacy property and not a
- * gesture, which is why the digest is shown back: a support agent can see that what left
- * their machine was sixty-four hex characters and not the address of the person who rang.
- *
- * The list below it is still worth drawing, because channel, reason and date say things a
- * digest column does not, and a row appearing yesterday is the signal an operator came for.
- * What it cannot do is connect a row to a person, which is what the lookup is for.
- *
- * Nothing writes to this list yet. The provider event pipeline is designed and not built,
- * so a real project's list is empty, and the empty state says that rather than letting it
- * read as "this project has never had a bounce".
+ * The note's three findings shape the rest. A table of hashes cannot answer which customer
+ * needs help, so the records are advanced evidence and the lookup is the page. A lookup
+ * that finds nothing is not proof of deliverability, so every answer carries what was
+ * compared and when, and says unknown where nothing writes to the list. And the page leads
+ * with what it can actually do, because an empty list and an unbuilt recorder look
+ * identical from here and only one of them is good news.
  */
-import type { ColumnState, DataTableColumn, DataTableSort } from "~/utils/data-table";
-import { defaultColumnState, reconcileColumnState } from "~/utils/data-table";
+import type { RecordColumn, RecordTab } from "~/components/RecordTable.vue";
 import {
+  canHash,
+  DELIVERY_CAPABILITIES,
+  deliveryStatus,
   hashAddress,
+  ingestionAvailable,
   LOOKUP_ISSUE_LABELS,
+  type LookupAnswer,
   type LookupIssue,
+  type ReleaseRecord,
   reasonInfo,
   reasonLabel,
   SUPPRESSION_CHANNEL_LABELS,
-  SUPPRESSION_REASONS,
-  SUPPRESSION_SOURCES,
   type SuppressionRow,
   shortDigest,
   tallyReasons,
   validateLookup,
 } from "~/utils/suppressions";
+import { applyDirection, type TableSort } from "~/utils/table-sort";
 import { formatDateTime, relativeTime } from "~/utils/time";
 
 const projects = useProjectStore();
@@ -45,33 +45,61 @@ const store = useSuppressionsStore();
 
 const now = useNow({ interval: 30_000 });
 
-/* Which cards start unfolded. The lookup and the list are what a visit is for. */
-const expanded = reactive({ sources: false, rules: false });
+/* Which cards start unfolded. None of them: the lookup and the records are the visit, and
+   what the page can tell you is on the badge beside the title either way. */
+const expanded = reactive({ capabilities: false, rules: false });
 
 const rows = computed(() => store.forProject(projects.current.id));
+const releases = computed(() => store.releasesFor(projects.current.id));
+
+const status = deliveryStatus();
+const ingestion = ingestionAvailable();
+const missing = DELIVERY_CAPABILITIES.filter((entry) => entry.state === "not_built");
+
+/* The two halves, headed rather than labelled per row. Which half an answer came from is
+   the whole point of the card, and it is a heading's job rather than a repeated word. */
+const CAPABILITY_GROUPS = [
+  {
+    id: "live",
+    title: "Working here",
+    note: "An answer from this half is the whole answer.",
+    icon: "material-symbols:check-circle-outline",
+    ink: "text-success",
+    items: DELIVERY_CAPABILITIES.filter((entry) => entry.state === "live"),
+  },
+  {
+    id: "pending",
+    title: "Not built yet",
+    note: "Anything resting on this half is unknown rather than good news.",
+    icon: "material-symbols:pending-outline",
+    ink: "text-warning",
+    items: missing,
+  },
+];
 
 /*
- * The lookup. The address is hashed here and the digest is what goes looking, so the
- * address never leaves this machine: it is not sent to us, not logged, and not put in a
- * URL. What is held afterwards is the digest and the answer, never the address itself
- * beyond the field the reader typed it into.
+ * The lookup, which is the page.
+ *
+ * The address is hashed here and the digest is what goes looking, so the address is not
+ * sent to us, not logged, and not put in a URL. What is held afterwards is the digest and
+ * the answer, never the address beyond the field the reader typed it into.
  */
 const address = ref("");
 const checking = ref(false);
-
-interface Answer {
-  /** The address as it was asked about, for the sentence that reports the result. */
-  asked: string;
-  digest: string;
-  row: SuppressionRow | null;
-}
-
-const answer = ref<Answer | null>(null);
 const issue = ref<LookupIssue | null>(null);
+const answer = ref<LookupAnswer | null>(null);
+const released = ref<ReleaseRecord | null>(null);
+
+const field = useTemplateRef<{ focus: () => void }>("field");
+
+const fieldId = useId();
+const helpId = `${fieldId}-help`;
+const issueId = `${fieldId}-issue`;
 
 /* A new question clears the old answer, so a stale verdict is never read as this one. */
 watch(address, () => {
   answer.value = null;
+  released.value = null;
   issue.value = null;
 });
 
@@ -79,6 +107,7 @@ watch(
   () => projects.current.id,
   () => {
     answer.value = null;
+    released.value = null;
     issue.value = null;
   },
 );
@@ -86,39 +115,113 @@ watch(
 async function check() {
   const found = validateLookup(address.value);
   issue.value = found;
-  answer.value = null;
-  if (found !== null) return;
+  if (found !== null) {
+    answer.value = null;
+    released.value = null;
+    return;
+  }
+  await ask(address.value.trim());
+}
 
+/**
+ * One comparison, and an answer that says what it compared.
+ *
+ * Two of the three verdicts are a finding; the third is the panel admitting it looked at
+ * nothing. A browser that cannot hash and a list that has not been read both answer
+ * unavailable rather than "not blocked", because an unread list is not an empty one.
+ */
+async function ask(asked: string) {
   checking.value = true;
+  released.value = null;
   try {
-    const asked = address.value.trim();
+    const failure = !canHash() ? "no_crypto" : store.loading ? "not_read" : null;
+    if (failure !== null) {
+      answer.value = {
+        asked,
+        digest: "",
+        checkedAt: new Date().toISOString(),
+        verdict: "unavailable",
+        email: null,
+        others: [],
+        failure,
+      };
+      return;
+    }
+
     const digest = await hashAddress(asked);
-    answer.value = { asked, digest, row: store.find(projects.current.id, digest) };
+    const found = store.matches(projects.current.id, digest);
+    const email = found.find((row) => row.channel === "email") ?? null;
+    answer.value = {
+      asked,
+      digest,
+      checkedAt: new Date().toISOString(),
+      verdict: email === null ? "clear" : "blocked",
+      email,
+      others: found.filter((row) => row.channel !== "email"),
+      failure: null,
+    };
   } finally {
     checking.value = false;
   }
 }
 
-/*
- * Releasing. Only from a lookup, because a row on its own names nobody: releasing by
- * clicking a digest would be taking an address off the list without knowing which.
- */
-const releaseOpen = ref(false);
-const releasing = ref(false);
-
-function askRelease() {
-  if (answer.value?.row) releaseOpen.value = true;
+/** Asking the same address again, which is how a release is seen to have landed. */
+async function recheck() {
+  const held = answer.value;
+  if (held === null) return;
+  await ask(held.asked);
 }
 
-async function confirmRelease() {
+/** A new question: the field is cleared and focused rather than merely emptied. */
+function another() {
+  address.value = "";
+  answer.value = null;
+  released.value = null;
+  issue.value = null;
+  void nextTick(() => field.value?.focus());
+}
+
+/*
+ * Releasing. Only from a lookup, because a row on its own names nobody: releasing by
+ * clicking a digest would be taking an address off the list without knowing whose.
+ */
+/** The one block this screen can release, gathered so the dialog narrows from one guard. */
+const releaseTarget = computed(() => {
   const held = answer.value;
-  if (held?.row == null) return;
+  if (held?.email == null) return null;
+  return { row: held.email, address: held.asked, others: held.others };
+});
+
+const releaseOpen = ref(false);
+const releasing = ref(false);
+const releaseError = ref("");
+const evidenceOpen = ref(false);
+
+function askRelease() {
+  if (answer.value?.email == null) return;
+  releaseError.value = "";
+  releaseOpen.value = true;
+}
+
+/** The dialog closes on a confirmed write and on nothing else (notes/dialogs.md). */
+async function confirmRelease(justification: string) {
+  const held = answer.value;
+  if (held?.email == null) return;
   releasing.value = true;
+  releaseError.value = "";
   try {
-    await store.release(projects.current.id, held.digest);
-    answer.value = { ...held, row: null };
+    const record = await store.release(
+      projects.current.id,
+      held.digest,
+      held.email.channel,
+      justification,
+    );
+    answer.value = { ...held, verdict: "clear", email: null };
+    released.value = record;
     releaseOpen.value = false;
-    notify(`${held.asked} can be sent to again`);
+    notify("Email block released");
+  } catch {
+    releaseError.value = "The release did not go through. Nothing changed, so try again.";
   } finally {
     releasing.value = false;
   }
@@ -126,9 +229,9 @@ async function confirmRelease() {
 
 const { copy } = useClipboard();
 
-async function copyText(text: string, what: string) {
-  await copy(text);
-  notify(`${what} copied`);
+async function copyDigest(digest: string) {
+  await copy(digest);
+  notify("Digest copied");
 }
 
 const toast = ref("");
@@ -140,262 +243,229 @@ function notify(text: string) {
 }
 
 /*
- * The list.
+ * The records, which are evidence rather than a work list.
  */
 const filterTab = ref("all");
 
 const tally = computed(() => tallyReasons(rows.value));
 
-const filterOptions = computed(() => [
-  { value: "all", label: `All · ${rows.value.length}` },
-  ...tally.value.map((entry) => ({
-    value: entry.reason,
-    label: `${entry.label} · ${entry.count}`,
-  })),
-]);
+/* The heading states the finding rather than naming the section twice, as the users and
+   sessions lists do: what is on the list is the first thing a reader wants from it. */
+const recordsHeading = computed(() => {
+  /* Distinct targets, not rows: one address blocked on two channels is one person. */
+  const count = new Set(rows.value.map((row) => row.targetHash)).size;
+  if (count === 0) return "Nothing is blocked on this project";
+  return count === 1 ? "One address is blocked" : `${count} addresses are blocked`;
+});
+
+/*
+ * No records, no tabs. A filter strip over an empty table is a control with nothing to
+ * filter, and "All · 0" beside a heading that already says nothing is blocked states the
+ * same fact twice. `RecordTable` draws no toolbar for an empty list.
+ */
+const filterTabs = computed<RecordTab[]>(() =>
+  rows.value.length === 0
+    ? []
+    : [
+        { key: "all", label: "All", count: rows.value.length },
+        ...tally.value.map((entry) => ({
+          key: entry.reason,
+          label: entry.label,
+          count: entry.count,
+        })),
+      ],
+);
 
 /* A reason that was on the list and is not any more must not leave the tabs on nothing. */
-watch([filterOptions, () => projects.current.id], ([options]) => {
-  if (!options.some((option) => option.value === filterTab.value)) filterTab.value = "all";
+watch([filterTabs, () => projects.current.id], ([options]) => {
+  if (!options.some((option) => option.key === filterTab.value)) filterTab.value = "all";
 });
 
-const listed = computed(() =>
-  filterTab.value === "all"
-    ? rows.value
-    : rows.value.filter((row) => row.reason === filterTab.value),
-);
-
-const COLUMNS: readonly DataTableColumn<SuppressionRow>[] = [
-  { key: "targetHash", title: "Target", fixed: true, mono: true, width: 200 },
-  {
-    key: "reason",
-    title: "Why",
-    width: 190,
-    skeleton: "pill",
-    value: (row) => reasonLabel(row.reason),
-  },
-  {
-    key: "channel",
-    title: "Channel",
-    width: 120,
-    value: (row) => SUPPRESSION_CHANNEL_LABELS[row.channel],
-  },
-  { key: "createdAt", title: "Added", width: 130, mono: true, value: (row) => row.createdAt },
+/*
+ * The records, on `RecordTable` and framed, which is the sending-domains list one drawer
+ * item away. This is a handful of rows about one subject rather than the project-wide list
+ * surface: a pager would read "1-6 of 6" and a column menu over four columns is furniture,
+ * and the note calls this advanced evidence under a lookup rather than a list screen.
+ */
+const COLUMNS: readonly RecordColumn[] = [
+  { key: "targetHash", label: "Target", width: "minmax(0, 1.4fr)", sortable: true },
+  { key: "reason", label: "Why", width: "170px", sortable: true },
+  { key: "channel", label: "Channel", width: "110px", sortable: true },
+  { key: "createdAt", label: "Added", width: "120px", align: "end", sortable: true },
 ];
 
-const stored = useLocalStorage<ColumnState>(
-  "idenzy.suppressions.columns",
-  defaultColumnState(COLUMNS),
-);
-const columnState = computed<ColumnState>({
-  get: () => reconcileColumnState(COLUMNS, stored.value),
-  set: (value) => {
-    stored.value = value;
-  },
+const COMPARE: Record<string, (a: SuppressionRow, b: SuppressionRow) => number> = {
+  targetHash: (a, b) => a.targetHash.localeCompare(b.targetHash),
+  reason: (a, b) => reasonLabel(a.reason).localeCompare(reasonLabel(b.reason)),
+  channel: (a, b) =>
+    SUPPRESSION_CHANNEL_LABELS[a.channel].localeCompare(SUPPRESSION_CHANNEL_LABELS[b.channel]),
+  createdAt: (a, b) => a.createdAt.localeCompare(b.createdAt),
+};
+
+/** Newest first, which is the order the list arrives in and what null means. */
+const DEFAULT_SORT: TableSort = { key: "createdAt", direction: "desc" };
+
+const sort = ref<TableSort | null>(DEFAULT_SORT);
+const active = computed(() => sort.value ?? DEFAULT_SORT);
+
+const listed = computed(() => {
+  const compare = COMPARE[active.value.key] ?? COMPARE.createdAt;
+  return rows.value
+    .filter((row) => filterTab.value === "all" || row.reason === filterTab.value)
+    .sort((a, b) => applyDirection(compare?.(a, b) ?? 0, active.value.direction));
 });
-const sortBy = ref<DataTableSort[]>([{ key: "createdAt", order: "desc" }]);
-const page = ref(1);
-const pageSize = useLocalStorage("idenzy.suppressions.page-size", 25);
 
-watch([filterTab, () => projects.current.id], () => {
-  page.value = 1;
-});
-
-const severe = computed(
-  () => rows.value.filter((row) => reasonInfo(row.reason)?.severe === true).length,
-);
-
-const GUIDES = [
-  {
-    icon: "material-symbols:do-not-disturb-on-outline",
-    title: "Suppressions",
-    detail: "What lands on the list, what it costs to ignore, and how to release one.",
-    href: "https://idenzy.dev/docs/email/suppressions",
-  },
-  {
-    icon: "material-symbols:mark-email-unread-outline",
-    title: "Bounces and complaints",
-    detail: "The provider events behind each reason, and what each one means.",
-    href: "https://idenzy.dev/docs/email/bounces",
-  },
-  {
-    icon: "material-symbols:webhook",
-    title: "The email.bounced webhook",
-    detail: "Reacting to the same signal in your own system.",
-    href: "https://idenzy.dev/docs/webhooks/email",
-  },
-  {
-    icon: "material-symbols:verified-outline",
-    title: "Sending reputation",
-    detail: "Why a shared domain makes this not a per-project decision.",
-    href: "https://idenzy.dev/docs/email/reputation",
-  },
-];
+const GUIDES_URL = "https://idenzy.dev/docs/email/suppressions";
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:do-not-disturb-on-outline" title="Suppressions">
+  <div class="flex w-full flex-col gap-6">
+    <PageHeader title="Blocked addresses">
+      <template #badge>
+        <StatusBadge :label="status.label" :tone="status.tone" />
+      </template>
       <template #description>
-        Addresses <span class="font-medium text-ink">{{ projects.current.name }}</span> must
-        never send to again. The list is stored as digests rather than addresses, so it
-        cannot be read or searched: ask it about an address instead.
+        The email addresses
+        <span class="font-medium text-ink">{{ projects.current.name }}</span> is currently
+        blocked from sending to. {{ status.detail }}
+      </template>
+      <template #actions>
+        <v-btn
+          :href="GUIDES_URL"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:menu-book-outline"
+          rel="noopener"
+          size="small"
+          target="_blank"
+          variant="outlined"
+        >
+          Delivery guide
+        </v-btn>
       </template>
     </PageHeader>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-      <div class="flex min-w-0 flex-col gap-6">
-        <LayerCard
-          description="The only way to connect an address to this list. It is hashed in your browser and the digest is what goes looking, so the address is not sent to us, not logged and not put in a URL."
-          title="Ask about an address"
-        >
-          <form class="flex flex-col gap-3" @submit.prevent="check">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
-              <div class="flex min-w-0 flex-1 flex-col gap-1">
-                <v-text-field
-                  v-model="address"
-                  :error="issue !== null"
-                  aria-label="Email address"
-                  autocomplete="off"
-                  class="suppressions__field font-mono"
-                  density="comfortable"
-                  hide-details
-                  placeholder="someone@example.com"
-                  prepend-inner-icon="material-symbols:alternate-email"
-                  spellcheck="false"
-                  variant="outlined"
-                />
-                <p v-if="issue" class="m-0 text-[11px] leading-4 text-error">
-                  {{ LOOKUP_ISSUE_LABELS[issue] }}
-                </p>
-              </div>
-              <FancyButton :disabled="checking" type="submit">
-                <Icon
-                  :class="checking ? 'animate-spin' : ''"
-                  :name="
-                    checking ? 'material-symbols:progress-activity' : 'material-symbols:search'
-                  "
-                  aria-hidden="true"
-                  class="text-sm"
-                />
-                Check
-              </FancyButton>
-            </div>
+    <!--
+      The lookup is the page, so it sits on the page rather than inside a card: a frame
+      around the one control makes it a section among sections. The answer appears under
+      the field, so the operator who came here with an address in a support ticket never
+      has to find it in a list. The list cannot hold it in any case: the column is a digest.
+    -->
+    <form class="flex flex-col gap-2" @submit.prevent="check">
+      <label :for="fieldId" class="text-sm font-medium text-ink">Email address</label>
 
-            <!-- The answer, and the digest that produced it. Showing the digest is the
-                 point rather than decoration: it is how a reader can see that what left
-                 the browser was not the address they typed. -->
-            <div
-              v-if="answer"
-              :class="
-                answer.row
-                  ? 'border-warning/40 bg-warning/6'
-                  : 'border-success/40 bg-success/6'
-              "
-              class="flex flex-col gap-3 rounded-(--idenzy-radius-small) border px-4 py-3.5"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-                <div class="flex min-w-0 items-start gap-2.5">
-                  <Icon
-                    :class="answer.row ? 'text-warning' : 'text-success'"
-                    :name="
-                      answer.row
-                        ? 'material-symbols:do-not-disturb-on-outline'
-                        : 'material-symbols:check-circle-outline'
-                    "
-                    aria-hidden="true"
-                    class="mt-px flex-none text-lg"
-                  />
-                  <div class="flex min-w-0 flex-col gap-0.5">
-                    <p class="m-0 text-sm font-medium text-ink">
-                      <template v-if="answer.row">
-                        {{ answer.asked }} is suppressed
-                      </template>
-                      <template v-else>{{ answer.asked }} is not suppressed</template>
-                    </p>
-                    <p class="m-0 text-xs leading-5 text-ink/65">
-                      <template v-if="answer.row">
-                        {{ reasonLabel(answer.row.reason) }}, added
-                        {{ relativeTime(answer.row.createdAt, now) }}. Every message to it is
-                        refused before any transport runs.
-                      </template>
-                      <template v-else>
-                        Nothing on this project's list matches it, so mail to it is attempted
-                        normally. A delivery problem is somewhere else.
-                      </template>
-                    </p>
-                  </div>
-                </div>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <v-text-field
+            :id="fieldId"
+            ref="field"
+            v-model="address"
+            :aria-describedby="issue ? issueId : helpId"
+            :error="issue !== null"
+            autocomplete="off"
+            class="suppressions__field font-mono"
+            density="comfortable"
+            hide-details
+            placeholder="someone@example.com"
+            prepend-inner-icon="material-symbols:alternate-email"
+            spellcheck="false"
+            variant="outlined"
+          />
+        </div>
+        <!-- Beside the field on a desktop, under it and full width on a phone. -->
+        <FancyButton :disabled="checking" class="w-full sm:w-auto" type="submit">
+          <Icon
+            :class="checking ? 'animate-spin' : ''"
+            :name="checking ? 'material-symbols:progress-activity' : 'material-symbols:search'"
+            aria-hidden="true"
+            class="text-sm"
+          />
+          Check address
+        </FancyButton>
+      </div>
 
-                <v-btn
-                  v-if="answer.row"
-                  class="flex-none text-xs font-medium"
-                  color="neutral"
-                  prepend-icon="material-symbols:undo"
-                  size="small"
-                  variant="outlined"
-                  @click="askRelease"
-                >
-                  Release
-                </v-btn>
-              </div>
+      <p v-if="issue" :id="issueId" class="m-0 text-xs leading-5 text-error" role="alert">
+        {{ LOOKUP_ISSUE_LABELS[issue] }}
+      </p>
+      <p v-else :id="helpId" class="m-0 text-xs leading-5 text-ink/55">
+        The only way to connect an address to this list. It is hashed in your browser and
+        the digest is what goes looking, so the address is not sent to us, not logged and
+        not put in a URL.
+      </p>
 
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink/55">
-                <span>Asked as</span>
-                <button
-                  class="group/d inline-flex max-w-full items-center gap-1 rounded-(--idenzy-radius-x-small) font-mono text-ink/75 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                  title="Copy the digest"
-                  type="button"
-                  @click="copyText(answer.digest, 'Digest')"
-                >
-                  <span class="truncate">{{ answer.digest }}</span>
-                  <Icon
-                    aria-hidden="true"
-                    class="flex-none text-xs opacity-0 transition-opacity duration-150 group-hover/d:opacity-60"
-                    name="material-symbols:content-copy-outline"
-                  />
-                </button>
-              </div>
-            </div>
-          </form>
-        </LayerCard>
+      <SuppressionLookupResult
+        v-if="answer"
+        :answer="answer"
+        :ingestion="ingestion"
+        :now="now"
+        :project-name="projects.current.name"
+        :released="released"
+        class="mt-2"
+        @another="another"
+        @evidence="evidenceOpen = true"
+        @recheck="recheck"
+        @release="askRelease"
+      />
+    </form>
 
-        <LayerCard :padded="false" title="On the list">
-          <template #badge>
-            <StatusBadge
-              :label="rows.length === 1 ? '1 address' : `${rows.length} addresses`"
-              :tone="severe > 0 ? 'warning' : 'neutral'"
-            />
-          </template>
+    <!--
+      The records, in the shape the users and sessions lists use: a heading that states
+      the finding, then one plain card holding the toolbar and the table. What it cannot
+      do is answer which customer needs help, which is what the heading says and what the
+      field above is for.
+    -->
+    <section class="flex flex-col gap-3">
+      <header class="flex min-w-0 flex-col gap-0.5">
+        <h2 class="m-0 text-sm font-medium text-ink">
+          {{ store.loading ? "Reading this project's records" : recordsHeading }}
+        </h2>
+        <p class="m-0 text-xs text-ink/55">
+          Every block on this project as it is stored: a digest, a channel, a reason and a
+          date. A digest cannot be turned back into an address, so a row here names nobody
+          and there is nothing to search. The field above is the only thing that can put a
+          person to one.
+        </p>
+      </header>
 
-          <div
-            class="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between"
-          >
-            <SegmentedControl v-model="filterTab" :options="filterOptions" label="Reason" />
-            <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
-          </div>
+      <RecordTable
+        v-model:sort="sort"
+        :aria-busy="store.loading"
+        :columns="COLUMNS"
+        :loading="store.loading"
+        :tabs="filterTabs"
+        v-model:tab="filterTab"
+        framed
+        label="Blocked targets"
+      >
+        <!-- Two rows of nothing while the store answers, so the frame keeps its height
+             and the records arrive as a fill rather than as a jump. -->
+        <template v-if="store.loading">
+          <li v-for="row in 2" :key="row" class="record-row">
+            <span class="record-cell record-cell--primary">
+              <span class="block h-2.5 w-40 animate-pulse rounded-full bg-ink/8" />
+            </span>
+            <span class="record-cell record-cell--half">
+              <span class="block h-4 w-24 animate-pulse rounded-full bg-ink/8" />
+            </span>
+            <span class="record-cell record-cell--half">
+              <span class="block h-2.5 w-16 animate-pulse rounded-full bg-ink/6" />
+            </span>
+            <span class="record-cell record-cell--end">
+              <span class="block h-2.5 w-12 animate-pulse rounded-full bg-ink/6" />
+            </span>
+          </li>
+        </template>
 
-          <DataTable
-            v-model:column-state="columnState"
-            v-model:items-per-page="pageSize"
-            v-model:page="page"
-            v-model:sort-by="sortBy"
-            :columns="COLUMNS"
-            :items="listed"
-            :loading="store.loading"
-            empty-description="Nothing writes to this list yet: the provider event pipeline that turns a bounce or a complaint into a row is designed and not built. So this is not the same as a project that has never had one, and an address that bounced today is still being sent to."
-            empty-title="Nothing is suppressed"
-            item-value="id"
-            label="Suppressed targets"
-          >
+        <template v-else>
+          <li v-for="item in listed" :key="item.id" class="record-row">
             <!-- The row identity is a digest, and it is all there is: no table holds the
                  address, so this cannot be turned back into one. -->
-            <template #cell.targetHash="{ item }">
+            <span class="record-cell record-cell--primary" data-label="Target">
               <button
                 class="group/h inline-flex max-w-full items-center gap-1 rounded-(--idenzy-radius-x-small) font-mono text-[11px] text-ink/65 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 title="Copy the digest"
                 type="button"
-                @click="copyText(item.targetHash, 'Digest')"
+                @click="copyDigest(item.targetHash)"
               >
                 <span class="truncate">{{ shortDigest(item.targetHash) }}</span>
                 <Icon
@@ -404,9 +474,9 @@ const GUIDES = [
                   name="material-symbols:content-copy-outline"
                 />
               </button>
-            </template>
+            </span>
 
-            <template #cell.reason="{ item }">
+            <span class="record-cell record-cell--half flex items-start" data-label="Why">
               <v-tooltip
                 :text="reasonInfo(item.reason)?.note ?? item.reason"
                 location="top"
@@ -421,212 +491,203 @@ const GUIDES = [
                   </span>
                 </template>
               </v-tooltip>
-            </template>
+            </span>
 
-            <template #cell.channel="{ item }">
-              <span class="text-xs text-ink/70">
-                {{ SUPPRESSION_CHANNEL_LABELS[item.channel] }}
-              </span>
-            </template>
+            <span class="record-cell record-cell--half text-xs text-ink/70" data-label="Channel">
+              {{ SUPPRESSION_CHANNEL_LABELS[item.channel] }}
+            </span>
 
-            <template #cell.createdAt="{ item }">
+            <span
+              class="record-cell record-cell--half record-cell--end font-mono text-[11px] text-ink/70 tabular-nums"
+              data-label="Added"
+            >
               <v-tooltip :text="formatDateTime(item.createdAt)" location="top">
                 <template #activator="{ props: tip }">
-                  <span v-bind="tip" class="font-mono text-[11px] text-ink/70 tabular-nums">
-                    {{ relativeTime(item.createdAt, now) }}
-                  </span>
+                  <span v-bind="tip">{{ relativeTime(item.createdAt, now) }}</span>
                 </template>
               </v-tooltip>
-            </template>
-          </DataTable>
+            </span>
+          </li>
+        </template>
 
-          <div class="border-t border-line bg-canvas/60 px-4 py-3 text-[11px] leading-4 text-ink/60">
-            <span class="font-medium text-ink">A digest cannot be turned back into an address.</span>
-            That is the reason there is no search here, and the reason the box above exists:
-            it is the only thing that can put a name to a row.
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.sources"
-          description="Three ways a row appears, and none of them work yet."
-          expandable
-          title="How an address gets here"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              v-for="source in SUPPRESSION_SOURCES"
-              :key="source.id"
-              :description="source.detail"
-              :fixed="source.built ? 'Live' : 'Not built'"
-              :label="source.title"
-            />
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.rules"
-          description="What the list guarantees, and the two places it deliberately gives you no choice."
-          expandable
-          title="How it behaves"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              description="Checked by the provider base before any transport runs, so no adapter can skip it and no caller has to remember it. A new email provider inherits the check by extending the base, which is the whole reason the base owns it."
-              fixed="Before sending"
-              label="Where it is enforced"
-            />
-            <SettingRow label="Whether you can override it">
-              <template #description>
-                You cannot, and that is deliberate rather than missing. A sending
-                reputation is shared with every project on the domain, so one customer
-                sending to known-dead addresses degrades delivery for everybody else. What
-                you can do is release a specific address, which is a decision about one
-                person rather than a setting.
-              </template>
-              <template #actions>
-                <span
-                  class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
-                >
-                  No
-                </span>
-              </template>
-            </SettingRow>
-            <SettingRow
-              description="One customer's bounce never mutes another's mail: the list is scoped to the project like every other tenant table, and a test asserts it at the database rather than trusting the query."
-              fixed="Per project"
-              label="Who it applies to"
-            />
-            <SettingRow
-              description="A row names a channel, so an address suppressed for email says nothing about SMS to the same person. Only email consults the list today; the SMS path is guarded by its own country allowlist and spend cap instead."
-              fixed="Per channel"
-              label="What it covers"
-            />
-            <SettingRow
-              description="A second hard bounce for an address already on the list is normal and writes nothing new. It must not fail the webhook that reported it, or a provider retrying its notification would look like an outage on our side."
-              fixed="Idempotent"
-              label="The same bounce twice"
-            />
-            <SettingRow label="What a blocked send answers">
-              <template #description>
-                <span class="font-mono text-ink/80">delivery_suppressed</span>, a 403, and it
-                is not retryable. That is the difference from
-                <span class="font-mono text-ink/80">delivery_failed</span>, which means the
-                transport had a problem and trying again is reasonable. Retrying a
-                suppression is never reasonable.
-              </template>
-              <template #actions>
-                <span
-                  class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
-                >
-                  403
-                </span>
-              </template>
-            </SettingRow>
-            <SettingRow
-              description="Releasing deletes the row rather than flagging it, so a released address carries nothing saying it was once suppressed. It is a deliberate action and there is no bulk version: clearing a list of bounces in one click is how a domain gets blocked."
-              fixed="A delete"
-              label="Releasing"
-            />
-          </div>
-        </LayerCard>
-      </div>
-
-      <aside class="flex flex-col gap-4 xl:sticky xl:top-20">
-        <div class="flex items-baseline justify-between px-1">
-          <h2 class="m-0 text-base font-semibold tracking-tight text-ink">The list</h2>
-          <span class="text-xs text-ink/55">On this project</span>
-        </div>
-
-        <LayerCard :padded="false" title="What it holds">
-          <div class="flex flex-col gap-2.5 p-4 text-xs">
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-ink/60">Addresses</span>
-              <span class="font-mono text-[11px] text-ink tabular-nums">{{ rows.length }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-ink/60">Reported by a provider</span>
-              <span class="font-mono text-[11px] text-ink tabular-nums">{{ severe }}</span>
-            </div>
-          </div>
-          <ul
-            v-if="tally.length > 0"
-            class="m-0 flex list-none flex-col gap-3 border-t border-line p-4 text-xs"
+        <template #empty>
+          <div
+            v-if="!store.loading && listed.length === 0"
+            class="flex flex-col items-center gap-1 px-4 py-14 text-center"
+            role="status"
           >
-            <li v-for="entry in tally" :key="entry.reason" class="flex flex-col gap-1">
-              <div class="flex items-baseline justify-between gap-3">
-                <span :class="entry.severe ? 'text-ink' : 'text-ink/70'" class="min-w-0 truncate">
-                  {{ entry.label }}
-                </span>
-                <span class="flex-none font-mono text-[11px] text-ink tabular-nums">
-                  {{ entry.count }}
-                </span>
-              </div>
-              <span class="block h-1.5 w-full overflow-hidden rounded-full bg-ink/8">
-                <span
-                  :class="entry.severe ? 'bg-warning' : 'bg-ink/30'"
-                  :style="{ width: `${Math.round((entry.count / rows.length) * 100)}%` }"
-                  class="block h-full rounded-full"
-                />
-              </span>
-            </li>
-          </ul>
-          <p v-else class="m-0 border-t border-line px-4 py-6 text-center text-xs text-ink/50">
-            Nothing is suppressed on this project.
-          </p>
-        </LayerCard>
+            <Icon
+              aria-hidden="true"
+              class="mb-1 text-2xl text-ink/25"
+              name="material-symbols:block"
+            />
+            <p class="m-0 text-sm font-medium text-ink">No records on this project</p>
+            <p class="m-0 max-w-md text-xs leading-5 text-ink/55">
+              Nothing writes to this list yet, so an empty table is not the same as a project
+              that has never had a bounce. An address that bounced today is still being sent
+              to.
+            </p>
+          </div>
+        </template>
+      </RecordTable>
 
-        <LayerCard :padded="false" description="Why an address ends up here, worst first." title="The reasons">
-          <ul class="m-0 flex list-none flex-col divide-y divide-line p-0">
-            <li v-for="reason in SUPPRESSION_REASONS" :key="reason.id" class="flex gap-2.5 px-4 py-3">
-              <Icon
-                :class="reason.severe ? 'text-warning' : 'text-ink/45'"
-                :name="reason.icon"
-                aria-hidden="true"
-                class="mt-px flex-none text-base"
-              />
-              <span class="flex min-w-0 flex-col gap-0.5">
-                <span class="text-xs font-medium text-ink">{{ reason.label }}</span>
-                <span class="text-[11px] leading-4 text-ink/55">{{ reason.note }}</span>
+      <!-- Releasing deletes the row, so this is what is left of the decision. The
+           justification is kept with it: a release nobody can account for later is the
+           one thing worse than a block nobody can explain. -->
+      <div v-if="releases.length > 0" class="flex flex-col gap-2">
+        <h3 class="m-0 text-xs font-medium text-ink">Released from this project</h3>
+        <ul class="m-0 flex list-none flex-col divide-y divide-line p-0">
+          <li v-for="record in releases" :key="record.id" class="flex flex-col gap-1 py-3">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span class="font-mono text-[11px] text-ink/70">
+                {{ shortDigest(record.targetHash) }}
               </span>
-            </li>
-          </ul>
-        </LayerCard>
+              <span class="text-[11px] text-ink/55">
+                {{ SUPPRESSION_CHANNEL_LABELS[record.channel] }} ·
+                {{ reasonLabel(record.reason).toLowerCase() }} ·
+                {{ relativeTime(record.releasedAt, now) }}
+              </span>
+            </div>
+            <p v-if="record.justification" class="m-0 text-xs leading-5 text-ink/65">
+              {{ record.justification }}
+            </p>
+          </li>
+        </ul>
+      </div>
+    </section>
 
-        <LayerCard :padded="false" title="Guides">
+    <!--
+      What the answer above is worth. An empty list and an unbuilt recorder are the same
+      picture from here, so the halves are named separately rather than averaged into a
+      reassuring sentence.
+    -->
+    <LayerCard
+      v-model:open="expanded.capabilities"
+      :padded="false"
+      description="Blocking and releasing are live. Recording one is not, so what an answer here settles depends on which half it came from."
+      expandable
+      title="What this page can tell you"
+    >
+      <template #badge>
+        <StatusBadge :label="status.label" :tone="status.tone" />
+      </template>
+
+      <!-- Grouped rather than a state word per row: the finding is that the two halves
+           have to be told apart, and a heading each does that in half the height. -->
+      <div class="divide-y divide-line">
+        <section v-for="group in CAPABILITY_GROUPS" :key="group.id">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 bg-ink/3 px-4 py-2">
+            <Icon :class="group.ink" :name="group.icon" aria-hidden="true" class="text-sm" />
+            <h3 :class="group.ink" class="m-0 text-[11px] font-medium tracking-wide uppercase">
+              {{ group.title }}
+            </h3>
+            <span class="text-[11px] leading-4 text-ink/50">{{ group.note }}</span>
+          </div>
           <ul class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="guide in GUIDES" :key="guide.href">
-              <a
-                :href="guide.href"
-                class="flex items-start gap-3 px-4 py-3 text-xs no-underline transition-colors duration-150 hover:bg-ink/3"
-                rel="noopener"
-                target="_blank"
-              >
-                <Icon
-                  :name="guide.icon"
-                  aria-hidden="true"
-                  class="mt-px flex-none text-xl text-ink/70"
-                />
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-medium text-ink">{{ guide.title }}</span>
-                  <span class="line-clamp-1 text-[11px] text-ink/55">{{ guide.detail }}</span>
-                </span>
-              </a>
+            <li
+              v-for="capability in group.items"
+              :key="capability.id"
+              class="grid grid-cols-1 gap-x-4 gap-y-0.5 px-4 py-3 sm:grid-cols-[12rem_minmax(0,1fr)]"
+            >
+              <span class="text-xs leading-5 font-medium text-ink">{{ capability.label }}</span>
+              <span class="text-xs leading-5 text-ink/60">{{ capability.finding }}</span>
             </li>
           </ul>
-        </LayerCard>
+        </section>
+      </div>
+      <p class="m-0 border-t border-line px-4 py-2.5 text-[11px] leading-4 text-ink/50">
+        Nothing here is a delivery log. Whether a message arrived is answered in the
+        provider console, and this list only ever says what we refuse to send.
+      </p>
+    </LayerCard>
 
-        <SaveStatus :last-saved="store.lastChangedAt(projects.current.id)" :saving="releasing" />
-      </aside>
-    </div>
+    <LayerCard
+      v-model:open="expanded.rules"
+      description="What a block guarantees, and the two places it deliberately gives you no choice."
+      expandable
+      title="How blocking behaves"
+    >
+      <div class="divide-y divide-line">
+        <SettingRow
+          description="Checked by the provider base before any transport runs, so no adapter can skip it and no caller has to remember it. A new email provider inherits the check by extending the base, which is the whole reason the base owns it."
+          fixed="Before sending"
+          label="Where it is enforced"
+        />
+        <SettingRow label="Whether you can override it">
+          <template #description>
+            You cannot, and that is deliberate rather than missing. A sending reputation is
+            shared with every project on the domain, so one customer sending to known-dead
+            addresses degrades delivery for everybody else. What you can do is allow one
+            address again, which is a decision about one person rather than a setting.
+          </template>
+          <template #actions>
+            <span
+              class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
+            >
+              No
+            </span>
+          </template>
+        </SettingRow>
+        <SettingRow
+          description="One customer's bounce never mutes another's mail: the list is scoped to the project like every other tenant table, and a test asserts it at the database rather than trusting the query."
+          fixed="Per project"
+          label="Who it applies to"
+        />
+        <SettingRow
+          description="A row names a channel, so an address blocked for email says nothing about SMS to the same person, and releasing one leaves the other standing. Only email consults the list today; the SMS path is guarded by its own country allowlist and spend cap instead."
+          fixed="Per channel"
+          label="What it covers"
+        />
+        <SettingRow
+          description="A second hard bounce for an address already blocked is normal and writes nothing new. It must not fail the webhook that reported it, or a provider retrying its notification would look like an outage on our side."
+          fixed="Idempotent"
+          label="The same bounce twice"
+        />
+        <SettingRow label="What a blocked send answers">
+          <template #description>
+            <span class="font-mono text-ink/80">delivery_suppressed</span>, a 403, and it is
+            not retryable. That is the difference from
+            <span class="font-mono text-ink/80">delivery_failed</span>, which means the
+            transport had a problem and trying again is reasonable. Retrying a block is never
+            reasonable.
+          </template>
+          <template #actions>
+            <span
+              class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
+            >
+              403
+            </span>
+          </template>
+        </SettingRow>
+        <SettingRow
+          description="Releasing deletes the row rather than flagging it, so a released address carries nothing saying it was once blocked. Your reason is kept separately. There is no bulk version: clearing a list of bounces in one click is how a domain gets blocked."
+          fixed="One at a time"
+          label="Allowing email again"
+        />
+      </div>
+    </LayerCard>
+
+    <SaveStatus :last-saved="store.lastChangedAt(projects.current.id)" :saving="releasing" />
 
     <SuppressionReleaseDialog
-      v-if="answer?.row"
+      v-if="releaseTarget"
       v-model="releaseOpen"
-      :address="answer.asked"
-      :releasing="releasing"
-      :row="answer.row"
+      :address="releaseTarget.address"
+      :busy="releasing"
+      :error="releaseError"
+      :others="releaseTarget.others"
+      :project-name="projects.current.name"
+      :row="releaseTarget.row"
       @confirm="confirmRelease"
+    />
+
+    <SuppressionEvidenceDialog
+      v-if="answer"
+      v-model="evidenceOpen"
+      :answer="answer"
+      :ingestion="ingestion"
+      :missing="missing"
+      :project-name="projects.current.name"
     />
 
     <v-snackbar
@@ -643,19 +704,19 @@ const GUIDES = [
 </template>
 
 <style scoped>
-/* The lookup field is the page's one input and sits at the height of the button beside
-   it, in the same small type as every other field in the panel. */
+/*
+ * The lookup field is the page's one input. Only the corner and the glyph are set here:
+ * comfortable density is already 32px and 13px, which is the height of the button beside
+ * it and the type of every other field in the panel.
+ *
+ * A height stated on the field alone is what this looked like before. theme.css sets
+ * `--v-input-control-height` on the input root and on the field because Vuetify
+ * redeclares it per variant, and the control's box is sized from the root: overriding the
+ * field's copy grew the text's own box past the border it sits in and left the value
+ * riding low inside it.
+ */
 .suppressions__field :deep(.v-field) {
-  --v-input-control-height: 36px;
-
   border-radius: var(--idenzy-radius-small);
-  font-size: 0.8125rem;
-}
-
-.suppressions__field :deep(.v-field__input),
-.suppressions__field :deep(.v-field__input::placeholder) {
-  font-size: 0.8125rem;
-  min-height: 36px;
 }
 
 .suppressions__field :deep(.v-field__prepend-inner > .v-icon) {

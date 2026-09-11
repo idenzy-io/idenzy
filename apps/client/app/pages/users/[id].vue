@@ -7,7 +7,7 @@
  * trail, holding a user id in your head between the three (notes/users.md, P1). So the
  * subject is fixed and everything about them is gathered under it: how they can sign in
  * and whether the project still allows it, what has been verified, the second factor and
- * the sheet behind it, the devices, the detector's signals, and the trail.
+ * the recovery codes behind it, the devices, the detector's signals, and the trail.
  *
  * The order is the order of the question. What is wrong first, what could be wrong next,
  * the record last. Nothing here is a figure that also appears above it, and there is no
@@ -18,7 +18,7 @@
  */
 
 import type { BadgeTone } from "~/components/StatusBadge.vue";
-import { SHEET, STATE_TEXT, stateOf } from "~/utils/recovery";
+import { CODE_SET, STATE_LABELS, STATE_TEXT, stateOf } from "~/utils/recovery";
 import { detectorCoverage } from "~/utils/security";
 import { type SessionRow, sessionStatus } from "~/utils/sessions";
 import { canSignInNow, methodStandings, type ProjectSignInSettings } from "~/utils/sign-in-paths";
@@ -134,17 +134,17 @@ const openSessions = computed(() =>
   ownSessions.value.filter((row) => sessionStatus(row, now.value) === "active"),
 );
 
-const sheet = computed(() =>
+const codes = computed(() =>
   user.value === null
     ? null
-    : (recovery.sheetsFor(projects.current.id).find((row) => row.userId === id.value) ?? null),
+    : (recovery.setsFor(projects.current.id).find((row) => row.userId === id.value) ?? null),
 );
 
 const lowThreshold = computed(() => recovery.settingsFor(projects.current.id).lowThreshold);
 
 /** Read three times by the recovery line: the bar, its colour and the word beside it. */
-const sheetState = computed(() =>
-  sheet.value === null ? null : stateOf(sheet.value, lowThreshold.value),
+const codesState = computed(() =>
+  codes.value === null ? null : stateOf(codes.value, lowThreshold.value),
 );
 
 const signals = computed(() =>
@@ -245,7 +245,7 @@ const factorFact = computed<Fact>(() => {
 /**
  * What has been proved about the identifiers on the account, which is the answer behind
  * half the tickets: a reset that never arrived is usually an address nobody confirmed.
- * The recovery sheet is not a fact here on purpose, because the card below prints that
+ * The recovery codes are not a fact here on purpose, because the card below prints that
  * figure and one number twice on a screen is one too many.
  */
 function verifiedNote(holds: number, proved: number): string {
@@ -349,7 +349,7 @@ async function copyText(text: string, what: string) {
   notify(`${what} copied`);
 }
 
-/** Where the sheet behind a second factor is managed. */
+/** Where the codes behind a second factor are managed. */
 const RECOVERY_ROUTE = "/mfa/recovery";
 
 function openElsewhere() {
@@ -644,8 +644,8 @@ function suspensionDetail(account: ProjectUser): string {
               title="Second factor"
               description="An extra check when this person signs in."
               icon="material-symbols:shield-outline"
-              :action="sheet ? 'Manage recovery codes' : ''"
-              :to="sheet ? RECOVERY_ROUTE : undefined"
+              :action="codes ? 'Manage recovery codes' : ''"
+              :to="codes ? RECOVERY_ROUTE : undefined"
             >
               <div class="factor-status">
                 <div>
@@ -658,16 +658,15 @@ function suspensionDetail(account: ProjectUser): string {
                   ? 'A passkey already proves a factor, so it is not challenged again.'
                   : 'Passkeys and recovery codes can answer a required challenge; neither enables the authenticator.' }}
               </p>
-              <div v-if="sheet && sheetState" class="recovery-summary">
+              <div v-if="codes && codesState" class="recovery-summary">
                 <div class="flex items-center justify-between gap-3">
                   <span>Recovery codes</span>
-                  <span class="font-mono text-ink">{{ sheet.remaining }}<span class="text-ink/40"> / {{ SHEET.codes }}</span></span>
+                  <span class="font-mono text-ink">{{ codes.remaining }}<span class="text-ink/40"> / {{ CODE_SET.codes }}</span></span>
                 </div>
                 <div class="mt-2 flex items-center justify-between gap-3">
-                  <RecoveryPips :remaining="sheet.remaining" :state="sheetState" />
-                  <span :class="STATE_TEXT[sheetState]">
-                    {{ sheetState === 'none' ? 'No codes left' : sheetState === 'low' ? 'Running low' : 'Healthy' }}
-                  </span>
+                  <RecoveryPips :remaining="codes.remaining" :state="codesState" />
+                  <!-- The same three words the recovery screen's own badge uses. -->
+                  <span :class="STATE_TEXT[codesState]">{{ STATE_LABELS[codesState] }}</span>
                 </div>
               </div>
             </UserDetailPanel>

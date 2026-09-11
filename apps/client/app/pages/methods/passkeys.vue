@@ -1,50 +1,43 @@
 <script setup lang="ts">
 /**
- * Passkey sign-in for the project: the one thing it decides, which is the relying
- * party, the switch, and the rules of the ceremony stated as rows because they are
- * fixed on purpose (apps/auth-api/src/passkey).
+ * Passkey sign-in for the project, arranged as a setup screen rather than a settings
+ * one: whether it works, what is stopping it, the three things a customer decides, and
+ * a check that says why a browser would refuse a ceremony.
  *
- * The relying party is the whole configuration. The RP ID decides which credentials an
- * assertion may address and is never read off the request, so a project with none has
- * no working passkeys, and the screen says so in place of the settings. Changing the id
- * on a project that already holds passkeys orphans every one of them, which is why that
- * one edit goes through a dialog that states the count. Origins are matched exactly.
+ * Three of those decisions are named here in the reader's words and not WebAuthn's. The
+ * passkey domain is the RP ID, and it is the whole configuration: it decides which
+ * credentials an assertion may address and is never read off the request, so a project
+ * without one has no working passkeys. Setting it goes through a dialog because its
+ * three fields are checked against each other and written as one record; changing it
+ * goes through another, because it orphans every passkey on the project.
  *
- * Every control saves itself, as on the passwords screen: switches and list edits at
- * once, text half a second after the last keystroke, with a refused value kept on screen
- * beside its reason and not sent. The figures on the side are the method's own, and the
- * authenticator breakdown comes from the AAGUID each registration carries.
+ * The setup check exists because two of the four things that have to be true are not on
+ * this screen. An application URL that is not also on the CORS allowlist is refused by
+ * the browser with nothing in our logs to explain it (ADR-0006), and a project nobody
+ * has integrated looks exactly like one whose integration is broken.
+ *
+ * Everything here saves itself: switches and list edits write at once and show their own
+ * wait, and a value the rules refuse is never sent. The WebAuthn rules are fixed by the
+ * server on purpose and sit folded at the foot, stated rather than hidden.
  */
 import {
   authenticatorOf,
+  backupLine,
   CEREMONY,
-  normaliseOrigin,
+  creationOptions,
+  evaluatePasskeySetup,
+  passkeyBlockers,
   type RelyingParty,
-  RP_ISSUE_LABELS,
   validateRelyingParty,
 } from "~/utils/passkeys";
 
 const projects = useProjectStore();
 const store = usePasskeysStore();
+const origins = useOriginsStore();
 
 const saved = computed(() => store.settingsFor(projects.current.id));
 const stats = computed(() => store.stats(projects.current.id));
 const configured = computed(() => saved.value.relyingParty !== null);
-
-/*
- * Which cards start unfolded. The switch is what most visits are for, so it is open;
- * the party unfolds itself for a project that has none, because its form is the only
- * thing on the screen that does anything until it does.
- */
-const expanded = reactive({ signIn: true, party: false, ceremony: false });
-
-watch(
-  () => (store.loading ? null : configured.value),
-  (isConfigured) => {
-    if (isConfigured === false) expanded.party = true;
-  },
-  { immediate: true },
-);
 
 /* The fields on their way to the server, so each control can show its own wait. */
 const busy = ref<Set<string>>(new Set());
@@ -68,9 +61,8 @@ function setEnabled(value: boolean) {
 }
 
 /*
- * The relying party, as a copy to edit against. It follows the saved one whenever that
- * changes underneath, and starts empty for a project that has none, where the same copy
- * is the form that creates it.
+ * The relying party, as a copy to edit against, so a list edit shows at once and the
+ * saved party does not change under a write that has not landed.
  */
 const party = ref<RelyingParty>({ rpId: "", rpName: "", origins: [] });
 
@@ -93,7 +85,15 @@ async function commitParty(change: Partial<RelyingParty>, key: string) {
   await whileBusy(key, () => store.setRelyingParty(projects.current.id, next));
 }
 
-/* The RP name, renamed through a dialog like the id, though nothing hangs on it. */
+/* Setting it up, for a project with none. One record, written whole. */
+const partyDialog = ref(false);
+
+function createParty(created: RelyingParty) {
+  party.value = { ...created, origins: [...created.origins] };
+  void whileBusy("create", () => store.setRelyingParty(projects.current.id, created));
+}
+
+/* The product name, edited through a dialog like the domain, though nothing hangs on it. */
 const rpNameDialog = ref(false);
 
 function confirmRpName(rpName: string) {
@@ -102,10 +102,10 @@ function confirmRpName(rpName: string) {
 }
 
 /*
- * The RP ID. It is shown, not typed: a change orphans every passkey on the project and
- * may drop origins with it, so it goes through a dialog that takes the new id, states
- * the cost and settles the origins in the same write. The values it moves from are held
- * still so it does not re-read the write as it closes.
+ * The domain. It is shown, not typed: a change orphans every passkey on the project and
+ * may drop URLs with it, so it goes through a dialog that takes the new one, states the
+ * cost and settles the URLs in the same write. The values it moves from are held still
+ * so it does not re-read the write as it closes.
  */
 const rpIdDialog = ref(false);
 const dialogFrom = ref<RelyingParty>({ rpId: "", rpName: "", origins: [] });
@@ -117,56 +117,71 @@ function openRpIdDialog() {
   rpIdDialog.value = true;
 }
 
-function confirmRpId(rpId: string, origins: string[]) {
-  party.value = { ...party.value, rpId, origins };
-  void commitParty({ rpId, origins }, "rpId");
+function confirmRpId(rpId: string, next: string[]) {
+  party.value = { ...party.value, rpId, origins: next };
+  void commitParty({ rpId, origins: next }, "rpId");
 }
 
 /*
- * Origins. Each add and each removal is a write. An add goes through a dialog that
- * checks the text against the RP ID as it is typed. The last origin cannot be removed,
- * because a party with none refuses every ceremony and that is worse than an old one.
+ * The application URLs. Each add and each removal is a write. An add goes through a
+ * dialog that checks the text against the domain as it is typed. The last one cannot be
+ * removed, because a party with none refuses every ceremony and that is worse than an
+ * out-of-date list.
  */
 const originDialog = ref(false);
 
 function addOrigin(origin: string) {
   if (party.value.origins.includes(origin)) return;
-  const origins = [...party.value.origins, origin];
-  party.value = { ...party.value, origins };
-  void commitParty({ origins }, "origins");
+  const next = [...party.value.origins, origin];
+  party.value = { ...party.value, origins: next };
+  void commitParty({ origins: next }, "origins");
 }
 
 function removeOrigin(origin: string) {
   if (party.value.origins.length < 2) return;
-  const origins = party.value.origins.filter((entry) => entry !== origin);
-  party.value = { ...party.value, origins };
-  void commitParty({ origins }, "origins");
+  const next = party.value.origins.filter((entry) => entry !== origin);
+  party.value = { ...party.value, origins: next };
+  void commitParty({ origins: next }, "origins");
 }
 
 /*
- * Creating the party, for a project without one. The form is the same copy with the
- * first origin typed beside it, and it is written once, whole.
+ * The state of the setup, and the four checks behind it. The checks read what the panel
+ * already knows, so they are live rather than a snapshot; the button re-runs them and
+ * says when it last did, because a reader who has just changed something in another
+ * screen wants to watch this answer change.
  */
-const firstOrigin = ref("");
-const creation = computed(() => ({
-  ...party.value,
-  origins: firstOrigin.value.trim() === "" ? [] : [normaliseOrigin(firstOrigin.value)],
+const setup = computed(() => ({
+  enabled: saved.value.enabled,
+  party: saved.value.relyingParty,
+  allowedOrigins: origins.forProject(projects.current.id).map((entry) => entry.origin),
+  ceremonies: stats.value.signIns + stats.value.enrolled,
 }));
-const creationIssues = computed(() => validateRelyingParty(creation.value));
-const createTried = ref(false);
 
-function issueFor(...codes: readonly string[]): string {
-  if (!createTried.value) return "";
-  const found = creationIssues.value.find((issue) => codes.includes(issue));
-  return found === undefined ? "" : RP_ISSUE_LABELS[found];
+const blockers = computed(() => passkeyBlockers(setup.value));
+const ready = computed(() => !store.loading && blockers.value.length === 0);
+const checks = computed(() => evaluatePasskeySetup(setup.value));
+
+const testing = ref(false);
+const testedAt = ref<string | null>(null);
+
+async function runTest() {
+  testing.value = true;
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  testedAt.value = new Date().toISOString();
+  testing.value = false;
 }
 
-function createParty() {
-  createTried.value = true;
-  if (creationIssues.value.length > 0) return;
-  const created = creation.value;
-  void whileBusy("create", () => store.setRelyingParty(projects.current.id, created));
-}
+/* Run once as the screen settles, so the card carries an answer before it is asked. */
+watch(
+  () => store.loading || origins.loading,
+  (waiting) => {
+    if (!waiting && testedAt.value === null) void runTest();
+  },
+  { immediate: true },
+);
+
+/* The options the browser is given, read from the domain above and the fixed rules. */
+const options = computed(() => creationOptions(party.value));
 
 /*
  * The figures.
@@ -177,6 +192,7 @@ const authenticators = computed(() =>
     .map((entry) => ({
       ...authenticatorOf(entry.aaguid),
       count: entry.count,
+      backedUp: entry.backedUp,
       key: entry.aaguid ?? "other",
     })),
 );
@@ -184,397 +200,436 @@ const authenticators = computed(() =>
 const share = (count: number) =>
   stats.value.enrolled === 0 ? 0 : Math.round((count / stats.value.enrolled) * 100);
 
+/* Summed from the rows rather than held beside them, so the two cannot disagree. */
+const backedUp = computed(() =>
+  stats.value.byAuthenticator.reduce((total, entry) => total + entry.backedUp, 0),
+);
+
+/* The enrolled tile is a total, so what the window did to it goes in its description. */
+const addedThisMonth = computed(() =>
+  stats.value.enrolledDaily.reduce((total, day) => total + day, 0),
+);
+
 const saving = computed(() => busy.value.size > 0);
 const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 
-const GUIDES = [
-  {
-    icon: "material-symbols:passkey",
-    title: "Passkeys, end to end",
-    detail: "Enrolment inside a session, usernameless sign-in, autofill.",
-    href: "https://idenzy.dev/docs/passkeys",
-  },
-  {
-    icon: "material-symbols:domain",
-    title: "Choosing the RP ID",
-    detail: "Why it is the registrable domain, and what a change costs.",
-    href: "https://idenzy.dev/docs/passkeys/relying-party",
-  },
-  {
-    icon: "material-symbols:shield-lock-outline",
-    title: "Passkeys as a second factor",
-    detail: "Answering a step-up without turning MFA on.",
-    href: "https://idenzy.dev/docs/mfa/passkeys",
-  },
-  {
-    icon: "material-symbols:code",
-    title: "The JS SDK's ceremony calls",
-    detail: "signIn({ conditional: true }) and the registration pair.",
-    href: "https://idenzy.dev/docs/sdk/js/passkeys",
-  },
-];
+/* Folded by default: WebAuthn's own rules, none of which anybody here can change. */
+const advanced = ref(false);
+
+const GUIDES_URL = "https://idenzy.dev/docs/passkeys";
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:passkey" title="Passkeys">
+  <div class="flex w-full flex-col gap-6">
+    <PageHeader title="Passkeys">
+      <template #badge>
+        <StatusBadge
+          :label="ready ? 'Ready' : 'Setup incomplete'"
+          :tone="ready ? 'success' : 'warning'"
+        />
+      </template>
       <template #description>
-        Passkey sign-in on
-        <span class="font-medium text-ink">{{ projects.current.name }}</span>: the relying
-        party the credentials belong to, and the rules of the ceremony. Changes save as you
-        make them.
+        Signing in with a face, a fingerprint or a device PIN on
+        <span class="font-medium text-ink">{{ projects.current.name }}</span>, with no
+        password behind it. Changes save as you make them.
+      </template>
+      <template #actions>
+        <v-btn
+          :href="GUIDES_URL"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:menu-book-outline"
+          rel="noopener"
+          size="small"
+          target="_blank"
+          variant="outlined"
+        >
+          Passkey guides
+        </v-btn>
       </template>
     </PageHeader>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-      <div class="flex min-w-0 flex-col gap-6">
-        <LayerCard
-          v-model:open="expanded.signIn"
-          expandable
-          description="Whether the method exists on this project, and what it never does."
-          title="Passkey sign-in"
+    <!-- The blockers strip stands only while something is blocking; afterwards the badge
+         above and the setup check below carry the state. -->
+    <SetupBlockerCard
+      v-if="!store.loading && blockers.length > 0"
+      :blockers="blockers"
+      description="Nobody can sign in with a passkey on this project until these are settled."
+    >
+      <template #actions>
+        <FancyButton
+          v-if="saved.relyingParty === null"
+          :disabled="isBusy('create')"
+          @click="partyDialog = true"
         >
-          <template #badge>
-            <StatusBadge
-              :label="saved.enabled ? 'On' : 'Off'"
-              :tone="saved.enabled ? 'success' : 'neutral'"
-            />
+          <Icon
+            :class="isBusy('create') ? 'animate-spin' : ''"
+            :name="isBusy('create') ? 'material-symbols:progress-activity' : 'material-symbols:add'"
+            aria-hidden="true"
+            class="text-sm"
+          />
+          Complete setup
+        </FancyButton>
+      </template>
+      <template #action="{ blocker }">
+        <v-btn
+          v-if="blocker.id === 'disabled'"
+          :loading="isBusy('enabled')"
+          class="-mt-1 text-xs font-medium"
+          color="neutral"
+          size="small"
+          variant="outlined"
+          @click="setEnabled(true)"
+        >
+          {{ blocker.action }}
+        </v-btn>
+      </template>
+    </SetupBlockerCard>
+
+    <LayerCard
+      description="The method, the domain your passkeys belong to, and the pages allowed to run a ceremony."
+      title="Passkey sign-in"
+    >
+      <template #badge>
+        <StatusBadge
+          :label="saved.enabled ? 'On' : 'Off'"
+          :tone="saved.enabled ? 'success' : 'neutral'"
+        />
+      </template>
+
+      <div class="divide-y divide-line">
+        <SettingRow label="Enabled">
+          <template #description>
+            Users enrol a passkey from inside a session and sign in with it afterwards.
+            Off, the ceremony endpoints answer as if the method did not exist, and enrolled
+            credentials are kept for when it is back.
           </template>
-          <div class="divide-y divide-line">
-            <SettingRow label="Enabled">
-              <template #description>
-                Users enrol a passkey from inside a session and sign in with it afterwards.
-                Off, the ceremony endpoints answer as if the method did not exist, and
-                enrolled credentials are kept for when it is back.
-                <span v-if="!configured" class="text-warning">
-                  Nothing works until a relying party is configured below.
+          <v-switch
+            :disabled="isBusy('enabled')"
+            :loading="isBusy('enabled')"
+            :model-value="saved.enabled"
+            aria-label="Passkey sign-in"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="setEnabled($event === true)"
+          />
+        </SettingRow>
+
+        <SettingRow
+          description="The domain your pages share, and the one every application URL has to sit on. A passkey is bound to it, so changing it stops every passkey on the project answering and drops any URL off the new domain; the dialog says how many before it does anything. It is called the RP ID in WebAuthn and in our API."
+          label="Passkey domain (RP ID)"
+        >
+          <template #actions>
+            <template v-if="configured">
+              <span class="font-mono text-xs text-ink/60" data-testid="rp-id">
+                {{ party.rpId }}
+              </span>
+              <v-btn
+                :loading="isBusy('rpId')"
+                class="text-xs font-medium"
+                color="neutral"
+                prepend-icon="material-symbols:edit-outline"
+                size="small"
+                variant="text"
+                @click="openRpIdDialog"
+              >
+                Change domain
+              </v-btn>
+            </template>
+            <span v-else class="text-xs text-ink/45">Not set</span>
+          </template>
+        </SettingRow>
+
+        <SettingRow
+          description="What the authenticator shows when it asks someone to create or use a passkey. Your product, as its users know it, never us. A passkey is bound to the domain rather than to this, so a rename costs nothing."
+          label="Product name"
+        >
+          <template #actions>
+            <template v-if="configured">
+              <span class="text-xs text-ink/60">{{ party.rpName }}</span>
+              <v-btn
+                :loading="isBusy('rpName')"
+                class="text-xs font-medium"
+                color="neutral"
+                prepend-icon="material-symbols:edit-outline"
+                size="small"
+                variant="text"
+                @click="rpNameDialog = true"
+              >
+                Edit
+              </v-btn>
+            </template>
+            <span v-else class="text-xs text-ink/45">Not set</span>
+          </template>
+        </SettingRow>
+
+        <SettingRow
+          description="The pages allowed to run a ceremony, matched exactly: scheme, host and port, no wildcards, https everywhere but localhost. Each has to sit on the passkey domain, which is WebAuthn's rule and not ours. A ceremony from anywhere else is refused, whatever the domain says."
+          label="Allowed application URLs"
+        >
+          <template #actions>
+            <v-btn
+              :disabled="!configured"
+              :loading="isBusy('origins')"
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:add"
+              size="small"
+              variant="text"
+              @click="originDialog = true"
+            >
+              Add URL
+            </v-btn>
+          </template>
+          <template #detail>
+            <!--
+              Three columns on one grid rather than a flex row per URL: the glyph sits
+              centred in a box the height of one line, so every host starts at the same x
+              however long the scheme before it is.
+            -->
+            <ul
+              v-if="party.origins.length > 0"
+              class="m-0 list-none divide-y divide-line border-t border-line p-0"
+            >
+              <li
+                v-for="origin in party.origins"
+                :key="origin"
+                class="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 py-1.5"
+              >
+                <span aria-hidden="true" class="flex h-4 w-5 items-center justify-center">
+                  <Icon class="text-[15px] text-ink/45" name="material-symbols:language" />
                 </span>
-              </template>
-              <v-switch
-                :disabled="isBusy('enabled')"
-                :loading="isBusy('enabled')"
-                :model-value="saved.enabled"
-                aria-label="Passkey sign-in"
-                color="primary"
-                density="compact"
-                hide-details
-                inset
-                @update:model-value="setEnabled($event === true)"
-              />
-            </SettingRow>
-            <SettingRow
-              description="Authentication options name no credential, so the browser offers whatever it holds for this RP ID, and the SDK's conditional sign-in puts that in the address field's autofill. An endpoint that took an email would say which addresses have passkeys, an enumeration oracle in front of the method we promote."
-              fixed="Always"
-              label="Usernameless, with autofill"
-            />
-            <SettingRow
-              description="A passkey may answer a step-up or a second-factor challenge that something else demanded. Enrolling one never turns two-factor on for the account: a credential enrolled to sign in with must not silently start being demanded on top of the password."
-              fixed="Never demanded"
-              label="As a second factor"
-            />
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.party"
-          expandable
-          description="The domain the passkeys belong to and the pages allowed to run a ceremony. Exactly one per project: the RP ID decides which credentials an assertion may address, and a second would split the passkeys into two sets that cannot substitute for each other."
-          title="Relying party"
-        >
-          <template #badge>
-            <StatusBadge
-              :label="configured ? 'Configured' : 'Not configured'"
-              :tone="configured ? 'success' : 'warning'"
-            />
+                <span class="truncate font-mono text-xs leading-4 text-ink">{{ origin }}</span>
+                <v-tooltip
+                  :disabled="party.origins.length > 1"
+                  location="top"
+                  text="The last URL stays: a project with none refuses every ceremony."
+                >
+                  <template #activator="{ props: tip }">
+                    <span v-bind="tip" class="inline-flex">
+                      <v-btn
+                        :disabled="party.origins.length < 2 || isBusy('origins')"
+                        class="text-xs font-medium"
+                        color="neutral"
+                        size="small"
+                        variant="text"
+                        @click="removeOrigin(origin)"
+                      >
+                        Remove
+                      </v-btn>
+                    </span>
+                  </template>
+                </v-tooltip>
+              </li>
+            </ul>
+            <p v-else class="m-0 border-t border-line pt-2 text-xs text-ink/45">
+              None yet, so every ceremony is refused.
+            </p>
           </template>
+        </SettingRow>
+      </div>
+    </LayerCard>
 
-          <div v-if="!configured" class="flex flex-col gap-5">
-            <div class="flex items-start gap-3 rounded-(--idenzy-radius-small) border border-warning/40 bg-warning/6 px-4 py-3">
-              <Icon aria-hidden="true" class="mt-px flex-none text-base text-warning" name="material-symbols:warning-outline" />
-              <div class="flex flex-col gap-0.5 text-xs">
-                <p class="m-0 font-medium text-ink">No relying party yet</p>
-                <p class="m-0 leading-5 text-ink/70">
-                  Every ceremony on this project is refused until the RP ID and at least one
-                  origin are set, and the SDK reports it as a configuration error rather
-                  than a failed sign-in. It is never taken from the request's host: whoever
-                  controls a request would otherwise choose which credentials it may use.
-                </p>
-              </div>
-            </div>
+    <SetupCheckCard
+      v-if="configured"
+      :checks="checks"
+      :testing="testing"
+      description="The four things that have to be true before a browser can finish a ceremony. Two of them are settled on other screens."
+      note="Read from this project's own configuration, so it answers the moment something changes. Nothing here signs in on a user's behalf: a passkey needs the person and their device, which is the property that makes it worth having."
+      @test="runTest"
+    />
 
-            <div class="grid gap-x-8 gap-y-2 sm:grid-cols-2">
-              <div class="flex flex-col gap-2">
-                <label class="text-xs font-medium opacity-70" for="rp-create-id">RP ID</label>
-                <v-text-field
-                  id="rp-create-id"
-                  :error="issueFor('rp_id_invalid') !== ''"
-                  :model-value="party.rpId"
-                  autocomplete="off"
-                  class="font-mono"
-                  hide-details
-                  placeholder="example.com"
-                  variant="underlined"
-                  @update:model-value="party = { ...party, rpId: String($event).trim().toLowerCase() }"
-                />
-                <p v-if="issueFor('rp_id_invalid')" class="m-0 text-[11px] text-error">{{ issueFor('rp_id_invalid') }}</p>
-                <p v-else class="m-0 text-[11px] text-ink/50">
-                  The registrable domain your pages share. Subdomains of it may run the ceremony.
-                </p>
-              </div>
-              <div class="flex flex-col gap-2">
-                <label class="text-xs font-medium opacity-70" for="rp-create-name">RP name</label>
-                <v-text-field
-                  id="rp-create-name"
-                  :error="issueFor('rp_name_missing') !== ''"
-                  :model-value="party.rpName"
-                  autocomplete="off"
-                  hide-details
-                  placeholder="Your product's name"
-                  variant="underlined"
-                  @update:model-value="party = { ...party, rpName: String($event) }"
-                />
-                <p v-if="issueFor('rp_name_missing')" class="m-0 text-[11px] text-error">{{ issueFor('rp_name_missing') }}</p>
-                <p v-else class="m-0 text-[11px] text-ink/50">
-                  What the authenticator shows when it asks. Yours, not ours.
-                </p>
-              </div>
-              <div class="flex flex-col gap-2 sm:col-span-2">
-                <label class="text-xs font-medium opacity-70" for="rp-create-origin">First origin</label>
-                <v-text-field
-                  id="rp-create-origin"
-                  v-model="firstOrigin"
-                  :error="issueFor('origins_empty', 'origin_invalid', 'origin_insecure', 'origin_outside_rp') !== ''"
-                  autocomplete="off"
-                  class="font-mono"
-                  hide-details
-                  placeholder="https://app.example.com"
-                  variant="underlined"
-                />
-                <p v-if="issueFor('origins_empty', 'origin_invalid', 'origin_insecure', 'origin_outside_rp')" class="m-0 text-[11px] text-error">
-                  {{ issueFor('origins_empty', 'origin_invalid', 'origin_insecure', 'origin_outside_rp') }}
-                </p>
-                <p v-else class="m-0 text-[11px] text-ink/50">
-                  Scheme, host and port, matched exactly. More can be added once the party exists.
-                </p>
-              </div>
-            </div>
+    <section class="flex flex-col gap-4">
+      <header class="flex min-w-0 flex-col gap-0.5">
+        <h2 class="m-0 text-sm font-medium text-ink">Enrollment summary</h2>
+        <p class="m-0 text-xs text-ink/55">
+          Passkeys on this project, and what the last 30 days did to them.
+        </p>
+      </header>
 
-            <div class="flex items-center justify-between gap-3">
-              <p class="m-0 text-[11px] text-ink/50">
-                Written as one record. Localhost is allowed only by the development build, never by data.
-              </p>
-              <FancyButton :disabled="isBusy('create')" @click="createParty">
-                <Icon
-                  :class="isBusy('create') ? 'animate-spin' : ''"
-                  :name="isBusy('create') ? 'material-symbols:progress-activity' : 'material-symbols:add'"
-                  aria-hidden="true"
-                  class="text-sm"
-                />
-                Create relying party
-              </FancyButton>
-            </div>
-          </div>
-
-          <div v-else class="divide-y divide-line">
-            <SettingRow
-              description="The registrable domain the passkeys are bound to, and the domain every origin has to sit on. Change it and every passkey on the project stops answering, and any origin off the new domain comes off the list; the screen asks first."
-              label="RP ID"
-            >
-              <template #actions>
-                <span class="font-mono text-xs text-ink/60" data-testid="rp-id">{{ party.rpId }}</span>
-                <v-btn
-                  :loading="isBusy('rpId')"
-                  class="text-xs font-medium"
-                  color="neutral"
-                  prepend-icon="material-symbols:edit-outline"
-                  size="small"
-                  variant="text"
-                  @click="openRpIdDialog"
-                >
-                  Change
-                </v-btn>
-              </template>
-            </SettingRow>
-            <SettingRow
-              description="What the authenticator shows when it asks someone to create or use a passkey. The customer's product, not us."
-              label="RP name"
-            >
-              <template #actions>
-                <span class="text-xs text-ink/60">{{ party.rpName }}</span>
-                <v-btn
-                  :loading="isBusy('rpName')"
-                  class="text-xs font-medium"
-                  color="neutral"
-                  prepend-icon="material-symbols:edit-outline"
-                  size="small"
-                  variant="text"
-                  @click="rpNameDialog = true"
-                >
-                  Change
-                </v-btn>
-              </template>
-            </SettingRow>
-            <SettingRow
-              description="The pages allowed to run a ceremony, matched exactly: scheme, host and port, no wildcards, https everywhere but localhost. Each has to sit on the RP ID's domain, which is WebAuthn's rule and not ours. A ceremony from anywhere else is refused, whatever the RP ID says."
-              label="Origins"
-            >
-              <template #actions>
-                <v-btn
-                  :loading="isBusy('origins')"
-                  class="text-xs font-medium"
-                  color="neutral"
-                  prepend-icon="material-symbols:add"
-                  size="small"
-                  variant="text"
-                  @click="originDialog = true"
-                >
-                  Add origin
-                </v-btn>
-              </template>
-              <template #detail>
-                <ul class="m-0 mt-1 flex list-none flex-col gap-1 p-0">
-                  <li
-                    v-for="origin in party.origins"
-                    :key="origin"
-                    class="flex items-center gap-2 rounded-(--idenzy-radius-x-small) border border-line bg-canvas py-1 pr-1 pl-2.5"
-                  >
-                    <Icon aria-hidden="true" class="flex-none text-sm text-ink/45" name="material-symbols:language" />
-                    <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{{ origin }}</span>
-                    <v-tooltip
-                      :text="party.origins.length < 2 ? 'The last origin stays: a party with none refuses every ceremony.' : `Remove ${origin}`"
-                      location="top"
-                    >
-                      <template #activator="{ props: tip }">
-                        <span v-bind="tip">
-                          <button
-                            :aria-label="`Remove ${origin}`"
-                            :disabled="party.origins.length < 2 || isBusy('origins')"
-                            class="inline-flex size-6 items-center justify-center rounded-(--idenzy-radius-x-small) text-ink/50 transition-colors duration-150 hover:bg-ink/6 hover:text-ink disabled:pointer-events-none disabled:opacity-40"
-                            type="button"
-                            @click="removeOrigin(origin)"
-                          >
-                            <Icon aria-hidden="true" class="text-sm" name="material-symbols:close" />
-                          </button>
-                        </span>
-                      </template>
-                    </v-tooltip>
-                  </li>
-                </ul>
-              </template>
-            </SettingRow>
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.ceremony"
-          expandable
-          description="How every registration and assertion runs. None of it is configurable, and each row says why."
-          title="Ceremony"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              description="Every passkey is a resident key, so sign-in can name no credential and still find one. Relax it and sign-in has nothing discoverable to offer, so the usernameless flow stops working for credentials enrolled after the change."
-              fixed="Required"
-              label="Discoverable credentials"
-            />
-            <SettingRow
-              description="The authenticator has to check the person, by biometrics or a PIN, before it signs. That is what makes a passkey a complete sign-in on its own rather than a second factor waiting for a first."
-              fixed="Required"
-              label="User verification"
-            />
-            <SettingRow
-              description="We do not ask what make the authenticator is. Knowing it is not needed to trust the signature, and it is one more thing about a person to keep. The AAGUID an authenticator volunteers is recorded for the breakdown beside this page and nothing else."
-              fixed="Not collected"
-              label="Attestation"
-            />
-            <SettingRow
-              :description="`${CEREMONY.algorithms.map((algorithm) => algorithm.name).join(', ')}, advertised at registration and accepted at verification from one list, so an authenticator can never enrol with an algorithm it could not later sign in with.`"
-              fixed="Fixed"
-              label="Signature algorithms"
-            />
-            <SettingRow
-              :description="`${CEREMONY.challengeTtlSeconds / 60} minutes to answer, set for the deployment. A challenge is claimed the moment it is presented and before anything is verified, so a nonce that failed once cannot be signed against again.`"
-              fixed="Deployment"
-              label="Challenge lifetime"
-            />
-            <SettingRow
-              description="Every assertion carries a counter, and one that does not advance past the last we saw is refused and counted as a security event: it is the signature of a cloned authenticator."
-              fixed="Always"
-              label="Sign counter"
-            />
-            <SettingRow
-              description="Whether a passkey syncs to a provider's cloud or lives on one device is read from the flags the authenticator signs, not from anything the browser reports, and the breakdown beside this page counts them."
-              fixed="Recorded"
-              label="Backup state"
-            />
-          </div>
-        </LayerCard>
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <!-- One short line each, so four tiles side by side are the same object four
+             times. What each figure does and does not count is behind the glyph. -->
+        <Statistic
+          :previous="stats.signInsPrevious"
+          :value="stats.signIns"
+          compare="vs the 30 days before"
+          description="Accepted, and given a session."
+          info="Assertions that verified and issued a session. A ceremony somebody abandoned is not one."
+          label="Sign-ins"
+        />
+        <Statistic
+          :info="`Credentials on the project, across every account. ${addedThisMonth.toLocaleString('en')} were added in the last 30 days.`"
+          :value="stats.enrolled"
+          description="Credentials on this project."
+          label="Passkeys enrolled"
+        />
+        <Statistic
+          :value="stats.accounts"
+          description="Accounts holding at least one."
+          info="Accounts with a passkey they can sign in with. The rest sign in another way."
+          label="Accounts with one"
+        />
+        <Statistic
+          :previous="stats.refusedPrevious"
+          :value="stats.refused"
+          compare="vs the 30 days before"
+          description="Assertions we would not take."
+          info="A counter that went backwards, a URL off the list, or a challenge already spent."
+          label="Refused"
+          positive="down"
+        />
       </div>
 
-      <aside class="flex flex-col gap-4 xl:sticky xl:top-20">
-        <div class="flex items-baseline justify-between px-1">
-          <h2 class="m-0 text-base font-semibold tracking-tight text-ink">Passkeys</h2>
-          <span class="text-xs text-ink/55">Last 30 days</span>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <UsageTile :seed="13" :series="stats.signInsDaily" :value="stats.signIns" label="Sign-ins" />
-          <UsageTile :seed="17" :series="stats.enrolledDaily" :value="stats.enrolled" info="Credentials on the project. The line is how many were added each day." label="Enrolled" />
-          <UsageTile :seed="19" :value="stats.accounts" info="Accounts holding at least one passkey." label="Accounts with one" />
-          <UsageTile :seed="23" :series="stats.refusedDaily" :value="stats.refused" info="Assertions refused: a counter that went backwards, an origin off the list, or a challenge already spent." label="Refused" />
-        </div>
+    </section>
 
-        <LayerCard :padded="false" description="By the authenticator that made each credential." title="Where passkeys live">
-          <ul v-if="authenticators.length > 0" class="m-0 flex list-none flex-col gap-2.5 p-4 text-xs">
-            <li v-for="entry in authenticators" :key="entry.key" class="flex items-center gap-2.5">
-              <Icon
-                :class="entry.monochrome ? '[.v-theme--dark_&]:invert' : ''"
-                :name="entry.icon"
-                aria-hidden="true"
-                class="flex-none text-base"
-              />
-              <span class="w-32 flex-none truncate text-ink/80">{{ entry.name }}</span>
-              <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-ink/8">
-                <span :style="{ width: `${share(entry.count)}%` }" class="block h-full rounded-full bg-primary" />
-              </span>
-              <span class="w-8 flex-none text-right font-mono tabular-nums text-ink">{{ entry.count }}</span>
-            </li>
-          </ul>
-          <p v-else class="m-0 px-4 py-6 text-center text-xs text-ink/50">
-            No passkeys enrolled on this project yet.
+    <section class="flex flex-col gap-4">
+      <header class="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div class="flex min-w-0 flex-col gap-0.5">
+          <h2 class="m-0 text-sm font-medium text-ink">Where the passkeys live</h2>
+          <p class="m-0 text-xs text-ink/55">
+            By the authenticator that made each credential, from the AAGUID it volunteers.
           </p>
-          <div v-if="stats.enrolled > 0" class="flex items-center justify-between border-t border-line px-4 py-2.5 text-[11px] text-ink/55">
-            <span>
-              <span class="font-mono tabular-nums text-ink">{{ stats.backedUp }}</span> synced to a cloud
-            </span>
-            <span>
-              <span class="font-mono tabular-nums text-ink">{{ stats.deviceBound }}</span> bound to one device
-            </span>
-          </div>
-        </LayerCard>
+        </div>
+        <p v-if="stats.enrolled > 0" class="m-0 text-xs text-ink/55">
+          <span class="font-mono text-ink tabular-nums">{{ backedUp.toLocaleString("en") }}</span>
+          of
+          <span class="font-mono text-ink tabular-nums">{{ stats.enrolled.toLocaleString("en") }}</span>
+          sync to a cloud
+        </p>
+      </header>
 
-        <LayerCard :padded="false" title="Guides">
-          <ul class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="guide in GUIDES" :key="guide.href">
-              <a
-                :href="guide.href"
-                class="flex items-start gap-3 px-4 py-3 text-xs no-underline transition-colors duration-150 hover:bg-ink/3"
-                rel="noopener"
-                target="_blank"
+      <!-- The same card as the tiles above, one per authenticator: a mark and a name for
+           the label, the count for the figure, and where those passkeys live under it. -->
+      <div
+        v-if="authenticators.length > 0"
+        class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      >
+        <v-card v-for="entry in authenticators" :key="entry.key" border flat>
+          <div class="flex flex-col p-4">
+            <div class="flex min-w-0 items-center gap-2">
+              <span aria-hidden="true" class="flex h-4 w-5 flex-none items-center justify-center">
+                <Icon :class="entry.tint" :name="entry.icon" class="text-[15px]" />
+              </span>
+              <!-- Not `capitalize` as the tiles above are: these are proper nouns, and CSS
+                   would make iCloud Keychain into ICloud Keychain. -->
+              <span
+                :title="entry.name"
+                class="min-w-0 truncate text-[0.8125rem] font-medium text-ink/60"
               >
-                <Icon :name="guide.icon" aria-hidden="true" class="mt-px flex-none text-xl text-ink/70" />
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-medium text-ink">{{ guide.title }}</span>
-                  <span class="line-clamp-1 text-[11px] text-ink/55">{{ guide.detail }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
-        </LayerCard>
+                {{ entry.name }}
+              </span>
+            </div>
+            <p class="m-0 mt-4 flex items-baseline gap-2">
+              <span
+                class="font-mono text-2xl leading-none font-medium tracking-tight text-ink tabular-nums"
+              >
+                {{ entry.count }}
+              </span>
+              <span class="font-mono text-xs text-ink/55 tabular-nums">
+                {{ share(entry.count) }}%
+              </span>
+            </p>
+            <p class="m-0 mt-0.5 text-[0.6875rem] text-ink/55">
+              {{ backupLine(entry.count, entry.backedUp) }}
+            </p>
+          </div>
+        </v-card>
+      </div>
+      <v-card v-else border flat>
+        <p class="m-0 px-4 py-6 text-center text-xs text-ink/50">
+          No passkeys enrolled on this project yet.
+        </p>
+      </v-card>
 
-        <SaveStatus :last-saved="lastSaved" :saving="saving" />
-      </aside>
-    </div>
+      <!-- The caveat sits at the foot of what it qualifies, not above it. -->
+      <p v-if="stats.enrolled > 0" class="m-0 text-[11px] leading-4 text-ink/55">
+        Read from the backup-state flag each authenticator signs, never from anything the
+        browser reports. A passkey bound to its device is lost with the device, which is what
+        the recovery codes are for.
+      </p>
+    </section>
 
+    <LayerCard
+      v-model:open="advanced"
+      expandable
+      description="How every registration and assertion runs. None of it is configurable, and each row says why."
+      title="Advanced WebAuthn details"
+    >
+      <div class="divide-y divide-line">
+        <SettingRow
+          description="Authentication options name no credential, so the browser offers whatever it holds for this domain, and the SDK's conditional sign-in puts that in the address field's autofill. An endpoint that took an email would say which addresses have passkeys, an enumeration oracle in front of the method we promote."
+          fixed="Always"
+          label="Usernameless, with autofill"
+        />
+        <SettingRow
+          description="A passkey may answer a step-up or a second-factor challenge that something else demanded. Enrolling one never turns two-factor on for the account: a credential enrolled to sign in with must not silently start being demanded on top of the password."
+          fixed="Never demanded"
+          label="As a second factor"
+        />
+        <SettingRow
+          description="Every passkey is a resident key, so sign-in can name no credential and still find one. Relax it and sign-in has nothing discoverable to offer, so the usernameless flow stops working for credentials enrolled after the change."
+          fixed="Required"
+          label="Discoverable credentials"
+        />
+        <SettingRow
+          description="The authenticator has to check the person, by biometrics or a PIN, before it signs. That is what makes a passkey a complete sign-in on its own rather than a second factor waiting for a first."
+          fixed="Required"
+          label="User verification"
+        />
+        <SettingRow
+          description="We do not ask what make the authenticator is. Knowing it is not needed to trust the signature, and it is one more thing about a person to keep. The AAGUID an authenticator volunteers is recorded for the breakdown above and nothing else."
+          fixed="Not collected"
+          label="Attestation"
+        />
+        <SettingRow
+          :description="`${CEREMONY.algorithms.map((algorithm) => algorithm.name).join(', ')}, advertised at registration and accepted at verification from one list, so an authenticator can never enrol with an algorithm it could not later sign in with.`"
+          fixed="Fixed"
+          label="Signature algorithms"
+        />
+        <SettingRow
+          :description="`${CEREMONY.challengeTtlSeconds / 60} minutes to answer, set for the deployment. A challenge is claimed the moment it is presented and before anything is verified, so a nonce that failed once cannot be signed against again.`"
+          fixed="Deployment"
+          label="Challenge lifetime"
+        />
+        <SettingRow
+          description="Every assertion carries a counter, and one that does not advance past the last we saw is refused and counted as a security event: it is the signature of a cloned authenticator."
+          fixed="Always"
+          label="Sign counter"
+        />
+        <SettingRow
+          description="Whether a passkey syncs to a provider's cloud or lives on one device is read from the flags the authenticator signs, not from anything the browser reports, and the split above counts them."
+          fixed="Recorded"
+          label="Backup state"
+        />
+      </div>
+
+      <SamplePanel
+        v-if="configured"
+        class="mt-5"
+        meta="At registration"
+        note="What the SDK hands the browser, assembled from the settings above and the rules in these rows. Nothing in it is yours to set beyond the first line."
+        title="What the browser is asked for"
+      >
+        <SampleLine
+          v-for="option in options"
+          :key="option.name"
+          :name="option.name"
+          :value="option.value"
+        />
+        <SampleLine class="mt-2" icon="material-symbols:info-outline" tone="muted">
+          Sign-in sends the mirror of this with no
+          <span class="font-mono">allowCredentials</span>, which is what lets the browser offer
+          whatever it holds for this domain without being told an address first.
+        </SampleLine>
+      </SamplePanel>
+    </LayerCard>
+
+    <SaveStatus :last-saved="lastSaved" :saving="saving" />
+
+    <PasskeyPartyDialog v-model="partyDialog" @confirm="createParty" />
     <PasskeyRpNameDialog v-model="rpNameDialog" :current="party.rpName" @confirm="confirmRpName" />
     <PasskeyOriginDialog
       v-model="originDialog"

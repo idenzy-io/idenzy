@@ -449,271 +449,304 @@ function statusDetail(user: ProjectUser): string {
       </div>
     </div>
 
-    <v-card border flat>
-      <div class="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between">
-        <SegmentedControl v-model="statusTab" :options="statusOptions" label="Status" />
+    <!--
+      The list: a heading on the page, then the card, with the controls that narrow it
+      along the top and the table under them. The heading sits above the card rather than
+      in a strip inside it, which is where every other section on this panel puts its name,
+      and it leaves the card the same object here and on the sessions screen.
+    -->
+    <section class="flex flex-col gap-3">
+      <header class="flex min-w-0 flex-col gap-0.5">
+        <h2 class="m-0 text-sm font-medium text-ink">Every account</h2>
+        <p class="m-0 text-xs text-ink/55">
+          Suspended and erased rows stay listed beside the active ones: a tombstone keeps the
+          account's id and loses every column that named a person.
+        </p>
+      </header>
 
-        <div class="flex flex-wrap items-center gap-2">
-          <v-text-field
-            v-model="query"
-            aria-label="Search users"
-            class="users__search w-full sm:w-72"
-            clearable
-            density="comfortable"
-            hide-details
-            placeholder="Search name, email, phone or ID"
-            prepend-inner-icon="material-symbols:search"
-            variant="outlined"
-          />
-          <UsersFilterMenu v-model="filters" />
-          <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
+      <v-card border flat>
+        <div
+          class="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between"
+        >
+          <SegmentedControl v-model="statusTab" :options="statusOptions" label="Status" />
+
+          <div class="flex flex-wrap items-center gap-2">
+            <v-text-field
+              v-model="query"
+              aria-label="Search users"
+              class="users__search w-full sm:w-72"
+              clearable
+              density="comfortable"
+              hide-details
+              placeholder="Search name, email, phone or ID"
+              prepend-inner-icon="material-symbols:search"
+              variant="outlined"
+            />
+            <UsersFilterMenu v-model="filters" />
+            <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
+          </div>
         </div>
-      </div>
 
-      <DataTable
-        v-model:column-state="columnState"
-        v-model:items-per-page="pageSize"
-        v-model:page="page"
-        v-model:selected="selected"
-        v-model:sort-by="sortBy"
-        :columns="COLUMNS"
-        :items="filtered"
-        :loading="store.loading"
-        label="Users"
-        selectable
-      >
-        <!-- What can be done to the selection. Each button is off when nothing in the
-             selection can take it, so a bar over a mixed selection says which actions
-             apply rather than failing on the ones that do not. -->
-        <template #selection>
-          <v-btn
-            :disabled="suspendable(selectedUsers).length === 0"
-            class="text-xs font-medium"
-            color="neutral"
-            prepend-icon="material-symbols:block"
-            size="small"
-            variant="text"
-            @click="askSuspend(selectedUsers)"
-          >
-            Suspend
-          </v-btn>
-          <v-btn
-            :disabled="restorable(selectedUsers).length === 0"
-            class="text-xs font-medium"
-            color="neutral"
-            prepend-icon="material-symbols:lock-open-outline"
-            size="small"
-            variant="text"
-            @click="restore(restorable(selectedUsers))"
-          >
-            Lift suspension
-          </v-btn>
-          <v-btn
-            :disabled="signedIn(selectedUsers).length === 0"
-            class="text-xs font-medium"
-            color="neutral"
-            prepend-icon="material-symbols:logout"
-            size="small"
-            variant="text"
-            @click="signOut(signedIn(selectedUsers))"
-          >
-            Sign out everywhere
-          </v-btn>
-          <v-btn
-            class="text-xs font-medium"
-            color="neutral"
-            prepend-icon="material-symbols:download"
-            size="small"
-            variant="text"
-            @click="exportCsv(selectedUsers)"
-          >
-            Export
-          </v-btn>
-          <v-btn
-            :disabled="erasable(selectedUsers).length === 0"
-            class="text-xs font-medium"
-            color="error"
-            prepend-icon="material-symbols:delete-outline"
-            size="small"
-            variant="text"
-            @click="askDelete(selectedUsers)"
-          >
-            Delete
-          </v-btn>
-        </template>
+        <DataTable
+          v-model:column-state="columnState"
+          v-model:items-per-page="pageSize"
+          v-model:page="page"
+          v-model:selected="selected"
+          v-model:sort-by="sortBy"
+          :columns="COLUMNS"
+          :items="filtered"
+          :loading="store.loading"
+          label="Users"
+          selectable
+        >
+          <!-- What can be done to the selection. Each button is off when nothing in the
+               selection can take it, so a bar over a mixed selection says which actions
+               apply rather than failing on the ones that do not. -->
+          <template #selection>
+            <v-btn
+              :disabled="suspendable(selectedUsers).length === 0"
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:block"
+              size="small"
+              variant="text"
+              @click="askSuspend(selectedUsers)"
+            >
+              Suspend
+            </v-btn>
+            <v-btn
+              :disabled="restorable(selectedUsers).length === 0"
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:lock-open-outline"
+              size="small"
+              variant="text"
+              @click="restore(restorable(selectedUsers))"
+            >
+              Lift suspension
+            </v-btn>
+            <v-btn
+              :disabled="signedIn(selectedUsers).length === 0"
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:logout"
+              size="small"
+              variant="text"
+              @click="signOut(signedIn(selectedUsers))"
+            >
+              Sign out everywhere
+            </v-btn>
+            <v-btn
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:download"
+              size="small"
+              variant="text"
+              @click="exportCsv(selectedUsers)"
+            >
+              Export
+            </v-btn>
+            <v-btn
+              :disabled="erasable(selectedUsers).length === 0"
+              class="text-xs font-medium"
+              color="error"
+              prepend-icon="material-symbols:delete-outline"
+              size="small"
+              variant="text"
+              @click="askDelete(selectedUsers)"
+            >
+              Delete
+            </v-btn>
+          </template>
 
-        <!-- The identity is the way in, which is what makes the ellipsis the place for
-             everything else. The status rides along below `sm`: at 390px the status
-             column sits outside the first viewport, and a suspended account that reads as
-             a normal one is the wrong answer to the only question being asked. -->
-        <template #cell.user="{ item }">
-          <NuxtLink
-            :to="`/users/${item.id}`"
-            class="group/user -mx-1 block rounded-(--idenzy-radius-x-small) px-1 py-0.5 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            <UserIdentity :user="item">
-              <template #below>
-                <span class="mt-1 flex sm:hidden">
-                  <StatusBadge
-                    :detail="statusDetail(item)"
-                    :label="STATUS_LABELS[statusOf(item, now)]"
-                    :tone="STATUS_TONES[statusOf(item, now)]"
-                  />
-                </span>
-              </template>
-            </UserIdentity>
-          </NuxtLink>
-        </template>
-
-        <template #cell.id="{ item }">
-          <button
-            class="group/id inline-flex max-w-full items-center gap-1 rounded-(--idenzy-radius-x-small) font-mono text-[11px] text-ink/65 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            title="Copy user ID"
-            type="button"
-            @click="copyText(item.id, 'User ID')"
-          >
-            <span class="truncate">{{ item.id }}</span>
-            <Icon
-              aria-hidden="true"
-              class="flex-none text-xs opacity-0 transition-opacity duration-150 group-hover/id:opacity-60"
-              name="material-symbols:content-copy-outline"
-            />
-          </button>
-        </template>
-
-        <template #cell.phone="{ item }">
-          <span v-if="item.phone" class="inline-flex items-center gap-1 font-mono text-[11px] text-ink/80 tabular-nums">
-            {{ item.phone }}
-            <Icon
-              v-if="item.phoneVerified"
-              aria-label="Verified"
-              class="text-[13px] text-success"
-              name="material-symbols:verified-outline"
-              role="img"
-            />
-          </span>
-          <span v-else class="text-ink/30">–</span>
-        </template>
-
-        <template #cell.methods="{ item }">
-          <ul v-if="item.methods.length" class="m-0 flex list-none items-center gap-1 p-0">
-            <li v-for="method in item.methods" :key="method">
-              <v-tooltip :text="METHOD_LABELS[method]" location="top">
-                <template #activator="{ props: tip }">
-                  <span
-                    v-bind="tip"
-                    :aria-label="METHOD_LABELS[method]"
-                    class="flex size-6 items-center justify-center rounded-(--idenzy-radius-x-small) bg-ink/4 text-ink/70"
-                    role="img"
-                  >
-                    <Icon
-                      :class="METHOD_ICONS[method].monochrome ? '[.v-theme--dark_&]:invert' : ''"
-                      :name="METHOD_ICONS[method].icon"
-                      aria-hidden="true"
-                      class="text-[13px]"
+          <!-- The identity is the way in, which is what makes the ellipsis the place for
+               everything else. The status rides along below `sm`: at 390px the status
+               column sits outside the first viewport, and a suspended account that reads as
+               a normal one is the wrong answer to the only question being asked. -->
+          <template #cell.user="{ item }">
+            <NuxtLink
+              :to="`/users/${item.id}`"
+              class="group/user -mx-1 block rounded-(--idenzy-radius-x-small) px-1 py-0.5 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <UserIdentity :user="item">
+                <template #below>
+                  <span class="mt-1 flex sm:hidden">
+                    <StatusBadge
+                      :detail="statusDetail(item)"
+                      :label="STATUS_LABELS[statusOf(item, now)]"
+                      :tone="STATUS_TONES[statusOf(item, now)]"
                     />
                   </span>
                 </template>
-              </v-tooltip>
-            </li>
-          </ul>
-          <span v-else class="text-ink/30">–</span>
-        </template>
+              </UserIdentity>
+            </NuxtLink>
+          </template>
 
-        <template #cell.mfa="{ item }">
-          <span v-if="item.deletedAt" class="text-ink/30">–</span>
-          <span v-else-if="item.mfaEnabled" class="inline-flex items-center gap-1 text-ink">
-            <Icon aria-hidden="true" class="text-sm text-success" name="material-symbols:shield-lock-outline" />
-            On
-          </span>
-          <span v-else class="text-ink/40">Off</span>
-        </template>
-
-        <template #cell.status="{ item }">
-          <StatusBadge
-            :detail="statusDetail(item)"
-            :label="STATUS_LABELS[statusOf(item, now)]"
-            :tone="STATUS_TONES[statusOf(item, now)]"
-          />
-        </template>
-
-        <template #cell.sessions="{ item }">
-          <span
-            :class="item.activeSessions > 0 ? 'text-ink' : 'text-ink/30'"
-            class="font-mono tabular-nums"
-          >
-            {{ item.activeSessions }}
-          </span>
-        </template>
-
-        <template #cell.lastSignInAt="{ item }">
-          <span v-if="item.lastSignInAt === null" class="text-ink/35">Never</span>
-          <v-tooltip v-else :text="formatDateTime(item.lastSignInAt)" location="top">
-            <template #activator="{ props: tip }">
-              <span v-bind="tip" class="font-mono text-ink/80 tabular-nums">
-                {{ relativeTime(item.lastSignInAt, now) }}
-              </span>
-            </template>
-          </v-tooltip>
-        </template>
-
-        <template #cell.createdAt="{ item }">
-          <span class="font-mono text-ink/80 tabular-nums">{{ formatDateTime(item.createdAt) }}</span>
-        </template>
-
-        <template #cell.updatedAt="{ item }">
-          <span class="font-mono text-ink/80 tabular-nums">{{ formatDateTime(item.updatedAt) }}</span>
-        </template>
-
-        <template #cell.metadata="{ item }">
-          <span
-            :class="Object.keys(item.metadataPublic).length > 0 ? 'text-ink' : 'text-ink/30'"
-            class="font-mono tabular-nums"
-          >
-            {{ Object.keys(item.metadataPublic).length }}
-          </span>
-        </template>
-
-        <template #actions="{ item }">
-          <UserRowActions
-            :status="statusOf(item, now)"
-            :user="item"
-            @copy-email="item.email && copyText(item.email, 'Email')"
-            @copy-id="copyText(item.id, 'User ID')"
-            @remove="askDelete([item])"
-            @restore="restore([item])"
-            @sign-out="signOut([item])"
-            @suspend="askSuspend([item])"
-          />
-        </template>
-
-        <template #empty>
-          <div class="flex flex-col items-center gap-1 px-4 py-14 text-center">
-            <Icon aria-hidden="true" class="mb-1 text-2xl text-ink/25" name="material-symbols:person-search-outline" />
-            <p class="m-0 text-sm font-medium text-ink">
-              {{ all.length === 0 ? "No users yet" : "No users match" }}
-            </p>
-            <p class="m-0 max-w-sm text-xs text-ink/55">
-              {{
-                all.length === 0
-                  ? "Nobody has signed up on this project. Add one by hand, or import a list."
-                  : "Try another search, or clear the filters to see everyone."
-              }}
-            </p>
-            <v-btn
-              v-if="narrowed"
-              class="mt-2 text-xs font-medium"
-              color="neutral"
-              size="small"
-              variant="outlined"
-              @click="resetFilters"
+          <template #cell.id="{ item }">
+            <button
+              class="group/id inline-flex max-w-full items-center gap-1 rounded-(--idenzy-radius-x-small) font-mono text-[11px] text-ink/65 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              title="Copy user ID"
+              type="button"
+              @click="copyText(item.id, 'User ID')"
             >
-              Clear filters
-            </v-btn>
-          </div>
-        </template>
-      </DataTable>
-    </v-card>
+              <span class="truncate">{{ item.id }}</span>
+              <Icon
+                aria-hidden="true"
+                class="flex-none text-xs opacity-0 transition-opacity duration-150 group-hover/id:opacity-60"
+                name="material-symbols:content-copy-outline"
+              />
+            </button>
+          </template>
+
+          <template #cell.phone="{ item }">
+            <span
+              v-if="item.phone"
+              class="inline-flex items-center gap-1 font-mono text-[11px] text-ink/80 tabular-nums"
+            >
+              {{ item.phone }}
+              <Icon
+                v-if="item.phoneVerified"
+                aria-label="Verified"
+                class="text-[13px] text-success"
+                name="material-symbols:verified-outline"
+                role="img"
+              />
+            </span>
+            <span v-else class="text-ink/30">–</span>
+          </template>
+
+          <template #cell.methods="{ item }">
+            <ul v-if="item.methods.length" class="m-0 flex list-none items-center gap-1 p-0">
+              <li v-for="method in item.methods" :key="method">
+                <v-tooltip :text="METHOD_LABELS[method]" location="top">
+                  <template #activator="{ props: tip }">
+                    <span
+                      v-bind="tip"
+                      :aria-label="METHOD_LABELS[method]"
+                      class="flex size-6 items-center justify-center rounded-(--idenzy-radius-x-small) bg-ink/4 text-ink/70"
+                      role="img"
+                    >
+                      <Icon
+                        :class="METHOD_ICONS[method].monochrome ? '[.v-theme--dark_&]:invert' : ''"
+                        :name="METHOD_ICONS[method].icon"
+                        aria-hidden="true"
+                        class="text-[13px]"
+                      />
+                    </span>
+                  </template>
+                </v-tooltip>
+              </li>
+            </ul>
+            <span v-else class="text-ink/30">–</span>
+          </template>
+
+          <template #cell.mfa="{ item }">
+            <span v-if="item.deletedAt" class="text-ink/30">–</span>
+            <span v-else-if="item.mfaEnabled" class="inline-flex items-center gap-1 text-ink">
+              <Icon
+                aria-hidden="true"
+                class="text-sm text-success"
+                name="material-symbols:shield-lock-outline"
+              />
+              On
+            </span>
+            <span v-else class="text-ink/40">Off</span>
+          </template>
+
+          <template #cell.status="{ item }">
+            <StatusBadge
+              :detail="statusDetail(item)"
+              :label="STATUS_LABELS[statusOf(item, now)]"
+              :tone="STATUS_TONES[statusOf(item, now)]"
+            />
+          </template>
+
+          <template #cell.sessions="{ item }">
+            <span
+              :class="item.activeSessions > 0 ? 'text-ink' : 'text-ink/30'"
+              class="font-mono tabular-nums"
+            >
+              {{ item.activeSessions }}
+            </span>
+          </template>
+
+          <template #cell.lastSignInAt="{ item }">
+            <span v-if="item.lastSignInAt === null" class="text-ink/35">Never</span>
+            <v-tooltip v-else :text="formatDateTime(item.lastSignInAt)" location="top">
+              <template #activator="{ props: tip }">
+                <span v-bind="tip" class="font-mono text-ink/80 tabular-nums">
+                  {{ relativeTime(item.lastSignInAt, now) }}
+                </span>
+              </template>
+            </v-tooltip>
+          </template>
+
+          <template #cell.createdAt="{ item }">
+            <span class="font-mono text-ink/80 tabular-nums">
+              {{ formatDateTime(item.createdAt) }}
+            </span>
+          </template>
+
+          <template #cell.updatedAt="{ item }">
+            <span class="font-mono text-ink/80 tabular-nums">
+              {{ formatDateTime(item.updatedAt) }}
+            </span>
+          </template>
+
+          <template #cell.metadata="{ item }">
+            <span
+              :class="Object.keys(item.metadataPublic).length > 0 ? 'text-ink' : 'text-ink/30'"
+              class="font-mono tabular-nums"
+            >
+              {{ Object.keys(item.metadataPublic).length }}
+            </span>
+          </template>
+
+          <template #actions="{ item }">
+            <UserRowActions
+              :status="statusOf(item, now)"
+              :user="item"
+              @copy-email="item.email && copyText(item.email, 'Email')"
+              @copy-id="copyText(item.id, 'User ID')"
+              @remove="askDelete([item])"
+              @restore="restore([item])"
+              @sign-out="signOut([item])"
+              @suspend="askSuspend([item])"
+            />
+          </template>
+
+          <template #empty>
+            <div class="flex flex-col items-center gap-1 px-4 py-14 text-center">
+              <Icon
+                aria-hidden="true"
+                class="mb-1 text-2xl text-ink/25"
+                name="material-symbols:person-search-outline"
+              />
+              <p class="m-0 text-sm font-medium text-ink">
+                {{ all.length === 0 ? "No users yet" : "No users match" }}
+              </p>
+              <p class="m-0 max-w-sm text-xs text-ink/55">
+                {{
+                  all.length === 0
+                    ? "Nobody has signed up on this project. Add one by hand, or import a list."
+                    : "Try another search, or clear the filters to see everyone."
+                }}
+              </p>
+              <v-btn
+                v-if="narrowed"
+                class="mt-2 text-xs font-medium"
+                color="neutral"
+                size="small"
+                variant="outlined"
+                @click="resetFilters"
+              >
+                Clear filters
+              </v-btn>
+            </div>
+          </template>
+        </DataTable>
+      </v-card>
+    </section>
 
     <UserAddDialog v-model="adding" :create="addUser" />
     <UserSuspendDialog v-model="suspendOpen" :users="suspendTargets" @confirm="suspend" />

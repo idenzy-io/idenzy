@@ -1,30 +1,41 @@
 <script setup lang="ts">
 /**
  * Auth domains: the host a customer's own pages send their API calls to (PROJECT.md 4.3,
- * `apps/auth-api/src/session/session-transport.guard.ts`).
+ * notes/domains.md).
  *
  * The screen exists to say one sentence correctly. An auth domain is an API host and never
  * a page: `auth.customer.com` is a CNAME at our load balancer that a customer's React or
  * Nuxt page sends `fetch` calls to. Nobody navigates to it, it serves no HTML, and the
  * sign-in screen stays wherever the customer built it. Left unsaid, "you need an auth
  * domain" reads as "we host your sign-in screen", which is the one thing this product does
- * not do (ADR-0002), so the page opens with what it is not.
+ * not do (ADR-0002).
  *
- * It is optional, and the screen says so before it asks for anything. Header mode works on
- * the shared host and always has, so a project can ignore this entirely; what a domain buys
- * is cookie mode, the routes a browser navigates to, and a strict preflight. Each of those
- * is stated as what happens without one rather than as a feature that is off, because in
- * every case the answer is a specific refusal a customer will otherwise meet in a log.
+ * It opens on the host in force, because that is the value somebody came to copy, and on
+ * what the transport can do with it. The two capability rows are written as states rather
+ * than as refusals: header mode on the shared host is a legitimate integration, and
+ * "Cookie mode: Refused" over a project that is working exactly as intended reads as an
+ * incident report. What a domain buys is named instead, with the control that starts it.
  *
- * The state worth being careful about is pending. `resolve_project_by_host` matches only a
- * verified row, so while a domain is waiting on DNS a request to it is refused as an
- * unknown project rather than as a domain that is nearly ready. Nothing in that refusal
- * points here, which is why the row says it in words.
+ * Setting one up is a dialog off a row, the way the sending-domain and revocation setups
+ * open. Its last two steps are the reason the note exists: verification and client
+ * migration are different acts, and a verified host does not change a deployed base URL or
+ * make an unrelated application origin same-site with it. So `Update SDK` hands over the
+ * exact URL and says nothing has happened until it ships, and the check names what it
+ * covers and what it cannot see from here.
+ *
+ * Everything copyable is built from `apiBaseUrl` over the project's own domains, so the
+ * endpoint written here is the endpoint written everywhere else, and an illustrative value
+ * says that it is one.
  */
+import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
   AUTH_DOMAIN_CAPABILITIES,
   type AuthDomain,
+  apiBaseUrl,
+  cookieModeState,
+  EXAMPLE_AUTH_HOST,
   effectiveHost,
+  headerModeState,
   liveDomain,
   SHARED_API_HOST,
   siteOf,
@@ -32,18 +43,34 @@ import {
 
 const projects = useProjectStore();
 const store = useAuthDomainsStore();
+const origins = useOriginsStore();
 
 const now = useNow({ interval: 30_000 });
 
-/* Which cards start unfolded. The domain and what it buys are what a visit is for. */
-const expanded = reactive({ capabilities: true, rules: false });
+/* What a domain changes is reference, and it starts folded: the list is the visit. */
+const expanded = reactive({ capabilities: false });
 
 const domains = computed(() => store.forProject(projects.current.id));
 const live = computed(() => liveDomain(domains.value));
 const host = computed(() => effectiveHost(domains.value));
+const baseUrl = computed(() => apiBaseUrl(host.value));
 const custom = computed(() => live.value !== null);
 
-/* The fields on their way to the server, so each row shows its own wait. */
+const allowedOrigins = computed(() =>
+  origins.forProject(projects.current.id).map((entry) => entry.origin),
+);
+
+const header = headerModeState();
+const cookies = computed(() => cookieModeState(domains.value));
+
+const headerBadge = computed(() => {
+  if (store.loading) return { label: "Reading", tone: "neutral" as const };
+  if (custom.value) return { label: "Your domain", tone: "success" as const };
+  if (domains.value.length > 0) return { label: "Waiting on DNS", tone: "warning" as const };
+  return { label: "Shared host", tone: "neutral" as const };
+});
+
+/* The rows on their way to the server, so each one shows its own wait. */
 const busy = ref<Set<string>>(new Set());
 
 function isBusy(key: string): boolean {
@@ -59,25 +86,53 @@ async function whileBusy(key: string, work: () => Promise<void>) {
   }
 }
 
-const working = computed(() => busy.value.size > 0);
-
 /*
- * Adding.
+ * Adding, setting up and removing.
  */
 const addOpen = ref(false);
+const setupId = ref<string | null>(null);
+const setupOpen = ref(false);
+
+const setupDomain = computed<AuthDomain | null>(
+  () => domains.value.find((domain) => domain.id === setupId.value) ?? null,
+);
+
+function openSetup(domain: AuthDomain) {
+  setupId.value = domain.id;
+  setupOpen.value = true;
+}
 
 function addDomain(domain: string) {
   void whileBusy("add", async () => {
     await store.add(projects.current.id, domain);
     addOpen.value = false;
+    /* Straight into the setup, because the records are the whole of what is left to do and
+       a row that says "waiting on DNS" answers nothing on its own. */
+    const created = domains.value.find((row) => row.domain === domain);
+    if (created !== undefined) openSetup(created);
     notify(`${domain} added. Publish its two records and it goes live on the next check.`);
   });
 }
 
-function recheck(domain: AuthDomain) {
-  void whileBusy(domain.id, async () => {
-    await store.recheck(projects.current.id, domain.id);
-    notify(`Checked ${domain.domain}`);
+function recheck() {
+  const row = setupDomain.value;
+  if (row === null) return;
+  void whileBusy(row.id, async () => {
+    await store.recheck(projects.current.id, row.id);
+    notify(`Checked ${row.domain}`);
+  });
+}
+
+async function verify(origin: string) {
+  const row = setupDomain.value;
+  if (row === null) return;
+  await whileBusy("probe", async () => {
+    await store.checkSetup(
+      projects.current.id,
+      row.id,
+      origin,
+      allowedOrigins.value.includes(origin.trim()),
+    );
   });
 }
 
@@ -99,6 +154,7 @@ function confirmRemove() {
   void whileBusy(row.id, async () => {
     await store.remove(projects.current.id, row.id);
     removeOpen.value = false;
+    setupOpen.value = false;
     notify(`${row.domain} removed`);
   });
 }
@@ -109,16 +165,62 @@ watch(
   () => {
     addOpen.value = false;
     removeOpen.value = false;
+    setupOpen.value = false;
     removing.value = null;
+    setupId.value = null;
   },
 );
 
-const { copy } = useClipboard();
+/*
+ * The list.
+ */
 
-async function copyHost() {
-  await copy(`https://${host.value}`);
-  notify("API base URL copied");
-}
+const LIST_COLUMNS: readonly RecordColumn[] = [
+  { key: "domain", label: "Domain", width: "minmax(0, 1.6fr)" },
+  { key: "dns", label: "DNS", width: "132px" },
+  { key: "certificate", label: "Certificate", width: "140px" },
+  { key: "checked", label: "Last checked", width: "116px" },
+  { key: "manage", label: "Manage", width: "116px", align: "end" },
+];
+
+const listHeading = computed(() => {
+  if (domains.value.length === 0) return "This project uses the shared host";
+  if (custom.value) return `Answering on ${live.value?.domain}`;
+  return domains.value.length === 1
+    ? "One domain waiting on DNS"
+    : `${domains.value.length} domains waiting on DNS`;
+});
+
+/*
+ * What has called the host, which is nothing anybody counts yet.
+ *
+ * Requests per host are not metered: the figures a project has are billing's, and they do
+ * not say which hostname a call arrived on. The tiles are here rather than absent because
+ * the question is a real one and the honest answer is a shape with no series in it, said
+ * in words under the figure.
+ */
+const CONNECTED_FIGURES: readonly { label: string; seed: number; info: string }[] = [
+  {
+    label: "Requests",
+    seed: 11,
+    info: "API calls this project answered, whichever host they arrived on.",
+  },
+  {
+    label: "On your domain",
+    seed: 17,
+    info: "How many of them arrived on a host of yours rather than on the shared one.",
+  },
+  {
+    label: "Origins seen",
+    seed: 23,
+    info: "Distinct browser origins that called. Which of them are permitted is the CORS allowlist, and that is a list rather than a measurement.",
+  },
+  {
+    label: "Cookie-mode sessions",
+    seed: 29,
+    info: "Sessions holding a __Host- cookie rather than a token in the client. Only a verified domain of your own can produce one.",
+  },
+];
 
 const toast = ref("");
 const toastOpen = ref(false);
@@ -128,37 +230,15 @@ function notify(text: string) {
   toastOpen.value = true;
 }
 
-const GUIDES = [
-  {
-    icon: "material-symbols:language",
-    title: "Custom auth domains",
-    detail: "What one is, what it is not, and the two records that make it work.",
-    href: "https://idenzy.dev/docs/domains/auth",
-  },
-  {
-    icon: "material-symbols:cookie-outline",
-    title: "Cookie mode",
-    detail: "Why SameSite decides it, and what the SDK does when it cannot be had.",
-    href: "https://idenzy.dev/docs/sdk/js/transport",
-  },
-  {
-    icon: "material-symbols:swap-horiz",
-    title: "OAuth without an auth domain",
-    detail: "The JSON twin your page calls and then navigates itself.",
-    href: "https://idenzy.dev/docs/oauth/start",
-  },
-  {
-    icon: "material-symbols:dns-outline",
-    title: "DNS and certificates",
-    detail: "The CNAME, the authorisation record, and why renewal depends on it.",
-    href: "https://idenzy.dev/docs/domains/dns",
-  },
-];
+const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:language" title="Auth domains">
+  <div class="flex w-full flex-col gap-6">
+    <PageHeader title="Auth domains">
+      <template #badge>
+        <StatusBadge :label="headerBadge.label" :tone="headerBadge.tone" />
+      </template>
       <template #description>
         A host of your own for
         <span class="font-medium text-ink">{{ projects.current.name }}</span
@@ -166,280 +246,282 @@ const GUIDES = [
         where it is, and nothing here changes what you render.
       </template>
       <template #actions>
-        <FancyButton v-if="domains.length > 0" :disabled="isBusy('add')" @click="addOpen = true">
+        <v-btn
+          :href="GUIDES_URL"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:menu-book-outline"
+          rel="noopener"
+          size="small"
+          target="_blank"
+          variant="outlined"
+        >
+          Domain guides
+        </v-btn>
+        <FancyButton :disabled="isBusy('add')" @click="addOpen = true">
           <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Add a domain
+          Add domain
         </FancyButton>
       </template>
     </PageHeader>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-      <div class="flex min-w-0 flex-col gap-6">
-        <LayerCard :padded="false" title="Your domains">
-          <template #badge>
-            <StatusBadge
-              :label="custom ? 'Live' : domains.length > 0 ? 'Waiting on DNS' : 'Shared host'"
-              :tone="custom ? 'success' : domains.length > 0 ? 'warning' : 'neutral'"
-            />
-          </template>
-
-          <p v-if="store.loading" class="m-0 px-4 py-8 text-center text-xs text-ink/50">
-            Reading the domains.
-          </p>
-
-          <!-- The empty state is where the framing has to land, because a project with no
-               domain is the one most likely to misread what adding one would do. -->
-          <EmptyState
-            v-else-if="domains.length === 0"
-            icon="material-symbols:language"
-            title="This project uses the shared host"
-          >
-            <template #description>
-              Everything works on
-              <span class="font-mono text-ink/80">{{ SHARED_API_HOST }}</span> already, in
-              header mode. A domain of your own is a CNAME at our load balancer that your
-              pages call instead, and what it buys is cookie mode and the routes a browser
-              navigates to. It hosts nothing: your sign-in screen stays where you built it.
+    <!--
+      The host in force, which is the value somebody came to copy, and what the transport
+      can do with it. Both capability rows are states rather than refusals: header mode on
+      the shared host is a legitimate integration and must not read as an incident.
+    -->
+    <v-card border flat>
+      <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 p-4">
+        <div class="flex min-w-0 flex-1 basis-80 flex-col gap-1.5">
+          <span class="text-[11px] leading-4 text-ink/45">
+            Every API call from your pages goes to
+          </span>
+          <span
+            v-if="store.loading"
+            class="my-1 block h-4 w-64 max-w-full animate-pulse rounded-full bg-ink/8"
+          />
+          <CopyField v-else :value="baseUrl" label="Copy the API base URL" wrap />
+          <span class="text-[11px] leading-4 text-ink/50">
+            <template v-if="custom">
+              A host of yours, so this is the value your client is configured with.
             </template>
-            <template #actions>
-              <FancyButton :disabled="isBusy('add')" @click="addOpen = true">
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-                Add a domain
-              </FancyButton>
+            <template v-else>
+              Ours, and it works. A domain of your own replaces this value and nothing else.
             </template>
-          </EmptyState>
-
-          <ul v-else class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="domain in domains" :key="domain.id">
-              <AuthDomainRow
-                :busy="isBusy(domain.id)"
-                :domain="domain"
-                :now="now"
-                @recheck="recheck(domain)"
-                @remove="askRemove(domain)"
-              />
-            </li>
-          </ul>
-
-          <div
-            class="flex flex-col gap-1 border-t border-line bg-canvas/60 px-4 py-3 text-[11px] leading-4 text-ink/60"
-          >
-            <p class="m-0">
-              <span class="font-medium text-ink">A hostname belongs to one project.</span>
-              The index is on the domain alone, across every project and both kinds of
-              domain, so a name claimed here cannot be claimed anywhere else.
-            </p>
-            <p class="m-0">
-              <span class="font-medium text-ink">Only a verified domain resolves.</span> While
-              one is waiting on DNS, a request to it is refused as an unknown project rather
-              than as a domain that is nearly ready, and nothing in that refusal points here.
-            </p>
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.capabilities"
-          :description="
-            custom
-              ? 'What this project has because a domain is live.'
-              : 'What a domain would buy. Each of these has an answer today rather than simply being off.'
-          "
-          expandable
-          title="What it changes"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              v-for="capability in AUTH_DOMAIN_CAPABILITIES"
-              :key="capability.id"
-              :label="capability.title"
-            >
-              <template #description>
-                {{ custom ? capability.with : capability.without }}
-              </template>
-              <template #actions>
-                <span
-                  v-if="!custom && capability.errorCode"
-                  class="rounded-full border border-line px-1.5 font-mono text-[10px] leading-4 whitespace-nowrap text-ink/55"
-                >
-                  {{ capability.errorCode }}
-                </span>
-                <span
-                  v-else
-                  class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium whitespace-nowrap text-ink/55"
-                >
-                  {{ custom ? "Yours" : "Browser's" }}
-                </span>
-              </template>
-            </SettingRow>
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.rules"
-          description="What the host does, what it refuses, and the two things about DNS that bite later rather than now."
-          expandable
-          title="How it behaves"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow label="What it serves">
-              <template #description>
-                JSON and HTTP redirects, and nothing else. A
-                <span class="font-mono text-ink/80">Content-Type</span> of
-                <span class="font-mono text-ink/80">text/html</span> from this host is a bug
-                with a test asserting against it. That is what makes the headless decision a
-                security property rather than only a product one: your Content-Security-Policy
-                governs your sign-in page, and no script of ours runs on it.
-              </template>
-              <template #actions>
-                <span
-                  class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
-                >
-                  Never HTML
-                </span>
-              </template>
-            </SettingRow>
-            <SettingRow
-              description="Header first, then Authorization, then Host, and it is first-present-wins rather than a chain: a header that is present and unresolvable is a hard failure. Falling through to Host would let a request that named one project execute against whatever project the Host maps to, and nobody would notice."
-              fixed="Host is last"
-              label="How a request finds its project"
-            />
-            <SettingRow
-              description="Issued automatically once the authorisation record is seen, and renewed from that same record. Leave it published: removing it after the domain is working breaks renewal months later, at a moment nothing here caused and nothing obvious explains."
-              fixed="Automatic"
-              label="The certificate"
-            />
-            <SettingRow
-              description="A zone's apex cannot hold a CNAME, so an auth domain is always a subdomain. That is a DNS rule rather than ours, and it is why the field refuses a bare example.com before anything is stored."
-              fixed="A subdomain"
-              label="Why not the apex"
-            />
-            <SettingRow label="Localhost">
-              <template #description>
-                The development exception. Everything on localhost is same-site by accident,
-                so cookie mode works there without any of this, and a project can build the
-                whole integration before deciding whether it wants a domain at all.
-              </template>
-              <template #actions>
-                <span
-                  class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
-                >
-                  Exempt
-                </span>
-              </template>
-            </SettingRow>
-          </div>
-        </LayerCard>
+          </span>
+        </div>
       </div>
 
-      <aside class="flex flex-col gap-4 xl:sticky xl:top-20">
-        <div class="flex items-baseline justify-between px-1">
-          <h2 class="m-0 text-base font-semibold tracking-tight text-ink">This project</h2>
-          <span class="text-xs text-ink/55">Right now</span>
+      <div class="grid gap-px border-t border-line bg-line sm:grid-cols-3">
+        <div class="flex flex-col gap-1 bg-surface p-4">
+          <span class="text-[11px] leading-4 text-ink/45">Header mode</span>
+          <span class="text-xs font-medium text-ink">{{ header.label }}</span>
+          <span class="text-[11px] leading-4 text-ink/50">{{ header.detail }}</span>
         </div>
 
-        <LayerCard
-          :padded="false"
-          :description="
-            custom
-              ? 'Point your SDK here. Nothing navigates to it; your pages call it.'
-              : 'Where your pages call today. A domain of your own replaces this value and nothing else.'
-          "
-          title="API base URL"
-        >
-          <div class="p-4">
-            <CopyField :value="`https://${host}`" label="Copy the API base URL" />
-          </div>
-          <div class="flex flex-col gap-2.5 border-t border-line p-4 text-xs">
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-ink/60">Cookie mode</span>
-              <span :class="custom ? 'text-success' : 'text-ink/70'" class="text-[11px]">
-                {{ custom ? "Available" : "Refused" }}
-              </span>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-ink/60">Same-site with</span>
-              <span class="font-mono text-[11px] text-ink/75">
-                {{ live ? siteOf(live.domain) : "Nothing" }}
-              </span>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-ink/60">Domains added</span>
-              <span class="font-mono text-[11px] text-ink tabular-nums">{{ domains.length }}</span>
-            </div>
-          </div>
-          <button
-            class="flex w-full items-center justify-center gap-1.5 border-t border-line px-4 py-2.5 text-[11px] font-medium text-ink/70 transition-colors duration-150 hover:bg-ink/3 hover:text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
-            type="button"
-            @click="copyHost"
+        <div class="flex flex-col gap-1 bg-surface p-4">
+          <span class="text-[11px] leading-4 text-ink/45">Cookie mode</span>
+          <span
+            :class="cookies.state === 'ready' ? 'text-success' : 'text-ink'"
+            class="text-xs font-medium"
           >
-            <Icon aria-hidden="true" class="text-sm" name="material-symbols:content-copy-outline" />
-            Copy for your SDK
+            {{ cookies.label }}
+          </span>
+          <span class="text-[11px] leading-4 text-ink/50">{{ cookies.detail }}</span>
+          <!-- A setup action rather than a refusal: the state is a thing to start, not a
+               thing that failed (notes/domains.md P2). -->
+          <button
+            v-if="cookies.action"
+            class="mt-0.5 inline-flex w-fit items-center gap-0.5 text-[11px] font-medium text-ink transition-colors duration-150 hover:underline"
+            type="button"
+            @click="
+              cookies.action === 'Add a domain'
+                ? (addOpen = true)
+                : domains[0] && openSetup(domains[0])
+            "
+          >
+            {{ cookies.action }}
+            <Icon aria-hidden="true" class="text-sm" name="material-symbols:chevron-right" />
           </button>
-        </LayerCard>
+        </div>
 
-        <LayerCard :padded="false" description="Not this screen's, and worth not confusing." title="The other domains">
-          <ul class="m-0 flex list-none flex-col divide-y divide-line p-0 text-xs">
-            <li class="flex flex-col gap-0.5 px-4 py-3">
-              <NuxtLink
-                class="font-medium text-ink no-underline hover:underline"
-                to="/email/domains"
-                >Sending domains</NuxtLink
-              >
-              <span class="text-[11px] leading-4 text-ink/55">
-                Where your mail comes from. A different row of the same table, with DKIM and
-                SPF rather than a CNAME, and no bearing on how your app calls the API.
+        <div class="flex flex-col gap-1 bg-surface p-4">
+          <span class="text-[11px] leading-4 text-ink/45">Same-site with</span>
+          <span class="font-mono text-xs break-all text-ink">
+            {{ live ? siteOf(live.domain) : "—" }}
+          </span>
+          <span class="text-[11px] leading-4 text-ink/50">
+            <template v-if="live">
+              Any page under this site can hold a cookie the host sets. Everything else is
+              cross-site and stays in header mode.
+            </template>
+            <template v-else>
+              SameSite is a site rule, so nothing is same-site with our shared host. This is
+              what a domain on your own site changes.
+            </template>
+          </span>
+        </div>
+      </div>
+    </v-card>
+
+    <!--
+      What has called the host. Nothing meters requests per hostname, so the tiles say so
+      in words rather than drawing a chart of nothing.
+    -->
+    <section class="flex flex-col gap-3">
+      <header class="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+        <h2 class="m-0 text-sm font-medium text-ink">Connected applications</h2>
+        <span class="text-xs text-ink/55">Last 30 days</span>
+      </header>
+
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <UsageTile
+          v-for="figure in CONNECTED_FIGURES"
+          :key="figure.label"
+          :info="figure.info"
+          :label="figure.label"
+          :seed="figure.seed"
+          :value="0"
+        />
+      </div>
+
+      <p class="m-0 text-[11px] leading-4 text-ink/55">
+        Nothing counts requests per host yet, so these are the tiles as they will read. What
+        is registered rather than observed is the CORS allowlist on
+        <NuxtLink class="font-medium text-ink" to="/domains/origins">Allowed origins</NuxtLink>,
+        and where your mail comes from is a different table again on
+        <NuxtLink class="font-medium text-ink" to="/email/domains">Sending domains</NuxtLink>.
+      </p>
+    </section>
+
+    <!--
+      The list. DNS and the certificate are two columns because they fail separately and
+      are fixed by two different records.
+    -->
+    <section class="flex flex-col gap-3">
+      <header class="flex min-w-0 flex-col gap-0.5">
+        <h2 class="m-0 text-sm font-medium text-ink">
+          {{ store.loading ? "Reading this project's domains" : listHeading }}
+        </h2>
+        <p class="m-0 text-xs leading-5 text-ink/55">
+          A hostname belongs to one project, across every project and both kinds of domain.
+          Only a verified one resolves: while a domain waits on DNS, a request to it is
+          refused as an unknown project rather than as a host that is nearly ready.
+        </p>
+      </header>
+
+      <RecordTable :columns="LIST_COLUMNS" framed label="Auth domains">
+        <template v-if="store.loading">
+          <li v-for="row in 2" :key="row" class="record-row">
+            <span class="record-cell record-cell--primary flex items-center gap-3">
+              <span
+                class="size-7 flex-none animate-pulse rounded-(--idenzy-radius-x-small) bg-ink/8"
+              />
+              <span class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span class="h-2.5 w-40 animate-pulse rounded-full bg-ink/8" />
+                <span class="h-2 w-56 animate-pulse rounded-full bg-ink/6" />
               </span>
-            </li>
-            <li class="flex flex-col gap-0.5 px-4 py-3">
-              <NuxtLink
-                class="font-medium text-ink no-underline hover:underline"
-                to="/domains/origins"
-                >Allowed origins</NuxtLink
-              >
-              <span class="text-[11px] leading-4 text-ink/55">
-                Which browser origins may call with credentials. Its own exact-match list,
-                derived from nothing, and needed whether or not you have an auth domain.
-              </span>
-            </li>
-          </ul>
-        </LayerCard>
+            </span>
+            <span class="record-cell record-cell--half">
+              <span class="block h-4 w-20 animate-pulse rounded-full bg-ink/8" />
+            </span>
+            <span class="record-cell record-cell--half">
+              <span class="block h-4 w-20 animate-pulse rounded-full bg-ink/8" />
+            </span>
+            <span class="record-cell record-cell--half">
+              <span class="block h-2 w-14 animate-pulse rounded-full bg-ink/6" />
+            </span>
+            <span class="record-cell record-cell--action" />
+          </li>
+        </template>
 
-        <LayerCard :padded="false" title="Guides">
-          <ul class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="guide in GUIDES" :key="guide.href">
-              <a
-                :href="guide.href"
-                class="flex items-start gap-3 px-4 py-3 text-xs no-underline transition-colors duration-150 hover:bg-ink/3"
-                rel="noopener"
-                target="_blank"
-              >
-                <Icon
-                  :name="guide.icon"
-                  aria-hidden="true"
-                  class="mt-px flex-none text-xl text-ink/70"
-                />
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-medium text-ink">{{ guide.title }}</span>
-                  <span class="line-clamp-1 text-[11px] text-ink/55">{{ guide.detail }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
-        </LayerCard>
+        <template v-else>
+          <AuthDomainRow
+            v-for="domain in domains"
+            :key="domain.id"
+            :busy="isBusy(domain.id)"
+            :domain="domain"
+            :now="now"
+            @open="openSetup(domain)"
+            @remove="askRemove(domain)"
+          />
+        </template>
 
-        <SaveStatus :last-saved="store.lastChangedAt(projects.current.id)" :saving="working" />
-      </aside>
-    </div>
+        <!-- The empty state is where the framing has to land, and it leads with the choice
+             rather than with the architecture behind it (notes/domains.md P1). -->
+        <template #empty>
+          <div
+            v-if="!store.loading && domains.length === 0"
+            class="flex flex-col items-center gap-1.5 px-4 py-12 text-center"
+          >
+            <Icon
+              aria-hidden="true"
+              class="mb-1 text-2xl text-ink/25"
+              name="material-symbols:language"
+            />
+            <p class="m-0 text-sm font-medium text-ink">
+              Use <span class="font-mono">{{ EXAMPLE_AUTH_HOST }}</span> for authentication
+              requests
+            </p>
+            <p class="m-0 max-w-lg text-xs leading-5 text-ink/55">
+              A host on your own site, so the refresh token can live in a cookie the browser
+              will not hand to script. It takes two DNS records and about ten minutes, most of
+              it waiting, and it needs access to the zone that answers for your site.
+            </p>
+            <p class="m-0 max-w-lg text-xs leading-5 text-ink/50">
+              Everything already works without one on
+              <span class="font-mono text-ink/70">{{ SHARED_API_HOST }}</span> in header mode,
+              so this is a choice rather than a setup step.
+            </p>
+            <FancyButton class="mt-2" @click="addOpen = true">
+              <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+              Add domain
+            </FancyButton>
+          </div>
+        </template>
+      </RecordTable>
+    </section>
 
+    <LayerCard
+      v-model:open="expanded.capabilities"
+      :padded="false"
+      description="Three things behave differently with a host of your own, and each one is a specific answer rather than a feature that is off."
+      expandable
+      title="What a domain changes"
+    >
+      <ul class="m-0 list-none divide-y divide-line p-0">
+        <li
+          v-for="capability in AUTH_DOMAIN_CAPABILITIES"
+          :key="capability.id"
+          class="flex flex-col gap-2 px-4 py-3.5"
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-medium text-ink">{{ capability.title }}</span>
+            <span
+              v-if="capability.errorCode"
+              class="rounded-full bg-ink/4 px-1.5 font-mono text-[10px] leading-4 whitespace-nowrap text-ink/55 ring-1 ring-ink/6 ring-inset"
+            >
+              {{ capability.errorCode }}
+            </span>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <p class="m-0 text-[11px] leading-4 text-ink/55">
+              <span class="font-medium text-ink/75">With a domain.</span>
+              {{ capability.with }}
+            </p>
+            <p class="m-0 text-[11px] leading-4 text-ink/55">
+              <span class="font-medium text-ink/75">On the shared host.</span>
+              {{ capability.without }}
+            </p>
+          </div>
+        </li>
+      </ul>
+    </LayerCard>
+
+    <!-- Mounted only while open, like every dialog here that writes and then closes. -->
     <AuthDomainAddDialog
+      v-if="addOpen"
       v-model="addOpen"
       :existing="domains.map((domain) => domain.domain)"
       :saving="isBusy('add')"
       @add="addDomain"
     />
 
+    <AuthDomainSetupDialog
+      v-if="setupOpen && setupDomain"
+      v-model="setupOpen"
+      :busy="isBusy(setupDomain.id)"
+      :checking="isBusy('probe')"
+      :domain="setupDomain"
+      :origins="allowedOrigins"
+      :probe="store.probeFor(projects.current.id)"
+      @recheck="recheck"
+      @remove="askRemove(setupDomain)"
+      @verify="verify"
+    />
+
     <AuthDomainRemoveDialog
-      v-if="removing"
+      v-if="removeOpen && removing"
       v-model="removeOpen"
       :domain="removing"
       :removing="isBusy(removing.id)"
@@ -448,7 +530,7 @@ const GUIDES = [
 
     <v-snackbar
       v-model="toastOpen"
-      :timeout="4000"
+      :timeout="3000"
       color="surface"
       location="bottom right"
       rounded="lg"

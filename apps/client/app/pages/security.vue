@@ -39,20 +39,27 @@ import { defaultColumnState, reconcileColumnState } from "~/utils/data-table";
 import { type TimeWindow, WINDOW_LABELS } from "~/utils/filters";
 import type { MetricSeries, MetricTone } from "~/utils/metric-chart";
 import {
+  AUTH_OUTCOME_STATUSES,
   BREACH_CHECK,
   countSignals,
+  DEPLOYMENT_DEFENCES,
   type DetectorId,
   DISMISS_REASON_LABELS,
   type DismissReason,
+  describeEvidence,
+  detectorStatuses,
   INDISTINGUISHABLE,
   inWindow,
   KIND_LABELS,
   KIND_NOTES,
   kindOf,
+  MFA_REQUIRED_SAMPLE,
   REFUSAL_LABELS,
   REFUSAL_REASONS,
+  RESPONSE_ENFORCEMENT,
   RESPONSE_LABELS,
   RESPONSE_NOTES,
+  responseAvailable,
   SECURITY_ISSUE,
   SEVERITY_LABELS,
   SEVERITY_NOTES,
@@ -75,6 +82,7 @@ import {
   TRAVEL_SPEED_MAX,
   TRAVEL_SPEED_MIN,
   tallyKinds,
+  unenforcedCount,
 } from "~/utils/security";
 import { capShare, formatMoney } from "~/utils/sms-policy";
 import { formatDateTime, relativeTime } from "~/utils/time";
@@ -88,6 +96,31 @@ const { copy } = useClipboard({ legacy: true });
 
 /* A window counted back from now has to move, or "last 24 hours" quietly stops meaning it. */
 const now = useNow({ interval: 30_000 });
+
+/*
+ * Two halves, and they are not the same job. Investigating a signal is a queue somebody
+ * works down; changing a detector is a setting somebody comes to once. They shared a long
+ * page and competed for it (notes/security.md P2), so they are tabs, and the tab is in the
+ * query so a screen somebody is asked to look at can be linked to. Replaced rather than
+ * pushed: moving between the two is not navigation to step back through.
+ */
+type SecurityTab = "investigate" | "settings";
+
+const route = useRoute();
+const router = useRouter();
+
+const tab = computed<string>({
+  get: () => (route.query.tab === "settings" ? "settings" : "investigate"),
+  set: (value: string) => {
+    const next = value === "settings" ? "settings" : "investigate";
+    void router.replace({ query: next === "investigate" ? {} : { tab: next } });
+  },
+});
+
+const TABS: readonly SegmentedOption[] = [
+  { value: "investigate", label: "Investigate" },
+  { value: "settings", label: "Detection settings" },
+];
 
 const settings = computed(() => store.settingsFor(projects.current.id));
 const stats = computed(() => store.stats(projects.current.id));
@@ -164,9 +197,78 @@ const filterOptions = computed<SegmentedOption[]>(() => [
   { value: "all", label: `All · ${counts.value.all}` },
 ]);
 
-const filtered = computed(() =>
-  rows.value.filter((row) => filter.value === "all" || row.signal.state === filter.value),
+const search = computed({
+  get: () => query.value,
+  set: (value: string | null) => {
+    query.value = value ?? "";
+  },
+});
+
+const query = ref("");
+
+/** Everything on the row a reader can see, so a search finds what they are looking at. */
+function haystack(row: SignalRow): string {
+  return [
+    KIND_LABELS[kindOf(row.signal)],
+    describeEvidence(row.signal.evidence),
+    row.user === null ? "" : nameOf(row.user),
+    row.user?.email ?? "",
+    row.user?.phone ?? "",
+    row.signal.id,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+const filtered = computed(() => {
+  const needle = query.value.trim().toLowerCase();
+  return rows.value.filter(
+    (row) =>
+      (filter.value === "all" || row.signal.state === filter.value) &&
+      (needle === "" || haystack(row).includes(needle)),
+  );
+});
+
+/*
+ * The three counts in the strip, over exactly the rows the queue is showing.
+ *
+ * They used to come from the store's own totals, which counted every signal a project had
+ * ever recorded: the strip said twenty-two open while the list under it said ten, and an
+ * operator cannot reconcile two numbers that answer different questions without being told
+ * they do (notes/security.md P1). One source, one scope.
+ */
+const scope = computed(() => ({
+  act: filtered.value.filter((row) => row.severity === "act").length,
+  review: filtered.value.filter((row) => row.severity === "review").length,
+  record: filtered.value.filter((row) => row.severity === "record").length,
+}));
+
+/*
+ * The signal being read, in a dialog over the table.
+ *
+ * The queue is the project-wide list surface — sorting, paging, a column menu, an
+ * arrangement a reader keeps — and a detail panel wedged beside it left the table half a
+ * screen wide with nowhere to put the account a row is about. So the table has the page,
+ * and reading one signal is a dialog, the way every other detail in the panel opens.
+ */
+const readingId = ref<string | null>(null);
+const detailOpen = ref(false);
+
+const reading = computed<SignalRow | null>(
+  () => rows.value.find((row) => row.id === readingId.value) ?? null,
 );
+
+function read(row: SignalRow) {
+  readingId.value = row.id;
+  detailOpen.value = true;
+}
+
+/** What the deployment can actually carry out, per detector. */
+const statuses = computed(() => detectorStatuses(settings.value.rules));
+const unenforced = computed(() => unenforcedCount(statuses.value));
+
+/** How many are looking, which is what makes an empty queue worth reading. */
+const observing = computed(() => statuses.value.filter((status) => status.observed).length);
 
 const SEVERITY_TONES: Record<Severity, BadgeTone> = {
   act: "error",
@@ -307,6 +409,9 @@ const dismissing = ref<SignalRow | null>(null);
 const dismissDialog = ref(false);
 
 function askDismiss(row: SignalRow) {
+  /* One dialog at a time: the dismiss dialog is opened from the detail as well as from a
+     row, and two overlays deep is a reader who cannot tell which Cancel they are pressing. */
+  detailOpen.value = false;
   dismissing.value = row;
   dismissDialog.value = true;
 }
@@ -470,8 +575,8 @@ const GUIDES = [
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:security" title="Security center">
+  <div class="flex w-full flex-col gap-5">
+    <PageHeader title="Security center">
       <template #description>
         What the detectors on
         <span class="font-medium text-ink">{{ projects.current.name }}</span> have seen, and
@@ -479,17 +584,6 @@ const GUIDES = [
         account was taken, and nothing here acts on one by itself.
       </template>
       <template #actions>
-        <v-btn
-          :disabled="filtered.length === 0"
-          class="text-xs font-medium"
-          color="neutral"
-          prepend-icon="material-symbols:download"
-          size="small"
-          variant="outlined"
-          @click="exportCsv"
-        >
-          Export view
-        </v-btn>
         <v-btn
           :href="GUIDES_URL"
           class="text-xs font-medium"
@@ -505,158 +599,217 @@ const GUIDES = [
       </template>
     </PageHeader>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-      <div class="flex min-w-0 flex-col gap-6">
-        <LayerCard
-          :padded="false"
-          description="Ranked by how soon to look, never by how bad it is. A row is what a detector saw, and the numbers behind it are on the row."
-          title="Signals"
+    <!-- Investigating and configuring are two jobs, so they are two tabs. -->
+    <SegmentedControl v-model="tab" :options="TABS" label="Security center" />
+
+    <!-- ============================ Investigate ============================ -->
+    <template v-if="tab === 'investigate'">
+      <!--
+        Three counts and the period they are counted over, and they are the queue's own
+        rows rather than the project's totals: two numbers that answer different questions
+        cannot be reconciled by a reader who was not told they do.
+      -->
+      <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span
+            class="inline-flex items-center gap-2 rounded-(--idenzy-radius-x-small) bg-ink/4 px-2.5 py-1.5 text-xs ring-1 ring-ink/6 ring-inset"
+          >
+            <span class="size-1.5 flex-none rounded-full bg-error" />
+            <span class="font-medium text-ink">Act now</span>
+            <span class="font-mono text-ink/70 tabular-nums">{{ scope.act }}</span>
+          </span>
+          <span
+            class="inline-flex items-center gap-2 rounded-(--idenzy-radius-x-small) bg-ink/4 px-2.5 py-1.5 text-xs ring-1 ring-ink/6 ring-inset"
+          >
+            <span class="size-1.5 flex-none rounded-full bg-warning" />
+            <span class="font-medium text-ink">Review</span>
+            <span class="font-mono text-ink/70 tabular-nums">{{ scope.review }}</span>
+          </span>
+          <span
+            class="inline-flex items-center gap-2 rounded-(--idenzy-radius-x-small) bg-ink/4 px-2.5 py-1.5 text-xs ring-1 ring-ink/6 ring-inset"
+          >
+            <span class="size-1.5 flex-none rounded-full bg-ink/30" />
+            <span class="font-medium text-ink">Recorded</span>
+            <span class="font-mono text-ink/70 tabular-nums">{{ scope.record }}</span>
+          </span>
+          <span class="text-[11px] text-ink/45">
+            in this view, {{ WINDOW_LABELS[windowChoice].toLowerCase() }}
+          </span>
+        </div>
+        <SegmentedControl v-model="windowTab" :options="windowOptions" label="Period" />
+      </div>
+
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <v-text-field
+          v-model="search"
+          aria-label="Search the queue"
+          class="security__search w-full lg:max-w-md"
+          clearable
+          density="comfortable"
+          hide-details
+          placeholder="Search a signal, an account or an address"
+          prepend-inner-icon="material-symbols:search"
+          variant="outlined"
+        />
+        <div class="flex flex-wrap items-center gap-2">
+          <SegmentedControl v-model="filterTab" :options="filterOptions" label="Signals" />
+          <v-btn
+            :disabled="filtered.length === 0"
+            class="text-xs font-medium"
+            color="neutral"
+            prepend-icon="material-symbols:download"
+            size="small"
+            variant="outlined"
+            @click="exportCsv"
+          >
+            Export view
+          </v-btn>
+        </div>
+      </div>
+
+      <!--
+        The queue itself, on the panel's list surface: sorting, paging, a column menu and
+        an arrangement a reader keeps. It had the left five columns of a split with the
+        signal being read beside it, which left no room for the account a row is about;
+        the table has the page now and reading one is a dialog.
+      -->
+      <v-card border flat>
+        <div
+          class="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between"
         >
-          <template #badge>
-            <StatusBadge
-              :label="
-                counts.urgent === 0
-                  ? 'Nothing urgent open'
-                  : `${counts.urgent} to act on`
-              "
-              :tone="counts.urgent === 0 ? 'success' : 'error'"
+          <p class="m-0 text-xs text-ink/55">
+            Ranked by how soon to look, never by how bad it is. A signal outlives the session
+            it came from and is kept {{ settings.retentionDays }} days on this project.
+          </p>
+          <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
+        </div>
+
+        <DataTable
+          v-model:column-state="columnState"
+          v-model:items-per-page="pageSize"
+          v-model:page="page"
+          v-model:sort-by="sortBy"
+          :columns="COLUMNS"
+          :items="filtered"
+          :loading="store.loading"
+          item-value="id"
+          label="Security signals"
+        >
+          <!-- The way in, the way a person's name is on the users list: the cell opens
+               the signal and the ellipsis is for the less frequent actions. -->
+          <template #cell.signal="{ item }">
+            <button
+              class="flex w-full cursor-pointer items-center rounded-(--idenzy-radius-x-small) text-left transition-opacity duration-150 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              type="button"
+              @click="read(item)"
+            >
+              <SignalIdentity :signal="item.signal" />
+            </button>
+          </template>
+
+          <template #cell.severity="{ item }">
+            <v-tooltip :text="SEVERITY_NOTES[item.severity]" location="top" max-width="280">
+              <template #activator="{ props: tip }">
+                <span v-bind="tip" class="inline-flex">
+                  <StatusBadge
+                    :label="SEVERITY_LABELS[item.severity]"
+                    :tone="SEVERITY_TONES[item.severity]"
+                  />
+                </span>
+              </template>
+            </v-tooltip>
+          </template>
+
+          <template #cell.account="{ item }">
+            <UserIdentity v-if="item.user" :user="item.user" />
+            <!-- A list being tried against forty addresses is about the address doing the
+                 trying, so the cell says so rather than showing an empty column that reads
+                 as a row somebody failed to join. -->
+            <span v-else class="text-xs text-ink/45">No one account</span>
+          </template>
+
+          <template #cell.seenAt="{ item }">
+            <v-tooltip :text="formatDateTime(item.signal.seenAt)" location="top">
+              <template #activator="{ props: tip }">
+                <span v-bind="tip" class="font-mono text-ink/80 tabular-nums">
+                  {{ relativeTime(item.signal.seenAt, now) }}
+                </span>
+              </template>
+            </v-tooltip>
+          </template>
+
+          <template #cell.state="{ item }">
+            <v-tooltip
+              :disabled="item.signal.decidedAt === null"
+              :text="`${item.signal.decidedBy} · ${item.signal.decidedAt ? formatDateTime(item.signal.decidedAt) : ''}`"
+              location="top"
+            >
+              <template #activator="{ props: tip }">
+                <span v-bind="tip" class="inline-flex max-w-full">
+                  <StatusBadge
+                    :detail="item.signal.reason ? DISMISS_REASON_LABELS[item.signal.reason] : ''"
+                    :label="SIGNAL_STATE_LABELS[item.signal.state]"
+                    :tone="STATE_TONES[item.signal.state]"
+                  />
+                </span>
+              </template>
+            </v-tooltip>
+          </template>
+
+          <template #actions="{ item }">
+            <SignalRowActions
+              :person="item.user ? nameOf(item.user) : null"
+              :sessions="item.user?.activeSessions ?? 0"
+              :signal="item.signal"
+              @acknowledge="decide(item, 'acknowledged')"
+              @copy-id="copyText(item.signal.id)"
+              @copy-user="item.signal.userId && copyText(item.signal.userId)"
+              @dismiss="askDismiss(item)"
+              @open="read(item)"
+              @reopen="decide(item, 'open')"
+              @sign-out="signOut(item)"
             />
           </template>
-          <template #actions>
-            <SegmentedControl v-model="windowTab" :options="windowOptions" label="Window" />
-          </template>
 
-          <div
-            class="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between"
-          >
-            <SegmentedControl v-model="filterTab" :options="filterOptions" label="Signals" />
-            <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
-          </div>
-
-          <DataTable
-            v-model:column-state="columnState"
-            v-model:items-per-page="pageSize"
-            v-model:page="page"
-            v-model:sort-by="sortBy"
-            :columns="COLUMNS"
-            :items="filtered"
-            :loading="store.loading"
-            label="Security signals"
-          >
-            <template #cell.signal="{ item }">
-              <SignalIdentity :signal="item.signal" />
-            </template>
-
-            <template #cell.severity="{ item }">
-              <v-tooltip :text="SEVERITY_NOTES[item.severity]" location="top" max-width="280">
-                <template #activator="{ props: tip }">
-                  <span v-bind="tip" class="inline-flex">
-                    <StatusBadge
-                      :label="SEVERITY_LABELS[item.severity]"
-                      :tone="SEVERITY_TONES[item.severity]"
-                    />
-                  </span>
-                </template>
-              </v-tooltip>
-            </template>
-
-            <template #cell.account="{ item }">
-              <UserIdentity v-if="item.user" :user="item.user" />
-              <!-- A list being tried against forty addresses is about the address doing the
-                   trying, so the cell says so rather than showing an empty column that
-                   reads as a row somebody failed to join. -->
-              <span v-else class="text-xs text-ink/45">No one account</span>
-            </template>
-
-            <template #cell.seenAt="{ item }">
-              <v-tooltip :text="formatDateTime(item.signal.seenAt)" location="top">
-                <template #activator="{ props: tip }">
-                  <span v-bind="tip" class="font-mono text-ink/80 tabular-nums">
-                    {{ relativeTime(item.signal.seenAt, now) }}
-                  </span>
-                </template>
-              </v-tooltip>
-            </template>
-
-            <template #cell.state="{ item }">
-              <v-tooltip
-                :disabled="item.signal.decidedAt === null"
-                :text="`${item.signal.decidedBy} · ${item.signal.decidedAt ? formatDateTime(item.signal.decidedAt) : ''}`"
-                location="top"
-              >
-                <template #activator="{ props: tip }">
-                  <span v-bind="tip" class="inline-flex max-w-full">
-                    <StatusBadge
-                      :detail="
-                        item.signal.reason ? DISMISS_REASON_LABELS[item.signal.reason] : ''
-                      "
-                      :label="SIGNAL_STATE_LABELS[item.signal.state]"
-                      :tone="STATE_TONES[item.signal.state]"
-                    />
-                  </span>
-                </template>
-              </v-tooltip>
-            </template>
-
-            <template #actions="{ item }">
-              <SignalRowActions
-                :person="item.user ? nameOf(item.user) : null"
-                :sessions="item.user?.activeSessions ?? 0"
-                :signal="item.signal"
-                @acknowledge="decide(item, 'acknowledged')"
-                @copy-id="copyText(item.signal.id)"
-                @copy-user="item.signal.userId && copyText(item.signal.userId)"
-                @dismiss="askDismiss(item)"
-                @reopen="decide(item, 'open')"
-                @sign-out="signOut(item)"
+          <template #empty>
+            <div class="flex flex-col items-center gap-1 px-4 py-14 text-center">
+              <Icon
+                :class="filter === 'open' ? 'text-success/70' : 'text-ink/25'"
+                :name="
+                  filter === 'open'
+                    ? 'material-symbols:check-circle-outline'
+                    : 'material-symbols:shield-lock-outline'
+                "
+                aria-hidden="true"
+                class="mb-1 text-2xl"
               />
-            </template>
+              <p class="m-0 text-sm font-medium text-ink">
+                {{
+                  filter === "open"
+                    ? "Nothing waiting on you"
+                    : filter === "acknowledged"
+                      ? "Nothing acknowledged in this window"
+                      : filter === "dismissed"
+                        ? "Nothing dismissed in this window"
+                        : "No signal in this window"
+                }}
+              </p>
+              <p class="m-0 max-w-sm text-xs text-ink/55">
+                {{ observing }} of {{ statuses.length }} detectors are looking, so an empty
+                list is a measurement rather than a gap. Widen the period, clear the search,
+                or move to another segment.
+              </p>
+            </div>
+          </template>
+        </DataTable>
 
-            <template #empty>
-              <div class="flex flex-col items-center gap-1 px-4 py-14 text-center">
-                <Icon
-                  :class="filter === 'open' ? 'text-success/70' : 'text-ink/25'"
-                  :name="
-                    filter === 'open'
-                      ? 'material-symbols:check-circle-outline'
-                      : 'material-symbols:shield-lock-outline'
-                  "
-                  aria-hidden="true"
-                  class="mb-1 text-2xl"
-                />
-                <p class="m-0 text-sm font-medium text-ink">
-                  {{
-                    filter === "open"
-                      ? "Nothing waiting on you"
-                      : filter === "acknowledged"
-                        ? "Nothing acknowledged in this window"
-                        : filter === "dismissed"
-                          ? "Nothing dismissed in this window"
-                          : "No signal in this window"
-                  }}
-                </p>
-                <p class="m-0 max-w-sm text-xs text-ink/55">
-                  {{
-                    filter === "open"
-                      ? "Every signal in this window has been read. A quiet list is the normal state of this screen, not a detector that is switched off."
-                      : "Widen the window, or move to another segment. Nothing has been lost: a signal is kept for the project's retention whatever is decided about it."
-                  }}
-                </p>
-              </div>
-            </template>
-          </DataTable>
+        <p
+          class="m-0 border-t border-line px-4 py-2.5 text-[10px] leading-4 text-ink/45"
+        >
+          Every decision here is written to the audit log.
+        </p>
+      </v-card>
 
-          <div
-            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line px-4 py-2.5 text-[10px] leading-4 text-ink/45"
-          >
-            <p class="m-0">
-              A signal outlives the session it came from, so a review next month still finds
-              the evidence. Kept
-              {{ settings.retentionDays }} days on this project.
-            </p>
-            <p class="m-0">Every decision here is written to the audit log.</p>
-          </div>
-        </LayerCard>
 
         <MetricCard
           :categories="refusals.categories"
@@ -690,6 +843,85 @@ const GUIDES = [
             chart is visible to somebody guessing at your accounts.
           </span>
         </p>
+
+    </template>
+
+    <!-- ========================= Detection settings ======================== -->
+    <template v-else>
+      <!--
+        Observed, configured and enforced, kept apart. A rule set to something the
+        deployment cannot carry out is a protection a customer believes they have, and the
+        only place they would find out otherwise is an incident (notes/security.md P1).
+      -->
+      <LayerCard
+        :padded="false"
+        description="What each detector is looking for, what this project asked for, and what actually happens when one fires today."
+        title="Detectors"
+      >
+        <template #badge>
+          <StatusBadge
+            :label="unenforced === 0 ? 'All enforced' : `${unenforced} not enforced`"
+            :tone="unenforced === 0 ? 'success' : 'warning'"
+          />
+        </template>
+
+        <ul class="m-0 list-none divide-y divide-line p-0">
+          <li
+            v-for="status in statuses"
+            :key="status.kind"
+            class="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3.5 sm:grid-cols-[1.75rem_minmax(0,1.2fr)_9rem_minmax(0,1fr)]"
+          >
+            <span
+              class="flex size-7 items-center justify-center rounded-(--idenzy-radius-x-small) border border-line bg-ink/4 text-ink/70"
+            >
+              <Icon :name="status.icon" aria-hidden="true" class="text-sm" />
+            </span>
+
+            <span class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-xs font-medium text-ink">{{ status.label }}</span>
+              <span class="text-[11px] leading-4 text-ink/55">
+                {{ KIND_NOTES[status.kind] }}
+              </span>
+            </span>
+
+            <span class="col-start-2 flex min-w-0 flex-col gap-1 sm:col-start-3">
+              <span class="text-[10px] leading-4 text-ink/45">Observing</span>
+              <StatusBadge
+                :label="status.observed ? 'Yes' : 'Off'"
+                :tone="status.observed ? 'success' : 'neutral'"
+              />
+            </span>
+
+            <span class="col-start-2 flex min-w-0 flex-col gap-1 sm:col-start-4">
+              <span class="text-[10px] leading-4 text-ink/45">What happens today</span>
+              <span class="text-xs text-ink">
+                {{ RESPONSE_LABELS[status.enforced] }}
+              </span>
+              <!-- The one line that had to be here: what was asked for, where it is not
+                   what happens. -->
+              <span v-if="!status.matches && status.configured" class="text-[11px] leading-4 text-warning">
+                Set to “{{ RESPONSE_LABELS[status.configured] }}”, which this deployment
+                cannot carry out yet.
+                <NuxtLink
+                  v-if="RESPONSE_ENFORCEMENT[status.configured].fix"
+                  :to="RESPONSE_ENFORCEMENT[status.configured].fix?.to"
+                  class="font-medium text-ink"
+                >
+                  {{ RESPONSE_ENFORCEMENT[status.configured].fix?.label }}
+                </NuxtLink>
+              </span>
+            </span>
+          </li>
+        </ul>
+
+        <div class="border-t border-line px-4 py-3">
+          <p class="m-0 text-[11px] leading-4 text-ink/55">
+            Two of the six are facts rather than settings: a refresh token presented twice
+            and an SMS send the fraud guard refused are recorded whatever a project would
+            prefer, so they have no rule to change.
+          </p>
+        </div>
+      </LayerCard>
 
         <LayerCard
           v-model:open="expanded.rules"
@@ -968,75 +1200,80 @@ const GUIDES = [
             </SettingRow>
           </div>
 
+        </LayerCard>
+
+
+      <!--
+        The one example a developer copies. Mirrored from the protocol's own union rather
+        than written from memory: it said `status: "challenge"`, which is not a value the
+        API ever answers with, and a client branching on it fails on the one path this
+        screen describes (notes/security.md P1).
+      -->
+      <LayerCard
+        description="A step-up is a reply, never a screen. Your own code renders the challenge, the same way it renders your sign-in form."
+        title="What your application receives"
+      >
+        <div class="flex flex-col gap-3">
           <SamplePanel
-            class="mt-5"
-            note="A step-up is a reply, never a screen. Your own code renders the challenge, the same way it renders your sign-in form."
-            title="What your application receives"
+            meta="POST /v1/auth/sign-in"
+            note="The union discriminates on status. The other case is authenticated, which carries the session."
+            title="mfa_required"
           >
             <div class="flex flex-col gap-1">
-              <SampleLine name="status" value='"challenge"' />
-              <SampleLine name="reason" value='"impossible_travel"' />
-              <SampleLine name="factors" value='["totp", "passkey"]' />
+              <SampleLine
+                v-for="line in MFA_REQUIRED_SAMPLE"
+                :key="line.name"
+                :name="line.name"
+                :value="line.value"
+              />
               <SampleLine icon="material-symbols:info-outline" tone="muted">
                 An account with nothing enrolled is signed in instead. A challenge nobody can
                 answer is a sign-in that cannot be completed, not one that was refused.
               </SampleLine>
             </div>
           </SamplePanel>
-        </LayerCard>
+          <p class="m-0 text-[11px] leading-4 text-ink/55">
+            The two statuses are
+            <span v-for="(status, index) in AUTH_OUTCOME_STATUSES" :key="status" class="font-mono text-ink/75">
+              {{ status }}<span v-if="index === 0" class="font-sans text-ink/55"> and </span>
+            </span>
+            (ADR-0010). There is no other value, and there is no reason field on the
+            challenge: what fired is on this screen, not in the reply.
+          </p>
+        </div>
+      </LayerCard>
 
-        <LayerCard
-          v-model:open="expanded.always"
-          expandable
-          description="The defences under every project on the deployment. None of them is a setting, and each row says why not."
-          title="What runs whatever you set"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              description="Cloud Armor at the edge with the OWASP rule set, rate limits per address and per project, and adaptive protection for a layer-seven flood. It refuses before a request reaches an application, which is the only place a flood can be refused cheaply."
-              fixed="Always"
-              label="Edge rate limits and WAF"
-            />
-            <SettingRow
-              description="Per identifier, per address, per project and per endpoint, in Valkey, with exponential backoff. Sign-in fails open when the store is unreachable, so an outage is not a lockout; the SMS path fails closed for the opposite reason, because there the cost of allowing what we could not count is an invoice."
-              fixed="Always"
-              label="Application rate limits"
-            />
-            <SettingRow
-              description="A wrong password and an address with no account give one answer and cost the same Argon2 work, on a dummy hash where there is no user. It is why the chart above splits them and the API never will."
-              fixed="Always"
-              label="One answer for a guess"
-            />
-            <SettingRow
-              description="A refresh token presented twice revokes every session in its family and signs the whole device tree out. It is not a rule and cannot be turned off: a token seen twice means one of the two holders is not the owner, and there is no version of that worth allowing."
-              fixed="Always"
-              label="Refresh token reuse detection"
-            />
-            <SettingRow
-              description="Origin and site checks run before a credential is stashed on the request, so a forged request cannot consume a refresh token and trip reuse detection on the victim's behalf. Without that ordering, making somebody's browser send one request would sign them out everywhere."
-              fixed="Always"
-              label="Cross-site checks, in that order"
-            />
-            <SettingRow
-              description="Country allowlist, per-number velocity, per-address limits and a daily spend cap that is a hard stop rather than an alert. It has its own screen because the cap is a number with an invoice behind it, and one number belongs in one place."
-              fixed="Elsewhere"
-              label="The SMS fraud guard"
-            >
-              <template #actions>
-                <v-btn
-                  class="text-xs font-medium"
-                  color="neutral"
-                  prepend-icon="material-symbols:open-in-new"
-                  size="small"
-                  to="/sms/policy"
-                  variant="text"
-                >
-                  Policy &amp; spend
-                </v-btn>
-              </template>
-            </SettingRow>
-          </div>
-        </LayerCard>
+      <!--
+        The defences nobody configures, and which of them this deployment actually has.
+        "Always" over infrastructure that is designed and not provisioned is the claim that
+        is only ever tested during the incident it was meant to cover.
+      -->
+      <LayerCard
+        v-model:open="expanded.always"
+        :padded="false"
+        description="The defences under every project on the deployment. None of them is a setting, and each row says whether it is actually running."
+        expandable
+        title="What runs whatever you set"
+      >
+        <ul class="m-0 list-none divide-y divide-line p-0">
+          <li
+            v-for="defence in DEPLOYMENT_DEFENCES"
+            :key="defence.id"
+            class="flex items-start justify-between gap-4 px-4 py-3.5"
+          >
+            <span class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-xs font-medium text-ink">{{ defence.label }}</span>
+              <span class="text-[11px] leading-4 text-ink/55">{{ defence.detail }}</span>
+            </span>
+            <span class="flex-none">
+              <StatusBadge
+                :label="defence.state === 'enforced' ? 'Running' : 'Not provisioned'"
+                :tone="defence.state === 'enforced' ? 'success' : 'warning'"
+              />
+            </span>
+          </li>
+        </ul>
+      </LayerCard>
 
         <LayerCard
           v-model:open="expanded.never"
@@ -1067,141 +1304,7 @@ const GUIDES = [
             />
           </div>
         </LayerCard>
-      </div>
-
-      <aside class="flex flex-col gap-4 xl:sticky xl:top-20">
-        <div class="flex items-baseline justify-between px-1">
-          <h2 class="m-0 text-base font-semibold tracking-tight text-ink">Security</h2>
-          <span class="text-xs text-ink/55">Last 30 days</span>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <UsageTile
-            :seed="61"
-            :value="stats.open"
-            info="Signals nobody has acknowledged or dismissed yet. It is a queue, not a count of problems."
-            label="Open signals"
-          />
-          <UsageTile
-            :seed="63"
-            :value="stats.accountsFlagged"
-            info="Accounts named by at least one open signal. Never a count of compromised accounts: most of these are fine."
-            label="Accounts flagged"
-          />
-          <UsageTile
-            :seed="65"
-            :series="stats.refusedDaily"
-            :value="stats.refused"
-            info="Every sign-in we refused, for any reason. Most of it is people mistyping their own password."
-            label="Refused sign-ins"
-          />
-          <UsageTile
-            :seed="67"
-            :series="stats.breachedDaily"
-            :value="stats.breachedRefused"
-            info="Passwords refused for appearing in the corpus. A count of passwords offered, never of accounts holding one: those cannot be swept."
-            label="Breached refused"
-          />
-        </div>
-
-        <LayerCard
-          :padded="false"
-          description="In the window the list is set to."
-          title="Where the signals come from"
-        >
-          <ul v-if="counts.all > 0" class="m-0 flex list-none flex-col gap-2.5 p-4 text-xs">
-            <li v-for="tally in kindTally" :key="tally.kind" class="flex items-center gap-2.5">
-              <span class="w-32 flex-none truncate text-ink/80">{{ tally.label }}</span>
-              <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-ink/8">
-                <span
-                  :class="
-                    tally.kind === 'token_reuse' || tally.kind === 'sms_pumping'
-                      ? 'bg-error'
-                      : tally.kind === 'credential_stuffing'
-                        ? 'bg-warning'
-                        : 'bg-primary'
-                  "
-                  :style="{ width: `${tally.share}%` }"
-                  class="block h-full rounded-full"
-                />
-              </span>
-              <span
-                :class="tally.count === 0 ? 'text-ink/35' : 'text-ink'"
-                class="w-8 flex-none text-right font-mono tabular-nums"
-              >
-                {{ tally.count }}
-              </span>
-            </li>
-          </ul>
-          <p v-else class="m-0 px-4 py-6 text-center text-xs text-ink/50">
-            Nothing has fired in this window. Every detector is listed here whether or not it
-            found anything, so a quiet row is an answer rather than a gap.
-          </p>
-        </LayerCard>
-
-        <LayerCard
-          :padded="false"
-          description="A hard stop with an invoice behind it. Set on the SMS screen, watched here."
-          title="Today's SMS spend"
-        >
-          <div v-if="policy" class="flex flex-col gap-2.5 p-4">
-            <div class="flex items-baseline justify-between gap-3">
-              <span class="font-mono text-lg leading-none font-medium text-ink tabular-nums">
-                {{ formatMoney(spentToday, policy.currency) }}
-              </span>
-              <span class="text-xs text-ink/55">
-                of {{ formatMoney(policy.dailySpendCap, policy.currency) }}
-              </span>
-            </div>
-            <span class="h-1.5 overflow-hidden rounded-full bg-ink/8">
-              <span
-                :class="capUsed >= 90 ? 'bg-error' : capUsed >= 60 ? 'bg-warning' : 'bg-primary'"
-                :style="{ width: `${capUsed}%` }"
-                class="block h-full rounded-full"
-              />
-            </span>
-            <p class="m-0 text-[11px] leading-4 text-ink/55">
-              {{ capUsed }}% of today's cap. It clears at the start of the next UTC day, and a
-              cap that is reached refuses every send rather than slowing them down.
-            </p>
-            <NuxtLink
-              class="text-[11px] font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
-              to="/sms/policy"
-            >
-              Change the cap
-            </NuxtLink>
-          </div>
-          <p v-else class="m-0 px-4 py-6 text-center text-xs text-ink/50">
-            This project has no SMS policy, so it sends nothing and spends nothing. That is the
-            same answer as an empty allowlist and it is deliberate.
-          </p>
-        </LayerCard>
-
-        <LayerCard :padded="false" title="Guides">
-          <ul class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="guide in GUIDES" :key="guide.href">
-              <a
-                :href="guide.href"
-                class="flex items-start gap-3 px-4 py-3 text-xs no-underline transition-colors duration-150 hover:bg-ink/3"
-                rel="noopener"
-                target="_blank"
-              >
-                <Icon
-                  :name="guide.icon"
-                  aria-hidden="true"
-                  class="mt-px flex-none text-xl text-ink/70"
-                />
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-medium text-ink">{{ guide.title }}</span>
-                  <span class="line-clamp-1 text-[11px] text-ink/55">{{ guide.detail }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
-        </LayerCard>
-
-        <SaveStatus :last-saved="lastSaved" :saving="saving" />
-      </aside>
-    </div>
+    </template>
 
     <NumberDialog
       v-model="travelDialog"
@@ -1248,6 +1351,20 @@ const GUIDES = [
       @confirm="confirmRetention"
     />
 
+    <!-- Mounted only while open, like every dialog here that writes and then closes. -->
+    <SignalDetailDialog
+      v-if="detailOpen && reading"
+      v-model="detailOpen"
+      :busy="isBusy(reading.id)"
+      :now="now"
+      :severity="reading.severity"
+      :signal="reading.signal"
+      :user="reading.user"
+      @acknowledge="decide(reading, 'acknowledged')"
+      @dismiss="askDismiss(reading)"
+      @sign-out="signOut(reading)"
+    />
+
     <SignalDismissDialog
       v-model="dismissDialog"
       :busy="dismissingBusy"
@@ -1257,3 +1374,25 @@ const GUIDES = [
     />
   </div>
 </template>
+
+<style scoped>
+/* A search box at the height of the buttons beside it, in the toolbar's small type and on
+   the small radius, so the row reads as one set. */
+.security__search :deep(.v-field) {
+  --v-input-control-height: 32px;
+
+  border-radius: var(--idenzy-radius-small);
+  font-size: 0.75rem;
+}
+
+.security__search :deep(.v-field__input),
+.security__search :deep(.v-field__input::placeholder) {
+  font-size: 0.75rem;
+  min-height: 32px;
+}
+
+.security__search :deep(.v-field__prepend-inner > .v-icon),
+.security__search :deep(.v-field__clearable > .v-icon) {
+  font-size: 1rem;
+}
+</style>

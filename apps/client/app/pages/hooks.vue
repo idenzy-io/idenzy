@@ -1,94 +1,137 @@
 <script setup lang="ts">
 /**
- * Synchronous customer hooks: the five points where a customer's own service is called
- * while one of their users is waiting (PROJECT.md 3.2, 9.6).
+ * Synchronous hooks: the five points where a project's own service is called while one of its
+ * users waits (notes/hooks.md; PROJECT.md 3.2, 9.6).
  *
- * The page is built around one distinction and repeats it until it has landed, because
- * everybody arrives here from the webhooks screen next door and the two are opposites. A
- * webhook is told afterwards, retried, and cannot break anything. A hook is called during
- * the request, the sign-in is blocked on the reply, and there is a hard deadline after which
- * the request fails. So a hook is the only thing on this platform that lets a customer's own
- * code change the outcome of a sign-in, and it is also the only thing that lets their
- * downtime become ours. Both halves of that belong on the screen where the switch is.
+ * In the note's order: whether a webhook is what the reader wanted, then the hook points with
+ * readiness, deadline and failure rate, then signing and failure, folded. The figures lead the
+ * list, as on every screen that has them. Configure opens a hook's own configuration in a
+ * dialog, which owns its endpoint, its deadline, its contract, its check and Enable.
  *
- * Fail-closed is not a setting and the page never presents it as one. A gate that could be
- * got past by being slow was never a gate: an attacker able to make a customer's endpoint
- * time out would otherwise turn `before-sign-in` off from the outside. What the screen does
- * instead is say, per hook, what a failure means in that hook's own words, because a refused
- * sign-in and an unsent email are the same policy and very different sentences.
+ * Nothing calls a hook yet, and the page says so before anything else (`HOOK_CALLS`). A
+ * configuration is saved and checked as far as a check goes without a call; enabling waits on a
+ * call being possible, so no row reads as a gate that only exists in local state.
  *
- * The pipeline card is the one people came for. The order is a fact with a consequence
- * nobody expects: `AuthFlow` consults the MFA gate after `verify` and before the hooks, so a
- * `before-sign-in` hook is never handed a half-authenticated user and cannot be used to wave
- * one past a challenge.
- *
- * Two things are deliberately quiet. The deadline budget is added up in the header of the
- * list, because a budget assembled one switch at a time is one nobody totals, and the number
- * a customer is choosing is the worst case rather than today's median. And `customize-claims`
- * carries a pointer to claim templates, because the template is a read the transaction was
- * making anyway where the hook is a round trip inside every sign-in, and a screen that
- * offered them as equals would be selling the expensive one.
+ * The open hook is named in the query, replaced rather than pushed, so a link opens it.
  */
+import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
-  addedToSignIn,
-  BUDGET_WARNING_MS,
-  DEADLINE_ISSUE,
-  DEADLINE_MAX_MS,
-  DEADLINE_MIN_MS,
+  addedTo,
+  callFigures,
+  defaultHook,
+  FAIL_CLOSED_NOTE,
+  firstFailure,
   formatDuration,
+  HOOK_CALLS,
   HOOK_FAILURES,
-  HOOK_LABELS,
+  HOOK_FIGURE_DAYS,
+  HOOK_KINDS,
+  HOOK_OR_WEBHOOK,
   HOOK_SIGNATURE_HEADER,
   HOOK_TIMESTAMP_HEADER,
   HOOK_TIMESTAMP_TOLERANCE_SECONDS,
   HOOK_TYPE_HEADER,
+  HOOK_TYPES,
+  type HookStats,
   type HookType,
-  isHookLive,
   NO_RETRY_NOTE,
+  replacesLiveEndpoint,
+  secretSummary,
+  verdictOf,
 } from "~/utils/hooks";
 
 const projects = useProjectStore();
 const store = useHooksStore();
+const route = useRoute();
+const router = useRouter();
+const { lgAndUp } = useDisplay();
+const now = useNow({ interval: 60_000 });
+const running = HOOK_CALLS.running;
 
-const hooks = computed(() => store.hooksFor(projects.current.id));
-const live = computed(() => hooks.value.filter(isHookLive));
+const project = computed(() => projects.current.id);
+const hooks = computed(() => store.hooksFor(project.value));
+const secret = computed(() => store.secretFor(project.value));
 
-/** Per hook, or null where it is not in the path. Read once so the row and the bars agree. */
+/** Per hook, read once so the rows, the dialog and the figures agree. Null while nothing calls. */
 const stats = computed(
-  () =>
-    new Map(hooks.value.map((hook) => [hook.type, store.statsFor(projects.current.id, hook.type)])),
+  () => new Map(HOOK_TYPES.map((type) => [type, store.statsFor(project.value, type)] as const)),
+);
+const figures = computed(() =>
+  callFigures([...stats.value.values()].filter((entry): entry is HookStats => entry !== null)),
 );
 
-/** What a sign-in picks up in the worst case, which is what a deadline actually buys. */
-const budget = computed(() => addedToSignIn(hooks.value));
+const configured = computed(() => hooks.value.filter((hook) => hook.url !== null).length);
+const enabledCount = computed(() => hooks.value.filter((hook) => hook.enabled).length);
 
-const totals = computed(() => {
-  let calls = 0;
-  let refused = 0;
-  let failed = 0;
-  const callsDaily = Array.from({ length: 30 }, () => 0);
-  const failedDaily = Array.from({ length: 30 }, () => 0);
-  for (const entry of stats.value.values()) {
-    if (entry === null) continue;
-    calls += entry.calls;
-    refused += entry.refused;
-    failed += entry.failed;
-    entry.callsDaily.forEach((value, day) => {
-      callsDaily[day] = (callsDaily[day] ?? 0) + value;
-    });
-    entry.failedDaily.forEach((value, day) => {
-      failedDaily[day] = (failedDaily[day] ?? 0) + value;
-    });
-  }
-  return { calls, refused, failed, callsDaily, failedDaily };
+const pathHooks = computed(() =>
+  hooks.value.filter((hook) => HOOK_KINDS[hook.type] !== "override"),
+);
+const sendHooks = computed(() =>
+  hooks.value.filter((hook) => HOOK_KINDS[hook.type] === "override"),
+);
+
+const listHeading = computed(() =>
+  store.loading
+    ? "Reading this project's hooks"
+    : `${configured.value} of ${HOOK_TYPES.length} set up, ${enabledCount.value} enabled`,
+);
+
+/** The worst case a request picks up, which is what the deadlines add up to. */
+const budget = computed(() => {
+  const signIn = addedTo("sign_in", hooks.value);
+  const signUp = addedTo("sign_up", hooks.value);
+  if (signUp === 0) return "No sign-in waits on a hook";
+  return `Up to ${formatDuration(signIn)} on a sign-in, ${formatDuration(signUp)} on a sign-up`;
 });
 
-/** Which cards start unfolded. The list and where it runs are what a visit is for. */
-const expanded = reactive({ failure: false, signing: false, never: false });
+const HOOK_COLUMNS: readonly RecordColumn[] = [
+  { key: "hook", label: "Hook", width: "minmax(0, 2.2fr)" },
+  { key: "ready", label: "Ready?", width: "minmax(0, 1.2fr)" },
+  { key: "deadline", label: "Deadline", width: "minmax(0, 0.7fr)" },
+  { key: "failures", label: "Failure rate", width: "minmax(0, 1fr)" },
+  { key: "configure", label: "", width: "132px", align: "end" },
+];
+
+const COMPARE_COLUMNS: readonly RecordColumn[] = [
+  { key: "label", label: "", width: "minmax(0, 1fr)" },
+  { key: "hook", label: "A hook", width: "minmax(0, 1.4fr)" },
+  { key: "webhook", label: "A webhook", width: "minmax(0, 1.4fr)" },
+];
 
 /*
- * Saving. Every control writes itself, like the other settings screens, so each row can
- * show its own wait rather than the page holding a draft nobody asked for.
+ * The hook whose configuration is open, named in the URL so a link opens it.
+ */
+function isHookType(value: unknown): value is HookType {
+  return typeof value === "string" && (HOOK_TYPES as readonly string[]).includes(value);
+}
+
+const detailType = ref<HookType>("before_sign_in");
+const detailOpen = ref(false);
+const detailTitleId = `${useId()}-hook`;
+
+const detail = computed(
+  () => hooks.value.find((hook) => hook.type === detailType.value) ?? defaultHook(detailType.value),
+);
+
+function configure(type: HookType) {
+  detailType.value = type;
+  detailOpen.value = true;
+}
+
+/* Replaced rather than pushed: opening a hook is not a place to step back to. */
+watch(detailOpen, (open) => {
+  const rest = Object.fromEntries(Object.entries(route.query).filter(([key]) => key !== "hook"));
+  void router.replace({ query: open ? { ...rest, hook: detailType.value } : rest });
+});
+
+onMounted(() => {
+  const asked = route.query["hook"];
+  const value = Array.isArray(asked) ? asked[0] : asked;
+  if (isHookType(value)) configure(value);
+});
+
+/*
+ * Checking, which holds its own wait per hook.
  */
 const busy = ref<Set<string>>(new Set());
 
@@ -105,130 +148,190 @@ async function whileBusy(key: string, work: () => Promise<void>) {
   }
 }
 
-function toggle(type: HookType, enabled: boolean) {
-  void whileBusy(type, () => store.patch(projects.current.id, type, { enabled }));
-}
-
-/** Clearing the URL takes the hook out of the path, so the switch goes with it. */
-function removeEndpoint(type: HookType) {
-  void whileBusy(type, () => store.patch(projects.current.id, type, { url: null, enabled: false }));
+function validate(type: HookType) {
+  void whileBusy(`validate:${type}`, async () => {
+    await store.validate(project.value, type);
+  });
 }
 
 /*
- * The two dialogs. Which hook they are about is held here rather than passed down, so the
- * subject survives the frame in which the dialog is closing.
+ * The dialogs that write. One is open at a time, over the hook's own dialog when it is opened
+ * from there, and each is mounted only while it is, so the subject, the wait and the error are
+ * held here once.
  */
-const editing = ref<HookType | null>(null);
-const endpointOpen = ref(false);
-const deadlineOpen = ref(false);
+type DialogKind = "endpoint" | "deadline" | "enable" | "disable" | "remove" | "rotate";
 
-function askEndpoint(type: HookType) {
-  editing.value = type;
-  endpointOpen.value = true;
-}
+const dialog = ref<DialogKind | null>(null);
+const subject = ref<HookType>("before_sign_in");
+const working = ref(false);
+const problem = ref("");
 
-function askDeadline(type: HookType) {
-  editing.value = type;
-  deadlineOpen.value = true;
-}
-
-const editingHook = computed(() =>
-  editing.value === null ? null : (hooks.value.find((hook) => hook.type === editing.value) ?? null),
+const subjectHook = computed(
+  () => hooks.value.find((hook) => hook.type === subject.value) ?? defaultHook(subject.value),
 );
-const editingBusy = computed(() => editing.value !== null && isBusy(editing.value));
+const removeAction = computed(() => (dialog.value === "disable" ? "disable" : "remove"));
 
-function confirmEndpoint(url: string) {
-  const type = editing.value;
-  if (type === null) return;
-  void whileBusy(type, () => store.patch(projects.current.id, type, { url }));
+function ask(kind: DialogKind, type?: HookType) {
+  if (type !== undefined) subject.value = type;
+  problem.value = "";
+  dialog.value = kind;
 }
 
-function confirmDeadline(value: number) {
-  const type = editing.value;
-  if (type === null) return;
-  if (editingHook.value?.deadlineMs === value) return;
-  void whileBusy(type, () => store.patch(projects.current.id, type, { deadlineMs: value }));
+/** A dialog's own model: it can close itself, and only `ask` opens it. */
+function dialogModel(...kinds: DialogKind[]) {
+  return computed({
+    get: () => dialog.value !== null && kinds.includes(dialog.value),
+    set: (value: boolean) => {
+      if (!value && dialog.value !== null && kinds.includes(dialog.value)) dialog.value = null;
+    },
+  });
 }
 
-/* A dialog belongs to the project it was opened from. */
-watch(
-  () => projects.current.id,
-  () => {
-    endpointOpen.value = false;
-    deadlineOpen.value = false;
-    editing.value = null;
-  },
-);
+const endpointOpen = dialogModel("endpoint");
+const deadlineOpen = dialogModel("deadline");
+const enableOpen = dialogModel("enable");
+const removeOpen = dialogModel("disable", "remove");
+const rotateOpen = dialogModel("rotate");
 
-const saving = computed(() => busy.value.size > 0);
-const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
+/** Closes on success only; a failure keeps the dialog and says what did not happen. */
+async function run(work: () => Promise<void>, failure: string) {
+  working.value = true;
+  problem.value = "";
+  try {
+    await work();
+    dialog.value = null;
+  } catch {
+    problem.value = failure;
+  } finally {
+    working.value = false;
+  }
+}
 
-/**
- * The tail against the deadline, per live hook.
- *
- * Drawn against the largest of the two so both bars share a scale, which is the only way the
- * comparison means anything: a p99 bar longer than the deadline bar is a share of requests
- * being cut off on purpose, and that is the whole reason this panel is here.
- */
-const latency = computed(() =>
-  live.value.map((hook) => {
-    const entry = stats.value.get(hook.type) ?? null;
-    const p99 = entry?.p99 ?? 0;
-    const scale = Math.max(hook.deadlineMs, p99, 1);
+/** The secret, held only while its dialog is open. */
+const revealed = ref<{ secret: string; until: string | null } | null>(null);
+const secretOpen = ref(false);
+
+function reveal(value: string, until: string | null) {
+  revealed.value = { secret: value, until };
+  secretOpen.value = true;
+}
+
+interface SaveOutcome {
+  problem: string;
+  secret: string | null;
+}
+
+/** An enabled hook's new URL has to pass before it replaces the one a request waits on. */
+async function replaceLive(type: HookType, url: string): Promise<SaveOutcome> {
+  const check = await store.validate(project.value, type, url);
+  if (verdictOf(check) !== "ready") {
+    const reason = firstFailure(check)?.detail ?? "Part of the check was not run.";
     return {
-      type: hook.type,
-      deadlineMs: hook.deadlineMs,
-      p50: entry?.p50 ?? null,
-      p99: entry?.p99 ?? null,
-      deadlineShare: Math.round((hook.deadlineMs / scale) * 100),
-      p99Share: Math.round((p99 / scale) * 100),
-      over: p99 > hook.deadlineMs,
+      problem: `The new URL did not pass validation, so the current one is still called. ${reason}`,
+      secret: null,
     };
-  }),
-);
+  }
+  await store.saveEndpoint(project.value, type, url, check);
+  return { problem: "", secret: null };
+}
 
-const GUIDES_URL = "https://idenzy.dev/docs/hooks";
+async function confirmEndpoint(url: string) {
+  const type = subject.value;
+  working.value = true;
+  problem.value = "";
+  try {
+    const hook = store.hookFor(project.value, type);
+    const outcome = replacesLiveEndpoint(hook, url)
+      ? await replaceLive(type, url)
+      : { problem: "", ...(await store.saveEndpoint(project.value, type, url)) };
+    if (outcome.problem) {
+      problem.value = outcome.problem;
+      return;
+    }
+    dialog.value = null;
+    if (outcome.secret !== null) reveal(outcome.secret, null);
+  } catch {
+    problem.value = "The endpoint was not saved. What you typed is still here, so try again.";
+  } finally {
+    working.value = false;
+  }
+}
 
-const GUIDES = [
-  {
-    icon: "material-symbols:alt-route",
-    title: "Writing a hook endpoint",
-    detail: "The five payloads, what a 200 must carry, and the deadline you are working to.",
-    href: GUIDES_URL,
-  },
-  {
-    icon: "material-symbols:lock-outline",
-    title: "Verifying the signature",
-    detail: "The same scheme deliveries use, so one function covers both paths.",
-    href: "https://idenzy.dev/docs/webhooks/verifying",
-  },
-  {
-    icon: "material-symbols:token-outline",
-    title: "Claims without a hook",
-    detail: "What a claim template can already do, and when it genuinely cannot.",
-    href: "https://idenzy.dev/docs/tokens/claims",
-  },
-  {
-    icon: "material-symbols:speed",
-    title: "Keeping a hook fast",
-    detail: "Why the tail is the number that matters, and what to do about it.",
-    href: `${GUIDES_URL}/latency`,
-  },
-];
+function confirmDeadline(deadlineMs: number) {
+  const type = subject.value;
+  if (deadlineMs === subjectHook.value.deadlineMs) {
+    dialog.value = null;
+    return;
+  }
+  void run(
+    () => store.setDeadline(project.value, type, deadlineMs),
+    "The deadline was not changed. The current one still applies, so try again.",
+  );
+}
+
+function confirmEnable() {
+  const type = subject.value;
+  void run(
+    () => store.enable(project.value, type),
+    "It was not enabled, and nothing calls it. Try again.",
+  );
+}
+
+function confirmRemove() {
+  const type = subject.value;
+  if (removeAction.value === "disable") {
+    void run(
+      () => store.disable(project.value, type),
+      "It was not turned off and is still called. Try again.",
+    );
+    return;
+  }
+  void run(
+    () => store.removeEndpoint(project.value, type),
+    "The endpoint was not removed and is still saved. Try again.",
+  );
+}
+
+function confirmRotate() {
+  void run(async () => {
+    const rotated = await store.rotateSecret(project.value);
+    reveal(rotated.secret, rotated.until);
+  }, "The secret was not rotated. The current one still signs, so try again.");
+}
+
+/* A dialog belongs to the project it was opened from, and a revealed secret certainly does. */
+watch(project, () => {
+  dialog.value = null;
+  detailOpen.value = false;
+  secretOpen.value = false;
+  revealed.value = null;
+});
+
+const reference = reactive({ signing: false, failure: false });
+
+const GUIDE_URL = "https://idenzy.dev/docs/hooks";
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:alt-route" title="Hooks">
+  <div class="flex w-full flex-col gap-6">
+    <PageHeader title="Hooks">
+      <template #badge>
+        <StatusBadge
+          v-if="running"
+          :label="`${enabledCount} active`"
+          :tone="enabledCount > 0 ? 'success' : 'neutral'"
+        />
+        <StatusBadge v-else label="Not called yet" tone="warning" />
+      </template>
       <template #description>
-        Your own service, called from inside a request on
+        Your own service, called during a request on
         <span class="font-medium text-ink">{{ projects.current.name }}</span> while the person
-        signing in waits. The only place your code can change what a sign-in does, and the
-        only place your downtime becomes theirs.
+        waits. The one place your code can change a sign-in, and the one place its downtime fails
+        one.
       </template>
       <template #actions>
         <v-btn
-          :href="GUIDES_URL"
+          :href="GUIDE_URL"
           class="text-xs font-medium"
           color="neutral"
           prepend-icon="material-symbols:menu-book-outline"
@@ -237,386 +340,319 @@ const GUIDES = [
           target="_blank"
           variant="outlined"
         >
-          Hook guide
+          Integration guide
         </v-btn>
       </template>
     </PageHeader>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-      <div class="flex min-w-0 flex-col gap-6">
-        <LayerCard
-          description="Two ways of telling you something happened, and only one of them can break a sign-in. Reach for the other one unless you need to change the outcome."
-          title="A hook is not a webhook"
-        >
-          <div class="grid gap-3 sm:grid-cols-2">
-            <section
-              class="flex flex-col gap-2 rounded-(--idenzy-radius-small) border border-primary/30 bg-primary/4 px-3.5 py-3"
-            >
-              <h3 class="m-0 flex items-center gap-2 text-xs font-medium text-ink">
-                <Icon
-                  aria-hidden="true"
-                  class="text-sm text-primary"
-                  name="material-symbols:alt-route"
-                />
-                A hook
-              </h3>
-              <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-[11px] leading-4 text-ink/70">
-                <li>Called during the request. The sign-in waits for the answer.</li>
-                <li>Can refuse it, or change what the token carries.</li>
-                <li>One attempt, one deadline. Never retried.</li>
-                <li>
-                  <span class="font-medium text-ink">Fail-closed:</span> a call that does not
-                  come back fails the request.
-                </li>
-              </ul>
-            </section>
+    <!-- The first decision on the screen: plenty of people who arrive here wanted the page
+         next door, and it is the one that cannot break a sign-in. -->
+    <!-- Inline, so a narrow screen wraps it as a sentence rather than leaving the glyph on a
+         line of its own. -->
+    <p class="m-0 text-xs leading-5 text-ink/60">
+      <Icon
+        aria-hidden="true"
+        class="mr-1 inline-block align-[-3px] text-sm text-ink/45"
+        name="material-symbols:webhook"
+      />
+      <span class="font-medium text-ink">Only need to know after something happens?</span>
+      A webhook is told afterwards, is retried, and cannot break a sign-in.
+      <NuxtLink
+        class="font-medium whitespace-nowrap text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
+        to="/webhooks"
+      >
+        Open Webhooks
+      </NuxtLink>
+    </p>
 
-            <section
-              class="flex flex-col gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3.5 py-3"
-            >
-              <h3 class="m-0 flex items-center gap-2 text-xs font-medium text-ink">
-                <Icon
-                  aria-hidden="true"
-                  class="text-sm text-ink/60"
-                  name="material-symbols:webhook"
-                />
-                A webhook
-              </h3>
-              <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-[11px] leading-4 text-ink/70">
-                <li>Sent afterwards. Nothing waits for it.</li>
-                <li>Cannot change anything that already happened.</li>
-                <li>Retried for a day, at least once, in no guaranteed order.</li>
-                <li>
-                  <span class="font-medium text-ink">Fail-safe:</span> a receiver that is down
-                  costs you notifications and costs your users nothing.
-                </li>
-              </ul>
-              <NuxtLink
-                class="mt-0.5 text-[11px] font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
-                to="/webhooks"
-              >
-                Set up a webhook instead
-              </NuxtLink>
-            </section>
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          :padded="false"
-          description="Five points where we will call you. Each one is off until it has an endpoint, and each says what happens to the request when the call does not come back."
-          title="Hook points"
-        >
-          <template #badge>
-            <StatusBadge
-              :label="live.length === 0 ? 'None live' : `${live.length} live`"
-              :tone="live.length === 0 ? 'neutral' : 'success'"
-            />
-          </template>
-          <template #actions>
-            <v-tooltip
-              location="top"
-              max-width="300"
-              text="The worst case a sign-in picks up: every live hook on that path, each waited for up to its own deadline. Today's median is lower and the day your endpoint is unwell it will not be."
-            >
-              <template #activator="{ props: tip }">
-                <span
-                  v-bind="tip"
-                  :class="budget > BUDGET_WARNING_MS ? 'text-warning' : 'text-ink/60'"
-                  class="flex items-center gap-1.5 text-xs"
-                >
-                  <Icon aria-hidden="true" class="text-sm" name="material-symbols:timer-outline" />
-                  <span class="font-mono tabular-nums">
-                    {{ budget === 0 ? "Nothing" : `+${formatDuration(budget)}` }}
-                  </span>
-                  on a sign-in
-                </span>
-              </template>
-            </v-tooltip>
-          </template>
-
-          <div v-if="store.loading" class="divide-y divide-line">
-            <div v-for="row in 3" :key="row" class="flex items-center gap-4 px-4 py-5">
-              <span class="size-9 flex-none animate-pulse rounded-(--idenzy-radius-x-small) bg-ink/8" />
-              <span class="flex min-w-0 flex-1 flex-col gap-2">
-                <span class="h-3 w-40 animate-pulse rounded-full bg-ink/8" />
-                <span class="h-2.5 w-full max-w-lg animate-pulse rounded-full bg-ink/6" />
-                <span class="h-2.5 w-56 animate-pulse rounded-full bg-ink/6" />
-              </span>
-            </div>
-          </div>
-
-          <div v-else class="divide-y divide-line">
-            <HookRow
-              v-for="hook in hooks"
-              :key="hook.type"
-              :busy="isBusy(hook.type)"
-              :hook="hook"
-              :stats="stats.get(hook.type) ?? null"
-              @configure="askEndpoint(hook.type)"
-              @deadline="askDeadline(hook.type)"
-              @remove="removeEndpoint(hook.type)"
-              @toggle="toggle(hook.type, $event)"
-            />
-          </div>
-
-          <div
-            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line px-4 py-2.5 text-[10px] leading-4 text-ink/45"
-          >
-            <p class="m-0">
-              A switch here writes on the spot. Turning a gate off stops it refusing anybody
-              from the next request, which is the point and is worth saying out loud.
-            </p>
-            <p class="m-0">Every change is in the audit log.</p>
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          description="One request, in order, with your three points on it. Everything above a point has already happened by the time we call you."
-          title="Where each hook runs"
-        >
-          <HookPipeline :hooks="hooks" />
-
-          <p
-            class="m-0 mt-5 flex items-start gap-2 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3 py-2.5 text-[11px] leading-4 text-ink/65"
-          >
-            <Icon
-              aria-hidden="true"
-              class="mt-px flex-none text-sm text-ink/40"
-              name="material-symbols:mail-outline"
-            />
-            <span>
-              The two delivery hooks are not on this path. They run on the dispatcher instead,
-              in place of our own sender, after whatever asked for the message has already
-              been answered.
-            </span>
-          </p>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.failure"
-          expandable
-          description="Four ways a call does not come back with a yes, and what each one leaves behind."
-          title="When a hook fails"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              v-for="failure in HOOK_FAILURES"
-              :key="failure.id"
-              :description="failure.note"
-              :fixed="failure.id === 'refused' ? 'Yours' : 'Fails the request'"
-              :label="failure.label"
-            />
-            <SettingRow :description="NO_RETRY_NOTE" fixed="Never" label="Retried" />
-            <SettingRow
-              description="Fail-closed is not a switch and will not become one. A gate that could be got past by being slow was never a gate: anybody able to make your endpoint time out could otherwise turn it off from the outside."
-              fixed="Always"
-              label="Fail-closed"
-            />
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.signing"
-          expandable
-          description="The same scheme a webhook delivery uses, so the verification you have already written covers both."
-          title="Signing and headers"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              :fixed="HOOK_SIGNATURE_HEADER"
-              description="Over the timestamp, a dot, then the raw body, exactly as a delivery is. The body has to be the bytes as they arrived: a handler that parses the JSON and re-serialises it is signing a different string and will never match."
-              label="How it is signed"
-            />
-            <SettingRow
-              :description="`Refuse anything more than ${HOOK_TIMESTAMP_TOLERANCE_SECONDS} seconds out of step before you check the digest. That is what makes the signature replay-safe rather than merely authentic.`"
-              :fixed="HOOK_TIMESTAMP_HEADER"
-              label="How replay is stopped"
-            />
-            <SettingRow
-              description="Your webhook signing secret, not a second one. One secret and one verification function is one place for it to be wrong, and rolling it covers both paths at once."
-              fixed="Shared"
-              label="Which secret"
-            />
-            <SettingRow
-              description="Names which of the five the body is for, so one route can serve them all. Switching on it beats five endpoints that drift apart, and it is what the dialog suggests when you set the first one."
-              :fixed="HOOK_TYPE_HEADER"
-              label="Which hook"
-            />
-            <SettingRow
-              description="We call from our own network, so an address on your machine is one nothing of ours can reach. Use a tunnel that gives you a public hostname while you are building."
-              fixed="https only"
-              label="Where we can call"
-            />
-          </div>
-        </LayerCard>
-
-        <LayerCard
-          v-model:open="expanded.never"
-          expandable
-          description="Four things a hook is regularly expected to do and does not."
-          title="What a hook never does"
-        >
-          <div class="divide-y divide-line">
-            <SettingRow
-              description="A hook runs before the thing it is about, or it is not a hook. If what you want is to be told after the fact, that is a webhook, and it is the one that cannot take your sign-ins down with it."
-              fixed="Never"
-              label="Run after the answer went back"
-            />
-            <SettingRow
-              description="Nothing about a credential leaves us. A gate is handed who is signing in and how, never the password, the code or the assertion, because a hook that could read one would make every customer's endpoint a place a password is."
-              fixed="Never"
-              label="See a credential"
-            />
-            <SettingRow
-              description="A hook cannot let somebody past a second factor. The MFA gate runs before it, so by the time you are called the factor is already proved, and a hook returning allow on an account that owes one changes nothing."
-              fixed="Never"
-              label="Skip a second factor"
-            />
-            <SettingRow
-              description="It is not a place to do work. Whatever you were going to write to your own database belongs on the webhook, where taking a second is your problem instead of your users'. A hook answers a question and returns."
-              fixed="Never"
-              label="Wait on your own side"
-            />
-          </div>
-        </LayerCard>
-      </div>
-
-      <aside class="flex flex-col gap-4 xl:sticky xl:top-20">
-        <div class="flex items-baseline justify-between px-1">
-          <h2 class="m-0 text-base font-semibold tracking-tight text-ink">Hooks</h2>
-          <span class="text-xs text-ink/55">Last 30 days</span>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <UsageTile
-            :seed="81"
-            :series="totals.callsDaily"
-            :value="totals.calls"
-            info="Calls made to your endpoints across every live hook."
-            label="Calls"
-          />
-          <UsageTile
-            :seed="83"
-            :value="totals.refused"
-            info="Calls your service answered with a no. The only kind of failure that is your service working correctly."
-            label="Refused"
-          />
-          <UsageTile
-            :seed="85"
-            :series="totals.failedDaily"
-            :value="totals.failed"
-            info="Calls that timed out, returned a bad status, or came back in a shape we could not read. Every one of these failed somebody's request."
-            label="Failed"
-          />
-          <!-- A count rather than the deadline budget: UsageTile writes a figure compactly
-               and carries no unit, so 1500 milliseconds would read as "1.5k". The budget is a
-               duration and lives where a duration has context, above the bars. -->
-          <UsageTile
-            :seed="87"
-            :value="live.length"
-            info="Hooks with an endpoint and their switch on. Anything else on the list is configuration nobody is calling."
-            label="Live hooks"
-          />
-        </div>
-
-        <LayerCard
-          :padded="false"
-          description="The tail against the deadline you set. A p99 past the line is a share of requests being cut off on purpose."
-          title="Latency and deadlines"
-        >
-          <p
-            v-if="latency.length > 0"
-            :class="budget > BUDGET_WARNING_MS ? 'text-warning' : 'text-ink/60'"
-            class="m-0 flex items-baseline gap-2 border-b border-line px-4 py-3 text-xs"
-          >
-            <span class="font-mono text-base leading-none font-medium tabular-nums">
-              +{{ formatDuration(budget) }}
-            </span>
-            <span>worst case on a sign-in</span>
-          </p>
-          <ul v-if="latency.length > 0" class="m-0 flex list-none flex-col gap-3 p-4 text-xs">
-            <li v-for="entry in latency" :key="entry.type" class="flex flex-col gap-1.5">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="truncate text-ink/80">{{ HOOK_LABELS[entry.type] }}</span>
-                <span
-                  :class="entry.over ? 'text-warning' : 'text-ink/55'"
-                  class="flex-none font-mono text-[11px] tabular-nums"
-                >
-                  {{ entry.p99 === null ? "–" : formatDuration(entry.p99) }}
-                  <span class="text-ink/35">/ {{ formatDuration(entry.deadlineMs) }}</span>
-                </span>
-              </div>
-              <!-- Two bars on one scale: the tail, then the line it is measured against. -->
-              <span class="relative block h-1.5 overflow-hidden rounded-full bg-ink/8">
-                <span
-                  :class="entry.over ? 'bg-warning' : 'bg-primary'"
-                  :style="{ width: `${entry.p99Share}%` }"
-                  class="absolute inset-y-0 left-0 rounded-full"
-                />
-                <span
-                  :style="{ left: `${entry.deadlineShare}%` }"
-                  aria-hidden="true"
-                  class="absolute inset-y-0 w-px bg-ink/45"
-                />
-              </span>
-              <span v-if="entry.p50 !== null" class="text-[10px] leading-3 text-ink/45">
-                Median {{ formatDuration(entry.p50) }}
-              </span>
-            </li>
-          </ul>
-          <p v-else class="m-0 px-4 py-6 text-center text-xs text-ink/50">
-            No hook is in the path, so nothing on this project waits on anybody else.
-          </p>
-        </LayerCard>
-
-        <LayerCard :padded="false" title="Guides">
-          <ul class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="guide in GUIDES" :key="guide.href">
-              <a
-                :href="guide.href"
-                class="flex items-start gap-3 px-4 py-3 text-xs no-underline transition-colors duration-150 hover:bg-ink/3"
-                rel="noopener"
-                target="_blank"
-              >
-                <Icon
-                  :name="guide.icon"
-                  aria-hidden="true"
-                  class="mt-px flex-none text-xl text-ink/70"
-                />
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-medium text-ink">{{ guide.title }}</span>
-                  <span class="line-clamp-1 text-[11px] text-ink/55">{{ guide.detail }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
-        </LayerCard>
-
-        <SaveStatus :last-saved="lastSaved" :saving="saving" />
-      </aside>
+    <!-- Before anything that could read as enforcement (P1). -->
+    <div
+      v-if="!running"
+      class="flex items-start gap-2.5 rounded-(--idenzy-radius) border border-line bg-surface px-4 py-3"
+      role="status"
+    >
+      <span aria-hidden="true" class="mt-1.5 size-1.5 flex-none rounded-full bg-warning" />
+      <p class="m-0 text-sm text-ink">
+        Nothing calls a hook yet.
+        <span class="text-ink/60">
+          {{ HOOK_CALLS.reason }} Validation checks what it can without a call, and enabling waits
+          until something can make one.
+        </span>
+      </p>
     </div>
 
+    <section class="flex flex-col gap-3">
+      <header class="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+        <h2 class="m-0 text-sm font-medium text-ink">Observed calls</h2>
+        <span class="text-xs text-ink/55">Last {{ HOOK_FIGURE_DAYS }} days</span>
+      </header>
+
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <UsageTile
+          v-for="figure in figures"
+          :key="figure.id"
+          :info="figure.info"
+          :label="figure.label"
+          :seed="figure.seed"
+          :series="figure.series"
+          :value="figure.value"
+        />
+      </div>
+
+      <p class="m-0 text-[11px] leading-4 text-ink/55">
+        <template v-if="running">
+          Every call to an enabled hook on this project. A refusal is your service saying no; a
+          failure is a request that failed because of the call.
+        </template>
+        <template v-else>
+          Nothing calls a hook, so there are no figures. Read an empty tile as nobody counting,
+          not as nothing failing.
+        </template>
+      </p>
+    </section>
+
+    <section class="flex flex-col gap-3">
+      <header class="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div class="flex min-w-0 flex-col gap-0.5">
+          <h2 class="m-0 text-sm font-medium text-ink">{{ listHeading }}</h2>
+          <p class="m-0 text-xs leading-5 text-ink/55">
+            Five points where we would call your service. Configure one to set where we call and
+            how long we wait, check it, then enable it.
+          </p>
+        </div>
+        <span class="flex items-center gap-1.5 text-xs text-ink/60">
+          <Icon aria-hidden="true" class="text-sm" name="material-symbols:timer-outline" />
+          {{ budget }}
+        </span>
+      </header>
+
+      <RecordTable :columns="HOOK_COLUMNS" framed label="Hook points">
+        <template v-if="store.loading">
+          <li v-for="row in 5" :key="row" class="record-row">
+            <span class="record-cell record-cell--primary flex items-center gap-3">
+              <span class="size-8 flex-none animate-pulse rounded-(--idenzy-radius-x-small) bg-ink/8" />
+              <span class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span class="h-2.5 w-28 animate-pulse rounded-full bg-ink/8" />
+                <span class="h-2 w-48 max-w-full animate-pulse rounded-full bg-ink/6" />
+              </span>
+            </span>
+            <span class="record-cell record-cell--half"><span class="block h-4 w-20 animate-pulse rounded-full bg-ink/8" /></span>
+            <span class="record-cell record-cell--half"><span class="block h-2.5 w-10 animate-pulse rounded-full bg-ink/6" /></span>
+            <span class="record-cell record-cell--half"><span class="block h-2.5 w-16 animate-pulse rounded-full bg-ink/6" /></span>
+            <span class="record-cell record-cell--action" />
+          </li>
+        </template>
+
+        <template v-else>
+          <li class="bg-ink/2 px-3.5 py-1.5 text-[11px] leading-4 font-medium text-ink/50">
+            On the sign-in path
+          </li>
+          <HookRow
+            v-for="hook in pathHooks"
+            :key="hook.type"
+            :hook="hook"
+            :stats="stats.get(hook.type) ?? null"
+            @configure="configure(hook.type)"
+            @deadline="ask('deadline', hook.type)"
+            @endpoint="ask('endpoint', hook.type)"
+            @remove="ask('remove', hook.type)"
+          />
+          <li class="bg-ink/2 px-3.5 py-1.5 text-[11px] leading-4 font-medium text-ink/50">
+            In place of our sender
+          </li>
+          <HookRow
+            v-for="hook in sendHooks"
+            :key="hook.type"
+            :hook="hook"
+            :stats="stats.get(hook.type) ?? null"
+            @configure="configure(hook.type)"
+            @deadline="ask('deadline', hook.type)"
+            @endpoint="ask('endpoint', hook.type)"
+            @remove="ask('remove', hook.type)"
+          />
+        </template>
+      </RecordTable>
+    </section>
+
+    <LayerCard
+      v-model:open="reference.signing"
+      description="Which secret signs a hook, how you get it, and what rotating it moves."
+      expandable
+      title="Signing"
+    >
+      <div class="divide-y divide-line">
+        <SettingRow :description="secretSummary(secret, now)" label="Hook signing secret">
+          <template v-if="secret" #actions>
+            <v-btn
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:key-outline"
+              size="small"
+              variant="outlined"
+              @click="ask('rotate')"
+            >
+              Rotate secret
+            </v-btn>
+          </template>
+        </SettingRow>
+        <SettingRow
+          description="Webhook secrets are per endpoint, and a project can have none or several, so none of them signs a hook. Rotating one never touches a hook, and rotating this never touches a webhook."
+          fixed="Its own"
+          label="Not a webhook secret"
+        />
+        <SettingRow
+          description="Shown once and never again is settled. How it is held so we can sign with it is not, as for webhook secrets."
+          fixed="Not settled"
+          label="Where it is kept"
+        />
+        <SettingRow
+          :fixed="HOOK_SIGNATURE_HEADER"
+          description="Over the timestamp, a dot, then the raw body, exactly as a webhook delivery is, so the verifier on the Webhooks page checks a hook with this secret. Read the body as text first: re-serialised JSON never matches."
+          label="How a call is signed"
+        />
+        <SettingRow
+          :description="`Refuse a call whose timestamp is more than ${HOOK_TIMESTAMP_TOLERANCE_SECONDS / 60} minutes out before you check the signature. That is what makes it replay-safe rather than merely authentic.`"
+          :fixed="HOOK_TIMESTAMP_HEADER"
+          label="How replay is stopped"
+        />
+        <SettingRow
+          :fixed="HOOK_TYPE_HEADER"
+          description="Names which of the five the body is for, so one route can serve them all."
+          label="Which hook"
+        />
+      </div>
+    </LayerCard>
+
+    <LayerCard
+      v-model:open="reference.failure"
+      description="Four ways a call does not come back with a yes, why none is retried, and how that differs from a webhook."
+      expandable
+      title="How a hook fails"
+    >
+      <div class="flex flex-col gap-5">
+        <div class="divide-y divide-line">
+          <SettingRow
+            v-for="failure in HOOK_FAILURES"
+            :key="failure.id"
+            :description="failure.note"
+            :fixed="failure.id === 'refused' ? 'Yours' : 'Fails the request'"
+            :label="failure.label"
+          />
+          <SettingRow :description="NO_RETRY_NOTE" fixed="Never" label="Retried" />
+          <SettingRow :description="FAIL_CLOSED_NOTE" fixed="Always" label="Fail-closed" />
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <h3 class="m-0 text-xs font-medium text-ink">A hook or a webhook</h3>
+          <RecordTable :columns="COMPARE_COLUMNS" framed label="A hook or a webhook">
+            <li v-for="row in HOOK_OR_WEBHOOK" :key="row.id" class="record-row">
+              <span class="record-cell record-cell--primary text-xs font-medium text-ink">{{ row.label }}</span>
+              <span class="record-cell text-xs text-ink/75" data-label="A hook">{{ row.hook }}</span>
+              <span class="record-cell text-xs text-ink/75" data-label="A webhook">{{ row.webhook }}</span>
+            </li>
+          </RecordTable>
+        </div>
+      </div>
+    </LayerCard>
+
+    <!-- A hook's configuration, over the list rather than under it: capped from `lg` up and a
+         full-height sheet below it. It does not write and close itself, so it stays mounted;
+         the edits it offers open over it, and it is still there when they close. -->
+    <v-dialog
+      v-model="detailOpen"
+      :aria-labelledby="detailTitleId"
+      :fullscreen="!lgAndUp"
+      :max-width="lgAndUp ? 880 : undefined"
+      :transition="lgAndUp ? undefined : 'dialog-bottom-transition'"
+      scrollable
+      width="100%"
+    >
+      <v-card border flat>
+        <HookConfigPanel
+          :hook="detail"
+          :hooks="hooks"
+          :project-name="projects.current.name"
+          :secret="secret"
+          :stats="stats.get(detail.type) ?? null"
+          :title-id="detailTitleId"
+          :validating="isBusy(`validate:${detail.type}`)"
+          @close="detailOpen = false"
+          @deadline="ask('deadline', detail.type)"
+          @disable="ask('disable', detail.type)"
+          @enable="ask('enable', detail.type)"
+          @endpoint="ask('endpoint', detail.type)"
+          @validate="validate(detail.type)"
+        />
+      </v-card>
+    </v-dialog>
+
+    <!-- Mounted only while open, like every dialog here that writes and then closes. -->
     <HookEndpointDialog
+      v-if="dialog === 'endpoint'"
       v-model="endpointOpen"
-      :busy="editingBusy"
-      :current="editingHook?.url ?? null"
-      :deadline-ms="editingHook?.deadlineMs ?? 0"
-      :type="editing"
+      :busy="working"
+      :current="subjectHook.url"
+      :deadline-ms="subjectHook.deadlineMs"
+      :enabled="subjectHook.enabled"
+      :error="problem"
+      :project-name="projects.current.name"
+      :secret="secret"
+      :type="subject"
       @confirm="confirmEndpoint"
     />
 
-    <NumberDialog
+    <HookDeadlineDialog
+      v-if="dialog === 'deadline'"
       v-model="deadlineOpen"
-      :current="editingHook?.deadlineMs ?? 0"
-      :hint="`Between ${DEADLINE_MIN_MS} and ${DEADLINE_MAX_MS}. Set it above your endpoint's tail, not its median.`"
-      :integer-label="DEADLINE_ISSUE.integer"
-      :max="DEADLINE_MAX_MS"
-      :min="DEADLINE_MIN_MS"
-      :range-label="DEADLINE_ISSUE.range"
-      :title="`Change the ${editing ? HOOK_LABELS[editing].toLowerCase() : ''} deadline`"
-      description="How long we wait before the call is abandoned and the request fails. Every millisecond of it is added to somebody's sign-in on the day your endpoint is slow, and a deadline under your own p99 is a decision to fail that share of requests."
-      label="Wait at most"
-      suffix="ms"
+      :busy="working"
+      :error="problem"
+      :hook="subjectHook"
+      :hooks="hooks"
+      :project-name="projects.current.name"
+      :stats="stats.get(subject) ?? null"
       @confirm="confirmDeadline"
+    />
+
+    <HookEnableDialog
+      v-if="dialog === 'enable'"
+      v-model="enableOpen"
+      :busy="working"
+      :error="problem"
+      :hook="subjectHook"
+      :hooks="hooks"
+      :project-name="projects.current.name"
+      :secret="secret"
+      @confirm="confirmEnable"
+    />
+
+    <HookRemoveDialog
+      v-if="dialog === 'disable' || dialog === 'remove'"
+      v-model="removeOpen"
+      :action="removeAction"
+      :busy="working"
+      :error="problem"
+      :hook="subjectHook"
+      :project-name="projects.current.name"
+      @confirm="confirmRemove"
+    />
+
+    <HookRotateDialog
+      v-if="dialog === 'rotate'"
+      v-model="rotateOpen"
+      :busy="working"
+      :enabled-count="enabledCount"
+      :error="problem"
+      :project-name="projects.current.name"
+      @confirm="confirmRotate"
+    />
+
+    <HookSecretDialog
+      v-if="secretOpen && revealed"
+      v-model="secretOpen"
+      :project-name="projects.current.name"
+      :secret="revealed.secret"
+      :until="revealed.until"
+      @done="revealed = null"
     />
   </div>
 </template>

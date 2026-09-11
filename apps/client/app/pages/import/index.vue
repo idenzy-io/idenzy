@@ -11,34 +11,43 @@
  * address, the duplicates, the hashes we cannot verify. A dry run is the same job with
  * nothing written, and it sits beside the real one rather than behind a flag.
  *
+ * The history under it is the panel's list shape and nothing else: the section's name
+ * above a plain card, the controls that narrow it along the top, the table under them,
+ * exactly as the users and sessions screens are laid out. There is no strip of totals
+ * over it, because the figures that would go in one are the migration's and they are
+ * already in the sidebar; the same number twice on one screen is the tell this panel
+ * was rewritten to get rid of.
+ *
  * The figures on the side are the migration's: users imported, and how many of the
  * passwords that came with them have been upgraded since, which is the count of legacy
  * hashes still in the database going down (@idenzy/crypto's verify-only hashers).
+ *
+ * The catalogue of sources is reference content, so it is a table under the history
+ * rather than a hand-written list of links in the sidebar, folded away until somebody
+ * is choosing where their users are coming from.
  *
  * The data is the store's placeholder until the management API client exists. The
  * file, the parsing and the analysis are real and stay in the browser.
  */
 
-import type { ImportFile } from "~/components/ImportDropzone.vue";
+import type { SegmentedOption } from "~/components/SegmentedControl.vue";
 import type { BadgeTone } from "~/components/StatusBadge.vue";
-import type { Step } from "~/components/Steps.vue";
-import type { ImportJob, ImportStatus } from "~/stores/imports";
 import type { ColumnState, DataTableColumn, DataTableSort } from "~/utils/data-table";
 import { defaultColumnState, reconcileColumnState } from "~/utils/data-table";
 import {
-  analyse,
-  detectSource,
-  EMPTY_FIREBASE_HASH_CONFIG,
-  type FirebaseHashConfig,
+  countImportsByKind,
+  EMPTY_IMPORT_FILTERS,
   FORMAT_LABELS,
-  firebaseHashConfigComplete,
-  HASH_LABELS,
-  type HashKind,
+  filterImports,
+  IMPORT_KIND_LABELS,
+  IMPORT_OUTCOME_LABELS,
+  type ImportFilters,
+  type ImportJob,
+  type ImportKind,
+  type ImportOutcome,
   type ImportSource,
-  ISSUE_LABELS,
-  type Issue,
-  inferMapping,
-  type Mapping,
+  importFilterCount,
+  importOutcome,
   SOURCES,
   sourceInfo,
 } from "~/utils/import";
@@ -53,196 +62,103 @@ const metrics = computed(() => store.metrics(projects.current.id, now.value));
 
 const GUIDES_URL = "https://idenzy.dev/docs/migrate";
 
+/* The wizard is a dialog, so the page holds only whether it is up. */
+const wizardOpen = ref(false);
+
 /*
- * The wizard.
+ * The history: the same four controls the users and sessions lists carry, over the same
+ * card. The tabs are the one cut that puts every job in exactly one place, a rehearsal
+ * or a real run, so a job that is still going belongs to the tab it will still be in
+ * when it finishes. Everything else that narrows the list is behind the Filter button,
+ * and what a job ended as is a badge in the table rather than a tab of its own.
  */
-type StepId = "source" | "file" | "fields" | "review";
+const filters = ref<ImportFilters>({ ...EMPTY_IMPORT_FILTERS });
 
-const STEPS: readonly Step[] = [
-  { id: "source", label: "Source" },
-  { id: "file", label: "File" },
-  { id: "fields", label: "Fields" },
-  { id: "review", label: "Review and run" },
-];
+const filtered = computed(() => filterImports(jobs.value, filters.value, now.value));
+const kindCounts = computed(() => countImportsByKind(jobs.value));
 
-const STEP_TITLES: Record<StepId, string> = {
-  source: "Where are the users coming from?",
-  file: "Drop the export",
-  fields: "Which column is which",
-  review: "What the import will do",
-};
+const KIND_TABS: readonly ("all" | ImportKind)[] = ["all", "import", "dry-run"];
 
-const open = ref(false);
-const step = ref<StepId>("source");
-const source = ref<ImportSource | null>(null);
-const file = ref<ImportFile | null>(null);
-const firebase = ref<FirebaseHashConfig>({ ...EMPTY_FIREBASE_HASH_CONFIG });
-const mapping = ref<Mapping>({});
-const options = ref({ duplicates: "skip" as "skip" | "update", verifyAll: false, dryRun: false });
-const runningId = ref<string | null>(null);
+function isKindTab(value: string): value is "all" | ImportKind {
+  return (KIND_TABS as readonly string[]).includes(value);
+}
 
-/* The segmented control hands back a string; it is narrowed before it is stored. */
-const duplicates = computed({
-  get: () => options.value.duplicates,
+const kindOptions = computed<SegmentedOption[]>(() =>
+  KIND_TABS.map((tab) => ({
+    value: tab,
+    label: `${tab === "all" ? "All" : IMPORT_KIND_LABELS[tab]} · ${kindCounts.value[tab]}`,
+  })),
+);
+
+const kindTab = computed({
+  get: () => filters.value.kind,
   set: (value: string) => {
-    if (value === "skip" || value === "update") options.value.duplicates = value;
+    if (isKindTab(value)) filters.value = { ...filters.value, kind: value };
   },
 });
 
-function isStep(value: string): value is StepId {
-  return STEPS.some((entry) => entry.id === value);
-}
-
-function begin() {
-  open.value = true;
-  step.value = "source";
-  source.value = null;
-  file.value = null;
-  firebase.value = { ...EMPTY_FIREBASE_HASH_CONFIG };
-  mapping.value = {};
-  options.value = { duplicates: "skip", verifyAll: false, dryRun: false };
-  runningId.value = null;
-}
-
-function close() {
-  open.value = false;
-  runningId.value = null;
-}
-
-/* A new file resets the mapping to the guess, and says so if it looks like another
-   source's export: the wrong source reads passwords under the wrong hash. */
-watch(file, (chosen) => {
-  mapping.value = chosen ? inferMapping(chosen.keys) : {};
+/* `clearable` hands back null, which the filter reads as nothing typed. */
+const query = computed({
+  get: () => filters.value.query,
+  set: (value: string | null) => {
+    filters.value = { ...filters.value, query: value ?? "" };
+  },
 });
 
-const detected = computed(() => (file.value ? detectSource(file.value.records) : null));
-const mismatch = computed(
-  () => detected.value !== null && source.value !== "file" && detected.value !== source.value,
+const narrowed = computed(
+  () =>
+    filters.value.kind !== "all" ||
+    filters.value.query.trim() !== "" ||
+    importFilterCount(filters.value) > 0,
 );
 
-const accepted = computed(() =>
-  source.value ? sourceInfo(source.value).formats : (["json", "ndjson", "csv"] as const),
-);
-
-const analysis = computed(() =>
-  file.value ? analyse(file.value.records, mapping.value, source.value) : null,
-);
-
-const ready = computed<Record<StepId, boolean>>(() => ({
-  source: source.value !== null,
-  file:
-    file.value !== null &&
-    (source.value !== "firebase" || firebaseHashConfigComplete(firebase.value)),
-  fields: mapping.value.email !== undefined || mapping.value.phone !== undefined,
-  review: (analysis.value?.importable ?? 0) > 0,
-}));
-
-const order: readonly StepId[] = ["source", "file", "fields", "review"];
-
-function next() {
-  const at = order.indexOf(step.value);
-  const following = order[at + 1];
-  if (following && ready.value[step.value]) step.value = following;
+function resetFilters() {
+  filters.value = { ...EMPTY_IMPORT_FILTERS };
 }
 
-function back() {
-  const at = order.indexOf(step.value);
-  const previous = order[at - 1];
-  if (previous) step.value = previous;
-}
-
-function jump(id: string) {
-  if (isStep(id)) step.value = id;
-}
-
-const job = computed(() => store.jobs.find((entry) => entry.id === runningId.value) ?? null);
-
-function run(dryRun: boolean) {
-  if (!file.value || !source.value || !analysis.value) return;
-  const started = store.start({
-    projectId: projects.current.id,
-    source: source.value,
-    fileName: file.value.name,
-    format: file.value.format,
-    dryRun,
-    analysis: analysis.value,
-    startedBy: "hasan@example.com",
-  });
-  runningId.value = started.id;
-}
-
-/* The review step's figures, in the order an operator reads them: what goes in, what
-   does not, and what happens to passwords. */
-const review = computed(() => {
-  const found = analysis.value;
-  if (!found) return [];
-  return [
-    { label: "Rows in the file", value: found.total, tone: "" },
-    {
-      label: options.value.dryRun ? "Would import" : "Will import",
-      value: found.importable,
-      tone: "text-success",
-    },
-    {
-      label: "Refused",
-      value: found.total - found.importable,
-      tone: found.total - found.importable > 0 ? "text-error" : "",
-    },
-    { label: "Verified emails", value: found.verifiedEmails, tone: "" },
-    { label: "Passwords kept", value: found.passwordsKeptTotal, tone: "" },
-    {
-      label: "Passwords dropped",
-      value: found.passwordsDropped,
-      tone: found.passwordsDropped > 0 ? "text-warning" : "",
-    },
-  ];
-});
-
-const kept = computed(() =>
-  Object.entries(analysis.value?.passwordsKept ?? {}).map(([kind, count]) => ({
-    label: HASH_LABELS[kind as HashKind], // the keys are the HashKinds the analysis counted
-    count: count ?? 0,
-  })),
-);
-
-const issues = computed(() =>
-  Object.entries(analysis.value?.issues ?? {}).map(([issue, count]) => ({
-    label: ISSUE_LABELS[issue as Issue], // likewise, the issues the analysis counted
-    count: count ?? 0,
-  })),
-);
-
-/*
- * The history.
- */
-const STATUS: Record<ImportStatus, { label: string; tone: BadgeTone }> = {
-  queued: { label: "Queued", tone: "neutral" },
-  running: { label: "Running", tone: "warning" },
-  done: { label: "Done", tone: "success" },
-  failed: { label: "Failed", tone: "error" },
+/* The label is decided in `utils/import.ts`, so the run card and this table cannot
+   call the same job two different things. Only the colour is the screen's. */
+const OUTCOME_TONES: Record<ImportOutcome, BadgeTone> = {
+  queued: "neutral",
+  running: "warning",
+  done: "success",
+  failed: "error",
+  "dry-run": "neutral",
 };
 
-function statusOf(entry: ImportJob) {
-  return entry.dryRun && entry.status === "done"
-    ? { label: "Dry run", tone: "neutral" as BadgeTone }
-    : STATUS[entry.status];
+function outcomeOf(entry: ImportJob) {
+  const outcome = importOutcome(entry);
+  return { label: IMPORT_OUTCOME_LABELS[outcome], tone: OUTCOME_TONES[outcome] };
 }
 
+/*
+ * Nine columns, five of them shown. The table sits beside the migration's figures, so
+ * it is the narrowest list in the panel, and a default arrangement wider than its card
+ * makes every reader scroll sideways to reach the outcome. The four that are off answer
+ * a second question rather than the first, and the columns menu is one click away.
+ */
 const COLUMNS: readonly DataTableColumn<ImportJob>[] = [
-  { key: "job", title: "Import", fixed: true, minWidth: 260, value: (entry) => entry.fileName },
-  { key: "startedAt", title: "Started", mono: true, width: 120 },
-  { key: "startedBy", title: "By", width: 190 },
-  { key: "rows", title: "Rows", align: "end", mono: true, width: 88 },
+  { key: "job", title: "Import", fixed: true, minWidth: 200, value: (entry) => entry.fileName },
+  { key: "startedAt", title: "Started", mono: true, width: 110 },
+  { key: "startedBy", title: "By", width: 190, hidden: true },
+  { key: "rows", title: "Rows", align: "end", mono: true, width: 88, hidden: true },
   { key: "imported", title: "Imported", align: "end", mono: true, width: 96 },
-  { key: "skipped", title: "Skipped", align: "end", mono: true, width: 88 },
+  { key: "skipped", title: "Skipped", align: "end", mono: true, width: 88, hidden: true },
   { key: "failed", title: "Failed", align: "end", mono: true, width: 88 },
-  { key: "passwordsKept", title: "Passwords kept", align: "end", mono: true, width: 128 },
+  {
+    key: "passwordsKept",
+    title: "Passwords kept",
+    align: "end",
+    mono: true,
+    width: 128,
+    hidden: true,
+  },
   {
     key: "status",
-    title: "Status",
+    title: "Outcome",
     width: 112,
     skeleton: "pill",
-    value: (entry) => statusOf(entry).label,
+    value: (entry) => outcomeOf(entry).label,
   },
 ];
 
@@ -257,19 +173,67 @@ const sortBy = ref<DataTableSort[]>([{ key: "startedAt", order: "desc" }]);
 const page = ref(1);
 const pageSize = useLocalStorage("idenzy.imports.page-size", 10);
 
-const guides = SOURCES.map((entry) => ({
+/* A narrowed list starts at its own beginning. Page two of everything is not page two
+   of the dry runs. */
+watch(filters, () => {
+  page.value = 1;
+});
+
+/*
+ * What each source exports, as the catalogue it is. The order is the one the source
+ * grid uses, which is how often a migration comes from each, so the table opens on it
+ * and sorts from there.
+ *
+ * Short cells only. A row in this panel is one line high, so the sentence about how an
+ * export is obtained would be clipped rather than read; it is in the wizard's first
+ * step already, in full, beside the source it belongs to. What is here is what that
+ * screen cannot be scanned for: the formats, the answer about passwords, and the guide.
+ */
+interface SourceRow {
+  id: ImportSource;
+  label: string;
+  icon: string;
+  monochrome: boolean;
+  tint: string;
+  formats: string;
+  hashes: string;
+  guide: string;
+}
+
+const SOURCE_ROWS: readonly SourceRow[] = SOURCES.map((entry) => ({
+  id: entry.id,
+  label: entry.label,
   icon: entry.icon,
   monochrome: entry.monochrome,
   tint: entry.tint ?? "",
-  title: entry.id === "file" ? "The file format" : `Migrating from ${entry.label}`,
-  detail: entry.id === "file" ? "Columns, hash formats, and the CSV and JSON shapes." : entry.how,
-  href: entry.guide,
+  formats: entry.formats.map((format) => FORMAT_LABELS[format]).join(", "),
+  hashes: entry.hashes,
+  guide: entry.guide,
 }));
+
+const SOURCE_COLUMNS: readonly DataTableColumn<SourceRow>[] = [
+  { key: "label", title: "Source", fixed: true, minWidth: 260 },
+  { key: "formats", title: "Formats", width: 180 },
+  { key: "hashes", title: "Passwords that keep working", minWidth: 240 },
+];
+
+const storedSourceColumns = useLocalStorage<ColumnState>(
+  "idenzy.import-sources.columns",
+  defaultColumnState(SOURCE_COLUMNS),
+);
+const sourceColumnState = computed<ColumnState>({
+  get: () => reconcileColumnState(SOURCE_COLUMNS, storedSourceColumns.value),
+  set: (value) => {
+    storedSourceColumns.value = value;
+  },
+});
+const sourceSort = ref<DataTableSort[]>([]);
+const sourcesOpen = ref(false);
 </script>
 
 <template>
   <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:upload-file-outline" title="Import users">
+    <PageHeader title="Import users">
       <template #description>
         Bring your users over from Firebase, Supabase, Auth0, Clerk, Cognito or a file.
         Passwords come along wherever the source exports hashes.
@@ -287,7 +251,7 @@ const guides = SOURCES.map((entry) => ({
         >
           Migration guides
         </v-btn>
-        <FancyButton @click="begin">
+        <FancyButton @click="wizardOpen = true">
           <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           New import
         </FancyButton>
@@ -296,384 +260,165 @@ const guides = SOURCES.map((entry) => ({
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
       <div class="flex min-w-0 flex-col gap-6">
-        <!-- The wizard, or the empty state in its place, or nothing when there is a
-             history and no import underway: the history is then the page. -->
-        <LayerCard v-if="open" :padded="false">
-          <template #header>
-            <Steps :current="step" :steps="STEPS" @select="jump" />
-          </template>
-          <template #actions>
-            <v-btn class="text-xs font-medium" color="neutral" size="small" variant="text" @click="close">
-              {{ job?.status === "done" ? "Close" : "Cancel" }}
-            </v-btn>
-          </template>
+        <!--
+          The history: the section's name on the page, then the card, with the controls
+          that narrow it along the top and the table under them. The same object as the
+          users and sessions lists, down to the order of the controls in the strip.
+        -->
+        <section class="flex flex-col gap-3">
+          <header class="flex min-w-0 flex-col gap-0.5">
+            <h2 class="m-0 text-sm font-medium text-ink">Past imports</h2>
+            <p class="m-0 text-xs text-ink/55">
+              Every run on this project, dry runs included. A run is listed as it starts and
+              its counts climb as rows land, and the refused rows stay in the report the run
+              leaves behind.
+            </p>
+          </header>
 
-          <div class="flex flex-col gap-5 p-5">
-            <template v-if="job">
-              <ImportRunCard :job="job">
-                <template v-if="job.status === 'done'" #actions>
-                  <FancyButton @click="begin">
-                    <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-                    Import another
-                  </FancyButton>
-                  <v-btn
-                    v-if="!job.dryRun"
-                    class="text-xs font-medium"
-                    color="neutral"
-                    size="small"
-                    to="/users"
-                    variant="outlined"
-                  >
-                    View users
-                  </v-btn>
-                  <v-btn
-                    v-else
-                    class="text-xs font-medium"
-                    color="neutral"
-                    size="small"
-                    variant="outlined"
-                    @click="run(false)"
-                  >
-                    Run it for real
-                  </v-btn>
-                </template>
-              </ImportRunCard>
-            </template>
+          <v-card border flat>
+            <div
+              class="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between"
+            >
+              <SegmentedControl v-model="kindTab" :options="kindOptions" label="Kind" />
 
-            <template v-else>
-              <header class="flex flex-col gap-1">
-                <h3 class="m-0 text-base font-semibold tracking-tight text-ink">
-                  {{ STEP_TITLES[step] }}
-                </h3>
-                <p v-if="step === 'source'" class="m-0 text-xs text-ink/60">
-                  The source decides how the file is read and how its passwords are treated,
-                  so it comes first.
-                </p>
-                <p v-else-if="step === 'file'" class="m-0 text-xs text-ink/60">
-                  {{ source ? sourceInfo(source).how : "" }}
-                </p>
-                <p v-else-if="step === 'fields'" class="m-0 text-xs text-ink/60">
-                  The guess is filled in from the column names. Check the first value beside
-                  each one; a wrong column here is a wrong password for everyone.
-                </p>
-                <p v-else class="m-0 text-xs text-ink/60">
-                  Nothing has been sent yet. A dry run checks every row and writes nothing.
-                </p>
-              </header>
+              <div class="flex flex-wrap items-center gap-2">
+                <v-text-field
+                  v-model="query"
+                  aria-label="Search imports"
+                  class="imports__search w-full sm:w-72"
+                  clearable
+                  density="comfortable"
+                  hide-details
+                  placeholder="Search file, who ran it or ID"
+                  prepend-inner-icon="material-symbols:search"
+                  variant="outlined"
+                />
+                <ImportsFilterMenu v-model="filters" />
+                <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
+              </div>
+            </div>
 
-              <ImportSourceGrid v-if="step === 'source'" v-model="source" />
-
-              <template v-else-if="step === 'file'">
-                <ImportDropzone v-model="file" :accept="accepted" />
-
-                <div
-                  v-if="mismatch && detected"
-                  class="flex items-start gap-2 rounded-(--idenzy-radius-small) border border-warning/40 bg-warning/6 px-3 py-2.5 text-xs text-ink"
-                  role="status"
-                >
-                  <Icon aria-hidden="true" class="mt-px flex-none text-sm text-warning" name="material-symbols:warning-outline" />
-                  <span class="flex-1">
-                    This file looks like a {{ sourceInfo(detected).label }} export, and you chose
-                    {{ source ? sourceInfo(source).label : "another source" }}. The source decides
-                    how passwords are read.
+            <DataTable
+              v-model:column-state="columnState"
+              v-model:items-per-page="pageSize"
+              v-model:page="page"
+              v-model:sort-by="sortBy"
+              :columns="COLUMNS"
+              :items="filtered"
+              :loading="store.loading"
+              label="Past imports"
+            >
+              <template #cell.job="{ item }">
+                <span class="flex min-w-0 items-center gap-2.5">
+                  <span class="flex size-7 flex-none items-center justify-center text-ink">
+                    <Icon
+                      :class="[
+                        sourceInfo(item.source).monochrome ? '[.v-theme--dark_&]:invert' : '',
+                        sourceInfo(item.source).tint ?? '',
+                      ]"
+                      :name="sourceInfo(item.source).icon"
+                      aria-hidden="true"
+                      class="text-[22px]"
+                    />
                   </span>
-                  <button
-                    class="font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
-                    type="button"
-                    @click="source = detected"
-                  >
-                    Use {{ sourceInfo(detected).label }}
-                  </button>
-                </div>
-
-                <section v-if="source === 'firebase'" class="flex flex-col gap-1">
-                  <h4 class="m-0 text-xs font-medium text-ink">Password hash parameters</h4>
-                  <p class="m-0 mb-2 text-[11px] text-ink/50">
-                    From the Firebase console, under Authentication, Users, then "Password hash
-                    parameters". They belong to the project and the export leaves them out;
-                    without them no scrypt hash can be verified.
-                  </p>
-                  <div class="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                    <div class="flex flex-col gap-2 sm:col-span-2">
-                      <label class="text-xs font-medium opacity-70" for="fb-signer">Signer key</label>
-                      <v-text-field
-                        id="fb-signer"
-                        v-model="firebase.signerKey"
-                        autocomplete="off"
-                        class="font-mono"
-                        hide-details
-                        placeholder="base64"
-                        variant="underlined"
-                      />
-                    </div>
-                    <div class="flex flex-col gap-2">
-                      <label class="text-xs font-medium opacity-70" for="fb-separator">Salt separator</label>
-                      <v-text-field
-                        id="fb-separator"
-                        v-model="firebase.saltSeparator"
-                        autocomplete="off"
-                        class="font-mono"
-                        hide-details
-                        variant="underlined"
-                      />
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                      <div class="flex flex-col gap-2">
-                        <label class="text-xs font-medium opacity-70" for="fb-rounds">Rounds</label>
-                        <v-text-field
-                          id="fb-rounds"
-                          v-model.number="firebase.rounds"
-                          class="font-mono"
-                          hide-details
-                          type="number"
-                          variant="underlined"
-                        />
-                      </div>
-                      <div class="flex flex-col gap-2">
-                        <label class="text-xs font-medium opacity-70" for="fb-mem">Memory cost</label>
-                        <v-text-field
-                          id="fb-mem"
-                          v-model.number="firebase.memoryCost"
-                          class="font-mono"
-                          hide-details
-                          type="number"
-                          variant="underlined"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              </template>
-
-              <template v-else-if="step === 'fields' && file">
-                <ImportMappingTable v-model="mapping" :keys="file.keys" :records="file.records" />
-
-                <section class="flex flex-col gap-3">
-                  <h4 class="m-0 text-xs font-medium text-ink">Options</h4>
-                  <div class="flex flex-col gap-2">
-                    <div class="flex flex-col gap-1.5">
-                      <span class="text-xs text-ink/70">When an email already exists on this project</span>
-                      <SegmentedControl
-                        v-model="duplicates"
-                        :options="[
-                          { value: 'skip', label: 'Skip the row' },
-                          { value: 'update', label: 'Update the account' },
-                        ]"
-                        label="Existing accounts"
-                      />
-                    </div>
-                    <label class="mt-1 flex cursor-pointer items-start gap-2 text-xs text-ink">
-                      <v-checkbox-btn v-model="options.verifyAll" class="-mt-1.5 -ml-1.5" color="primary" density="compact" />
-                      <span class="flex flex-col gap-0.5 pt-px">
-                        Treat every email as verified
-                        <span class="text-[11px] text-ink/50">
-                          Only if the source verified them and the column says nothing. A
-                          verified address is what other sign-ins can be linked on.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                </section>
-              </template>
-
-              <template v-else-if="step === 'review' && analysis">
-                <dl class="m-0 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div
-                    v-for="figure in review"
-                    :key="figure.label"
-                    class="flex flex-col gap-1 rounded-(--idenzy-radius-small) border border-line bg-canvas px-3 py-2.5"
-                  >
-                    <dt class="text-[11px] text-ink/55">{{ figure.label }}</dt>
-                    <dd :class="figure.tone || 'text-ink'" class="m-0 font-mono text-lg leading-none font-medium tabular-nums">
-                      {{ figure.value.toLocaleString("en") }}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div class="grid gap-4 sm:grid-cols-2">
-                  <section class="flex flex-col gap-2">
-                    <h4 class="m-0 text-xs font-medium text-ink">Passwords</h4>
-                    <ul v-if="kept.length > 0" class="m-0 flex list-none flex-col gap-1 p-0 text-xs">
-                      <li v-for="entry in kept" :key="entry.label" class="flex items-center gap-2">
-                        <Icon aria-hidden="true" class="text-sm text-success" name="material-symbols:check-circle-outline" />
-                        <span class="font-mono tabular-nums text-ink">{{ entry.count.toLocaleString("en") }}</span>
-                        <span class="text-ink/70">{{ entry.label }}, verified as they are and upgraded on first sign-in</span>
-                      </li>
-                      <li v-if="analysis.passwordsDropped > 0" class="flex items-center gap-2">
-                        <Icon aria-hidden="true" class="text-sm text-warning" name="material-symbols:key-off-outline" />
-                        <span class="font-mono tabular-nums text-ink">{{ analysis.passwordsDropped.toLocaleString("en") }}</span>
-                        <span class="text-ink/70">in a format we cannot verify. These accounts set a new password.</span>
-                      </li>
-                      <li v-if="analysis.withoutPassword > 0" class="flex items-center gap-2">
-                        <Icon aria-hidden="true" class="text-sm text-ink/40" name="material-symbols:mail-outline" />
-                        <span class="font-mono tabular-nums text-ink">{{ analysis.withoutPassword.toLocaleString("en") }}</span>
-                        <span class="text-ink/70">without a password, who sign in by a code.</span>
-                      </li>
-                    </ul>
-                    <p v-else class="m-0 text-xs text-ink/60">
-                      No password hashes in this file. Every account signs in by a code to its
-                      address, or sets a password on first visit.
-                    </p>
-                  </section>
-
-                  <section class="flex flex-col gap-2">
-                    <h4 class="m-0 text-xs font-medium text-ink">Rows with a problem</h4>
-                    <ul v-if="issues.length > 0" class="m-0 flex list-none flex-col gap-1 p-0 text-xs">
-                      <li v-for="entry in issues" :key="entry.label" class="flex items-center gap-2">
-                        <span class="font-mono tabular-nums text-ink">{{ entry.count.toLocaleString("en") }}</span>
-                        <span class="text-ink/70">{{ entry.label }}</span>
-                      </li>
-                    </ul>
-                    <p v-else class="m-0 text-xs text-ink/60">Every row has an address and reads cleanly.</p>
-                    <p class="m-0 text-[11px] text-ink/50">
-                      A refused row is listed in the report after the run, with its line number,
-                      so the file can be fixed and sent again.
-                    </p>
-                  </section>
-                </div>
-
-                <label class="flex cursor-pointer items-start gap-2 text-xs text-ink">
-                  <v-checkbox-btn v-model="options.dryRun" class="-mt-1.5 -ml-1.5" color="primary" density="compact" />
-                  <span class="flex flex-col gap-0.5 pt-px">
-                    Dry run
-                    <span class="text-[11px] text-ink/50">
-                      Checks every row against the project and writes nothing. The report is the
-                      same one the real run would give.
+                  <span class="flex min-w-0 flex-col gap-px leading-4">
+                    <span class="truncate text-xs font-medium text-ink">{{ item.fileName }}</span>
+                    <span class="truncate text-[11px] text-ink/55">
+                      {{ sourceInfo(item.source).label }} · {{ FORMAT_LABELS[item.format] }}
                     </span>
                   </span>
-                </label>
+                </span>
               </template>
-            </template>
-          </div>
+              <template #cell.startedAt="{ item }">
+                <v-tooltip :text="formatDateTime(item.startedAt)" location="top">
+                  <template #activator="{ props: tip }">
+                    <span v-bind="tip" class="font-mono text-ink/80 tabular-nums">
+                      {{ relativeTime(item.startedAt, now) }}
+                    </span>
+                  </template>
+                </v-tooltip>
+              </template>
+              <template #cell.failed="{ item }">
+                <span
+                  :class="item.failed > 0 ? 'text-error' : 'text-ink/35'"
+                  class="font-mono tabular-nums"
+                >
+                  {{ item.failed }}
+                </span>
+              </template>
+              <template #cell.skipped="{ item }">
+                <span
+                  :class="item.skipped > 0 ? 'text-ink' : 'text-ink/35'"
+                  class="font-mono tabular-nums"
+                >
+                  {{ item.skipped }}
+                </span>
+              </template>
+              <template #cell.passwordsKept="{ item }">
+                <span class="font-mono tabular-nums text-ink">{{ item.passwordsKept.toLocaleString("en") }}</span>
+                <span
+                  v-if="item.passwordsDropped > 0"
+                  class="font-mono text-[11px] tabular-nums text-warning"
+                >
+                  · {{ item.passwordsDropped }} dropped
+                </span>
+              </template>
+              <template #cell.status="{ item }">
+                <StatusBadge :label="outcomeOf(item).label" :tone="outcomeOf(item).tone" />
+              </template>
 
-          <footer
-            v-if="!job"
-            class="flex items-center justify-between gap-3 border-t border-line px-5 py-3"
-          >
-            <v-btn
-              :disabled="step === 'source'"
-              class="text-xs font-medium"
-              color="neutral"
-              prepend-icon="material-symbols:chevron-left"
-              size="small"
-              variant="text"
-              @click="back"
-            >
-              Back
-            </v-btn>
-            <div class="flex items-center gap-2">
-              <span v-if="step === 'review' && analysis" class="text-[11px] text-ink/50">
-                Recorded in the audit log with who ran it and when.
-              </span>
-              <FancyButton
-                v-if="step === 'review'"
-                :disabled="!ready.review"
-                @click="run(options.dryRun)"
-              >
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:play-arrow" />
-                {{ options.dryRun ? "Run the dry run" : "Run the import" }}
-              </FancyButton>
-              <FancyButton v-else :disabled="!ready[step]" @click="next">
-                Continue
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:chevron-right" />
-              </FancyButton>
-            </div>
-          </footer>
-        </LayerCard>
-
-        <LayerCard v-else-if="!store.loading && jobs.length === 0" :padded="false">
-          <EmptyState
-            description="Bring your users over from Firebase, Supabase, Auth0, Clerk, Cognito or a file of your own. Where the source exports password hashes they come too, and nobody is asked to reset."
-            icon="material-symbols:upload-file-outline"
-            title="No imports yet"
-          >
-            <template #actions>
-              <FancyButton @click="begin">
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-                Start an import
-              </FancyButton>
-              <v-btn
-                :href="GUIDES_URL"
-                class="text-xs font-medium"
-                color="neutral"
-                rel="noopener"
-                size="small"
-                target="_blank"
-                variant="outlined"
-              >
-                Read the guides
-              </v-btn>
-            </template>
-          </EmptyState>
-        </LayerCard>
-
-        <LayerCard
-          v-if="store.loading || jobs.length > 0"
-          :padded="false"
-          description="Every run on this project, dry runs included."
-          title="Past imports"
-        >
-          <DataTable
-            v-model:column-state="columnState"
-            v-model:items-per-page="pageSize"
-            v-model:page="page"
-            v-model:sort-by="sortBy"
-            :columns="COLUMNS"
-            :items="jobs"
-            :loading="store.loading"
-            label="Past imports"
-          >
-            <template #cell.job="{ item }">
-              <span class="flex min-w-0 items-center gap-2.5">
-                <span class="flex size-7 flex-none items-center justify-center text-ink">
+              <!-- Nothing has ever run, or nothing answers the narrowing. The first is
+                   the screen's whole purpose and gets the framed state; the second is a
+                   note with the way out of it. -->
+              <template #empty>
+                <div v-if="narrowed" class="flex flex-col items-center gap-1 px-4 py-14 text-center">
                   <Icon
-                    :class="[
-                      sourceInfo(item.source).monochrome ? '[.v-theme--dark_&]:invert' : '',
-                      sourceInfo(item.source).tint ?? '',
-                    ]"
-                    :name="sourceInfo(item.source).icon"
                     aria-hidden="true"
-                    class="text-[22px]"
+                    class="mb-1 text-2xl text-ink/25"
+                    name="material-symbols:search-off"
                   />
-                </span>
-                <span class="flex min-w-0 flex-col gap-px leading-4">
-                  <span class="truncate text-xs font-medium text-ink">{{ item.fileName }}</span>
-                  <span class="truncate text-[11px] text-ink/55">
-                    {{ sourceInfo(item.source).label }} · {{ FORMAT_LABELS[item.format] }}
-                  </span>
-                </span>
-              </span>
-            </template>
-            <template #cell.startedAt="{ item }">
-              <v-tooltip :text="formatDateTime(item.startedAt)" location="top">
-                <template #activator="{ props: tip }">
-                  <span v-bind="tip" class="font-mono text-ink/80 tabular-nums">
-                    {{ relativeTime(item.startedAt, now) }}
-                  </span>
-                </template>
-              </v-tooltip>
-            </template>
-            <template #cell.failed="{ item }">
-              <span :class="item.failed > 0 ? 'text-error' : 'text-ink/35'" class="font-mono tabular-nums">
-                {{ item.failed }}
-              </span>
-            </template>
-            <template #cell.skipped="{ item }">
-              <span :class="item.skipped > 0 ? 'text-ink' : 'text-ink/35'" class="font-mono tabular-nums">
-                {{ item.skipped }}
-              </span>
-            </template>
-            <template #cell.passwordsKept="{ item }">
-              <span class="font-mono tabular-nums text-ink">{{ item.passwordsKept.toLocaleString("en") }}</span>
-              <span v-if="item.passwordsDropped > 0" class="font-mono text-[11px] tabular-nums text-warning">
-                · {{ item.passwordsDropped }} dropped
-              </span>
-            </template>
-            <template #cell.status="{ item }">
-              <StatusBadge :label="statusOf(item).label" :tone="statusOf(item).tone" />
-            </template>
-          </DataTable>
-        </LayerCard>
+                  <p class="m-0 text-sm font-medium text-ink">No imports match</p>
+                  <p class="m-0 max-w-sm text-xs text-ink/55">
+                    Try another search, or clear the filters to see every run.
+                  </p>
+                  <v-btn
+                    class="mt-2 text-xs font-medium"
+                    color="neutral"
+                    size="small"
+                    variant="outlined"
+                    @click="resetFilters"
+                  >
+                    Clear filters
+                  </v-btn>
+                </div>
+                <EmptyState
+                  v-else
+                  description="Bring your users over from Firebase, Supabase, Auth0, Clerk, Cognito or a file of your own. Where the source exports password hashes they come too, and nobody is asked to reset."
+                  icon="material-symbols:upload-file-outline"
+                  title="No imports yet"
+                >
+                  <template #actions>
+                    <FancyButton @click="wizardOpen = true">
+                      <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+                      Start an import
+                    </FancyButton>
+                    <v-btn
+                      :href="GUIDES_URL"
+                      class="text-xs font-medium"
+                      color="neutral"
+                      rel="noopener"
+                      size="small"
+                      target="_blank"
+                      variant="outlined"
+                    >
+                      Read the guides
+                    </v-btn>
+                  </template>
+                </EmptyState>
+              </template>
+            </DataTable>
+          </v-card>
+        </section>
       </div>
 
       <aside class="flex flex-col gap-4 xl:sticky xl:top-20">
@@ -682,50 +427,118 @@ const guides = SOURCES.map((entry) => ({
           <span class="text-xs text-ink/55">Last 30 days</span>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <UsageTile :seed="3" :series="metrics.daily" :value="metrics.usersImported" label="Users imported" />
-          <UsageTile :seed="5" :value="metrics.imports" info="Runs that wrote users. Dry runs are not counted." label="Imports run" />
-          <UsageTile :seed="7" :value="metrics.passwordsUpgraded" info="Imported password hashes rehashed to Argon2id at a sign-in. The legacy hash is gone once this happens." label="Hashes upgraded" />
-          <UsageTile :seed="11" :value="metrics.awaitingUpgrade" info="Imported accounts still on their original hash, because they have not signed in since." label="Awaiting sign-in" />
+          <UsageTile
+            :seed="3"
+            :series="metrics.daily"
+            :value="metrics.usersImported"
+            label="Users imported"
+          />
+          <UsageTile
+            :seed="5"
+            :value="metrics.imports"
+            info="Runs that wrote users. Dry runs are not counted."
+            label="Imports run"
+          />
+          <UsageTile
+            :seed="7"
+            :value="metrics.passwordsUpgraded"
+            info="Imported password hashes rehashed to Argon2id at a sign-in. The legacy hash is gone once this happens."
+            label="Hashes upgraded"
+          />
+          <UsageTile
+            :seed="11"
+            :value="metrics.awaitingUpgrade"
+            info="Imported accounts still on their original hash, because they have not signed in since."
+            label="Awaiting sign-in"
+          />
         </div>
-
-        <LayerCard :padded="false" title="Guides">
-          <ul class="m-0 list-none divide-y divide-line p-0">
-            <li v-for="guide in guides" :key="guide.href">
-              <a
-                :href="guide.href"
-                class="flex items-start gap-3 px-4 py-3 text-xs no-underline transition-colors duration-150 hover:bg-ink/3"
-                rel="noopener"
-                target="_blank"
-              >
-                <Icon
-                  :class="[guide.monochrome ? '[.v-theme--dark_&]:invert' : '', guide.tint]"
-                  :name="guide.icon"
-                  aria-hidden="true"
-                  class="mt-px flex-none text-xl text-ink"
-                />
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-medium text-ink">{{ guide.title }}</span>
-                  <span class="line-clamp-1 text-[11px] text-ink/55">{{ guide.detail }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
-          <div class="border-t border-line p-2">
-            <v-btn
-              :href="GUIDES_URL"
-              block
-              class="text-xs font-medium"
-              color="neutral"
-              rel="noopener"
-              size="small"
-              target="_blank"
-              variant="outlined"
-            >
-              All guides
-            </v-btn>
-          </div>
-        </LayerCard>
       </aside>
     </div>
+
+    <!-- The catalogue behind the first step of the wizard, folded away: the six sources
+         side by side, which the wizard's cards cannot be read as. -->
+    <LayerCard
+      v-model:open="sourcesOpen"
+      :padded="false"
+      description="Where a migration can come from, in which formats, and which of them hand over passwords that go on working. The wizard's first step says how each export is obtained."
+      expandable
+      title="What each source exports"
+    >
+      <template #actions>
+        <DataTableColumnsMenu v-model="sourceColumnState" :columns="SOURCE_COLUMNS" />
+      </template>
+
+      <!-- Unpaged: the set is every source we read, and a foot saying "1-6 of 6"
+           under it is a control with nothing to do. -->
+      <DataTable
+        v-model:column-state="sourceColumnState"
+        v-model:sort-by="sourceSort"
+        :columns="SOURCE_COLUMNS"
+        :items="SOURCE_ROWS"
+        :paged="false"
+        label="Import sources"
+      >
+        <!-- The marks are not one width, so the glyph sits in a box of its own and every
+             name starts at the same x. -->
+        <template #cell.label="{ item }">
+          <span class="grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2.5">
+            <span class="flex h-4 w-5 items-center justify-center">
+              <Icon
+                :class="[item.monochrome ? '[.v-theme--dark_&]:invert' : '', item.tint]"
+                :name="item.icon"
+                aria-hidden="true"
+                class="text-base"
+              />
+            </span>
+            <span class="truncate font-medium text-ink">{{ item.label }}</span>
+          </span>
+        </template>
+
+        <template #cell.formats="{ item }">
+          <span class="font-mono text-ink/70">{{ item.formats }}</span>
+        </template>
+
+        <template #cell.hashes="{ item }">
+          <span class="truncate text-ink/70">{{ item.hashes }}</span>
+        </template>
+
+        <template #actions="{ item }">
+          <a
+            :href="item.guide"
+            class="inline-flex items-center gap-1 text-xs font-medium text-ink/70 no-underline transition-colors duration-150 hover:text-ink"
+            rel="noopener"
+            target="_blank"
+          >
+            Guide
+            <Icon aria-hidden="true" class="text-sm" name="material-symbols:open-in-new" />
+          </a>
+        </template>
+      </DataTable>
+    </LayerCard>
+
+    <ImportWizardDialog v-model="wizardOpen" />
   </div>
 </template>
+
+<style scoped>
+/* A search box at the height of the buttons beside it, in the toolbar's small type and
+   on the small radius, so the three controls in the row read as one set. The same block
+   the users and sessions toolbars carry, because it is the same control. */
+.imports__search :deep(.v-field) {
+  --v-input-control-height: 32px;
+
+  border-radius: var(--idenzy-radius-small);
+  font-size: 0.75rem;
+}
+
+.imports__search :deep(.v-field__input),
+.imports__search :deep(.v-field__input::placeholder) {
+  font-size: 0.75rem;
+  min-height: 32px;
+}
+
+.imports__search :deep(.v-field__prepend-inner > .v-icon),
+.imports__search :deep(.v-field__clearable > .v-icon) {
+  font-size: 1rem;
+}
+</style>

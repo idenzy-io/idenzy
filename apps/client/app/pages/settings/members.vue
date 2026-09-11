@@ -1,20 +1,27 @@
 <script setup lang="ts">
 /**
- * Who is on the team, what each of them may do, and how somebody joins or leaves
- * (PROJECT.md 3.3, 4.13.7).
+ * Who is on the organisation's team, what each of them may do, and how somebody joins or
+ * leaves (PROJECT.md 3.3, 4.13.7, notes/settings-members.md).
  *
- * The rules are the interesting part of this screen rather than the list. There is exactly
- * one owner and there always will be: ownership is not a role anybody can be assigned, it
- * moves by transfer, which promotes and demotes in one act. The owner cannot be removed.
- * Both are enforced in `~/utils/members` rather than by hiding a button, because a rule a
- * template merely hides is a rule an API call gets past, and both are refused with the
- * reason rather than silently.
+ * The team belongs to the organisation and not to a project, and the screen says so in the
+ * header and in every dialog that changes anything. That is the note's first scope
+ * finding: a person is invited to an organisation and reaches every project under it, so
+ * "remove from this project" would be a lie on an organisation holding three, and somebody
+ * would keep access they were told they had lost.
+ *
+ * The rules are the interesting part rather than the list. There is exactly one owner and
+ * there always will be: ownership is not a role anybody can be assigned, it moves by
+ * transfer, which promotes and demotes in one act. The owner cannot be removed. Both are
+ * enforced in `~/utils/members` rather than by hiding a button, because a rule a template
+ * merely hides is a rule an API call gets past, and both are refused with the reason.
  *
  * The capability matrix says one uncomfortable thing on purpose. Anybody who can mint an
  * API key has whatever the management API allows, so the line under that row is where the
  * dashboard's roles stop being a security boundary. A permission model that implied
  * otherwise would be worse than one that admits it.
  */
+
+import type { SegmentedOption } from "~/components/SegmentedControl.vue";
 import type { ColumnState, DataTableColumn } from "~/utils/data-table";
 import { defaultColumnState, reconcileColumnState } from "~/utils/data-table";
 import {
@@ -33,23 +40,55 @@ import {
   refusalFor,
   roleInfo,
 } from "~/utils/members";
+import { ORG_KIND_LABELS, ORG_KIND_NOTES, orgKindOf } from "~/utils/organisation";
 import { formatDate, relativeTimeWords } from "~/utils/time";
+
+const route = useRoute();
+const router = useRouter();
 
 const projects = useProjectStore();
 const store = useMembersStore();
 
 const now = useNow({ interval: 60_000 });
 
-const members = computed(() => store.forProject(projects.current.id));
-const invitations = computed(() => store.invitationsFor(projects.current.id));
-const me = computed(() => store.currentMember(projects.current.id));
+const org = computed(() => projects.currentOrg);
+const members = computed(() => store.forOrg(org.value.id));
+const invitations = computed(() => store.invitationsFor(org.value.id));
+const me = computed(() => store.currentMember(org.value.id));
 const owner = computed(() => ownerOf(members.value));
 const withoutMfa = computed(() => membersWithoutMfa(members.value));
-const mfaRequired = computed(() => store.mfaRequired(projects.current.id));
-const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
+const mfaRequired = computed(() => store.mfaRequired(org.value.id));
+const lastSaved = computed(() => store.lastSavedAt(org.value.id));
+const kind = computed(() => orgKindOf(members.value.length));
+
+/** Every project the team reaches, which is what a removal actually takes away. */
+const reach = computed(() => projects.projectsOf(org.value.id));
 
 /** Whether the person reading this may change the team at all. */
 const canManage = computed(() => (me.value === null ? false : canRole(me.value.role, "members")));
+
+/**
+ * Which list is showing, kept in the URL so a screen somebody is asked to look at can be
+ * linked to. Replaced rather than pushed: moving between the two is not navigation to step
+ * back through.
+ */
+const view = computed<"members" | "invitations">(() => {
+  const asked = route.query["view"];
+  const value = Array.isArray(asked) ? asked[0] : asked;
+  return value === "invitations" ? "invitations" : "members";
+});
+
+const tab = computed<string>({
+  get: () => view.value,
+  set: (value) => {
+    void router.replace({ query: { ...route.query, view: value } });
+  },
+});
+
+const tabs = computed<SegmentedOption[]>(() => [
+  { value: "members", label: `Members ${members.value.length}` },
+  { value: "invitations", label: `Pending invitations ${invitations.value.length}` },
+]);
 
 const expanded = reactive({ roles: false });
 
@@ -90,6 +129,7 @@ function initials(name: string): string {
 const inviteOpen = ref(false);
 const removeOpen = ref(false);
 const transferOpen = ref(false);
+const mfaOpen = ref(false);
 const acting = ref<Member | null>(null);
 
 /** Why an action is refused, or empty when it is not. Shown rather than hidden. */
@@ -101,7 +141,7 @@ function refusal(action: "change_role" | "remove", member: Member): string {
 
 function setRole(member: Member, role: MemberRole) {
   if (refusal("change_role", member) !== "") return;
-  void whileBusy(member.id, () => store.setRole(projects.current.id, member.id, role));
+  void whileBusy(member.id, () => store.setRole(org.value.id, member.id, role));
 }
 
 function askRemoval(member: Member) {
@@ -112,33 +152,55 @@ function askRemoval(member: Member) {
 async function confirmRemoval() {
   const target = acting.value;
   if (target === null) return;
-  await whileBusy(target.id, () => store.remove(projects.current.id, target.id));
+  await whileBusy(target.id, () => store.remove(org.value.id, target.id));
   removeOpen.value = false;
 }
 
 async function confirmTransfer(toId: string) {
-  await whileBusy("transfer", () => store.transfer(projects.current.id, toId));
+  await whileBusy("transfer", () => store.transfer(org.value.id, toId));
   transferOpen.value = false;
 }
 
 async function confirmInvite(draft: { email: string; role: MemberRole }) {
-  await whileBusy("invite", () => store.invite(projects.current.id, draft.email, draft.role));
+  await whileBusy("invite", () => store.invite(org.value.id, draft.email, draft.role));
   inviteOpen.value = false;
 }
 
 function resend(id: string) {
-  void whileBusy(id, () => store.resend(projects.current.id, id));
+  void whileBusy(id, () => store.resend(org.value.id, id));
 }
 
 function revoke(id: string) {
-  void whileBusy(id, () => store.revoke(projects.current.id, id));
+  void whileBusy(id, () => store.revoke(org.value.id, id));
 }
 
-function setMfaRequired(required: boolean) {
-  void whileBusy("mfa", () => store.setMfaRequired(projects.current.id, required));
+async function confirmMfa(required: boolean) {
+  await whileBusy("mfa", () => store.setMfaRequired(org.value.id, required));
+  mfaOpen.value = false;
 }
 
 const candidates = computed(() => members.value.filter((member) => member.role !== "owner"));
+
+/* A dialog belongs to the organisation it was opened from. */
+watch(
+  () => org.value.id,
+  () => {
+    inviteOpen.value = false;
+    removeOpen.value = false;
+    transferOpen.value = false;
+    mfaOpen.value = false;
+    acting.value = null;
+  },
+);
+
+/**
+ * Whether anything enforces the second-factor requirement.
+ *
+ * Nothing does. There is no enrolment step inside the dashboard's own sign-in, so the
+ * requirement is recorded and a member without a factor still gets in. Stated here once
+ * and read by the row and the dialog, so the two cannot come to disagree about it.
+ */
+const MFA_ENFORCED = false;
 
 /*
  * What each role may do. Reference content, so it is a table.
@@ -170,11 +232,15 @@ const matrixColumns = computed<ColumnState>({
 
 <template>
   <div class="flex flex-col gap-6">
-    <PageHeader icon="material-symbols:group-outline" title="Members">
+    <PageHeader title="Members">
+      <template #badge>
+        <StatusBadge :detail="ORG_KIND_LABELS[kind]" :label="org.name" tone="neutral" />
+      </template>
       <template #description>
-        Who can reach
-        <span class="font-medium text-ink">{{ projects.current.name }}</span> and what each
-        of them may do. Seats are free: there is no per-seat price and there is not going to
+        Who can reach <span class="font-medium text-ink">{{ org.name }}</span> and what each
+        of them may do. A member reaches
+        {{ reach.length === 1 ? "its one project" : `all ${reach.length} of its projects` }},
+        not one of them. Seats are free: there is no per-seat price and there is not going to
         be one.
       </template>
       <template #actions>
@@ -185,16 +251,16 @@ const matrixColumns = computed<ColumnState>({
       </template>
     </PageHeader>
 
+    <SegmentedControl v-model="tab" :options="tabs" label="Team list" />
+
     <LayerCard
+      v-if="view === 'members'"
       :padded="false"
       description="A role is changed on the row and takes effect on their next request."
       title="The team"
     >
       <template #badge>
-        <StatusBadge
-          :label="`${members.length} ${members.length === 1 ? 'member' : 'members'}`"
-          tone="neutral"
-        />
+        <StatusBadge :label="ORG_KIND_NOTES[kind].split('.')[0] ?? ''" tone="neutral" />
       </template>
 
       <div v-if="store.loading" class="divide-y divide-line">
@@ -218,7 +284,7 @@ const matrixColumns = computed<ColumnState>({
             :class="
               member.role === 'owner'
                 ? 'border-primary/40 bg-primary/8 text-primary'
-                : 'border-line bg-canvas text-ink/70'
+                : 'border-line bg-ink/4 text-ink/70'
             "
             aria-hidden="true"
             class="flex size-9 flex-none items-center justify-center rounded-full border text-[11px] font-medium"
@@ -238,7 +304,7 @@ const matrixColumns = computed<ColumnState>({
               <StatusBadge
                 v-if="!member.mfaEnrolled"
                 label="No second factor"
-                :tone="mfaRequired ? 'error' : 'warning'"
+                :tone="mfaRequired ? 'warning' : 'neutral'"
               />
             </div>
             <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink/55">
@@ -310,7 +376,11 @@ const matrixColumns = computed<ColumnState>({
 
             <span v-else class="text-xs text-ink/55">{{ roleInfo(member.role).label }}</span>
 
-            <v-menu v-if="canManage || member.id === store.currentId" :offset="4" location="bottom end">
+            <v-menu
+              v-if="canManage || member.id === store.currentId"
+              :offset="4"
+              location="bottom end"
+            >
               <template #activator="{ props: activator }">
                 <button
                   v-bind="activator"
@@ -336,7 +406,9 @@ const matrixColumns = computed<ColumnState>({
                       ? 'material-symbols:logout'
                       : 'material-symbols:person-remove-outline'
                   "
-                  :title="member.id === store.currentId ? 'Leave the project' : 'Remove from team'"
+                  :title="
+                    member.id === store.currentId ? 'Leave the organisation' : 'Remove from team'
+                  "
                   @click="askRemoval(member)"
                 />
                 <v-list-item
@@ -354,16 +426,12 @@ const matrixColumns = computed<ColumnState>({
     </LayerCard>
 
     <LayerCard
-      v-if="invitations.length > 0"
+      v-else
       :padded="false"
-      :description="`A link that stands for ${INVITE_TTL_DAYS} days. Nothing about the project changes until somebody accepts one.`"
-      title="Invitations"
+      :description="`A link that stands for ${INVITE_TTL_DAYS} days. Nothing about the organisation changes until somebody accepts one.`"
+      title="Pending invitations"
     >
-      <template #badge>
-        <StatusBadge :label="`${invitations.length} waiting`" tone="neutral" />
-      </template>
-
-      <ul class="m-0 list-none divide-y divide-line p-0">
+      <ul v-if="invitations.length > 0" class="m-0 list-none divide-y divide-line p-0">
         <li
           v-for="invitation in invitations"
           :key="invitation.id"
@@ -420,43 +488,97 @@ const matrixColumns = computed<ColumnState>({
           </div>
         </li>
       </ul>
+
+      <EmptyState
+        v-else
+        description="An invitation is a link that stands for a week. Nothing about the organisation changes until somebody accepts one, and revoking it takes the link out of use."
+        icon="material-symbols:mail-outline"
+        title="Nobody is waiting"
+      >
+        <template #actions>
+          <v-btn
+            :disabled="!canManage"
+            class="text-xs font-medium"
+            color="primary"
+            size="small"
+            variant="flat"
+            @click="inviteOpen = true"
+          >
+            Invite somebody
+          </v-btn>
+        </template>
+      </EmptyState>
     </LayerCard>
 
     <LayerCard
       description="What the dashboard demands of everybody on this team, whatever their role."
-      title="Getting in"
+      title="Team sign-in policy"
     >
       <div class="divide-y divide-line">
         <SettingRow
-          control-id="require-mfa"
-          description="A dashboard account holds the keys to everybody else's. Turning this on does not lock anybody out: somebody without a factor is asked to enrol before they can do anything, on their next sign-in."
+          :description="
+            mfaRequired
+              ? 'Recorded for everybody on the team. Nothing enforces it yet, because the enrolment step inside sign-in is not built, so a member without a factor can still sign in.'
+              : 'A dashboard account holds the keys to every project underneath it. Turning this on locks nobody out: it records the requirement and names who has not enrolled.'
+          "
           label="Require a second factor"
         >
-          <v-switch
-            id="require-mfa"
-            :disabled="!canManage || isBusy('mfa')"
-            :loading="isBusy('mfa')"
-            :model-value="mfaRequired"
-            color="primary"
-            density="compact"
-            hide-details
-            inset
-            @update:model-value="setMfaRequired($event === true)"
-          />
+          <div class="flex items-center gap-2">
+            <StatusBadge
+              v-if="mfaRequired"
+              :label="MFA_ENFORCED ? 'Enforced' : 'Recorded, not enforced'"
+              :tone="MFA_ENFORCED ? 'success' : 'warning'"
+            />
+            <StatusBadge v-else label="Off" tone="neutral" />
+            <v-btn
+              :disabled="!canManage || isBusy('mfa')"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="outlined"
+              @click="mfaOpen = true"
+            >
+              Review change
+            </v-btn>
+          </div>
         </SettingRow>
 
         <SettingRow
           v-if="withoutMfa.length > 0"
-          :description="`${withoutMfa.map((member) => member.name).join(', ')} ${withoutMfa.length === 1 ? 'has' : 'have'} no second factor yet. ${mfaRequired ? 'They will be asked to enrol before they can do anything else.' : 'Nothing stops them signing in while the requirement is off.'}`"
+          :description="`${withoutMfa.map((member) => member.name).join(', ')} ${withoutMfa.length === 1 ? 'holds' : 'hold'} no second factor. Their own factors are on their account screen and nobody else can enrol one for them.`"
           :fixed="`${withoutMfa.length} of ${members.length}`"
           label="Who has not enrolled"
         />
+      </div>
+    </LayerCard>
 
+    <!-- Ownership sits below the routine membership and apart from any role control: the
+         note asks for it separately because it is the one change that cannot be undone by
+         the person making it. -->
+    <LayerCard
+      description="One owner, always. It moves by transfer rather than by being assigned, which is what keeps exactly one at every moment including the moment in the middle."
+      title="Ownership"
+    >
+      <div class="divide-y divide-line">
         <SettingRow
-          description="Ownership is not a role anybody is given: it moves by transfer, which promotes one person and demotes the other in a single change. That is what keeps exactly one owner on the project at every moment, including the moment in the middle."
-          fixed="By transfer"
-          label="How ownership moves"
-        />
+          v-if="owner"
+          :description="`The only seat that can hand the organisation on or delete a project, and it cannot be removed or demoted. ${me?.role === 'owner' ? 'That is you.' : `Ask ${owner.name} if you need something only an owner can do.`}`"
+          :fixed="me?.role === 'owner' ? 'You' : owner.name"
+          label="Current owner"
+        >
+          <template #actions>
+            <v-btn
+              :disabled="me?.role !== 'owner' || candidates.length === 0"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="outlined"
+              @click="transferOpen = true"
+            >
+              Transfer ownership
+            </v-btn>
+          </template>
+        </SettingRow>
       </div>
     </LayerCard>
 
@@ -507,6 +629,7 @@ const matrixColumns = computed<ColumnState>({
     <SaveStatus :last-saved="lastSaved" :saving="saving" />
 
     <MemberInviteDialog
+      v-if="inviteOpen"
       v-model="inviteOpen"
       :busy="isBusy('invite')"
       :invitations="invitations"
@@ -514,6 +637,7 @@ const matrixColumns = computed<ColumnState>({
       @confirm="confirmInvite"
     />
     <MemberRemoveDialog
+      v-if="removeOpen"
       v-model="removeOpen"
       :busy="acting !== null && isBusy(acting.id)"
       :member="acting"
@@ -521,11 +645,22 @@ const matrixColumns = computed<ColumnState>({
       @confirm="confirmRemoval"
     />
     <MemberTransferDialog
+      v-if="transferOpen"
       v-model="transferOpen"
       :busy="isBusy('transfer')"
       :candidates="candidates"
       :owner="owner"
       @confirm="confirmTransfer"
+    />
+    <MemberMfaDialog
+      v-if="mfaOpen"
+      v-model="mfaOpen"
+      :busy="isBusy('mfa')"
+      :enforced="MFA_ENFORCED"
+      :required="mfaRequired"
+      :total="members.length"
+      :without-mfa="withoutMfa"
+      @confirm="confirmMfa"
     />
   </div>
 </template>

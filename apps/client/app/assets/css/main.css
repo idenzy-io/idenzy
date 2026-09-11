@@ -87,6 +87,15 @@
   --color-platform-android: var(--idenzy-platform-android);
   --color-platform-chrome: var(--idenzy-platform-chrome);
   --color-platform-linux: var(--idenzy-platform-linux);
+  /* The single-colour authenticator logos, declared in theme.css beside the reason they
+     are tinted rather than inverted. One name each so the passkey breakdown can tint a
+     mark with a class. */
+  --color-mark-apple: var(--idenzy-mark-apple);
+  --color-mark-onepassword: var(--idenzy-mark-onepassword);
+  --color-mark-bitwarden: var(--idenzy-mark-bitwarden);
+  --color-mark-dashlane: var(--idenzy-mark-dashlane);
+  --color-mark-yubico: var(--idenzy-mark-yubico);
+  --color-mark-samsung: var(--idenzy-mark-samsung);
 }
 
 /*

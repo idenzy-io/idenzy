@@ -110,6 +110,23 @@
   --idenzy-platform-android: #00695c;
   --idenzy-platform-chrome: #6a1b9a;
   --idenzy-platform-linux: #4e342e;
+
+  /* The marks the passkey breakdown draws, for the authenticators whose logo is one
+     colour and takes ours. Each is its brand's hue rather than its brand's hex: a mark
+     sits at 15px on two surfaces, and several of the real values are under 3:1 on one of
+     them. Inverting them instead, which is what this replaced, turns a blue logo white
+     in the dark theme and black in the light one, so the only thing a reader could tell
+     apart was the shape. */
+  /* Apple's mark is the one that is not a hue: it is drawn black on a light ground and
+     white on a dark one, which is Apple's own rule and what every other product does with
+     it. The platform token beside it stays grey, because there it sits in a table of five
+     platforms and must not outweigh them. */
+  --idenzy-mark-apple: #121212;
+  --idenzy-mark-onepassword: #1668dc;
+  --idenzy-mark-bitwarden: #175ddc;
+  --idenzy-mark-dashlane: #0f7b6c;
+  --idenzy-mark-yubico: #6f9c00;
+  --idenzy-mark-samsung: #1428a0;
 }
 
 :where(.v-theme--dark) {
@@ -124,6 +141,12 @@
   --idenzy-platform-android: #4db6ac;
   --idenzy-platform-chrome: #ce93d8;
   --idenzy-platform-linux: #bcaaa4;
+  --idenzy-mark-apple: #ffffff;
+  --idenzy-mark-onepassword: #5aa9ff;
+  --idenzy-mark-bitwarden: #7ba4ff;
+  --idenzy-mark-dashlane: #4fc3ae;
+  --idenzy-mark-yubico: #a6cf3f;
+  --idenzy-mark-samsung: #8b9ceb;
 }
 
 /*
@@ -902,4 +925,53 @@ ul {
 /* Vuetify's inset thumb inherits the track's accent when on; the disc stays white. */
 .v-switch.v-switch--inset .v-selection-control--dirty .v-switch__thumb {
   background-color: #fff;
+}
+
+/*
+ * Shiki's output, wherever it lands.
+ *
+ * Both themes are rendered into every block (`defaultColor: false` in nuxt.config.ts),
+ * so each token carries a light value and a dark value as custom properties and the
+ * choice is made here, off Vuetify's own theme class. That is the same arrangement the
+ * rest of this file uses and it is what lets a code block follow the theme toggle
+ * without being re-highlighted; a colour baked into the markup would be the one thing on
+ * the screen that does not.
+ *
+ * The block paints no background and sets no face: the card it sits in owns the surface,
+ * and the element the panel wraps it in owns the type. A `pre` carries the browser's own
+ * monospace stack unless it is told otherwise, which is how DM Mono gets skipped in
+ * exactly the place a mono face matters most.
+ */
+.shiki,
+.shiki span {
+  color: var(--idenzy-code-light);
+}
+
+:where(.v-theme--dark) .shiki,
+:where(.v-theme--dark) .shiki span {
+  color: var(--idenzy-code-dark);
+}
+
+.shiki {
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  margin: 0;
+}
+
+/*
+ * Shiki separates its line spans with a real newline, and inside a `pre` that newline is
+ * a line box of its own: give `.line` a block display and every block of code is set at
+ * double leading. A grid drops the whitespace-only runs between items instead, so each
+ * line takes a row and nothing sits between them. The implicit column is sized to the
+ * widest line rather than to the container, which is what keeps a long line scrolling
+ * sideways instead of wrapping.
+ *
+ * Both selectors, because `unwrap` decides which element carries the class: unwrapped it
+ * is the `code`, and whole it is the `pre` with the `code` inside.
+ */
+.shiki,
+.shiki code {
+  display: grid;
 }

@@ -154,6 +154,7 @@ describe("tenant isolation holds at the database", () => {
        CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
          AND c.relname NOT IN ('audit_events', 'payment_provider_events')
+         AND c.relname NOT LIKE 'audit_events\\_%'
        GROUP BY c.relname
        HAVING count(*) FILTER (
          WHERE NOT has_table_privilege('idenzy_app', c.oid, p.priv)
@@ -397,6 +398,59 @@ describe("the audit trail is append-only", () => {
 
   it("refuses a delete", async () => {
     await expectInsufficientPrivilege(harness.db.execute(sql`delete from audit_events`));
+  });
+
+  /**
+   * The parent refusing a delete proves nothing on its own, and for three migrations it
+   * was the only thing being proved. `audit_events` is partitioned, and migration 0001
+   * ended with `ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE, DELETE`, so
+   * every partition created afterwards held all four: `DELETE FROM audit_events` was
+   * refused and `DELETE FROM audit_events_2026_09` removed the row. A partition name is
+   * the table name and a month, so finding one was not the hard part.
+   *
+   * Migration 0030 revoked the two verbs from the defaults, repaired the existing
+   * partitions and made `ensure_audit_partition` revoke them itself. This asserts all
+   * three, because the grants test above cannot: it checks that privileges are present.
+   */
+  it("withholds update and delete on every partition, not only on the parent", async () => {
+    const { rows } = await harness.owner.query<{ relname: string }>(
+      `SELECT c.relname
+       FROM pg_class c
+       JOIN pg_inherits i ON i.inhrelid = c.oid
+       JOIN pg_class parent ON parent.oid = i.inhparent
+       WHERE parent.relname = 'audit_events'
+         AND (has_table_privilege('idenzy_app', c.oid, 'UPDATE')
+              OR has_table_privilege('idenzy_app', c.oid, 'DELETE'))`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("refuses a delete addressed to a partition directly", async () => {
+    const partition = await harness.owner.query<{ relname: string }>(
+      `SELECT c.relname FROM pg_class c
+       JOIN pg_inherits i ON i.inhrelid = c.oid
+       JOIN pg_class parent ON parent.oid = i.inhparent
+       WHERE parent.relname = 'audit_events' LIMIT 1`,
+    );
+    const name = partition.rows[0]?.relname;
+    expect(name).toBeDefined();
+    await expectInsufficientPrivilege(
+      harness.db.execute(sql.raw(`delete from ${name ?? "audit_events"}`)),
+    );
+  });
+
+  /**
+   * A partition created next month must be born append-only, whatever the default
+   * privileges say by then. The function is the single writer of these tables, so the
+   * guarantee belongs in it rather than in a migration somebody remembers to repeat.
+   */
+  it("creates future partitions without update or delete", async () => {
+    await harness.owner.query(`SELECT ensure_audit_partition($1::date)`, ["2099-01-01"]);
+    const { rows } = await harness.owner.query<{ upd: boolean; del: boolean }>(
+      `SELECT has_table_privilege('idenzy_app', 'audit_events_2099_01', 'UPDATE') AS upd,
+              has_table_privilege('idenzy_app', 'audit_events_2099_01', 'DELETE') AS del`,
+    );
+    expect(rows[0]).toEqual({ upd: false, del: false });
   });
 
   it("is partitioned, so retention is a dropped partition rather than a mass delete", async () => {

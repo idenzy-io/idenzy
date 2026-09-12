@@ -211,6 +211,13 @@
       "when": 1789225719215,
       "tag": "0029_panoramic_maddog",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789227606836,
+      "tag": "0030_soft_blur",
+      "breakpoints": true
     }
   ]
 }

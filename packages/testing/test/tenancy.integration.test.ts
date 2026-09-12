@@ -300,6 +300,58 @@ describe("organisation isolation holds at the database", () => {
     expect(users.rows).toHaveLength(0);
   });
 
+  /**
+   * The org plane's chicken-and-egg, and the reason migration 0036 exists.
+   *
+   * A person signs in once and may belong to several organisations, so a request names
+   * one and the server checks the membership before anything binds `app.org_id`. Under
+   * the policy that check would correctly see nothing, so it goes through a SECURITY
+   * DEFINER function — the shape 0002 used for projects and 0029 for invitations.
+   *
+   * What matters is that it stays narrow: the subject is the user id from a verified
+   * token, and no argument can name a different one.
+   */
+  it("resolves a membership with no organisation bound", async () => {
+    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
+    const { rows: seeded } = await harness.owner.query<{ user_id: string }>(
+      `SELECT user_id FROM org_members WHERE org_id = $1`,
+      [ORG_A],
+    );
+    const userId = seeded[0]?.user_id;
+    expect(userId).toBeDefined();
+
+    const mine = await harness.db.execute<{ role: string }>(
+      sql`select * from resolve_org_membership(${userId ?? ""}::uuid, ${ORG_A}::uuid)`,
+    );
+    expect(mine.rows).toHaveLength(1);
+    expect(mine.rows[0]?.role).toBe("owner");
+
+    // The same person against an organisation they are not in. Not an error and not a
+    // different shape of answer: simply no row, so a caller cannot tell "not a member"
+    // from "no such organisation" and the id space is not an oracle for our customers.
+    const theirs = await harness.db.execute(
+      sql`select * from resolve_org_membership(${userId ?? ""}::uuid, ${ORG_B}::uuid)`,
+    );
+    expect(theirs.rows).toHaveLength(0);
+  });
+
+  it("lists only the organisations a person is actually in", async () => {
+    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
+    const { rows: seeded } = await harness.owner.query<{ user_id: string }>(
+      `SELECT user_id FROM org_members WHERE org_id = $1`,
+      [ORG_B],
+    );
+    const userId = seeded[0]?.user_id ?? "";
+
+    const listed = await harness.db.execute<{ org_id: string; name: string; role: string }>(
+      sql`select * from orgs_for_user(${userId}::uuid)`,
+    );
+    expect(listed.rows).toHaveLength(1);
+    expect(listed.rows[0]?.org_id).toBe(ORG_B);
+    expect(listed.rows[0]?.name).toBe("Globex");
+    expect(listed.rows[0]?.role).toBe("owner");
+  });
+
   it("holds one owner per organisation, so a transfer cannot leave two", async () => {
     await expect(
       harness.owner.query(

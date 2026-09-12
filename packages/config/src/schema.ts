@@ -21,6 +21,20 @@ export const configSchema = z.object({
 
   VALKEY_URL: z.string().min(1),
 
+  /**
+   * The project our own dashboard signs in through, in its public `prj_` form.
+   *
+   * We run the panel on our own product (PROJECT.md 9.5), so a dashboard access token is
+   * an ordinary Idenzy token and `aud` names this project. `management-api` verifies
+   * against it and refuses anything minted for a customer's project, which is the same
+   * check a customer's own server makes.
+   *
+   * Optional here and required at boot by the one service that needs it: making it
+   * mandatory for every process would stop `auth-api` and `workers` starting without a
+   * value neither of them reads.
+   */
+  DASHBOARD_PROJECT_ID: z.string().min(1).optional(),
+
   /** Region cell this process serves. Cross-cell requests are refused (4.13.5). */
   CELL_CODE: z.string().min(1),
   KMS_KEY_RING: z.string().min(1),

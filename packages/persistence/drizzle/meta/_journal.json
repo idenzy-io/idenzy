@@ -253,6 +253,13 @@
       "when": 1789228941746,
       "tag": "0035_noisy_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789229477674,
+      "tag": "0036_faulty_old_lace",
+      "breakpoints": true
     }
   ]
 }

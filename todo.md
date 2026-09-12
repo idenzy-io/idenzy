@@ -438,7 +438,12 @@ client have no server halves to talk to yet.
 - [x] Reuse telemetry on `security.refresh_token_reused`. Nothing branches on it (ADR-0007)
 - [ ] Cookie mode is implemented but unusable in production until custom auth domains exist:
       `SameSite` is a site rule, so it needs the auth API to be same-site with the app
-- [ ] Project creation, API keys, custom auth domain provisioning
+- [~] Project creation, API keys, custom auth domain provisioning. The management API has
+      a spine now: config, persistence, the error contract, and a guard that verifies a
+      dashboard access token with `@idenzy/node` — the same server SDK we sell, which is
+      the most honest test of it we have — then resolves which organisation the request
+      acts on and binds `app.org_id` (ADR-0011). `GET /v1/orgs` and `GET /v1/orgs/:orgId`
+      prove the chain end to end. The three things in the title are next, in that order
 - [ ] Webhooks with HMAC signing, retries and replay safety
 - [ ] Usage metering and the MAU HyperLogLog sketch
 - [ ] `client` panel v1: users, sessions, providers, templates, keys, usage

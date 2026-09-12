@@ -12,19 +12,27 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@idenzy/compliance": "workspace:*",
     "@idenzy/config": "workspace:*",
     "@idenzy/core": "workspace:*",
+    "@idenzy/domain": "workspace:*",
+    "@idenzy/node": "workspace:*",
     "@idenzy/observability": "workspace:*",
+    "@idenzy/persistence": "workspace:*",
     "@idenzy/protocol": "workspace:*",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",
+    "drizzle-orm": "catalog:",
     "fastify": "catalog:",
+    "pg": "catalog:",
     "reflect-metadata": "catalog:",
-    "rxjs": "catalog:"
+    "rxjs": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

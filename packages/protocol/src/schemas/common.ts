@@ -5,6 +5,8 @@ import { z } from "zod";
  * the wire contract: a client may match on them, so changing one is a breaking change.
  */
 export const IdPrefix = {
+  Org: "org",
+  Member: "mem",
   Project: "prj",
   User: "usr",
   Session: "ses",

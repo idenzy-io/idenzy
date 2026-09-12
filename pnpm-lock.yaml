@@ -498,15 +498,27 @@ importers:
 
   apps/management-api:
     dependencies:
+      '@idenzy/compliance':
+        specifier: workspace:*
+        version: link:../../packages/compliance
       '@idenzy/config':
         specifier: workspace:*
         version: link:../../packages/config
       '@idenzy/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@idenzy/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@idenzy/node':
+        specifier: workspace:*
+        version: link:../../packages/sdk/server/node
       '@idenzy/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@idenzy/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
       '@idenzy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -519,19 +531,31 @@ importers:
       '@nestjs/platform-fastify':
         specifier: 'catalog:'
         version: 12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.15.6)(pg@8.23.0)
       fastify:
         specifier: 'catalog:'
         version: 5.12.1
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.0
       reflect-metadata:
         specifier: 'catalog:'
         version: 0.2.2
       rxjs:
         specifier: 'catalog:'
         version: 7.8.2
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 26.4.1
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.15.6
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

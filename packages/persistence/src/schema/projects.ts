@@ -103,9 +103,16 @@ export const projectDomains = classifiedTable(
     type: classified(text("type").notNull(), config),
     status: classified(text("status").notNull().default("pending"), { ...config, loggable: true }),
     dnsRecords: classified(jsonb("dns_records").notNull().default([]), config),
+    checkedAt: classified(timestamp("checked_at", { withTimezone: true }), {
+      ...config,
+      loggable: true,
+      note: "When DNS was last resolved, so a reader knows how stale a 'not found' is.",
+    }),
     createdAt: createdAtColumn(),
   },
   (t) => [
+    // Across every project, not per project. A hostname resolves to one project or the
+    // routing is ambiguous, and `resolve_project_by_host` would have two answers.
     uniqueIndex("project_domains_domain_key").on(t.domain),
     index("project_domains_project_idx").on(t.projectId),
     tenantIsolationPolicy("project_domains"),

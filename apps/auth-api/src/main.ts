@@ -37,12 +37,23 @@ async function bootstrap(): Promise<void> {
 
   // A process in an unknown state does not keep serving auth traffic (PROJECT.md 9.6).
   process.on("unhandledRejection", (reason: unknown) => {
-    logger.error("unhandled rejection, exiting", { outcome: "fatal" });
-    void reason;
+    logger.error("unhandled rejection, exiting", {
+      outcome: "fatal",
+      errorName: reason instanceof Error ? reason.name : "unknown",
+      errorCode: codeOf(reason),
+    });
     process.exit(1);
   });
-  process.on("uncaughtException", () => {
-    logger.error("uncaught exception, exiting", { outcome: "fatal" });
+  process.on("uncaughtException", (error: Error) => {
+    // The class and the code, never the message. A fatal line saying only "exiting" is an
+    // outage with no first clue, and this one cost real minutes on a boot failure — but a
+    // message can quote a value, which is what the log allowlist exists to keep out
+    // (PROJECT.md 4.13.8). A name and a stable code are enough to name the fault.
+    logger.error("uncaught exception, exiting", {
+      outcome: "fatal",
+      errorName: error.name,
+      errorCode: codeOf(error),
+    });
     process.exit(1);
   });
 
@@ -55,3 +66,10 @@ async function bootstrap(): Promise<void> {
 }
 
 await bootstrap();
+
+/** A stable error code where there is one. Node and Fastify both carry constants here. */
+function codeOf(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("code" in error)) return "unknown";
+  const code = (error as { code: unknown }).code;
+  return typeof code === "string" ? code : "unknown";
+}

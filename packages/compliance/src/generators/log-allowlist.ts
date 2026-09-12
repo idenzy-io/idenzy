@@ -35,6 +35,11 @@ export function generateLogAllowlist(): ReadonlySet<string> {
     "status",
     "component",
     "droppedFields",
+    // The class of a fatal error, which is a type name and never data. Its *message* is
+    // deliberately absent: that is the one field on an exception that can quote a value,
+    // and a driver error naming the row it choked on is exactly what must not be logged.
+    // `errorCode` above carries the stable code, which is what a reader actually greps.
+    "errorName",
   ]);
 
   for (const columns of classificationRegistry().values()) {

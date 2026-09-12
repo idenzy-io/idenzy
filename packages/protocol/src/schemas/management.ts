@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ApiKeyKind, MemberRole } from "../enums/tenancy.js";
+import {
+  ApiKeyKind,
+  MemberRole,
+  ProjectDomainStatus,
+  ProjectDomainType,
+} from "../enums/tenancy.js";
 
 /**
  * What the dashboard asks the management API for, and what it gets back.
@@ -157,3 +162,53 @@ export const createdApiKeySchema = z.object({
   secret: z.string(),
 });
 export type CreatedApiKey = z.infer<typeof createdApiKeySchema>;
+
+/*
+ * Custom domains.
+ */
+
+/** One record the customer has to create in their own DNS. */
+export const domainRecordSchema = z.object({
+  /** `cname` routes traffic; `cert` is what authorises the certificate. */
+  kind: z.enum(["cname", "cert"]),
+  /** Fully qualified, as a DNS console wants it. */
+  name: z.string(),
+  value: z.string(),
+  status: z.enum(["pending", "found", "missing"]),
+});
+export type DomainRecord = z.infer<typeof domainRecordSchema>;
+
+export const projectDomainSchema = z.object({
+  id: z.string(),
+  domain: z.string(),
+  type: z.enum(ProjectDomainType),
+  status: z.enum(ProjectDomainStatus),
+  records: z.array(domainRecordSchema),
+  /** When DNS was last resolved, so a reader knows how stale a "not found" is. */
+  checkedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type ProjectDomain = z.infer<typeof projectDomainSchema>;
+
+export const projectDomainListSchema = z.object({ domains: z.array(projectDomainSchema) });
+export type ProjectDomainList = z.infer<typeof projectDomainListSchema>;
+
+/**
+ * A hostname, as a customer types it.
+ *
+ * Lowercased and trimmed rather than rejected for case, because DNS is case-insensitive
+ * and refusing `Auth.Example.com` would be refusing a correct answer. The shape is checked
+ * here and the ownership is checked by DNS, which is the only thing that can check it.
+ */
+export const addProjectDomainSchema = z.object({
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(4)
+    .max(253)
+    .regex(/^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/, {
+      message: "That is not a hostname.",
+    }),
+});
+export type AddProjectDomain = z.infer<typeof addProjectDomainSchema>;

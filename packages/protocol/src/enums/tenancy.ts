@@ -50,3 +50,27 @@ export const ASSIGNABLE_MEMBER_ROLES: readonly MemberRole[] = [
   MemberRole.Developer,
   MemberRole.Viewer,
 ];
+
+/** What a custom domain is for. A project may hold one of each. */
+export const ProjectDomainType = {
+  /** Where the auth API answers, which is what makes cookie mode possible (4.3). */
+  Auth: "auth",
+  /** Where transactional email is sent from. */
+  Email: "email",
+} as const;
+export type ProjectDomainType = (typeof ProjectDomainType)[keyof typeof ProjectDomainType];
+
+/**
+ * How far a domain has got.
+ *
+ * `pending` is the state a domain sits in until its records resolve, which can be minutes
+ * or a working day depending on whose DNS it is — so it is a normal state and not a
+ * failure. `failed` is what a check that ran and found the wrong thing produces, which is
+ * a different sentence to the reader: one says wait, the other says fix something.
+ */
+export const ProjectDomainStatus = {
+  Pending: "pending",
+  Verified: "verified",
+  Failed: "failed",
+} as const;
+export type ProjectDomainStatus = (typeof ProjectDomainStatus)[keyof typeof ProjectDomainStatus];

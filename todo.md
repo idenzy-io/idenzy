@@ -442,12 +442,17 @@ client have no server halves to talk to yet.
       `auth.idenzy.dev` — and it already runs in cookie mode locally, where loopback is
       same-site by accident and the transport guard's eligibility check is skipped. What is
       missing is the domain itself and the `project_domains` row that marks it verified
-- [~] Project creation, API keys, custom auth domain provisioning. Project creation is in:
+- [x] Project creation, API keys, custom auth domain provisioning. Project creation is in:
       `POST /v1/onboarding` makes the organisation, its owner and its first project in one
       transaction, `POST /v1/orgs/:orgId/projects` adds another, and `GET /v1/regions`
       offers only the cells we actually run. A person who registers directly gets their own
       organisation; a person who accepts an invitation joins one and never comes through
-      here. API keys and custom auth domains are next. The management API has
+      here. API keys are in: issued once, stored as a digest, revoked rather than deleted,
+      and every route scoped through `ProjectScope` so a project outside the caller's
+      organisation is not found rather than refused. Custom auth domains are in too: a claim
+      mints the two CNAMEs Certificate Manager and the load balancer need, and `POST
+      .../verify` resolves them against real DNS. Issuing the certificate is not ours and is
+      not done, so `verified` means the records are in place and no more. The management API has
       a spine now: config, persistence, the error contract, and a guard that verifies a
       dashboard access token with `@idenzy/node` — the same server SDK we sell, which is
       the most honest test of it we have — then resolves which organisation the request

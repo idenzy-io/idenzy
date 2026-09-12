@@ -9,6 +9,7 @@ export const IdPrefix = {
   Member: "mem",
   Project: "prj",
   ApiKey: "key",
+  Domain: "dom",
   User: "usr",
   Session: "ses",
   Challenge: "chl",

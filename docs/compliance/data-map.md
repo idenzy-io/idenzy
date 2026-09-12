@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 19 |
 | pseudonymous | 85 |
-| operational | 307 |
+| operational | 308 |
 
 ## `api_keys`
 
@@ -610,6 +610,7 @@ Notes:
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
+| `checkedAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `dnsRecords` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `domain` | operational | service_configuration | project_lifetime | no | not_applicable | no |
@@ -620,6 +621,7 @@ Notes:
 
 Notes:
 
+- `checkedAt`: When DNS was last resolved, so a reader knows how stale a 'not found' is.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `project_origins`

@@ -488,10 +488,23 @@ client have no server halves to talk to yet.
       a Cloudflare Worker all hand over. Custody is settled too, and it revises PROJECT.md 12: the
       secret is **encrypted** with the project's data key rather than hashed, because a digest
       cannot sign — we can sign and we choose not to re-reveal, which is the distinction the second
-      P1 asked for. Next, in order: the schema (encrypted secret, rotation columns, the delivery
-      working set and its window), the management API routes the panel's store needs, then the
-      pipeline itself — fan-out relay, dispatcher, Cloud Tasks adapter, per-endpoint in-flight caps
-      and the breaker at 20 consecutive failures. Known gap, recorded rather than closed: a
+      P1 asked for. The schema is in, across migrations 0040 to 0042: `webhooks` carries the
+      encrypted secret, the previous one and its overlap deadline, the description, the all-events
+      flag, why it is off and the breaker's durable counter; `webhook_deliveries` is the working set
+      — status, sequence, a bounded attempt log, `next_attempt_at`, and a payload that is nullable
+      because it is cleared the moment the delivery is terminal; and `webhook_endpoint_stats` is the
+      daily rollup that keeps the health figures off a scan of the window. `Retention.Hours72` is a
+      new tier rather than rounding the window up to `Days30`, because the data map is the answer to
+      what we keep and for how long. Deliveries are deliberately not partitioned yet: daily
+      partitions dropped by a retention pass are the plan, and shipping them before the pass that
+      maintains them is a table that stops accepting inserts on a date nobody wrote down, so they
+      land with the pipeline. Writing `0042` also corrected the guide's own advice — copying 0004's
+      dynamic grant blocks re-grants the two verbs 0030 withheld from every audit partition and the
+      delete `payment_provider_events` must refuse, which the append-only tests caught on a fresh
+      database. Next, in order: the endpoint and delivery repositories, the management API routes
+      the panel's store needs, then the pipeline itself — fan-out relay, dispatcher, Cloud Tasks
+      adapter, per-endpoint in-flight caps and the breaker at 20 consecutive failures. Known gap,
+      recorded rather than closed: a
       hostname that *resolves* to a private address is not caught by parsing, so the dispatcher
       owes a resolve-and-refuse check at delivery time (ADR-0012)
 - [ ] Usage metering and the MAU HyperLogLog sketch

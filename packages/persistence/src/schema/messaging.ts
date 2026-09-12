@@ -1,4 +1,8 @@
-import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
+import {
+  classified,
+  classifiedTable,
+  encrypted,
+} from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
@@ -9,6 +13,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -19,7 +24,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { config, credential } from "./presets.js";
+import { config } from "./presets.js";
 import {
   createdAtColumn,
   projectIdColumn,
@@ -154,22 +159,112 @@ export const suppressions = classifiedTable(
   ],
 ).enableRLS();
 
-/** Customer webhook endpoints. Only the secret hash is stored. */
+/**
+ * Customer webhook endpoints, and the secret each one's deliveries are signed with.
+ *
+ * **The secret is encrypted, not hashed** (ADR-0012), which revises PROJECT.md 12. A digest
+ * cannot sign, and a column called `secret_hash` on a table whose whole purpose is producing
+ * HMACs was a design that could not work. So it is envelope-encrypted under the project's own
+ * data key with the project id as additional authenticated data, exactly as provider credentials
+ * and TOTP secrets are: we can sign, and we do not re-reveal. The second half is a policy with an
+ * audit trail behind it rather than a property of the storage, and saying which is which is the
+ * whole of what the panel's note asked for.
+ *
+ * Rotation is two secrets in force at once. The new one signs first, the previous one keeps
+ * signing until `previous_secret_until`, and both appear in the header so a customer can redeploy
+ * their verifier inside the window without a failed delivery. The old ciphertext is cleared when
+ * the window closes, which is a write somebody has to make: a rotation is not finished by time
+ * passing.
+ */
 export const webhooks = classifiedTable(
   "webhooks",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
     projectId: projectIdColumn(),
     url: classified(text("url").notNull(), config),
-    secretHash: classified(text("secret_hash").notNull(), credential),
+    /** The customer's own note about what this endpoint is for. Shown, never parsed. */
+    description: classified(text("description").notNull().default(""), config),
+    secretCiphertext: encrypted(text("secret_ciphertext").notNull(), {
+      class: DataClass.Secret,
+      purpose: Purpose.MessageDelivery,
+      retention: Retention.ProjectLifetime,
+      erasure: Erasure.NullOut,
+      note: "Encrypted rather than hashed: signing needs the value back (ADR-0012).",
+    }),
+    /** The secret before the last rotation, still signing until the window closes. */
+    previousSecretCiphertext: encrypted(text("previous_secret_ciphertext"), {
+      class: DataClass.Secret,
+      purpose: Purpose.MessageDelivery,
+      retention: Retention.ProjectLifetime,
+      erasure: Erasure.NullOut,
+    }),
+    previousSecretUntil: classified(
+      timestamp("previous_secret_until", { withTimezone: true }),
+      config,
+    ),
+    /** When the secret was last replaced. Null means it is the one the endpoint was made with. */
+    rolledAt: classified(timestamp("rolled_at", { withTimezone: true }), config),
     events: classified(text("events").array().notNull().default([]), config),
-    enabled: classified(boolean("enabled").notNull().default(true), config),
+    /**
+     * Everything, including events that do not exist yet.
+     *
+     * A flag rather than a list kept in step with the catalogue: a project that asked for
+     * everything means everything, and a new event type must not silently miss the endpoints
+     * whose owner said so.
+     */
+    allEvents: classified(boolean("all_events").notNull().default(false), config),
+    /**
+     * Whether the fan-out will write a delivery for it. Defaults to off, on purpose.
+     *
+     * The screen makes a new endpoint start off so a test event can come before real ones, and
+     * the column agrees with it: a row inserted by something that forgot the flag is silent
+     * rather than live.
+     */
+    enabled: classified(boolean("enabled").notNull().default(false), config),
+    /** When it was switched off, and by what. Null exactly while `enabled` is true. */
+    disabledAt: classified(timestamp("disabled_at", { withTimezone: true }), config),
+    /** `paused` for a person, `failing` for the breaker. Null while it is on. */
+    disabledReason: classified(text("disabled_reason"), { ...config, loggable: true }),
+    /** The membership that paused it. Null for the breaker, which is nobody. */
+    disabledBy: classified(uuid("disabled_by"), config),
+    /**
+     * Consecutive failed deliveries, which is the breaker's durable half.
+     *
+     * Valkey holds the hot counter; this is what survives a cache restart, so an endpoint
+     * nineteen failures deep is not forgiven by an unrelated eviction.
+     */
+    consecutiveFailures: classified(integer("consecutive_failures").notNull().default(0), {
+      ...config,
+      loggable: true,
+    }),
     createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
   },
-  (t) => [index("webhooks_project_idx").on(t.projectId), tenantIsolationPolicy("webhooks")],
+  (t) => [
+    // The fan-out's own query: every enabled endpoint on a project, per event.
+    index("webhooks_project_enabled_idx").on(t.projectId, t.enabled),
+    tenantIsolationPolicy("webhooks"),
+  ],
 ).enableRLS();
 
-/** Delivery attempts, retained short-term for the customer's debugging. */
+/**
+ * Deliveries: the work still owed, and a short window of what happened (ADR-0012).
+ *
+ * This table is a queue rather than a log, which is the decision that makes webhooks affordable
+ * at the volume the plan aims at. A row exists while the delivery is open; on a terminal outcome
+ * the payload is cleared and the row is dropped once it leaves the 72-hour window. What it is
+ * deliberately not is a record of every delivery ever made: 100M rows a month of somebody else's
+ * 200 responses, on the instance that authenticates users, would cost more than the sending.
+ *
+ * `attempts` is a bounded JSON array rather than a child table, capped by
+ * `WEBHOOK_MAX_ATTEMPTS`: a delivery has at most eight of them, they are only ever read together
+ * with the delivery, and a second table would double the row count of the busiest write path we
+ * have to store a list that cannot grow.
+ *
+ * Not partitioned yet. Daily partitions dropped by a retention pass are the plan, and the pass
+ * that drops them is the same worker that will maintain them — shipping the partitions before
+ * their keeper is a table that stops accepting inserts on a date nobody wrote down.
+ */
 export const webhookDeliveries = classifiedTable(
   "webhook_deliveries",
   {
@@ -182,21 +277,110 @@ export const webhookDeliveries = classifiedTable(
       config,
     ),
     event: classified(text("event").notNull(), { ...delivery, loggable: true }),
-    payload: classified(jsonb("payload").notNull(), {
+    /**
+     * The event's place in the outbox's total order, carried through to the receiver.
+     *
+     * Delivery is unordered by construction, so this is how a receiver that cares about order
+     * sorts rather than assumes. It is also what makes the fan-out idempotent: the same event
+     * relayed twice would produce the same (endpoint, sequence) pair.
+     */
+    sequence: classified(bigint("sequence", { mode: "number" }).notNull(), {
+      ...delivery,
+      loggable: true,
+    }),
+    /** `queued`, `delivering`, `delivered` or `failed`. The screen's pending is the first two. */
+    status: classified(text("status").notNull().default("queued"), {
+      ...delivery,
+      loggable: true,
+    }),
+    /**
+     * The body as signed, and only while the delivery is open.
+     *
+     * Cleared on a terminal outcome, which is both cheaper and less exposure: an event payload
+     * names a user, and keeping it for a month would put a copy of their data in the erasure
+     * path for the sake of a record that a 200 came back (PROJECT.md 4.13.6).
+     */
+    payload: classified(jsonb("payload"), {
       class: DataClass.Pii,
       purpose: Purpose.MessageDelivery,
-      retention: Retention.Days30,
+      retention: Retention.Hours72,
       erasure: Erasure.RowDeleted,
-      note: "Event payloads carry user data, so they expire on the short retention clock.",
+      note: "Held only while the delivery is open, then cleared. Never re-signed from storage.",
     }),
-    statusCode: classified(integer("status_code"), { ...delivery, loggable: true }),
-    attempts: classified(integer("attempts").notNull().default(0), { ...delivery, loggable: true }),
+    attemptCount: classified(integer("attempt_count").notNull().default(0), {
+      ...delivery,
+      loggable: true,
+    }),
+    /**
+     * One entry per attempt, oldest first: when, what answered, how long it took, and an
+     * excerpt of the response.
+     *
+     * The excerpt is the customer's own bytes coming back and is capped, because it is shown on
+     * a screen and could carry anything their server chose to say.
+     */
+    attemptLog: classified(jsonb("attempt_log").notNull().default([]), {
+      class: DataClass.Pii,
+      purpose: Purpose.MessageDelivery,
+      retention: Retention.Hours72,
+      erasure: Erasure.RowDeleted,
+      note: "Carries a capped excerpt of the receiver's own response, which may contain anything.",
+    }),
+    /** When the next attempt is due. Null once the delivery is terminal. */
+    nextAttemptAt: classified(timestamp("next_attempt_at", { withTimezone: true }), delivery),
     deliveredAt: classified(timestamp("delivered_at", { withTimezone: true }), delivery),
+    /** Sent by "send a test event" rather than by something that happened. */
+    test: classified(boolean("test").notNull().default(false), { ...delivery, loggable: true }),
     createdAt: createdAtColumn(),
   },
   (t) => [
-    index("webhook_deliveries_webhook_idx").on(t.webhookId),
+    // What the screen reads: one endpoint's deliveries, newest first.
+    index("webhook_deliveries_webhook_idx").on(t.webhookId, t.createdAt),
+    // What the dispatcher reads: everything due, across projects, oldest first. Partial on
+    // `next_attempt_at` so the index holds open deliveries only and not the window behind them.
+    index("webhook_deliveries_due_idx")
+      .on(t.nextAttemptAt)
+      .where(sql`${t.nextAttemptAt} is not null`),
+    // The fan-out writes one delivery per endpoint per event, and relaying the same outbox row
+    // twice must not send it twice.
+    uniqueIndex("webhook_deliveries_webhook_sequence_key").on(t.webhookId, t.sequence),
     tenantIsolationPolicy("webhook_deliveries"),
+  ],
+).enableRLS();
+
+/**
+ * What an endpoint has done, a day at a time.
+ *
+ * The health figures on the screen are counters rather than a scan: reading "97% delivered over
+ * seven days" out of the delivery window would mean scanning every delivery a project made, which
+ * is the cost the window exists to avoid. Valkey holds the live counters and this is the rollup
+ * they land in, so the figures survive a cache restart and a day's row is one row per endpoint.
+ *
+ * Kept for as long as the project rather than for 72 hours, because a count is not an event: it
+ * names nobody, a day's row is a few dozen bytes, and a customer asking whether last month was
+ * worse than this one is asking about exactly this.
+ */
+export const webhookEndpointStats = classifiedTable(
+  "webhook_endpoint_stats",
+  {
+    projectId: projectIdColumn(),
+    webhookId: classified(
+      uuid("webhook_id")
+        .notNull()
+        .references(() => webhooks.id, { onDelete: "cascade" }),
+      config,
+    ),
+    /** The UTC day being counted. One row per endpoint per day. */
+    day: classified(date("day").notNull(), { ...config, loggable: true }),
+    delivered: classified(integer("delivered").notNull().default(0), { ...config, loggable: true }),
+    failed: classified(integer("failed").notNull().default(0), { ...config, loggable: true }),
+    /** Attempts made, which is more than deliveries: a retry is an attempt and not a delivery. */
+    attempts: classified(integer("attempts").notNull().default(0), { ...config, loggable: true }),
+    lastDeliveredAt: classified(timestamp("last_delivered_at", { withTimezone: true }), config),
+    lastFailedAt: classified(timestamp("last_failed_at", { withTimezone: true }), config),
+  },
+  (t) => [
+    primaryKey({ columns: [t.webhookId, t.day] }),
+    tenantIsolationPolicy("webhook_endpoint_stats"),
   ],
 ).enableRLS();
 

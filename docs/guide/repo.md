@@ -26,8 +26,15 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   applied both by looping over the tables that existed when it ran, and it ran once. A
   table added later gets its policy from `drizzle-kit` and neither FORCE nor a grant,
   which means `idenzy_app` cannot read it at all and the owner can read across tenants.
-  Copy the two `DO` blocks from `0004_nasty_catseye.sql`; they are dynamic and
-  idempotent. Two tests in `packages/testing` fail if you forget.
+  Two tests in `packages/testing` fail if you forget.
+  **Name the table; do not copy the dynamic blocks from `0004_nasty_catseye.sql`.** They
+  grant all four verbs on every table except `audit_events`, and three tables now
+  deliberately refuse one: every `audit_events_*` partition (append-only, narrowed in 0030)
+  and `payment_provider_events` (no `DELETE`). Copying them re-grants what those migrations
+  withheld, which is how `0042` was first written and what the append-only tests caught.
+  Two named statements are the whole migration:
+  `ALTER TABLE public.x FORCE ROW LEVEL SECURITY;` and
+  `GRANT SELECT, INSERT, UPDATE, DELETE ON public.x TO idenzy_app;`
 - **Default privileges outrank your migration's intent, and did so twice.** Migration
   0001 ends with `ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE, DELETE`, so
   for three migrations every `audit_events` partition was created holding all four:

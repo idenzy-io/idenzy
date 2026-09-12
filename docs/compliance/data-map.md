@@ -11,11 +11,11 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 31 |
+| pii | 32 |
 | phi | 0 |
-| secret | 19 |
+| secret | 20 |
 | pseudonymous | 85 |
-| operational | 308 |
+| operational | 328 |
 
 ## `api_keys`
 
@@ -989,33 +989,66 @@ Notes:
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
-| `attempts` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `attemptCount` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `attemptLog` | pii | message_delivery | hours_72 | no | row_deleted | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `deliveredAt` | operational | message_delivery | project_lifetime | no | not_applicable | no |
 | `event` | operational | message_delivery | project_lifetime | no | not_applicable | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
-| `payload` | pii | message_delivery | days_30 | no | row_deleted | no |
+| `nextAttemptAt` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `payload` | pii | message_delivery | hours_72 | no | row_deleted | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
-| `statusCode` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `sequence` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `status` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `test` | operational | message_delivery | project_lifetime | no | not_applicable | no |
 | `webhookId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 
 Notes:
 
-- `payload`: Event payloads carry user data, so they expire on the short retention clock.
+- `attemptLog`: Carries a capped excerpt of the receiver's own response, which may contain anything.
+- `payload`: Held only while the delivery is open, then cleared. Never re-signed from storage.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `webhook_endpoint_stats`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `attempts` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `day` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `delivered` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `failed` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `lastDeliveredAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `lastFailedAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `webhookId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `webhooks`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
+| `allEvents` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `consecutiveFailures` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `description` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `disabledAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `disabledBy` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `disabledReason` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `enabled` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `events` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `previousSecretCiphertext` | secret | message_delivery | project_lifetime | no | null_out | yes |
+| `previousSecretUntil` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
-| `secretHash` | secret | authentication | until_account_deletion | no | null_out | no |
+| `rolledAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `secretCiphertext` | secret | message_delivery | project_lifetime | no | null_out | yes |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `url` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 
 Notes:
 
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `secretCiphertext`: Encrypted rather than hashed: signing needs the value back (ADR-0012).

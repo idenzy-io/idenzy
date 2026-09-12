@@ -35,6 +35,14 @@ export type Purpose = (typeof Purpose)[keyof typeof Purpose];
 /** How long the column may be kept. Enforced by the retention worker, not by intent. */
 export const Retention = {
   SessionLifetime: "session_lifetime",
+  /**
+   * Three days, which is the horizon somebody debugging a delivery works in (ADR-0012).
+   *
+   * Its own tier rather than rounding up to `Days30`, because these artifacts are the answer
+   * to "what do you keep and for how long" and a column that is dropped after 72 hours must
+   * not be described as kept for a month.
+   */
+  Hours72: "hours_72",
   Days30: "days_30",
   UntilAccountDeletion: "until_account_deletion",
   /** Standard audit retention. */

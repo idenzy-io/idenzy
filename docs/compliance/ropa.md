@@ -138,10 +138,11 @@ certification; see PROJECT.md 4.13.10.
 ## message_delivery
 
 - **Lawful basis:** art_6_1_b_contract
-- **Retention:** days_30, project_lifetime
+- **Retention:** days_30, hours_72, project_lifetime
 - **Tables:** `outbox`, `suppressions`, `webhook_deliveries`
 - **Categories of personal data:**
 
+  - pii: attemptLog
   - pii: payload
   - pseudonymous: targetHash
 

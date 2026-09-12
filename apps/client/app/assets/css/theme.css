@@ -690,8 +690,13 @@
  * the drawer takes the quieter one, for the reason given where they are declared. A
  * list inside the drawer is see-through, because Vuetify paints every list in the
  * surface colour and a card-coloured block down the middle of the chrome is not a list.
+ *
+ * Scoped to `color="shell"` rather than every `v-app-bar`: the auth layout's bar is
+ * `color="transparent"` and floats over the centred card with nothing to its left to
+ * meet, so the same rule drew a line under Back and Log in that answered a question
+ * ("what is above, what is below") the signed-out screens do not ask.
  */
-.v-app-bar.v-toolbar {
+.v-app-bar.v-toolbar.bg-shell {
   border-bottom-color: var(--idenzy-shell-line);
   border-bottom-width: thin;
 }

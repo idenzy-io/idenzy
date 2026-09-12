@@ -111,6 +111,35 @@ export const webhookEnvelopeSchema = z.object({
 export type WebhookEnvelope = z.infer<typeof webhookEnvelopeSchema>;
 
 /**
+ * The envelope for one delivery, assembled rather than stored.
+ *
+ * A delivery row keeps the event's `data` and nothing else, because everything around it is already
+ * on the row: the id, the type, the sequence, the instant it happened and the project. Assembling
+ * at send time is what makes a retry byte-identical — same id, same data, same `createdAt` — so the
+ * signature covers the same string on the eighth attempt as on the first, and a receiver deduping
+ * on the id sees one delivery rather than two events that happen to look alike.
+ *
+ * Both senders and the dashboard build it here, so what the screen shows as the body is the body.
+ */
+export function buildWebhookEnvelope(parts: {
+  readonly deliveryId: string;
+  readonly type: string;
+  readonly sequence: number;
+  readonly createdAt: Date;
+  readonly projectId: string;
+  readonly data: Readonly<Record<string, unknown>>;
+}): WebhookEnvelope {
+  return {
+    id: parts.deliveryId,
+    type: parts.type,
+    sequence: parts.sequence,
+    createdAt: parts.createdAt.toISOString(),
+    project: parts.projectId,
+    data: { ...parts.data },
+  };
+}
+
+/**
  * The most a body may be, which is a cap on us rather than on the customer.
  *
  * An event carrying an unbounded field — a metadata blob, a user's own JSON — would be a delivery

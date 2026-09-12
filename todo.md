@@ -519,9 +519,27 @@ client have no server halves to talk to yet.
       a boolean, because `enabled` alone cannot say whether a person or the breaker switched an
       endpoint off. A test event and a retry are deliberately absent until the dispatcher exists:
       either would write a delivery nothing sends, and the screen already says both are
-      unavailable. Next: the pipeline itself — fan-out relay, dispatcher, Cloud Tasks adapter,
-      per-endpoint in-flight caps and the breaker at 20 consecutive failures — and then the panel's
-      own store, which models all of this already. Known gap, recorded rather than closed: a
+      unavailable. **The pipeline runs.** The relay maps outbox topics onto public event names,
+      fans one delivery out per subscribed endpoint inside each project's own tenant scope — so
+      there is no cross-tenant read of anybody's endpoints — and makes the first attempt from a
+      bounded pool, with one watermark per topic because `outbox.seq` is global and a shared bound
+      would skip a slower topic's events. The dispatcher signs from what is stored, sends, writes
+      down what happened and then decides, in that order, so a crash before the write leaves the
+      delivery due again rather than lost. The sweeper is the durable half and, until a queue exists,
+      the only timer: `SweepingScheduler` is where the Cloud Tasks adapter goes, which needs a queue,
+      a service account and an OIDC audience in Terraform first — until then a retry costs latency
+      rather than deliveries. The SSRF gap ADR-0012 recorded is closed: the transport resolves the
+      hostname, refuses unless every address is public, and connects to the address it checked with
+      SNI and `Host` set to the name, so TLS still has to be the customer's certificate and the
+      rebinding window is gone. The breaker counts **attempts** and not dead deliveries, which the
+      integration test is what exposed: a delivery only dies after eight attempts over a day, so
+      twenty of those is a month of calling an endpoint that has never answered. Verified end to end
+      against a real Postgres and a real HTTP receiver that verifies every delivery with
+      `verifyWebhook` from the SDK we publish — our signer and our customers' verifier agreeing over
+      a socket, which is the one thing no unit test can say. Next: the panel's own store, which
+      models all of this already, and then the event types nothing emits yet
+      (`WEBHOOK_EVENTS_WITHOUT_EMITTER` lists them: account creation, deletion and suspension write
+      no outbox row, and the three delivery events wait on the SES and SMS paths). Known gap, recorded rather than closed: a
       hostname that *resolves* to a private address is not caught by parsing, so the dispatcher
       owes a resolve-and-refuse check at delivery time (ADR-0012)
 - [ ] Usage metering and the MAU HyperLogLog sketch

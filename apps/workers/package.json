@@ -17,6 +17,7 @@
     "@idenzy/compliance": "workspace:*",
     "@idenzy/config": "workspace:*",
     "@idenzy/core": "workspace:*",
+    "@idenzy/crypto": "workspace:*",
     "@idenzy/observability": "workspace:*",
     "@idenzy/persistence": "workspace:*",
     "@idenzy/protocol": "workspace:*",
@@ -28,6 +29,7 @@
     "rxjs": "catalog:"
   },
   "devDependencies": {
+    "@idenzy/node": "workspace:*",
     "@idenzy/testing": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",

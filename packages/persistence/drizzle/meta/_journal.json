@@ -302,6 +302,13 @@
       "when": 1789252332466,
       "tag": "0042_giant_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789256920028,
+      "tag": "0043_majestic_dracula",
+      "breakpoints": true
     }
   ]
 }

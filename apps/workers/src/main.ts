@@ -2,15 +2,26 @@ import "reflect-metadata";
 import { createValkeyClient } from "@idenzy/cache/connection/client";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
 import { AppConfig } from "@idenzy/config/app-config";
+import { InternalError } from "@idenzy/core/errors";
 import { SystemClock } from "@idenzy/core/time/clock";
+import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
+import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
+import { Sha256WebhookSigner } from "@idenzy/crypto/webhooks/webhook-signer";
 import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
+import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-reader";
+import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { AuditRelay } from "./audit-relay.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
+import { SweepingScheduler } from "./webhooks/delivery-scheduler.js";
+import { WebhookDispatcher } from "./webhooks/webhook-dispatcher.js";
+import { WebhookRelay } from "./webhooks/webhook-relay.js";
+import { WebhookSweeper } from "./webhooks/webhook-sweeper.js";
+import { HttpsWebhookTransport } from "./webhooks/webhook-transport.js";
 
 /**
  * Standalone consumers: email, sms, webhook, audit, analytics, dsr and retention
@@ -78,11 +89,61 @@ async function bootstrap(): Promise<void> {
     logger,
   );
 
-  // Both awaited, so a worker that has just started has already done a pass before it
+  /*
+   * Webhooks (ADR-0012). The relay turns events into deliveries and makes the first attempt; the
+   * sweeper is what gets back to everything else.
+   *
+   * The encryptor is the same shape as auth-api's and refuses the same way: the real data key is
+   * per project and KMS-wrapped, and a deployment that signed customers' deliveries with a key
+   * derived from the cell code — which is not a secret — would be worse than one that will not
+   * start. Nothing else in this worker needs key material.
+   */
+  if (config.isProduction) {
+    throw new InternalError({
+      detail: {
+        reason: "the per-project KMS-wrapped data key is not implemented",
+        rule: "webhook signing secrets are decrypted under a derived key, development only",
+      },
+    });
+  }
+  const uow = new UnitOfWork(db);
+  const dispatcher = new WebhookDispatcher(
+    uow,
+    new Sha256WebhookSigner(),
+    new FieldEncryptor(developmentDataKey(config.get("CELL_CODE"))),
+    // Loopback over plain http is allowed here for the same reason cookie mode is: a developer
+    // running their own receiver on localhost has no other way to try this, and a production
+    // deployment calling loopback would be calling itself.
+    new HttpsWebhookTransport({ allowLoopbackHttp: !config.isProduction }),
+    // Cloud Tasks would go here. Until the queue exists, the sweeper is the timer, which costs
+    // latency rather than deliveries.
+    new SweepingScheduler(),
+    clock,
+    logger,
+  );
+  const webhookRelay = new WebhookRelay(
+    new AuditEventReader(db),
+    new RelayOffsetRepository(db),
+    uow,
+    dispatcher,
+    clock,
+    logger,
+  );
+  const webhookSweeper = new WebhookSweeper(
+    new WebhookDueReader(db),
+    uow,
+    dispatcher,
+    clock,
+    logger,
+  );
+
+  // All awaited, so a worker that has just started has already done a pass before it
   // reports itself up. A restart is exactly when the cache is most likely to be empty, and
   // it is also when the audit trail is furthest behind.
   await reconciler.start();
   await auditRelay.start();
+  await webhookRelay.start();
+  await webhookSweeper.start();
   logger.info("workers started", config.toSafeSummary());
 }
 

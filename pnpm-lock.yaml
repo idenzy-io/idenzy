@@ -601,6 +601,9 @@ importers:
       '@idenzy/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@idenzy/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@idenzy/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -629,6 +632,9 @@ importers:
         specifier: 'catalog:'
         version: 7.8.2
     devDependencies:
+      '@idenzy/node':
+        specifier: workspace:*
+        version: link:../../packages/sdk/server/node
       '@idenzy/testing':
         specifier: workspace:*
         version: link:../../packages/testing

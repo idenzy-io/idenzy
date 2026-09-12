@@ -50,6 +50,11 @@ const { copy } = useClipboard({ legacy: true });
 
 const project = computed(() => projects.current.id);
 const keys = computed(() => store.keysFor(project.value));
+
+// Loaded when the screen opens and again whenever the project changes. `keysFor` is
+// deliberately synchronous — the screen reads it in a computed, and a fetch inside one is
+// a request per render — so something has to fill the cache, and this is it.
+watch(project, (id) => void store.load(id), { immediate: true });
 const rotations = computed(() => rotationsOf(keys.value));
 
 /**

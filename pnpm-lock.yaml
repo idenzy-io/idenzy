@@ -400,6 +400,9 @@ importers:
       '@iconify-json/circle-flags':
         specifier: 'catalog:'
         version: 1.2.11
+      '@idenzy/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@idenzy/js':
         specifier: workspace:*
         version: link:../../packages/sdk/client/js

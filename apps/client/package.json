@@ -22,6 +22,7 @@
     "@fontsource-variable/dm-sans": "catalog:",
     "@fontsource/dm-mono": "catalog:",
     "@iconify-json/circle-flags": "catalog:",
+    "@idenzy/core": "workspace:*",
     "@idenzy/js": "workspace:*",
     "@idenzy/nuxt": "workspace:*",
     "@idenzy/protocol": "workspace:*",

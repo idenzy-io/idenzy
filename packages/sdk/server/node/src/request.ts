@@ -49,9 +49,19 @@ function sessionCookie(value: string | null): string | null {
   return null;
 }
 
-function header(headers: RequestHeaders, name: string): string | null {
-  if ("get" in headers && typeof headers.get === "function") return headers.get(name);
-  const value = (headers as Record<string, string | readonly string[] | undefined>)[name];
+/**
+ * One reader for every shape a Node server spells headers in.
+ *
+ * Exported because the webhook verifier needs the same answer and a second reader is how one of
+ * them ends up not handling a `Headers` — which is the shape Hono, a Next route handler and a
+ * Cloudflare Worker all hand over, so getting it wrong there fails for exactly the customers this
+ * package is for. The name is lowercased here rather than at each call site, because Node keys
+ * `request.headers` that way and `Headers.get` is case-insensitive anyway.
+ */
+export function header(headers: RequestHeaders, name: string): string | null {
+  const key = name.toLowerCase();
+  if ("get" in headers && typeof headers.get === "function") return headers.get(key);
+  const value = (headers as Record<string, string | readonly string[] | undefined>)[key];
   // A repeated header is ambiguous where a credential is concerned, so it is refused rather
   // than resolved by picking one.
   return typeof value === "string" ? value : null;

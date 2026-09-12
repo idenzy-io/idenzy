@@ -467,7 +467,33 @@ client have no server halves to talk to yet.
       the most honest test of it we have — then resolves which organisation the request
       acts on and binds `app.org_id` (ADR-0011). `GET /v1/orgs` and `GET /v1/orgs/:orgId`
       prove the chain end to end. The three things in the title are next, in that order
-- [ ] Webhooks with HMAC signing, retries and replay safety
+- [~] Webhooks with HMAC signing, retries and replay safety. **The architecture is settled in
+      ADR-0012 and the numbers are in it**: at the 1000-project, 10M-MAU shape the design target is
+      100M deliveries a month, and the marginal cost of a correctly shaped pipeline is under $20 —
+      dominated by egress, because we are being paid to make HTTP requests. What would have cost
+      hundreds, and shared IOPS with sign-in, is logging every delivery in Cloud SQL for thirty
+      days, so delivery is a queue and not a log: Postgres holds open deliveries, terminal ones are
+      summarised into a 72-hour partitioned window, counters do the health figures, and the long
+      history belongs to the analytics store. Cloud Tasks is the retry timer only — the first
+      attempt is inline in the relay that already holds the batch — because a queue round trip per
+      delivery is $80 a month to move work we were holding. The contract is in
+      `@idenzy/protocol/schemas/webhooks` and is now the single copy: envelope, headers, the signed
+      string, the 300-second tolerance, the published retry schedule, the event catalogue and the
+      SSRF rules for an endpoint URL. `WebhookSigner` is the abstract family PROJECT.md 7.2 asks
+      for with `Sha256WebhookSigner` in it, and `verifyWebhook` in `@idenzy/node` is the verifier a
+      customer runs — which answers the first P1 on notes/webhooks.md, because the example that
+      contradicted its own header is now a tested function rather than a snippet. Writing the
+      signer caught two bugs worth keeping: the base class labelled every scheme `sha256=`, and the
+      verifier could not read a `Headers` object, which is the shape Hono, a Next route handler and
+      a Cloudflare Worker all hand over. Custody is settled too, and it revises PROJECT.md 12: the
+      secret is **encrypted** with the project's data key rather than hashed, because a digest
+      cannot sign — we can sign and we choose not to re-reveal, which is the distinction the second
+      P1 asked for. Next, in order: the schema (encrypted secret, rotation columns, the delivery
+      working set and its window), the management API routes the panel's store needs, then the
+      pipeline itself — fan-out relay, dispatcher, Cloud Tasks adapter, per-endpoint in-flight caps
+      and the breaker at 20 consecutive failures. Known gap, recorded rather than closed: a
+      hostname that *resolves* to a private address is not caught by parsing, so the dispatcher
+      owes a resolve-and-refuse check at delivery time (ADR-0012)
 - [ ] Usage metering and the MAU HyperLogLog sketch
 - [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own

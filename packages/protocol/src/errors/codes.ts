@@ -77,6 +77,10 @@ export const ErrorCode = {
   HookRejected: "hook_rejected",
   HookTimedOut: "hook_timed_out",
 
+  // Webhooks. The one code we never answer with: a delivery is a request *we* make, so this is
+  // raised inside a receiver's own process by the SDK's verifier, and their right answer is 400.
+  WebhookSignatureInvalid: "webhook_signature_invalid",
+
   // Ours, not theirs
   ProviderUnavailable: "provider_unavailable",
   Internal: "internal_error",

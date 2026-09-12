@@ -452,6 +452,25 @@ export class ClaimTemplateUnsatisfiedError extends ServerError {
   }
 }
 
+/**
+ * A webhook delivery could not be verified, raised in a receiver's process and never by us.
+ *
+ * The only error in this file that our API cannot answer with: a delivery is a request we make, so
+ * this is what the server SDK's verifier throws when the signature does not match, the timestamp
+ * is outside the tolerance, or the body is not an event envelope. Those are one answer for the
+ * receiver — 400 and do nothing — which is why they are one class rather than three.
+ *
+ * The reason is on `detail`, for the receiver's own logs. It is deliberately not offered as
+ * separate codes: a receiver branching on "stale" versus "wrong digest" would be building retry
+ * logic for a delivery it must simply refuse, and we retry it ourselves anyway.
+ */
+export class WebhookSignatureInvalidError extends BadRequestError {
+  override readonly code = ErrorCode.WebhookSignatureInvalid;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "That webhook delivery could not be verified.", options);
+  }
+}
+
 /** The catch-all. Its message is fixed so nothing internal leaks through the filter. */
 export class InternalError extends ServerError {
   override readonly code = ErrorCode.Internal;

@@ -83,10 +83,18 @@ Configure a host with partial DNS and understand which check failed. After verif
   over the exact URL and says nothing has happened until it ships, and `authNextStep` never
   claims otherwise; a test asserts the wording.
 - **`setupProbe` names what the check covers, line by line, and where it stops.** Three
-  lines are ours to observe: the name resolves, the certificate is served, the project
+  lines are ours to observe: the name resolves, the certificate is *authorised*, the project
   answers by Host. The fourth is the application origin the operator names, which we can
   say is on the CORS allowlist and never that their build is calling this host. It is a
   pure function so the honesty is tested rather than trusted.
+- **The screen is wired to the management API, and two claims went with the fixture.** A
+  resolved authorisation record is not an issued certificate: Certificate Manager issues off
+  that record and nothing here watches it do so, so the row says `Authorised` and the probe
+  line says the same. And nothing checks DNS on a schedule, so "the first look runs within a
+  few minutes" is gone — a check happens because somebody pressed for one, which is also why
+  `Verify setup` runs a real check before it reads the result rather than replaying the last
+  one. A read that fails says so and offers the read again, because the empty state under it
+  would otherwise tell somebody their project has no domains.
 - **Everything copyable is `apiBaseUrl` over the project's own domains.** One derivation, so
   the endpoint written here is the endpoint written on every other screen, and the SDK
   snippet is marked `Illustrative` rather than reading as configured.

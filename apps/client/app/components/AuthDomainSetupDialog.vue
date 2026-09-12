@@ -24,7 +24,7 @@ import {
   apiBaseUrl,
   authNextStep,
   authSetupStage,
-  certificateIssued,
+  certificateAuthorised,
   dnsFound,
   RECORD_STATUS_LABELS,
   siteOf,
@@ -39,6 +39,8 @@ const props = defineProps<{
   probe: SetupProbe | null;
   checking: boolean;
   busy: boolean;
+  /** Why a check did not run. Never a finding about the domain, which is the records' job. */
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -273,8 +275,11 @@ const SDK_SNIPPET = computed(
                 <template v-if="checkedAgo">
                   Last checked {{ checkedAgo }} ({{ formatDateTime(domain.checkedAt ?? "") }}).
                 </template>
+                <!-- Nothing looks on a schedule, so a reader waiting for one would wait
+                     forever. A check happens because somebody asks for it. -->
                 <template v-else>
-                  Not checked yet. The first look runs within a few minutes of adding the host.
+                  Not checked yet. Nothing looks on its own: publish both records and run the
+                  check.
                 </template>
               </p>
               <v-btn
@@ -336,9 +341,9 @@ const SDK_SNIPPET = computed(
             <div class="flex flex-col gap-1">
               <h3 class="m-0 text-sm font-medium text-ink">Test it from an application origin</h3>
               <p class="m-0 text-xs leading-5 text-ink/60">
-                The check is a request to the host from our side. It says the name resolves,
-                the certificate is served, the project answers, and whether a browser on the
-                origin you name would be allowed to call it.
+                The check resolves this host's records from our side. It says the name points at
+                us, the certificate is authorised, the project answers by Host, and whether a
+                browser on the origin you name would be allowed to call it.
               </p>
             </div>
 
@@ -413,9 +418,12 @@ const SDK_SNIPPET = computed(
         <footer
           class="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3"
         >
-          <p class="m-0 text-[11px] leading-4 text-ink/50">
-            <template v-if="dnsFound(domain) && certificateIssued(domain)">
-              Both records found. The host resolves and the certificate is issued.
+          <!-- A refusal here is about the check and not about the domain: the records say
+               what is true of the domain, and they are a scroll away. -->
+          <p v-if="error" class="m-0 text-[11px] leading-4 text-error" role="alert">{{ error }}</p>
+          <p v-else class="m-0 text-[11px] leading-4 text-ink/50">
+            <template v-if="dnsFound(domain) && certificateAuthorised(domain)">
+              Both records found. The host resolves and the certificate is authorised.
             </template>
             <template v-else-if="dnsFound(domain)">
               The CNAME is found and the authorisation record is not.

@@ -27,6 +27,7 @@
  * endpoint written here is the endpoint written everywhere else, and an illustrative value
  * says that it is one.
  */
+import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
   AUTH_DOMAIN_CAPABILITIES,
@@ -40,6 +41,7 @@ import {
   SHARED_API_HOST,
   siteOf,
 } from "~/utils/auth-domains";
+import { isRefusal } from "~/utils/sign-in-errors";
 
 const projects = useProjectStore();
 const store = useAuthDomainsStore();
@@ -49,6 +51,17 @@ const now = useNow({ interval: 30_000 });
 
 /* What a domain changes is reference, and it starts folded: the list is the visit. */
 const expanded = reactive({ capabilities: false });
+
+const project = computed(() => projects.current.id);
+
+/* Read when the screen opens and again whenever the project changes. `forProject` is
+   deliberately synchronous — it is read in a computed, and a fetch inside one is a request
+   per render — so something has to fill the cache, and this is it. */
+watch(project, (id) => void store.load(id), { immediate: true });
+
+function reload() {
+  void store.load(project.value);
+}
 
 const domains = computed(() => store.forProject(projects.current.id));
 const live = computed(() => liveDomain(domains.value));
@@ -65,6 +78,9 @@ const cookies = computed(() => cookieModeState(domains.value));
 
 const headerBadge = computed(() => {
   if (store.loading) return { label: "Reading", tone: "neutral" as const };
+  /* Not "shared host", which would be a claim about a project whose domains we failed to
+     read. A badge is the one thing on the page somebody reads without reading. */
+  if (store.refusal !== null) return { label: "Not read", tone: "warning" as const };
   if (custom.value) return { label: "Your domain", tone: "success" as const };
   if (domains.value.length > 0) return { label: "Waiting on DNS", tone: "warning" as const };
   return { label: "Shared host", tone: "neutral" as const };
@@ -90,27 +106,44 @@ async function whileBusy(key: string, work: () => Promise<void>) {
  * Adding, setting up and removing.
  */
 const addOpen = ref(false);
+const addError = ref("");
 const setupId = ref<string | null>(null);
 const setupOpen = ref(false);
+const setupError = ref("");
 
 const setupDomain = computed<AuthDomain | null>(
   () => domains.value.find((domain) => domain.id === setupId.value) ?? null,
 );
 
+function openAdd() {
+  addError.value = "";
+  addOpen.value = true;
+}
+
 function openSetup(domain: AuthDomain) {
+  setupError.value = "";
   setupId.value = domain.id;
   setupOpen.value = true;
 }
 
 function addDomain(domain: string) {
   void whileBusy("add", async () => {
-    await store.add(projects.current.id, domain);
-    addOpen.value = false;
-    /* Straight into the setup, because the records are the whole of what is left to do and
-       a row that says "waiting on DNS" answers nothing on its own. */
-    const created = domains.value.find((row) => row.domain === domain);
-    if (created !== undefined) openSetup(created);
-    notify(`${domain} added. Publish its two records and it goes live on the next check.`);
+    addError.value = "";
+    try {
+      const created = await store.add(projects.current.id, domain);
+      addOpen.value = false;
+      /* Straight into the setup, on the row the server answered with: the records are the
+         whole of what is left to do, and a row that says "waiting on DNS" answers nothing
+         on its own. */
+      openSetup(created);
+      notify(`${domain} added. Publish its two records and it goes live on the next check.`);
+    } catch (cause: unknown) {
+      /* A conflict is the one refusal that earns its own sentence, and it deliberately does
+         not say whether the hostname is held by this organisation or by a stranger. */
+      addError.value = isRefusal(cause, ErrorCode.Conflict)
+        ? "That hostname is already claimed. A hostname belongs to one project, across every project and both kinds of domain."
+        : "The domain was not added. Nothing changed, so try again.";
+    }
   });
 }
 
@@ -118,8 +151,20 @@ function recheck() {
   const row = setupDomain.value;
   if (row === null) return;
   void whileBusy(row.id, async () => {
-    await store.recheck(projects.current.id, row.id);
-    notify(`Checked ${row.domain}`);
+    setupError.value = "";
+    try {
+      const checked = await store.recheck(projects.current.id, row.id);
+      /* What the check found, because it is the answer: a row can come back verified, and
+         it can come back with a record that still does not resolve. */
+      notify(
+        checked.status === "verified"
+          ? `${row.domain} is verified. Both records resolve.`
+          : `Checked ${row.domain}. Not every record has resolved yet.`,
+      );
+    } catch {
+      setupError.value =
+        "The check did not run, so nothing about the records has changed. Try again.";
+    }
   });
 }
 
@@ -127,12 +172,18 @@ async function verify(origin: string) {
   const row = setupDomain.value;
   if (row === null) return;
   await whileBusy("probe", async () => {
-    await store.checkSetup(
-      projects.current.id,
-      row.id,
-      origin,
-      allowedOrigins.value.includes(origin.trim()),
-    );
+    setupError.value = "";
+    try {
+      await store.checkSetup(
+        projects.current.id,
+        row.id,
+        origin,
+        allowedOrigins.value.includes(origin.trim()),
+      );
+    } catch {
+      setupError.value =
+        "The check did not run, so nothing about the records has changed. Try again.";
+    }
   });
 }
 
@@ -142,8 +193,10 @@ async function verify(origin: string) {
  */
 const removing = ref<AuthDomain | null>(null);
 const removeOpen = ref(false);
+const removeError = ref("");
 
 function askRemove(domain: AuthDomain) {
+  removeError.value = "";
   removing.value = domain;
   removeOpen.value = true;
 }
@@ -152,10 +205,15 @@ function confirmRemove() {
   const row = removing.value;
   if (row === null) return;
   void whileBusy(row.id, async () => {
-    await store.remove(projects.current.id, row.id);
-    removeOpen.value = false;
-    setupOpen.value = false;
-    notify(`${row.domain} removed`);
+    removeError.value = "";
+    try {
+      await store.remove(projects.current.id, row.id);
+      removeOpen.value = false;
+      setupOpen.value = false;
+      notify(`${row.domain} removed`);
+    } catch {
+      removeError.value = "The domain was not removed, so nothing has changed. Try again.";
+    }
   });
 }
 
@@ -184,6 +242,12 @@ const LIST_COLUMNS: readonly RecordColumn[] = [
 ];
 
 const listHeading = computed(() => {
+  /* A failed re-read keeps the rows it already had, and the heading says which of the two
+     this is: nothing known, or something known and now a read behind. */
+  if (store.refusal !== null)
+    return domains.value.length === 0
+      ? "This project's domains could not be read"
+      : "The last read failed, so these are the domains from before it";
   if (domains.value.length === 0) return "This project uses the shared host";
   if (custom.value) return `Answering on ${live.value?.domain}`;
   return domains.value.length === 1
@@ -258,7 +322,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
         >
           Domain guides
         </v-btn>
-        <FancyButton :disabled="isBusy('add')" @click="addOpen = true">
+        <FancyButton :disabled="isBusy('add')" @click="openAdd()">
           <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           Add domain
         </FancyButton>
@@ -282,7 +346,13 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
           />
           <CopyField v-else :value="baseUrl" label="Copy the API base URL" wrap />
           <span class="text-[11px] leading-4 text-ink/50">
-            <template v-if="custom">
+            <!-- A read that failed is not a project on the shared host, and the line under
+                 the value it copied has to say which of the two this is. -->
+            <template v-if="store.refusal">
+              This project's domains could not be read, so this is our shared host rather than
+              an answer about yours.
+            </template>
+            <template v-else-if="custom">
               A host of yours, so this is the value your client is configured with.
             </template>
             <template v-else>
@@ -315,9 +385,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
             class="mt-0.5 inline-flex w-fit items-center gap-0.5 text-[11px] font-medium text-ink transition-colors duration-150 hover:underline"
             type="button"
             @click="
-              cookies.action === 'Add a domain'
-                ? (addOpen = true)
-                : domains[0] && openSetup(domains[0])
+              cookies.action === 'Add a domain' ? openAdd() : domains[0] && openSetup(domains[0])
             "
           >
             {{ cookies.action }}
@@ -390,7 +458,30 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
         </p>
       </header>
 
-      <RecordTable :columns="LIST_COLUMNS" framed label="Auth domains">
+      <!-- A read that failed says so and offers the read again. Left to the empty state
+           below, it would tell somebody their project has no domains. Rows already read
+           stay under it: they are a read behind and that is better than gone. -->
+      <div v-if="store.refusal" class="flex flex-col items-start gap-2.5">
+        <InfoNote :text="store.refusal" icon="material-symbols:error-outline" tone="warning" />
+        <v-btn
+          :loading="store.loading"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:refresh"
+          size="small"
+          variant="outlined"
+          @click="reload()"
+        >
+          Try again
+        </v-btn>
+      </div>
+
+      <RecordTable
+        v-if="store.refusal === null || domains.length > 0"
+        :columns="LIST_COLUMNS"
+        framed
+        label="Auth domains"
+      >
         <template v-if="store.loading">
           <li v-for="row in 2" :key="row" class="record-row">
             <span class="record-cell record-cell--primary flex items-center gap-3">
@@ -453,7 +544,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
               <span class="font-mono text-ink/70">{{ SHARED_API_HOST }}</span> in header mode,
               so this is a choice rather than a setup step.
             </p>
-            <FancyButton class="mt-2" @click="addOpen = true">
+            <FancyButton class="mt-2" @click="openAdd()">
               <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
               Add domain
             </FancyButton>
@@ -502,6 +593,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
     <AuthDomainAddDialog
       v-if="addOpen"
       v-model="addOpen"
+      :error="addError"
       :existing="domains.map((domain) => domain.domain)"
       :saving="isBusy('add')"
       @add="addDomain"
@@ -513,6 +605,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
       :busy="isBusy(setupDomain.id)"
       :checking="isBusy('probe')"
       :domain="setupDomain"
+      :error="setupError"
       :origins="allowedOrigins"
       :probe="store.probeFor(projects.current.id)"
       @recheck="recheck"
@@ -524,6 +617,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
       v-if="removeOpen && removing"
       v-model="removeOpen"
       :domain="removing"
+      :error="removeError"
       :removing="isBusy(removing.id)"
       @confirm="confirmRemove"
     />

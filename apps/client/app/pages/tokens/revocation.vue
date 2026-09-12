@@ -179,6 +179,11 @@ async function refreshStatus() {
  */
 const authApiBase = useAuthApiBase();
 
+/* The domains store reads over a cache and this screen is one of the readers: without the
+   fill, the endpoint a developer copies would name the shared host on a project that has a
+   host of its own. */
+watch(projectId, (id) => void authDomains.load(id), { immediate: true });
+
 const endpoint = computed(() => {
   const domain =
     authDomains.forProject(projectId.value).find((entry) => entry.status === "verified")?.domain ??

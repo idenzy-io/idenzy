@@ -1,4 +1,5 @@
 import { createFetch } from "@vueuse/core";
+import { refusalIn } from "~/utils/sign-in-errors";
 
 /**
  * How the panel asks the management API for its own data.
@@ -56,6 +57,19 @@ export function useManagementApi() {
           options.headers = { ...options.headers, Authorization: `Bearer ${token}` };
         }
         return { options };
+      },
+      /**
+       * Hands a refusal back as the error contract's own document rather than as a status
+       * line.
+       *
+       * VueUse puts `Error.message` into `error.value`, which for a non-2xx is the status
+       * text — and a status text carries no code, so every screen built on
+       * `managementMessage` would say "something went wrong" about a refusal the server had
+       * explained precisely. The body is parsed before the status is judged, so the shape
+       * the service promised (PROJECT.md 9.3) is already here to hand over.
+       */
+      onFetchError(context) {
+        return { ...context, error: refusalIn(context.data) ?? context.error };
       },
     },
     fetchOptions: {

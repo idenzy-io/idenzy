@@ -464,7 +464,17 @@ client have no server halves to talk to yet.
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
       can read (ADR-0008), and a global middleware decides who sees which half of the panel.
-      The data stores are still placeholders; the management client is what replaces them
+      Four stores are off fixtures now: the organisation and project lists, API keys, and
+      auth domains — claiming a hostname, the DNS check and removing one are management API
+      calls, and the panel no longer mints a record value or decides that a domain is
+      verified. What the wiring cost the screen was two claims it could no longer support: a
+      resolved authorisation record is not an issued certificate, and nothing checks DNS on a
+      schedule, so a check happens because somebody asked. A refusal now carries the
+      contract's own code into the panel (`refusalIn`), which is what lets a dialog say "that
+      hostname is already claimed" rather than "something went wrong" — every screen built on
+      `managementMessage` was answering with the fallback before it, because a failed fetch
+      hands its caller a status line and a status line has no code. The remaining stores are
+      placeholders, and each one waits on an endpoint rather than on the panel
 - [ ] Cloud Armor rules and application rate limits
 
 ---

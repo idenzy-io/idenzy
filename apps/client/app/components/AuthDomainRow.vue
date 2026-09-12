@@ -17,7 +17,7 @@ import {
   AUTH_DOMAIN_STATUS_LABELS,
   AUTH_DOMAIN_STATUS_TONES,
   type AuthDomain,
-  certificateIssued,
+  certificateAuthorised,
   dnsFound,
 } from "~/utils/auth-domains";
 import { relativeTime } from "~/utils/time";
@@ -34,7 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const resolves = computed(() => dnsFound(props.domain));
-const certificate = computed(() => certificateIssued(props.domain));
+const certificate = computed(() => certificateAuthorised(props.domain));
 
 /** Set up while something is missing, Manage once nothing is: one control, two jobs. */
 const openLabel = computed(() =>
@@ -78,8 +78,10 @@ const openLabel = computed(() =>
       class="record-cell record-cell--half flex flex-col items-start gap-1"
       data-label="Certificate"
     >
+      <!-- "Authorised" rather than "Issued": the record resolving is what we looked at, and
+           whether Certificate Manager has issued off it is not something a check can see. -->
       <StatusBadge
-        :label="certificate ? 'Issued' : 'Waiting'"
+        :label="certificate ? 'Authorised' : 'Waiting'"
         :tone="certificate ? 'success' : 'warning'"
       />
       <span class="text-[10px] leading-4 text-ink/45">

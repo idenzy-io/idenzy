@@ -17,6 +17,7 @@
  * domain alone: a hostname belongs to one project, whatever it is for.
  */
 
+import type { ProjectDomain } from "@idenzy/protocol/schemas/management";
 import { isRpId } from "./passkeys";
 
 /**
@@ -24,12 +25,6 @@ import { isRpId } from "./passkeys";
  * entirely: header mode works on the shared host and always has.
  */
 export const SHARED_API_HOST = "api.idenzy.io";
-
-/** What the CNAME points at. Our global load balancer, the same one for every customer. */
-export const LOAD_BALANCER_TARGET = "edge.idenzy.io";
-
-/** The label the certificate authorisation record hangs off. */
-export const CERT_AUTH_PREFIX = "_acme-challenge";
 
 /*
  * The records.
@@ -126,22 +121,28 @@ export interface AuthDomain {
   checkedAt: string | null;
 }
 
-/** The records for a hostname, as they would arrive on the row when it is added. */
-export function recordsFor(domain: string, token: string): AuthDnsRecord[] {
-  return [
-    {
-      kind: "cname",
-      name: domain,
-      value: LOAD_BALANCER_TARGET,
-      status: "pending",
-    },
-    {
-      kind: "cert",
-      name: `${CERT_AUTH_PREFIX}.${domain}`,
-      value: `${token}.authorize.certificatemanager.goog`,
-      status: "pending",
-    },
-  ];
+/**
+ * A row from the management API as this screen's model.
+ *
+ * One word differs, and it is mapped rather than renamed at either end. The API calls a
+ * domain whose records have not resolved `pending`; both domain screens call it `verifying`,
+ * because these are rows of one table and a reader should not have to learn two words for
+ * one state. So the protocol keeps its own vocabulary and the panel keeps the one it shares
+ * with sending domains.
+ *
+ * Records come across as they are. The values are minted by whoever created the identity and
+ * nothing here computes one: a plausible record invented in a panel is a value somebody
+ * pastes into DNS and then waits on a check that can never pass.
+ */
+export function authDomainFrom(row: ProjectDomain): AuthDomain {
+  return {
+    id: row.id,
+    domain: row.domain,
+    status: row.status === "pending" ? "verifying" : row.status,
+    records: row.records.map((record) => ({ ...record })),
+    createdAt: row.createdAt,
+    checkedAt: row.checkedAt,
+  };
 }
 
 /** Whether the project has a domain that would actually resolve a request. */
@@ -451,8 +452,14 @@ export function dnsFound(domain: AuthDomain): boolean {
   return recordOf(domain, "cname")?.status === "found";
 }
 
-/** Whether the authorisation record has been seen, which is what issues the certificate. */
-export function certificateIssued(domain: AuthDomain): boolean {
+/**
+ * Whether the authorisation record has been seen, which is what a certificate is issued on.
+ *
+ * Not whether a certificate exists. Certificate Manager issues off this record and nothing
+ * here watches it do so, so the record resolving is the whole of what we can say — which is
+ * also exactly what the server means by a verified domain.
+ */
+export function certificateAuthorised(domain: AuthDomain): boolean {
   return recordOf(domain, "cert")?.status === "found";
 }
 
@@ -467,7 +474,7 @@ export function certificateIssued(domain: AuthDomain): boolean {
  */
 export function authSetupStage(domain: AuthDomain, tested: boolean): AuthSetupStage {
   if (!dnsFound(domain)) return "dns";
-  if (!certificateIssued(domain) || domain.status !== "verified") return "certificate";
+  if (!certificateAuthorised(domain) || domain.status !== "verified") return "certificate";
   return tested ? "test" : "sdk";
 }
 
@@ -517,11 +524,11 @@ function resolveLine(host: string, ok: boolean): SetupProbeLine {
 
 function certificateLine(ok: boolean): SetupProbeLine {
   return {
-    label: "The certificate is served",
+    label: "The certificate is authorised",
     ok,
     detail: ok
-      ? "A request over TLS is answered rather than refused at the handshake."
-      : "The authorisation record has not been seen, so no certificate has been issued for this host.",
+      ? "The authorisation record resolves, which is what lets Certificate Manager issue for this host. Whether it has issued yet is not something a DNS check can see."
+      : "The authorisation record has not been seen, so nothing can issue a certificate for this host.",
   };
 }
 
@@ -530,7 +537,7 @@ function answersLine(host: string, ok: boolean): SetupProbeLine {
     label: "The project answers on it",
     ok,
     detail: ok
-      ? `A request to ${apiBaseUrl(host)} resolved to this project by Host alone.`
+      ? `Both records resolve and the host is verified, so a request to ${apiBaseUrl(host)} is routed to this project by Host alone.`
       : "The host is not verified, so a request to it is refused as an unknown project rather than as a domain that is nearly ready.",
   };
 }
@@ -561,7 +568,13 @@ function originLine(origin: string, allowed: boolean): SetupProbeLine {
   };
 }
 
-/** Reads a domain as a probe would find it, so the check is tested rather than trusted. */
+/**
+ * Reads a row the way the check reports it, so the honesty is tested rather than trusted.
+ *
+ * Pure, and the freshness is the caller's business: the store runs a real DNS check first
+ * and reads the row that check wrote, so three of these lines are an observation from a
+ * moment ago rather than a replay of whatever was last written down.
+ */
 export function setupProbe(
   domain: AuthDomain | null,
   origin: string,
@@ -570,7 +583,7 @@ export function setupProbe(
   const host = domain?.domain ?? "";
   const named = origin.trim();
   const resolves = domain !== null && dnsFound(domain);
-  const certificate = domain !== null && certificateIssued(domain);
+  const certificate = domain !== null && certificateAuthorised(domain);
   const answers = domain?.status === "verified";
   const lines = [
     resolveLine(host, resolves),

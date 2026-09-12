@@ -22,6 +22,8 @@ const props = defineProps<{
   /** Hostnames already on the project, so one is not added twice. */
   existing: readonly string[];
   saving: boolean;
+  /** Why the claim was refused. The dialog stays open with the name still in the field. */
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -103,6 +105,8 @@ const id = `${useId()}-domain`;
           changes for your users until a check sees them: until then the host answers no
           request, and clients keep using the shared API host.
         </p>
+
+        <p v-if="error" class="m-0 text-xs leading-5 text-error" role="alert">{{ error }}</p>
 
         <footer class="flex items-center justify-end gap-2">
           <v-btn

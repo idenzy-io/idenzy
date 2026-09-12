@@ -310,6 +310,11 @@ watch(
   { immediate: true },
 );
 
+/* Read once per opening, because the page mounts this dialog only while it is open. The
+   domains store answers over a cache, and an unfilled one would hide the test behind "you
+   need a custom domain" from a project that has one. */
+void authDomains.load(projects.current.id);
+
 /**
  * A verified custom auth domain, which is what decides whether a test can be started from
  * here at all. A top-level navigation carries neither our header nor an Authorization, so

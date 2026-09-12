@@ -15,6 +15,8 @@ import { type AuthDomain, SHARED_API_HOST, siteOf } from "~/utils/auth-domains";
 const props = defineProps<{
   domain: AuthDomain;
   removing: boolean;
+  /** Why the removal was refused, which means the host is still answering. */
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -82,6 +84,8 @@ function confirm() {
             will fail until I do.
           </span>
         </label>
+
+        <p v-if="error" class="m-0 text-xs leading-5 text-error" role="alert">{{ error }}</p>
 
         <footer class="flex items-center justify-end gap-2">
           <v-btn

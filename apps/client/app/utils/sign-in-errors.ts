@@ -68,3 +68,49 @@ export function managementMessage(error: unknown): string {
   if (code === null) return MANAGEMENT_FALLBACK;
   return MANAGEMENT_MESSAGES[code] ?? MANAGEMENT_FALLBACK;
 }
+
+/** The code and message a refusal carries, which is what both readers above want. */
+export interface Refusal {
+  code: string;
+  message: string;
+}
+
+/**
+ * The `{ error: { code, message } }` document a refused request answered with, or null.
+ *
+ * This is what makes the two functions above worth having. A fetch that failed hands its
+ * caller a status line, and a status line has no code — so without reading the body back
+ * into its documented shape, every screen would say "something went wrong" about a refusal
+ * the server had explained precisely (PROJECT.md 9.3).
+ *
+ * Both shapes arrive here: a call that asked for JSON has already been parsed, and one that
+ * did not — a delete, whose success is an empty 204 — still carries its refusal as text.
+ * Anything else is not a refusal of ours, and null leaves the status line as the error.
+ */
+export function refusalIn(data: unknown): Refusal | null {
+  const body = typeof data === "string" ? parsed(data) : data;
+  if (typeof body !== "object" || body === null || !("error" in body)) return null;
+  const refusal = (body as { error: unknown }).error;
+  if (typeof refusal !== "object" || refusal === null || !("code" in refusal)) return null;
+  return typeof (refusal as { code: unknown }).code === "string" ? (refusal as Refusal) : null;
+}
+
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a refusal is a particular one, for a screen with a better sentence for it.
+ *
+ * The map above is what a screen says when it has nothing specific to say. A dialog that has
+ * been refused for a reason its own reader can act on — a hostname somebody else holds, a
+ * name already taken — says that instead, and this is how it asks without reaching for the
+ * server's own message.
+ */
+export function isRefusal(error: unknown, code: ErrorCode): boolean {
+  return codeOf(error) === code;
+}

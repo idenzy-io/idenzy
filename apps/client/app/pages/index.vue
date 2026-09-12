@@ -44,6 +44,19 @@ const otp = useOtpStore();
 const audit = useAuditStore();
 
 const project = computed(() => projects.current.id);
+
+/* Two of the five facts come from the management API, and both stores read over a cache
+   something has to fill. Without this the strip reported a project with keys and a verified
+   domain as having neither, which is a worse answer than a spinner. */
+watch(
+  project,
+  (id) => {
+    void keys.load(id);
+    void domains.load(id);
+  },
+  { immediate: true },
+);
+
 const loading = computed(() => keys.loading || origins.loading || domains.loading);
 
 /*

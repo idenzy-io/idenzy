@@ -1,34 +1,54 @@
+import type { ProjectDomain } from "@idenzy/protocol/schemas/management";
 import { describe, expect, it } from "vitest";
 import {
   AUTH_DOMAIN_CAPABILITIES,
   AUTH_DOMAIN_STATUS_LABELS,
   AUTH_RECORD_INFO,
   AUTH_RECORD_KINDS,
+  type AuthDnsRecord,
   type AuthDomain,
   apiBaseUrl,
+  authDomainFrom,
   authNextStep,
   authSetupStage,
-  CERT_AUTH_PREFIX,
   cookieModeState,
   DOMAIN_ISSUE_LABELS,
   effectiveHost,
   headerModeState,
-  LOAD_BALANCER_TARGET,
   liveDomain,
   normalizeDomain,
-  recordsFor,
   SHARED_API_HOST,
   setupProbe,
   siteOf,
   validateDomain,
 } from "../../app/utils/auth-domains";
 
+/**
+ * The two records as the server mints them, written out rather than computed.
+ *
+ * The values are the management API's to choose and the panel's only to display, so a
+ * fixture here spells them the way a response does. A helper that built them would be the
+ * panel deciding what our own load balancer is called, which is the duplication that went
+ * when these screens stopped inventing rows.
+ */
+function records(): AuthDnsRecord[] {
+  return [
+    { kind: "cname", name: "auth.example.com", value: "edge.idenzy.io", status: "pending" },
+    {
+      kind: "cert",
+      name: "_acme-challenge.auth.example.com",
+      value: "9f2c41a8.authorize.certificatemanager.goog",
+      status: "pending",
+    },
+  ];
+}
+
 function domain(change: Partial<AuthDomain> = {}): AuthDomain {
   return {
     id: "dom_1",
     domain: "auth.example.com",
     status: "verified",
-    records: recordsFor("auth.example.com", "tok"),
+    records: records(),
     createdAt: "2026-09-01T00:00:00.000Z",
     checkedAt: null,
     ...change,
@@ -119,33 +139,48 @@ describe("siteOf", () => {
   });
 });
 
-describe("recordsFor", () => {
-  const records = recordsFor("auth.example.com", "9f2c41a8");
-
-  it("asks for the two records a working domain needs and no others", () => {
-    expect(records.map((record) => record.kind)).toEqual(["cname", "cert"]);
-  });
-
-  it("points the hostname itself at the load balancer", () => {
-    expect(records[0]?.name).toBe("auth.example.com");
-    expect(records[0]?.value).toBe(LOAD_BALANCER_TARGET);
-  });
-
-  it("hangs the authorisation record off the challenge label", () => {
-    expect(records[1]?.name).toBe(`${CERT_AUTH_PREFIX}.auth.example.com`);
-    expect(records[1]?.value).toContain("9f2c41a8");
-  });
-
-  it("starts both pending, since nothing has been looked for yet", () => {
-    expect(records.every((record) => record.status === "pending")).toBe(true);
-  });
-
+describe("the records", () => {
   it("describes each kind, including what removing it later costs", () => {
     for (const info of AUTH_RECORD_KINDS) {
       expect(info.purpose.length).toBeGreaterThan(0);
       expect(info.afterwards.length).toBeGreaterThan(0);
       expect(AUTH_RECORD_INFO[info.kind]).toBe(info);
     }
+  });
+});
+
+/*
+ * The boundary between the API's vocabulary and this screen's, which is one word wide.
+ */
+describe("authDomainFrom", () => {
+  const row: ProjectDomain = {
+    id: "dom_9",
+    domain: "auth.example.com",
+    type: "auth",
+    status: "pending",
+    records: records(),
+    checkedAt: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+  };
+
+  it("calls a pending domain verifying, which is the word both domain screens use", () => {
+    expect(authDomainFrom(row).status).toBe("verifying");
+  });
+
+  it("leaves the other two alone, since they are the same word either side", () => {
+    expect(authDomainFrom({ ...row, status: "verified" }).status).toBe("verified");
+    expect(authDomainFrom({ ...row, status: "failed" }).status).toBe("failed");
+  });
+
+  it("carries the server's records across rather than minting any of its own", () => {
+    expect(authDomainFrom(row).records).toEqual(records());
+  });
+
+  it("keeps the id and the timestamps the row arrived with", () => {
+    const checked = authDomainFrom({ ...row, checkedAt: "2026-09-02T08:00:00.000Z" });
+    expect(checked.id).toBe("dom_9");
+    expect(checked.createdAt).toBe("2026-09-01T00:00:00.000Z");
+    expect(checked.checkedAt).toBe("2026-09-02T08:00:00.000Z");
   });
 });
 
@@ -299,5 +334,15 @@ describe("setupProbe", () => {
 
   it("answers for no domain at all rather than throwing", () => {
     expect(setupProbe(null, "", false).ok).toBe(false);
+  });
+
+  /* A resolved authorisation record is not an issued certificate: Certificate Manager issues
+     off that record and nothing here watches it do so. A line claiming a served certificate
+     would be the screen promising something no DNS check establishes. */
+  it("claims an authorised certificate and never a served one", () => {
+    const line = setupProbe(found(), "https://app.example.com", true).lines[1];
+    expect(line?.label).toBe("The certificate is authorised");
+    expect(line?.detail).toMatch(/authorisation record resolves/i);
+    expect(line?.detail).not.toMatch(/handshake|is answered rather than refused/i);
   });
 });

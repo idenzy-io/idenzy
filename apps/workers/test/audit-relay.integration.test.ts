@@ -111,9 +111,14 @@ describe("building the chain", () => {
   /**
    * The reason the sequence column exists. Two entries written in the same millisecond
    * used to leave the project's tip ambiguous, and both would have claimed it.
+   *
+   * The instant is relative to now and not a literal date. It was
+   * `new Date("2026-09-04T00:00:00.000Z")`, which sat inside the relay's cold-start
+   * lookback on the day it was written and fell outside it a week later: the sweep then
+   * read nothing, and the test failed on the calendar rather than on the code.
    */
   it("keeps one order for entries that share a timestamp", async () => {
-    const sameInstant = new Date("2026-09-04T00:00:00.000Z");
+    const sameInstant = new Date(Date.now() - 60_000);
     for (const action of ["a", "b", "c", "d"]) {
       await enqueue(PROJECT_ONE, action, { createdAt: sameInstant, at: sameInstant });
     }
@@ -125,6 +130,55 @@ describe("building the chain", () => {
     expect(entries.map((entry) => entry.seq)).toEqual(
       [...entries.map((e) => e.seq)].sort((a, b) => a - b),
     );
+    expect(verifyAuditChain(entries)).toEqual({ valid: true });
+  });
+
+  /**
+   * The order the chain is built in is the order events were enqueued, even when every
+   * one of them shares a timestamp.
+   *
+   * This is the test that would have caught what the suite was flaking on.
+   * `outbox_events_since` ordered by `(created_at, id)` and `id` is a random uuid, so a
+   * tie in `created_at` was broken by a random number. Measured against a real database,
+   * three events enqueued in a loop shared a millisecond on 29 runs in 30 and reached the
+   * chain out of order on 20 of those, which is why the two tampering tests below failed
+   * at a different index each run. Eight events make a coincidental pass unlikely enough
+   * to be worth asserting on.
+   */
+  it("chains a burst in enqueue order, not in uuid order", async () => {
+    const sameInstant = new Date(Date.now() - 60_000);
+    const actions = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    for (const action of actions) {
+      await enqueue(PROJECT_ONE, action, { createdAt: sameInstant, at: sameInstant });
+    }
+
+    expect(await relay.sweep()).toBe(actions.length);
+
+    const entries = await trail(PROJECT_ONE);
+    expect(entries.map((entry) => entry.action)).toEqual(actions);
+    expect(verifyAuditChain(entries)).toEqual({ valid: true });
+  });
+
+  /**
+   * Why the watermark has to be the sequence and not `created_at`.
+   *
+   * An event sharing the last instant of a finished sweep — because it committed after
+   * that sweep read, or fell past the reader's LIMIT — was `created_at > since` false for
+   * ever under the old cursor. It was never relayed, nothing errored, and the only
+   * symptom was an audit entry that did not exist. A hash chain cannot detect that: it
+   * verifies what is there.
+   */
+  it("relays an event that shares the last instant of a finished sweep", async () => {
+    const instant = new Date(Date.now() - 60_000);
+    await enqueue(PROJECT_ONE, "first", { createdAt: instant, at: instant });
+    expect(await relay.sweep()).toBe(1);
+
+    // The same timestamp to the millisecond, enqueued after the watermark was stored.
+    await enqueue(PROJECT_ONE, "late", { createdAt: instant, at: instant });
+    expect(await relay.sweep()).toBe(1);
+
+    const entries = await trail(PROJECT_ONE);
+    expect(entries.map((entry) => entry.action)).toEqual(["first", "late"]);
     expect(verifyAuditChain(entries)).toEqual({ valid: true });
   });
 
@@ -207,6 +261,9 @@ describe("what the chain is for", () => {
   });
 
   it("detects an entry removed from the middle", async () => {
+    // Relies on 'second' being the middle of the chain, which holds only because the
+    // relay preserves enqueue order. Before 0031 it did not, and this failed at a
+    // different index on almost every run.
     await enqueue(PROJECT_ONE, "first");
     await enqueue(PROJECT_ONE, "second");
     await enqueue(PROJECT_ONE, "third");

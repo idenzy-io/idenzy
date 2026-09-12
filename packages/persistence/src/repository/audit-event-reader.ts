@@ -8,6 +8,8 @@ export interface OutboxEvent {
   readonly topic: string;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly createdAt: Date;
+  /** The consumer's watermark. Unique and monotonic, which `createdAt` is neither. */
+  readonly seq: number;
 }
 
 export interface AuditChainTip {
@@ -21,6 +23,7 @@ interface OutboxRow extends Record<string, unknown> {
   readonly topic: string;
   readonly payload: unknown;
   readonly created_at: Date;
+  readonly seq: string;
 }
 
 /**
@@ -43,10 +46,25 @@ interface OutboxRow extends Record<string, unknown> {
 export class AuditEventReader {
   constructor(private readonly db: NodePgDatabase) {}
 
-  /** Events of one topic newer than a watermark, oldest first. Capped by the function. */
-  async outboxSince(topic: string, since: Date): Promise<readonly OutboxEvent[]> {
+  /**
+   * Events of one topic past a watermark, in sequence order. Capped by the function.
+   *
+   * The watermark is `outbox.seq` and not `created_at`, which is the whole point of
+   * migration 0031. A timestamp ties at millisecond precision, so an exclusive bound on
+   * one skipped every event that shared the last instant of a sweep, for ever and
+   * without an error (PROJECT.md 4.13.3).
+   *
+   * `notBefore` is only for a consumer that has no watermark yet: it bounds how far back
+   * a cold start reads. In steady state it is null and the sequence alone decides.
+   */
+  async outboxSince(
+    topic: string,
+    sinceSeq: number,
+    notBefore: Date | null = null,
+  ): Promise<readonly OutboxEvent[]> {
     const rows = await this.db.execute<OutboxRow>(
-      sql`select * from outbox_events_since(${topic}, ${since.toISOString()})`,
+      sql`select * from outbox_events_since(
+            ${topic}, ${sinceSeq}, ${notBefore === null ? null : notBefore.toISOString()})`,
     );
     return rows.rows.map((row) => ({
       id: row.id,
@@ -54,7 +72,18 @@ export class AuditEventReader {
       topic: row.topic,
       payload: asRecord(row.payload),
       createdAt: new Date(row.created_at),
+      // bigint arrives as a string from pg, because it does not fit a JS number in
+      // general. It does here: the sequence would need 2^53 events to overflow.
+      seq: Number(row.seq),
     }));
+  }
+
+  /** Where a consumer with no watermark starts: the newest event already past its lookback. */
+  async outboxSeqBefore(topic: string, at: Date): Promise<number> {
+    const rows = await this.db.execute<{ outbox_seq_before: string }>(
+      sql`select outbox_seq_before(${topic}, ${at.toISOString()})`,
+    );
+    return Number(rows.rows[0]?.outbox_seq_before ?? 0);
   }
 
   /**

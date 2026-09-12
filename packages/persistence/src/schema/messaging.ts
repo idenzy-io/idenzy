@@ -5,7 +5,9 @@ import {
   Purpose,
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
+import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -219,9 +221,18 @@ export const outbox = classifiedTable(
     attempts: classified(integer("attempts").notNull().default(0), { ...config, loggable: true }),
     publishedAt: classified(timestamp("published_at", { withTimezone: true }), config),
     createdAt: createdAtColumn(),
+    seq: classified(
+      bigint("seq", { mode: "number" }).notNull().default(sql`nextval('outbox_seq')`),
+      {
+        ...config,
+        loggable: true,
+        note: "Total order for consumers, from one cluster sequence. A consumer's watermark cannot be created_at: it ties at millisecond precision, so an event sharing the last instant would be skipped by an exclusive bound and never relayed (PROJECT.md 4.13.3).",
+      },
+    ),
   },
   (t) => [
     index("outbox_unpublished_idx").on(t.publishedAt, t.createdAt),
+    index("outbox_topic_seq_idx").on(t.topic, t.seq),
     tenantIsolationPolicy("outbox"),
   ],
 ).enableRLS();

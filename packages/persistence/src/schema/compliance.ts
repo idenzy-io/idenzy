@@ -211,10 +211,10 @@ export const staffAccessGrants = classifiedTable("staff_access_grants", {
  */
 export const relayOffsets = classifiedTable("relay_offsets", {
   consumer: classified(text("consumer").primaryKey(), { ...config, loggable: true }),
-  position: classified(timestamp("position", { withTimezone: true }).notNull(), {
+  positionSeq: classified(bigint("position_seq", { mode: "number" }).notNull(), {
     ...config,
     loggable: true,
-    note: "Exclusive lower bound on outbox created_at. A window rather than an id, so a restart re-reads a little rather than skipping anything.",
+    note: "Exclusive lower bound on outbox seq. A timestamp could not be one: it ties at millisecond precision, so an event sharing the watermark's instant was skipped for ever.",
   }),
   updatedAt: classified(timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(), {
     ...config,

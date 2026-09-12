@@ -43,11 +43,13 @@ const DEFAULT_COLD_START_MS = 24 * 60 * 60 * 1000;
  * project queuing behind the one before it. Moving the write here costs a few seconds of
  * lag and buys a chain that cannot fork.
  *
- * It is idempotent by construction rather than by checking. The watermark is an exclusive
- * lower bound on `created_at`, so a restart re-reads whatever shares the last instant, and
- * an entry that is already in the trail is recognised by its own hash: the same event
- * against the same tip produces the same `entry_hash`, so replaying it is a no-op that the
- * chain does not notice.
+ * The watermark is an exclusive lower bound on `outbox.seq`, and it has to be a sequence
+ * rather than a timestamp. `created_at` ties at millisecond precision — measured against a
+ * real database, three events enqueued in a loop shared a millisecond on 29 runs in 30 —
+ * and an exclusive bound on a tied value skips every event sharing the last instant of a
+ * sweep, permanently and without an error. A sequence is unique, so the bound excludes
+ * exactly what was consumed. It is also a total order, so the trail's order is the order
+ * events were enqueued rather than the order of their random uuids (migration 0031).
  *
  * `audit_events` grants this connection INSERT and SELECT and nothing else, so a bug here
  * can add a wrong entry but cannot remove or alter a right one. That is the property the
@@ -91,8 +93,15 @@ export class AuditRelay {
    * either replaying everything or skipping the remainder.
    */
   async sweep(): Promise<number> {
-    const since = (await this.offsets.read(AUDIT_CONSUMER)) ?? this.coldStart();
-    const pending = await this.events.outboxSince(AUDIT_TOPIC, since);
+    const stored = await this.offsets.read(AUDIT_CONSUMER);
+    // A cold start bounds how far back it reads by time and then follows the sequence.
+    // A stored watermark needs no time bound at all: the sequence is the whole answer.
+    const since = stored ?? (await this.coldStartSeq());
+    const pending = await this.events.outboxSince(
+      AUDIT_TOPIC,
+      since,
+      stored === null ? this.coldStartAt() : null,
+    );
     if (pending.length === 0) return 0;
 
     // One tip per project for the whole pass. Read once from the trail and advanced in
@@ -108,7 +117,7 @@ export class AuditRelay {
         const entry = chainedEntry(event, previous);
         await this.events.append(entry);
         tips.set(event.projectId, entry.entryHash);
-        watermark = event.createdAt;
+        watermark = event.seq;
         written += 1;
       } catch (error: unknown) {
         // Stop at the first failure rather than skipping past it. An entry the chain never
@@ -133,10 +142,21 @@ export class AuditRelay {
     return tip?.entryHash ?? AUDIT_CHAIN_GENESIS;
   }
 
-  private coldStart(): Date {
+  private coldStartAt(): Date {
     return new Date(
       this.clock.nowMs() - (this.options.coldStartLookbackMs ?? DEFAULT_COLD_START_MS),
     );
+  }
+
+  /**
+   * The sequence a consumer with no watermark starts from.
+   *
+   * Read from the outbox rather than assumed to be zero: starting at zero would make the
+   * first sweep of a long-lived deployment a read of the whole table, which is what the
+   * lookback exists to prevent.
+   */
+  private coldStartSeq(): Promise<number> {
+    return this.events.outboxSeqBefore(AUDIT_TOPIC, this.coldStartAt());
   }
 }
 

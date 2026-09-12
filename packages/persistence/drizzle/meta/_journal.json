@@ -218,6 +218,27 @@
       "when": 1789227606836,
       "tag": "0030_soft_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789228202772,
+      "tag": "0031_fresh_living_tribunal",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789228230449,
+      "tag": "0032_lumpy_matthew_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789228261001,
+      "tag": "0033_soft_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }

@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 19 |
 | pseudonymous | 83 |
-| operational | 304 |
+| operational | 305 |
 
 ## `api_keys`
 
@@ -536,11 +536,13 @@ Notes:
 | `payload` | pii | message_delivery | days_30 | no | row_deleted | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `publishedAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `seq` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `topic` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 
 Notes:
 
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `seq`: Total order for consumers, from one cluster sequence. A consumer's watermark cannot be created_at: it ties at millisecond precision, so an event sharing the last instant would be skipped by an exclusive bound and never relayed (PROJECT.md 4.13.3).
 
 ## `payment_methods`
 
@@ -691,12 +693,12 @@ Notes:
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `consumer` | operational | service_configuration | project_lifetime | no | not_applicable | no |
-| `position` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `positionSeq` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `updatedAt` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 
 Notes:
 
-- `position`: Exclusive lower bound on outbox created_at. A window rather than an id, so a restart re-reads a little rather than skipping anything.
+- `positionSeq`: Exclusive lower bound on outbox seq. A timestamp could not be one: it ties at millisecond precision, so an event sharing the watermark's instant was skipped for ever.
 - `updatedAt`: How stale the consumer is, which is the only signal that a relay has stopped.
 
 ## `retention_policies`

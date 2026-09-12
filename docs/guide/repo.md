@@ -28,6 +28,14 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   which means `idenzy_app` cannot read it at all and the owner can read across tenants.
   Copy the two `DO` blocks from `0004_nasty_catseye.sql`; they are dynamic and
   idempotent. Two tests in `packages/testing` fail if you forget.
+- **Default privileges outrank your migration's intent, and did so twice.** Migration
+  0001 ends with `ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE, DELETE`, so
+  for three migrations every `audit_events` partition was created holding all four:
+  `DELETE FROM audit_events` was refused and `DELETE FROM audit_events_2026_09` was not.
+  0030 revoked the two dangerous verbs from the defaults and made
+  `ensure_audit_partition` revoke them itself. If you add a table that must refuse a
+  privilege, revoke it explicitly and assert the *absence* in a test — the grants test
+  only checks that privileges are present, so it cannot see this class of bug.
 - **There are two tenant keys, not one.** `app.project_id` scopes a project's data and
   `app.org_id` scopes the organisation's — the team, the wallet, the cards, the invoices
   (ADR-0011). Neither satisfies the other's policy, so a repository built on the wrong

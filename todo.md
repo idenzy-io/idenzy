@@ -697,6 +697,12 @@ rate is a placeholder and closing it is the first task here.
       `apps/workers` is the chain's single writer, which is what the fork problem actually
       needed: serialising on the request path would have queued every sign-in for a busy
       project behind the one before it. What is left is the scheduled verifier, below.
+- [ ] `apps/workers/test/audit-relay.integration.test.ts` is flaky. Three of its fifteen
+      fail on some runs and none on others, always in `building the chain` and `what the
+      chain is for`, with the trail reading back empty or one entry short. It looks like
+      the per-test truncation racing the relay's own sweep rather than anything the relay
+      does in production, but it is unproven and a flaky test on the audit chain is the
+      one nobody will trust when it matters.
 - [ ] KMS token issuer, and the per-project data encryption key alongside it. `auth-api`
       refuses to boot outside development rather than sign with an ephemeral in-process
       key (§4.2), and `FieldEncryptor` now refuses on the same terms rather than encrypt

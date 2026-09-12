@@ -6,17 +6,21 @@
  * The first job of this screen is to say whose account it is, because every other
  * credential screen in the drawer is about somebody else's. Sign-in methods and
  * multi-factor configure what a customer's *users* must do; this is what the person
- * reading it does. That sentence is in the header and repeated on the devices card, which
- * is the one place the two lists could genuinely be confused.
+ * reading it does. So the person is the title, with their own picture before it, which is
+ * the one case `PageHeader` carries a mark at all.
  *
- * It is a tab of the settings screen and still global: the project in the corner changes
- * nothing here, and the memberships section is where the organisation appears, named,
- * because leaving one is the only thing on this page with a scope at all.
+ * It is the reader's own detail page rather than a stack of settings cards: who you are in
+ * a band of facts, then the two things that are actually credentials, then the devices
+ * holding them. What each of those facts means used to be a paragraph under it; the
+ * sentences are all still here, behind the glyph on each label, out of the way of somebody
+ * who came to change a password (notes/shared-experience.md: state, then controls, then
+ * rationale).
  *
- * Four sections in the note's order, and nothing else. What was here before and is not now
- * are the essays: how avatars would work, which Argon2 parameters are used, and a second
- * article listing what the page never does. Those are documentation, and on a screen where
- * somebody has come to change a password they sat between the reader and the control.
+ * What is not here are the essays: how avatars would work, which Argon2 parameters are
+ * used, and a second article listing what the page never does. Those are documentation, and
+ * on a screen where somebody has come to change a password they sat between the reader and
+ * the control. The security checklist went too, because the factor panel below it was
+ * already saying the same four things with the buttons attached.
  *
  * Three rules are worth the room they take. Changing an address confirms on *both*
  * addresses, so somebody at an unlocked screen cannot move an account somewhere its owner
@@ -27,6 +31,8 @@
  * something else demanded, so enrolling a passkey does not start challenging password
  * sign-ins.
  */
+import type { Fact } from "~/components/FactGrid.vue";
+import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
   ACCOUNT_WRITES,
   type AccountFactorKind,
@@ -54,6 +60,7 @@ const now = useNow({ interval: 30_000 });
 
 const profile = computed(() => store.profile);
 const factors = computed(() => store.factors);
+
 const twoFactor = computed(() => twoFactorOn(factors.value));
 const pendingEmail = computed(() => store.emailChange);
 
@@ -69,47 +76,66 @@ const kind = computed(() => orgKindOf(team.value.length));
 const reach = computed(() => projects.projectsOf(org.value.id));
 
 /**
- * The short list of things worth doing something about, and it is deliberately short. A
- * checklist that scored everything would be a checklist nobody finishes. Inline in the
- * section it is about rather than in a rail of its own, so it sits beside the controls that
- * answer it.
+ * Who you are, as against what you can change.
+ *
+ * The address is not in here and that is the rule rather than an oversight: it is the one
+ * identity field somebody edits, so it belongs with the password under Sign-in. A fact
+ * grid is for what is true; a control that lived in it would have nowhere to put its
+ * button and no way to show a change already under way.
  */
-const checks = computed(() => {
-  const recovery = factors.value.find((factor) => factor.kind === "recovery");
-  const age = profile.value.passwordChangedAt
-    ? Math.floor(
-        (now.value.getTime() - new Date(profile.value.passwordChangedAt).getTime()) / 86_400_000,
-      )
-    : null;
-  return [
+const facts = computed<Fact[]>(() => {
+  const rows: Fact[] = [
     {
-      id: "mfa",
-      label: "Second factor",
-      ok: twoFactor.value,
-      detail: twoFactor.value ? "An authenticator is enrolled" : "Nothing challenges a sign-in",
+      key: "id",
+      label: "User ID",
+      value: profile.value.userId,
+      mono: true,
+      copy: profile.value.userId,
+      info: "How the audit trail names you, and how support identifies you without an address. It is pseudonymous and safe to paste into a ticket.",
     },
     {
-      id: "recovery",
-      label: "Recovery codes",
-      ok: (recovery?.count ?? 0) > 0,
-      detail: recovery?.enrolled ? `${recovery.count} unspent` : "None to fall back on",
+      key: "joined",
+      label: "Joined",
+      value: formatDate(profile.value.createdAt),
+      info: "When this dashboard account was created. It is not when the organisation was, and not when any project under it was.",
     },
     {
-      id: "passkey",
-      label: "Passkey",
-      ok: factors.value.some((factor) => factor.kind === "passkey" && factor.enrolled),
-      detail: "A way in that no phishing page can take",
-    },
-    {
-      id: "password",
-      label: "Password age",
-      ok: age === null || age < 365,
-      detail:
-        profile.value.passwordChangedAt === null
-          ? "No password set"
-          : `Changed ${relativeTimeWords(profile.value.passwordChangedAt, now.value)}`,
+      key: "last",
+      label: "Last sign-in",
+      value: profile.value.lastSignInAt
+        ? relativeTimeWords(profile.value.lastSignInAt, now.value)
+        : "Never",
+      note: "This session",
+      info: "The session you are reading this in. Every session on the account, including this one, is listed under Devices.",
     },
   ];
+
+  if (me.value === null) return rows;
+
+  rows.push(
+    {
+      key: "org",
+      label: "Organisation",
+      value: org.value.name,
+      to: "/settings/members",
+      note: `${ORG_KIND_LABELS[kind.value]} · ${reach.value.length === 1 ? "one project" : `${reach.value.length} projects`}`,
+      info: "Membership is of the organisation rather than of a project, which is why leaving ends access to every one of them.",
+    },
+    {
+      key: "role",
+      label: "Your role",
+      value: roleInfo(me.value.role).label,
+      info: roleInfo(me.value.role).note,
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      value: isOwner.value ? "You" : (owner.value?.name ?? "Nobody"),
+      info: "Ownership moves by transfer rather than by being assigned, so there is exactly one of it at every moment.",
+    },
+  );
+
+  return rows;
 });
 
 /*
@@ -133,19 +159,10 @@ async function whileBusy(key: string, work: () => Promise<void>) {
 const emailOpen = ref(false);
 const passwordOpen = ref(false);
 const leaveOpen = ref(false);
-const nameDraft = ref("");
-const editingName = ref(false);
+const nameOpen = ref(false);
 
-function startRename() {
-  nameDraft.value = profile.value.name;
-  editingName.value = true;
-}
-
-function commitName() {
-  const value = nameDraft.value.trim();
-  editingName.value = false;
-  if (value === "" || value === profile.value.name) return;
-  void whileBusy("name", () => store.patch({ name: value }));
+function confirmName(name: string) {
+  void whileBusy("name", () => store.patch({ name }));
 }
 
 /**
@@ -189,83 +206,86 @@ function confirmLeave() {
 
 const otherSessions = computed(() => store.sessions.filter((session) => !session.current));
 
+/** Whether a factor may be given up, and why not when it may not. */
+function factorLock(kind: AccountFactorKind, enrolled: boolean): string {
+  return kind === "totp" && mfaRequired.value && enrolled
+    ? "This organisation requires a second factor for the dashboard, so yours cannot be removed while that stands."
+    : "";
+}
+
+const DEVICE_COLUMNS: readonly RecordColumn[] = [
+  { key: "device", label: "Device", width: "minmax(0, 1.4fr)" },
+  { key: "where", label: "Where from", width: "minmax(0, 1.2fr)" },
+  { key: "active", label: "Last active", width: "140px" },
+  { key: "action", label: "", width: "100px", align: "end" },
+];
+
 const saving = computed(() => busy.value.size > 0);
 </script>
 
 <template>
   <div class="flex flex-col gap-6">
-    <PageHeader title="Account">
+    <!-- The person is the subject, so the person is the title and their picture stands
+         before it. The breadcrumb and the rail both still say Account. -->
+    <PageHeader :title="profile.name">
+      <template #mark>
+        <span
+          aria-hidden="true"
+          class="flex size-11 flex-none items-center justify-center rounded-full border border-line bg-ink/4 text-sm font-semibold text-primary"
+        >
+          {{ profile.name.slice(0, 2).toUpperCase() }}
+        </span>
+      </template>
+      <template #badge>
+        <StatusBadge
+          :label="twoFactor ? 'Two-factor on' : 'Password only'"
+          :tone="twoFactor ? 'success' : 'warning'"
+        />
+      </template>
       <template #description>
         Your own sign-in to this dashboard, not your users'. What
         <span class="font-medium text-ink">they</span> must do is on the sign-in method and
-        multi-factor screens; nothing here touches it.
+        multi-factor screens.
+      </template>
+      <template #actions>
+        <v-btn
+          :loading="isBusy('name')"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:edit-outline"
+          size="small"
+          variant="outlined"
+          @click="nameOpen = true"
+        >
+          Edit name
+        </v-btn>
       </template>
     </PageHeader>
 
     <!-- Said once, at the top, because it is true of every control below it. -->
-    <p
+    <InfoNote
       v-if="!ACCOUNT_WRITES.running"
-      class="m-0 flex items-start gap-2 rounded-(--idenzy-radius) border border-warning/40 bg-warning/8 p-3 text-[11px] leading-4 text-warning"
+      :text="ACCOUNT_WRITES.reason"
+      icon="material-symbols:warning-outline"
+      tone="warning"
+    />
+
+    <FactGrid :columns="3" :facts="facts" label="Account facts" />
+
+    <!-- The two things on the page that are credentials rather than state. Both are
+         dialogs, because each is one value with a consequence worth reading first. -->
+    <PageSection
+      :divided="false"
+      description="What you sign in with. Both of these ask you to confirm before anything moves."
+      title="Sign-in"
     >
-      <Icon
-        aria-hidden="true"
-        class="mt-0.5 flex-none text-sm"
-        name="material-symbols:warning-outline"
-      />
-      <span>{{ ACCOUNT_WRITES.reason }}</span>
-    </p>
-
-    <LayerCard description="What the member list and the audit trail call you." title="Profile">
-      <div class="flex flex-wrap items-center gap-4 pb-5">
-        <span
-          aria-hidden="true"
-          class="flex size-14 flex-none items-center justify-center rounded-full border border-line bg-ink/4 text-sm font-semibold text-primary"
-        >
-          {{ profile.name.slice(0, 2).toUpperCase() }}
-        </span>
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-base font-medium text-ink">{{ profile.name }}</span>
-          <span class="font-mono text-xs text-ink/55">{{ profile.email }}</span>
-        </div>
-      </div>
-
-      <div class="divide-y divide-line border-t border-line">
+      <div class="divide-y divide-line">
         <SettingRow
-          description="What the member list and the audit trail show beside anything you do."
-          label="Display name"
-        >
-          <template #actions>
-            <v-btn
-              v-if="!editingName"
-              :loading="isBusy('name')"
-              class="text-xs font-medium"
-              color="neutral"
-              prepend-icon="material-symbols:edit-outline"
-              size="small"
-              variant="text"
-              @click="startRename"
-            >
-              {{ profile.name }}
-            </v-btn>
-          </template>
-          <v-text-field
-            v-if="editingName"
-            v-model="nameDraft"
-            autofocus
-            density="compact"
-            hide-details
-            style="min-width: 180px"
-            variant="outlined"
-            @blur="commitName"
-            @keyup.enter="commitName"
-          />
-        </SettingRow>
-
-        <SettingRow
-          description="What you sign in with. Changing it starts a confirmation on the old address as well as the new one, and the address here keeps working until both have answered."
+          description="Changing it starts a confirmation on the old address as well as the new one, and the address here keeps working until both have answered."
           label="Address"
         >
           <template #actions>
+            <span class="font-mono text-xs text-ink/70">{{ profile.email }}</span>
             <StatusBadge
               :label="profile.emailVerified ? 'Verified' : 'Not verified'"
               :tone="profile.emailVerified ? 'success' : 'warning'"
@@ -285,10 +305,10 @@ const saving = computed(() => busy.value.size > 0);
           </template>
           <template v-if="pendingEmail" #detail>
             <div
-              class="flex flex-wrap items-center justify-between gap-3 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset px-3 py-2.5"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-(--idenzy-radius-small) bg-ink/4 px-3 py-2.5 ring-1 ring-ink/6 ring-inset"
             >
               <span class="flex min-w-0 flex-col gap-0.5">
-                <span class="flex flex-wrap items-center gap-2 text-[11px] font-medium text-ink">
+                <span class="flex flex-wrap items-center gap-2 text-xs font-medium text-ink">
                   Moving to
                   <span class="font-mono">{{ pendingEmail.email }}</span>
                   <StatusBadge
@@ -296,7 +316,7 @@ const saving = computed(() => busy.value.size > 0);
                     :tone="isEmailChangeExpired(pendingEmail, now) ? 'warning' : 'neutral'"
                   />
                 </span>
-                <span class="text-[11px] leading-4 text-ink/60">
+                <span class="text-xs leading-5 text-ink/60">
                   {{ emailChangeWords(pendingEmail, now) }}
                 </span>
               </span>
@@ -315,61 +335,17 @@ const saving = computed(() => busy.value.size > 0);
         </SettingRow>
 
         <SettingRow
-          description="How the audit trail names you, and how support identifies you without an address. It is pseudonymous and safe to paste into a ticket."
-          fixed="Fixed"
-          label="User ID"
-        >
-          <template #detail>
-            <CopyField :value="profile.userId" dense label="Copy your user ID" />
-          </template>
-        </SettingRow>
-
-        <SettingRow
-          :description="`Signed in ${profile.lastSignInAt ? relativeTimeWords(profile.lastSignInAt, now) : 'never'}, from the session you are reading this in.`"
-          :fixed="formatDate(profile.createdAt)"
-          label="Joined"
-        />
-      </div>
-    </LayerCard>
-
-    <LayerCard
-      description="Your password and the factors your account holds. The rules are the ones your own projects run on, because this dashboard is a customer of them."
-      title="Security"
-    >
-      <template #badge>
-        <StatusBadge
-          :label="twoFactor ? 'Two-factor on' : 'Password only'"
-          :tone="twoFactor ? 'success' : 'warning'"
-        />
-      </template>
-
-      <!-- The checklist, compact and in the section it is about. Four things worth having;
-           nothing here is enforced by us. -->
-      <ul class="m-0 grid list-none gap-2 p-0 pb-5 sm:grid-cols-2">
-        <li v-for="check in checks" :key="check.id" class="flex items-start gap-2">
-          <Icon
-            :class="check.ok ? 'text-success' : 'text-warning'"
-            :name="
-              check.ok
-                ? 'material-symbols:check-circle-outline'
-                : 'material-symbols:error-outline'
-            "
-            aria-hidden="true"
-            class="mt-0.5 flex-none text-sm"
-          />
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-[11px] font-medium text-ink">{{ check.label }}</span>
-            <span class="text-[11px] leading-4 text-ink/55">{{ check.detail }}</span>
-          </span>
-        </li>
-      </ul>
-
-      <div class="divide-y divide-line border-t border-line">
-        <SettingRow
-          :description="`Argon2id under a pepper in the key store, the same parameters your users' passwords get. ${profile.passwordChangedAt ? `Last changed ${relativeTimeWords(profile.passwordChangedAt, now)}.` : ''} The current one is asked for even from inside a session.`"
+          description="Argon2id under a pepper in the key store, the same parameters your users' passwords get. The current one is asked for even from inside a session."
           label="Password"
         >
           <template #actions>
+            <span class="text-xs text-ink/55">
+              {{
+                profile.passwordChangedAt
+                  ? `Changed ${relativeTimeWords(profile.passwordChangedAt, now)}`
+                  : "Never set"
+              }}
+            </span>
             <v-btn
               :loading="isBusy('password')"
               class="text-xs font-medium"
@@ -383,38 +359,73 @@ const saving = computed(() => busy.value.size > 0);
             </v-btn>
           </template>
         </SettingRow>
+      </div>
+    </PageSection>
 
-        <SettingRow
+    <!--
+      The dominant region, and what makes this page not the project's. Four things with a
+      state and an action each: a table row would spend the page's width on two short words,
+      and four separately bordered cards would be four frames for one question. One frame,
+      hairlines inside it, the same mosaic the fact band uses.
+    -->
+    <PageSection
+      description="What answers a challenge, and which one of them starts demanding it. Nothing here is enforced by us: an authenticator is what turns two-factor on, and the other two answer a challenge something else demanded."
+      title="Second factors"
+    >
+      <div
+        class="grid overflow-hidden rounded-(--idenzy-radius) border border-line bg-surface sm:grid-cols-2"
+      >
+        <div
           v-for="factor in factors"
           :key="factor.kind"
-          :description="FACTOR_NOTES[factor.kind]"
-          :label="factorRoleOf(factor.kind)?.label ?? factor.kind"
+          class="-mt-px -ml-px flex min-w-0 flex-col gap-2 border-t border-l border-line p-4"
         >
-          <template #actions>
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="truncate text-sm font-medium text-ink">
+              {{ factorRoleOf(factor.kind)?.label ?? factor.kind }}
+            </span>
             <span
               v-if="FACTOR_DEMANDS[factor.kind]"
-              class="rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
+              class="flex-none rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/55"
             >
               Turns it on
             </span>
+            <button
+              :aria-label="`About ${factorRoleOf(factor.kind)?.label ?? factor.kind}`"
+              class="ml-auto flex size-4 flex-none items-center justify-center rounded-full text-ink/40 transition-colors duration-150 hover:text-ink/80 focus-visible:text-ink/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+              type="button"
+            >
+              <Icon aria-hidden="true" class="text-sm" name="material-symbols:info-outline" />
+              <v-tooltip
+                :text="FACTOR_NOTES[factor.kind]"
+                activator="parent"
+                location="top"
+                max-width="280"
+                open-delay="200"
+              />
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <StatusBadge
               :detail="factor.enrolled && factor.count !== null ? String(factor.count) : ''"
               :label="factor.enrolled ? 'Enrolled' : 'Not set up'"
               :tone="factor.enrolled ? 'success' : 'neutral'"
             />
+
             <v-tooltip
-              :disabled="!(factor.kind === 'totp' && mfaRequired && factor.enrolled)"
+              :disabled="factorLock(factor.kind, factor.enrolled) === ''"
+              :text="factorLock(factor.kind, factor.enrolled)"
               location="top"
               max-width="260"
-              text="This organisation requires a second factor for the dashboard, so yours cannot be removed while that stands."
             >
               <template #activator="{ props: tip }">
                 <span v-bind="tip">
                   <v-btn
-                    :disabled="factor.kind === 'totp' && mfaRequired && factor.enrolled"
+                    :color="factor.enrolled ? 'neutral' : 'primary'"
+                    :disabled="factorLock(factor.kind, factor.enrolled) !== ''"
                     :loading="isBusy(factor.kind)"
                     class="text-xs font-medium"
-                    :color="factor.enrolled ? 'neutral' : 'primary'"
                     size="small"
                     variant="text"
                     @click="factor.enrolled ? removeFactor(factor.kind) : undefined"
@@ -424,23 +435,14 @@ const saving = computed(() => busy.value.size > 0);
                 </span>
               </template>
             </v-tooltip>
-          </template>
-        </SettingRow>
+          </div>
+        </div>
       </div>
 
-      <p
-        class="m-0 mt-5 flex items-start gap-2 rounded-(--idenzy-radius-small) bg-ink/4 ring-1 ring-ink/6 ring-inset px-3 py-2.5 text-[11px] leading-4 text-ink/65"
-      >
-        <Icon
-          aria-hidden="true"
-          class="mt-px flex-none text-sm text-ink/40"
-          name="material-symbols:key-vertical-outline"
-        />
-        <span>{{ RECOVERY_FOLLOWS_NOTE }}</span>
-      </p>
-    </LayerCard>
+      <InfoNote :text="RECOVERY_FOLLOWS_NOTE" icon="material-symbols:key-vertical-outline" />
+    </PageSection>
 
-    <LayerCard :description="OWN_SESSIONS_NOTE" :padded="false" title="Devices">
+    <PageSection :description="OWN_SESSIONS_NOTE" title="Devices">
       <template #actions>
         <v-btn
           :disabled="otherSessions.length === 0"
@@ -455,158 +457,100 @@ const saving = computed(() => busy.value.size > 0);
         </v-btn>
       </template>
 
-      <ul class="m-0 list-none divide-y divide-line p-0">
-        <li
-          v-for="session in store.sessions"
-          :key="session.id"
-          class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5"
-        >
-          <span
-            :class="session.current ? 'bg-success/10 text-success' : 'bg-ink/6 text-ink/60'"
-            aria-hidden="true"
-            class="flex size-9 flex-none items-center justify-center rounded-(--idenzy-radius-x-small)"
-          >
-            <Icon class="text-lg" name="material-symbols:devices" />
-          </span>
-
-          <div class="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
-            <span class="flex flex-wrap items-center gap-2">
-              <span class="text-sm font-medium text-ink">{{ session.deviceName }}</span>
-              <StatusBadge v-if="session.current" label="This device" tone="success" />
-            </span>
-            <span
-              class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink/55"
-            >
-              <span>{{ session.browser }}</span>
-              <span class="font-mono">{{ session.ip }}</span>
-              <span v-if="session.country" class="flex items-center gap-1">
-                <span aria-hidden="true">{{ countryFlag(session.country) }}</span>
-                {{ countryName(session.country) }}
-              </span>
-              <span>Active {{ relativeTimeWords(session.lastActiveAt, now) }}</span>
-            </span>
-          </div>
-
-          <v-tooltip
-            :disabled="!session.current"
-            :text="CURRENT_SESSION_NOTE"
-            location="top"
-            max-width="260"
-          >
-            <template #activator="{ props: tip }">
-              <span v-bind="tip">
-                <v-btn
-                  :disabled="session.current"
-                  :loading="isBusy(session.id)"
-                  class="text-xs font-medium"
-                  color="neutral"
-                  size="small"
-                  variant="text"
-                  @click="revokeSession(session.id)"
+      <div>
+        <RecordTable :columns="DEVICE_COLUMNS" framed label="Your dashboard sessions">
+          <li v-for="session in store.sessions" :key="session.id" class="record-row">
+            <span class="record-cell record-cell--primary" data-label="Device">
+              <span class="flex min-w-0 items-center gap-2.5">
+                <span
+                  :class="session.current ? 'bg-success/10 text-success' : 'bg-ink/6 text-ink/60'"
+                  aria-hidden="true"
+                  class="flex size-7 flex-none items-center justify-center rounded-(--idenzy-radius-x-small)"
                 >
-                  Sign out
-                </v-btn>
+                  <Icon class="text-base" name="material-symbols:devices" />
+                </span>
+                <span class="flex min-w-0 flex-col">
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class="truncate font-medium text-ink">{{ session.deviceName }}</span>
+                    <StatusBadge v-if="session.current" label="This device" tone="success" />
+                  </span>
+                  <span class="truncate text-[11px] text-ink/55">{{ session.browser }}</span>
+                </span>
               </span>
-            </template>
-          </v-tooltip>
-        </li>
-      </ul>
+            </span>
 
-      <p class="m-0 border-t border-line px-4 py-2.5 text-[10px] leading-4 text-ink/45">
-        The same refresh rotation and reuse detection the product sells. A token presented
-        twice revokes the whole family, which is as true of this dashboard as of your app.
-      </p>
-    </LayerCard>
+            <span class="record-cell record-cell--half" data-label="Where from">
+              <span class="flex min-w-0 flex-col">
+                <span v-if="session.country" class="flex items-center gap-1 text-ink/70">
+                  <span aria-hidden="true">{{ countryFlag(session.country) }}</span>
+                  <span class="truncate">{{ countryName(session.country) }}</span>
+                </span>
+                <span class="truncate font-mono text-[11px] text-ink/55">{{ session.ip }}</span>
+              </span>
+            </span>
 
-    <LayerCard
-      v-if="me"
-      description="Which organisation you are in, what you are in it, and who to ask when you need more."
-      title="Memberships"
-    >
-      <div class="divide-y divide-line">
-        <SettingRow
-          :description="`You reach ${reach.length === 1 ? 'its one project' : `all ${reach.length} of its projects`} through it. Membership is of the organisation rather than of a project, which is why leaving ends access to every one of them.`"
-          :fixed="`${org.name} · ${ORG_KIND_LABELS[kind]}`"
-          label="Organisation"
-        >
-          <template #actions>
-            <v-btn
-              class="text-xs font-medium"
-              color="neutral"
-              prepend-icon="material-symbols:group-outline"
-              size="small"
-              to="/settings/members"
-              variant="text"
-            >
-              Members
-            </v-btn>
-          </template>
-        </SettingRow>
-        <SettingRow
-          :description="roleInfo(me.role).note"
-          :fixed="roleInfo(me.role).label"
-          label="Your role"
-        />
-        <SettingRow
-          v-if="owner"
-          :description="`Ownership moves by transfer rather than by being assigned, so there is exactly one and it is ${isOwner ? 'you' : owner.name}.`"
-          :fixed="isOwner ? 'You' : owner.name"
-          label="Owner"
-        />
-        <SettingRow
-          :description="
-            mfaRequired
-              ? 'This organisation requires a second factor for the dashboard, so yours cannot be removed while that stands.'
-              : 'Members may sign in with a password alone. The requirement is on the members screen and applies to everybody.'
-          "
-          :fixed="mfaRequired ? 'Required' : 'Optional'"
-          label="Second factor for members"
-        />
+            <span class="record-cell record-cell--half text-ink/70" data-label="Last active">
+              {{ relativeTimeWords(session.lastActiveAt, now) }}
+            </span>
+
+            <span class="record-cell record-cell--end record-cell--action">
+              <v-tooltip
+                :disabled="!session.current"
+                :text="CURRENT_SESSION_NOTE"
+                location="top"
+                max-width="260"
+              >
+                <template #activator="{ props: tip }">
+                  <span v-bind="tip">
+                    <v-btn
+                      :disabled="session.current"
+                      :loading="isBusy(session.id)"
+                      class="text-xs font-medium"
+                      color="neutral"
+                      size="small"
+                      variant="text"
+                      @click="revokeSession(session.id)"
+                    >
+                      Sign out
+                    </v-btn>
+                  </span>
+                </template>
+              </v-tooltip>
+            </span>
+          </li>
+        </RecordTable>
+
+        <p class="m-0 mt-3 text-xs leading-5 text-ink/50">
+          The same refresh rotation and reuse detection the product sells. A token presented
+          twice revokes the whole family, which is as true of this dashboard as of your app.
+        </p>
       </div>
-    </LayerCard>
+    </PageSection>
 
     <SaveStatus :last-saved="store.lastSaved" :saving="saving" />
 
-    <!-- Last, and in its own frame: the one block whose weight should differ before
-         anything is read. -->
-    <section class="rounded-(--idenzy-radius-large) border border-error/25 bg-error/3 p-1">
-      <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2">
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <h2 class="m-0 flex items-center gap-2 text-sm font-medium text-ink">
-            <Icon
-              aria-hidden="true"
-              class="text-base text-error"
-              name="material-symbols:door-open-outline"
-            />
-            Leave {{ org.name }}
-          </h2>
-          <p class="m-0 text-xs text-ink/55">
-            Your access ends. Nothing you made stops working.
-          </p>
-        </div>
-      </header>
+    <DangerZone
+      :title="`Leave ${org.name}`"
+      action="Leave organisation"
+      description="Your access ends. Nothing you made stops working."
+      @confirm="leaveOpen = true"
+    >
+      <p class="m-0 text-xs leading-5 text-ink/70">
+        Access to
+        {{ reach.length === 1 ? "its project" : `all ${reach.length} of its projects` }} ends.
+        Keys, webhooks and hooks belong to the project rather than to you, so they keep
+        working after you go, and the audit trail keeps your name. Coming back needs a new
+        invitation.
+      </p>
+    </DangerZone>
 
-      <div class="rounded-(--idenzy-radius) border border-line bg-surface p-5">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <p class="m-0 max-w-lg text-xs leading-5 text-ink/70">
-            Access to
-            {{ reach.length === 1 ? "its project" : `all ${reach.length} of its projects` }}
-            ends. Keys, webhooks and hooks belong to the project rather than to you, so they
-            keep working after you go, and the audit trail keeps your name. Coming back needs
-            a new invitation.
-          </p>
-          <v-btn
-            class="text-xs font-medium"
-            color="error"
-            size="small"
-            variant="flat"
-            @click="leaveOpen = true"
-          >
-            Leave organisation
-          </v-btn>
-        </div>
-      </div>
-    </section>
+    <AccountNameDialog
+      v-if="nameOpen"
+      v-model="nameOpen"
+      :busy="isBusy('name')"
+      :current="profile.name"
+      @confirm="confirmName"
+    />
 
     <AccountEmailDialog
       v-if="emailOpen"

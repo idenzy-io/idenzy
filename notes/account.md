@@ -74,8 +74,35 @@ Change password with a wrong current password and remain in the dialog with a us
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+The page is the reader's own detail page: their picture and their name in the header, then a
+band of facts, then the two things that are actually credentials. That is this note's
+"remove avatar/dogfooding essays from the working area" and its "lead with
+profile/security/devices", done by giving each kind of content a different shape rather than
+four identically weighted cards.
+
+**The security checklist went, and nothing was lost with it.** It scored four things —
+second factor, recovery codes, passkey, password age — directly above a list that named the
+same four with the buttons attached. The factor panel now carries the state, and password
+age sits on the password row. A checklist that restates the section under it is the
+"repeating explanations" this note's P2 is about.
+
+**The address is a control and not a fact**, so it is under Sign-in with the password rather
+than in the fact band: it is the one identity field somebody edits, and a fact grid has
+nowhere to put its button or its pending-change block. The two-confirmation model and
+`ACCOUNT_WRITES.running` are untouched, and the "nothing here reaches a server yet" warning
+is still stated once at the top.
+
+Second factors are a four-up panel inside one frame rather than four rows of prose or four
+separately bordered cards, and devices are a `RecordTable`, which is what every other list of
+records in the panel is.
+
 ## Implementation references
 
+- [FactGrid.vue](../apps/client/app/components/FactGrid.vue)
+- [DangerZone.vue](../apps/client/app/components/DangerZone.vue)
+- [InfoNote.vue](../apps/client/app/components/InfoNote.vue)
 - [AccountEmailDialog.vue](../apps/client/app/components/AccountEmailDialog.vue)
 - [AccountPasswordDialog.vue](../apps/client/app/components/AccountPasswordDialog.vue)
 - [AccountLeaveDialog.vue](../apps/client/app/components/AccountLeaveDialog.vue)

@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "./config/config.module.js";
 import { HealthController } from "./health.controller.js";
+import { HttpModule } from "./http/http.module.js";
+import { MeModule } from "./me/me.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 import { OnboardingModule } from "./onboarding/onboarding.module.js";
 import { OrgsModule } from "./orgs/orgs.module.js";
@@ -24,7 +26,9 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
     ConfigModule,
     ObservabilityModule,
     PersistenceModule,
+    HttpModule,
     TenancyModule,
+    MeModule,
     OnboardingModule,
     OrgsModule,
     ProjectsModule,

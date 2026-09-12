@@ -33,7 +33,8 @@ export class ProjectsService {
     const rows = await this.uow.runForOrg(context, (tx) =>
       new OrgProjectRepository(tx, context).list(),
     );
-    return rows.map((row) => present(row, codes.get(row.cellId) ?? row.cellId));
+    const orgId = PublicId.encode(IdPrefix.Org, context.orgId).value;
+    return rows.map((row) => present(row, codes.get(row.cellId) ?? row.cellId, orgId));
   }
 
   /**
@@ -58,13 +59,14 @@ export class ProjectsService {
         complianceTier: ComplianceTier.Standard,
       }),
     );
-    return present(row, cell.code);
+    return present(row, cell.code, PublicId.encode(IdPrefix.Org, context.orgId).value);
   }
 }
 
-function present(row: OrgProjectRow, region: string): ProjectSummary {
+function present(row: OrgProjectRow, region: string, orgId: string): ProjectSummary {
   return {
     id: PublicId.encode(IdPrefix.Project, row.id).value,
+    orgId,
     name: row.name,
     region,
     plan: row.plan,

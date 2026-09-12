@@ -45,6 +45,17 @@ export const configSchema = z.object({
    */
   DASHBOARD_PROJECT_ID: z.string().min(1).optional(),
 
+  /**
+   * The origin our own dashboard is served from, and the only one `management-api` answers
+   * a browser at.
+   *
+   * One value rather than a list: this API is addressed by our panel and by nothing else,
+   * so an allowlist would be a list of one with room for a mistake. Loopback is permitted
+   * outside production by the CORS policy itself rather than through this, so a deployment
+   * cannot be talked into trusting `http://localhost` by setting a variable.
+   */
+  DASHBOARD_ORIGIN: z.url().default("https://app.idenzy.dev"),
+
   /** Region cell this process serves. Cross-cell requests are refused (4.13.5). */
   CELL_CODE: z.string().min(1),
   KMS_KEY_RING: z.string().min(1),

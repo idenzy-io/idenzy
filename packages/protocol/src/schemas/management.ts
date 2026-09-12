@@ -72,6 +72,8 @@ export type CreateProject = z.infer<typeof createProjectSchema>;
 
 export const projectSummarySchema = z.object({
   id: z.string(),
+  /** The organisation that owns it. The panel keys every screen on the pair. */
+  orgId: z.string(),
   name: z.string(),
   region: z.string(),
   plan: z.string(),
@@ -89,3 +91,26 @@ export const onboardingResultSchema = z.object({
   project: projectSummarySchema,
 });
 export type OnboardingResult = z.infer<typeof onboardingResultSchema>;
+
+/**
+ * Everything the panel's shell needs about the signed-in person, in one call.
+ *
+ * One request rather than one per screen, because the drawer, the switcher and the
+ * breadcrumb all want the same three facts before anything can render, and three round
+ * trips to draw a sidebar is three chances to show a half-built page.
+ *
+ * The identity is deliberately absent. It is already in the access token the caller
+ * presented, and `@idenzy/js` hands it to the panel as `useUser()`; repeating it here
+ * would be a second copy of a fact, which is a second thing to keep true.
+ *
+ * Balance is absent too, and that is a decision rather than an omission. Nothing can fund
+ * an account yet, so every figure would be a real zero where the billing screens currently
+ * show a fixture — a regression dressed as progress. It joins this shape when a top-up can
+ * actually happen.
+ */
+export const meSchema = z.object({
+  organisations: z.array(orgSummarySchema),
+  /** Every project across every organisation the caller belongs to. */
+  projects: z.array(projectSummarySchema),
+});
+export type Me = z.infer<typeof meSchema>;

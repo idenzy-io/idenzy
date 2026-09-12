@@ -93,6 +93,7 @@ export class OnboardingService {
       },
       project: {
         id: PublicId.encode(IdPrefix.Project, provisioned.projectId).value,
+        orgId: PublicId.encode(IdPrefix.Org, provisioned.orgId).value,
         name: input.projectName,
         region: cell.code,
         plan: "free",

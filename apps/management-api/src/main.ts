@@ -5,6 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { AppModule } from "./app.module.js";
 import { IdenzyExceptionFilter } from "./common/exception.filter.js";
+import { CorsPolicy } from "./http/cors-policy.js";
 
 /**
  * The management API (PROJECT.md 9.1). It mints no tokens and serves no HTML.
@@ -31,6 +32,10 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(Logger);
 
   app.useGlobalFilters(new IdenzyExceptionFilter(logger));
+  // Bound to Fastify rather than to Nest, and before listen: the preflight route has to
+  // exist outside the guard chain, and the response hook has to run after the filter so a
+  // 401 carries CORS headers too.
+  app.get(CorsPolicy).bindTo(app.getHttpAdapter().getInstance());
   app.enableShutdownHooks();
 
   process.on("unhandledRejection", (reason: unknown) => {

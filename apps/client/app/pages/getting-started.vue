@@ -40,6 +40,12 @@ definePageMeta({ layout: "onboarding" });
 
 const store = useOnboardingStore();
 
+// The cells we actually run, asked for once when the page opens. A region offered from a
+// constant in this bundle could name a stack we are draining (notes/getting-started.md).
+onMounted(() => {
+  void store.loadRegions();
+});
+
 type StepId = "project" | "about";
 
 const STEPS: readonly Step[] = [

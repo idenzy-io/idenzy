@@ -43,3 +43,28 @@ function codeOf(error: unknown): ErrorCode | null {
   const code = (error as { code: unknown }).code;
   return typeof code === "string" ? (code as ErrorCode) : null;
 }
+
+/**
+ * The same idea for the management API, which refuses for different reasons.
+ *
+ * Separate from `signInMessage` because the codes that matter differ: nothing here is
+ * about a password, and a 403 means a role too junior rather than an account suspended.
+ * One shared map would say "check the details above" on a screen with no form on it.
+ */
+const MANAGEMENT_MESSAGES: Partial<Record<ErrorCode, string>> = {
+  [ErrorCode.MissingCredentials]: "Your session has expired. Sign in again.",
+  [ErrorCode.InsufficientScope]: "Your role on this organisation does not allow that.",
+  [ErrorCode.NotFound]: "That is no longer there. Reload and try again.",
+  [ErrorCode.Conflict]: "That has already been done.",
+  [ErrorCode.ValidationFailed]: "Check the details and try again.",
+  [ErrorCode.RateLimited]: "Too many requests. Wait a moment and try again.",
+  [ErrorCode.ProviderUnavailable]: "We could not reach the service. Try again shortly.",
+};
+
+const MANAGEMENT_FALLBACK = "Something went wrong. Try again.";
+
+export function managementMessage(error: unknown): string {
+  const code = codeOf(error);
+  if (code === null) return MANAGEMENT_FALLBACK;
+  return MANAGEMENT_MESSAGES[code] ?? MANAGEMENT_FALLBACK;
+}

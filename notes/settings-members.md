@@ -67,8 +67,33 @@ Invite a Viewer and verify effective API access matches the UI promise. Transfer
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+**The team is a `DataTable`, which is what the arrangement above already drew.** The first
+implementation built `[Name + email | Role | MFA readiness | Last active | Actions]` as an
+avatar list inside a card, under three more cards, so a screen whose task is "find a person
+and act" read like a configuration page. It is now the `/users` shape: the figures strip,
+then one card holding a toolbar and a table, with Members and Invitations as the toolbar's
+own tabs and a search beside them. Two screens with the same task are now read the same way.
+
+`?view=` still names the list and is still replaced rather than pushed. The search term is
+deliberately not in the query: an address in a URL is personal data in a browser history,
+which is the rule [data-requests.md](data-requests.md) already keeps.
+
+**Ownership lost its card and kept its act.** Who holds it is a fact in the strip; handing it
+on is performed on the person receiving it, from their own row. The card's only control
+opened a dialog that then asked "to whom?", so there were two routes to one act and the
+shorter one was hidden in an overflow menu.
+
+The second-factor policy is the one setting left on the screen, and it still says that the
+requirement is recorded rather than enforced. The capability matrix is folded, carries its
+counts while shut, and keeps the sentence about API keys directly under it: that line is
+where the dashboard's roles stop being a security boundary, and it must not become a
+tooltip.
+
 ## Implementation references
 
+- [FactGrid.vue](../apps/client/app/components/FactGrid.vue)
 - [MemberInviteDialog.vue](../apps/client/app/components/MemberInviteDialog.vue)
 - [MemberRemoveDialog.vue](../apps/client/app/components/MemberRemoveDialog.vue)
 - [MemberTransferDialog.vue](../apps/client/app/components/MemberTransferDialog.vue)

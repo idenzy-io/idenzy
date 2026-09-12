@@ -119,6 +119,29 @@ through turbo, which is rarely what you want while working on one panel.
 Design tokens and the shared `ApiClient` belong in `@idenzy/ui` (PROJECT.md 10.3), which
 does not exist yet. The theme colours in `nuxt.config.ts` are placeholders until it does.
 
+## The panel's own HTTP is VueUse, and the SDK's is not the panel's
+
+Two kinds of request leave this app, and they do not share a client.
+
+**Authentication goes through `@idenzy/js`** and nothing else. The panel signs in to our
+own product (PROJECT.md 9.5), so `useIdenzy()` is the only thing that talks to the auth
+API, and the SDK owns the parts that are easy to get wrong: single-flight refresh through
+`navigator.locks`, the cookie-or-header negotiation, the one-way downgrade when cookie mode
+is refused, and the stable error codes. Reaching past it would mean reimplementing those,
+and it would stop the panel being a test of the SDK, which is the point of it being here.
+
+**Everything the panel fetches for itself uses VueUse** — `createFetch` for the management
+API client, `useFetch` at the call sites. Not `$fetch`, not the global `fetch`. The reason
+is that these calls feed screens rather than flows: a screen wants `data`, `error` and
+`isFetching` as refs it can render, plus `abort` when the reader navigates away mid-request,
+and hand-rolling that around `$fetch` is how one screen ends up with a spinner that never
+stops and another with a race nobody can reproduce. One base URL, one place the access
+token is attached, one place a 401 is turned into a re-authentication.
+
+The seam between them is the token: `useIdenzy().getToken()` is what the management
+client's request interceptor attaches, so the SDK stays the only holder of session state
+and VueUse stays the only way the panel asks a question of its own.
+
 ## Syntax highlighting
 
 Shiki, through `nuxt-shiki`, and it is configured once in `nuxt.config.ts` so a caller

@@ -1,6 +1,6 @@
 # Billing
 
-Route: `/settings/billing` · [Page source](../apps/client/app/pages/settings/billing.vue)
+Route: `/billing` · [Shell](../apps/client/app/pages/billing.vue) · [Overview](../apps/client/app/pages/billing/index.vue) · [Wallet](../apps/client/app/pages/billing/wallet.vue) · [Payment methods](../apps/client/app/pages/billing/methods.vue) · [Invoices](../apps/client/app/pages/billing/invoices.vue)
 
 ## User task
 
@@ -69,8 +69,32 @@ Cancel checkout and confirm balance does not change. Retry after a provider time
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+The screen is a shell and four tabs rather than one page, on the settings shell's rail:
+Overview, Wallet, Payment methods, Invoices. The arrangement above is the overview's order
+read across the tabs: entity and payment status and the balance on the overview, automatic
+funding and the credit on the wallet, the card on the methods tab, the invoices on their own.
+
+**Cards are gone.** The first implementation stacked six equally weighted frames, which is
+[shared-experience.md](shared-experience.md)'s diagnosis word for word. Each tab is now a
+`PageHeader`, one warning that nothing can charge, and sections parted by a rule; the
+balance is a `FactGrid` on the overview (balance, charged, projected, payment state) and on
+the wallet (balance, purchased, promotional, expiring), with the explanation behind each
+label's glyph rather than in a paragraph under it.
+
+**A failed payment replaces the status, as asked, and is a soft banner.** `BillingPastDue`
+is a tint of the error colour with the repair and the way to the portal beside it. A solid
+band was tried and read as shouting; the error colour is kept for the glyph and the action.
+
+`useBillingScreen` derives every figure once for the four tabs, so the balance the overview
+shows is the balance the top-up dialog is handed and the wallet's fact band repeats.
+
 ## Implementation references
 
+- [billing-screen.ts](../apps/client/app/composables/billing-screen.ts)
+- [BillingAddCredit.vue](../apps/client/app/components/BillingAddCredit.vue)
+- [BillingPastDue.vue](../apps/client/app/components/BillingPastDue.vue)
 - [BillingTopUpDialog.vue](../apps/client/app/components/BillingTopUpDialog.vue)
 - [BillingAutoTopUpDialog.vue](../apps/client/app/components/BillingAutoTopUpDialog.vue)
 - [billing.ts](../apps/client/app/stores/billing.ts)

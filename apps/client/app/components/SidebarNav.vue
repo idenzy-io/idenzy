@@ -68,7 +68,8 @@ watch(
     <!-- Settings is one item here and three tabs inside the page. The rail on that screen
          is what moves between them, so listing its children in the drawer as well would
          be the same three destinations offered twice. Billing is its own item because it
-         is the organisation's money rather than a project's configuration. -->
+         is the organisation's money rather than a project's configuration, and it is one
+         item and four tabs for the same reason. -->
     <v-list-item
       :aria-label="rail ? NAV_SETTINGS.title : undefined"
       :prepend-icon="NAV_SETTINGS.icon"
@@ -88,7 +89,7 @@ watch(
       :aria-label="rail ? NAV_BILLING.title : undefined"
       :prepend-icon="NAV_BILLING.icon"
       :title="NAV_BILLING.title"
-      :to="NAV_BILLING.to"
+      to="/billing"
     >
       <v-tooltip
         v-if="rail"

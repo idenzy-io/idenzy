@@ -174,17 +174,28 @@ export const NAV_SETTINGS: NavGroup = {
  * its own task rather than a setting somebody changes, so it sits beside Settings instead
  * of inside it. Filed under Project settings it would also have said the wrong thing about
  * its own scope, which is the first finding on all three settings notes.
+ *
+ * Like Settings, one drawer item and four tabs: the rail inside the page moves between
+ * them, and the group exists so the breadcrumb can say "Billing / Invoices" and a link to
+ * one tab lands on it.
  */
-export const NAV_BILLING: NavLink = {
+export const NAV_BILLING: NavGroup = {
+  id: "billing",
   title: "Billing",
-  to: "/billing",
   icon: "material-symbols:receipt-long-outline",
+  children: [
+    { title: "Overview", to: "/billing" },
+    { title: "Wallet", to: "/billing/wallet" },
+    { title: "Payment methods", to: "/billing/methods" },
+    { title: "Invoices", to: "/billing/invoices" },
+  ],
 };
 
 /** The groups, in order, so the drawer can find the one a route lives in. */
 export const NAV_GROUPS: readonly NavGroup[] = [
   ...NAV_SECTIONS.flatMap((section) => section.entries.filter(isGroup)),
   NAV_SETTINGS,
+  NAV_BILLING,
 ];
 
 /** The group whose child is `path`, or null for a top-level screen. */
@@ -198,7 +209,7 @@ export const NAV_LINKS: readonly NavLink[] = [
     section.entries.flatMap((entry) => (isGroup(entry) ? entry.children : [entry])),
   ),
   ...NAV_SETTINGS.children,
-  NAV_BILLING,
+  ...NAV_BILLING.children,
 ];
 
 /**

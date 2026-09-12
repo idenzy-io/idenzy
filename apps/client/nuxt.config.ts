@@ -244,14 +244,11 @@ export default defineNuxtConfig({
    */
   echarts: {
     renderer: "canvas",
-    charts: ["BarChart", "LineChart", "PieChart", "RadarChart"],
+    charts: ["BarChart", "LineChart", "PieChart"],
     components: [
       "DatasetComponent",
       "GridComponent",
       "LegendComponent",
-      // A radar draws on its own coordinate system rather than the grid, so the chart
-      // type alone is not enough: without this it registers and renders nothing.
-      "RadarComponent",
       "TitleComponent",
       "TooltipComponent",
     ],

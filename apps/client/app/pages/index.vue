@@ -19,11 +19,19 @@
  * quietly, rather than a banner over the page saying it again.
  */
 import type { SegmentedOption } from "~/components/SegmentedControl.vue";
+import {
+  ACTOR_LABELS,
+  type AuditEvent,
+  actionInfo,
+  CATEGORY_SLOTS,
+  isTeamActor,
+  phraseFor,
+  SENSITIVE_LABEL,
+} from "~/utils/audit";
 import { isLive } from "~/utils/keys";
 import type { MetricSeries } from "~/utils/metric-chart";
 import { buildOverviewPreview, type OverviewRange } from "~/utils/overview";
-import { PLATFORM_MARKS } from "~/utils/platform-marks";
-import { describeAgent, PLATFORM_NAMES, sessionStatus } from "~/utils/sessions";
+import { formatDateTime, relativeTime } from "~/utils/time";
 
 const projects = useProjectStore();
 const keys = useKeysStore();
@@ -33,7 +41,7 @@ const passwords = usePasswordPolicyStore();
 const passkeys = usePasskeysStore();
 const providers = useProvidersStore();
 const otp = useOtpStore();
-const sessions = useSessionsStore();
+const audit = useAuditStore();
 
 const project = computed(() => projects.current.id);
 const loading = computed(() => keys.loading || origins.loading || domains.loading);
@@ -249,51 +257,38 @@ const mix = computed(() => {
 });
 
 /*
- * What people sign in on: live sessions counted by the platform their user agent reports.
+ * What happened last, from the audit trail (notes/overview.md: "Recent important
+ * activity" beside the method mix).
  *
- * A radar because the question is a profile and not a trend. Six fixed categories whose
- * relative sizes are the whole answer, where what a reader takes away is the shape, and
- * "mostly Apple, no Linux at all" is one glance rather than six numbers compared in the
- * head. It is also the one thing on this page that is a snapshot rather than a window,
- * which is why it carries no range control.
+ * A feed rather than a chart, because the question is "did anything happen that I should
+ * know about", and the answer to that is sentences. The rows are the trail's own entries
+ * read through the same phrasing the audit screen uses, so what this card says and what
+ * the trail says cannot differ. Activity by the project's users is set aside, as it is on
+ * the trail by default: on a live project it is nine rows in ten, and the five lines this
+ * card has room for would all be sign-ins. An entry the catalogue flags as sensitive says
+ * so in the warning colour, the same word the trail uses.
  *
- * The axes come from `PLATFORM_NAMES`, so a platform added to the parser appears here
- * rather than being quietly folded into the ones we could not place. Sessions whose agent
- * names nothing are left out and counted in the line under the chart, because a seventh
- * spoke called "Unknown" would make the shape about our parser.
+ * Five rows of one line each, so the card is never the taller of the two beside each
+ * other: the row's height is the chart card's, and a feed that outgrew it would stretch
+ * that card under its chart. The sentence truncates rather than wraps, with the whole of it
+ * on the row's title, and the trail is one link away for the rest.
  */
-const platforms = computed(() => {
-  const live = sessions
+const RECENT_LIMIT = 5;
+
+const now = useNow({ interval: 60_000 });
+
+const recent = computed(() =>
+  audit
     .forProject(project.value)
-    .filter((row) => sessionStatus(row, anchor) === "active");
+    .filter((event) => isTeamActor(event.actorType))
+    .sort((a, b) => b.seq - a.seq)
+    .slice(0, RECENT_LIMIT),
+);
 
-  const counts = new Map(PLATFORM_NAMES.map((name) => [name, 0]));
-  let unplaced = 0;
-  for (const row of live) {
-    const os = describeAgent(row.userAgent).os;
-    if (os === null || !counts.has(os)) unplaced += 1;
-    else counts.set(os, (counts.get(os) ?? 0) + 1);
-  }
-
-  return {
-    axes: PLATFORM_NAMES,
-    series: [
-      {
-        name: "Live sessions",
-        data: PLATFORM_NAMES.map((name) => counts.get(name) ?? 0),
-        tone: 1,
-      },
-    ] satisfies MetricSeries[],
-    total: live.length,
-    /* Written here rather than assembled in the template, where the whitespace between a
-       moustache and a conditional block lands in the sentence as a space before a full
-       stop. */
-    note:
-      unplaced === 0
-        ? `${live.length.toLocaleString("en")} live ${live.length === 1 ? "session" : "sessions"}.`
-        : `${live.length.toLocaleString("en")} live ${live.length === 1 ? "session" : "sessions"}, and ${unplaced} left out whose client names no platform we recognise.`,
-  };
-});
+/** The dot before a row, in the colour its category wears on the trail. */
+function dotColour(event: AuditEvent): string {
+  return `rgb(var(--v-theme-${CATEGORY_SLOTS[actionInfo(event.action).category]}))`;
+}
 
 watch(project, () => {
   range.value = "7d";
@@ -472,13 +467,13 @@ watch(project, () => {
     </section>
 
     <!--
-      Two charts on a twelve-column grid, eight and four. The mix is a daily series over
-      weeks and needs the width; the platform profile is one small polygon and reading it
-      does not improve with room. Equal halves would starve the first and pad the second.
+      A chart and a feed on a twelve-column grid, eight and four (notes/overview.md's
+      arrangement). The mix is a daily series over weeks and needs the width; six lines of
+      activity read at any width and would only get longer with room. Equal halves would
+      starve the first and pad the second.
 
-      Both cards take the row's height, which the taller of the two sets, and the radar
-      spends the difference on its picture rather than leaving a gap under it. Two cards
-      side by side whose bottom edges did not line up would read as a layout that missed.
+      Both cards take the row's height, which the taller of the two sets, so their bottom
+      edges line up: two cards side by side that did not would read as a layout that missed.
     -->
     <div class="grid gap-6 lg:grid-cols-12">
       <div class="lg:col-span-8">
@@ -501,36 +496,84 @@ watch(project, () => {
       </div>
 
       <!--
-        The radar card is built here rather than as a component of its own, because this
-        page is the only thing that wants one. Its shell is the metric card's, down to the
-        padding: two cards side by side that framed their charts differently would read as
-        two designs rather than one page.
-
-        No legend. One series has nothing to tell apart, and the card's own title already
-        says what the shape is.
+        The feed takes the metric card's shell, down to the padding: two cards side by side
+        that framed their content differently would read as two designs rather than one
+        page. Five rows of one line, which is what the chart card's height holds, and the
+        way to the whole trail at the foot.
       -->
       <v-card class="h-full lg:col-span-4" border flat>
         <div class="flex h-full flex-col gap-4 p-5">
           <header class="flex flex-col gap-1">
-            <h2 class="m-0 text-sm leading-7 font-medium text-ink">What people sign in on</h2>
+            <h2 class="m-0 text-sm leading-7 font-medium text-ink">Recent activity</h2>
             <p class="m-0 text-sm text-ink/60">
-              Live sessions by the platform their device reports.
+              What your team and your keys did last, from the audit trail.
             </p>
           </header>
 
-          <!-- The minimum is what the chart is worth on its own, for the single column
-               below `lg` where there is no card beside it to match and nothing to fill. -->
-          <div class="min-h-[15.5rem] flex-1">
-            <RadarChart
-              :axes="platforms.axes"
-              :marks="PLATFORM_MARKS"
-              :series="platforms.series"
-              fill
-              label="Live sessions by device platform."
-            />
+          <ol
+            v-if="audit.loading"
+            aria-label="Loading recent activity"
+            class="m-0 flex flex-1 list-none flex-col divide-y divide-line p-0"
+          >
+            <li v-for="row in RECENT_LIMIT" :key="row" class="flex items-start gap-3 py-3 first:pt-0">
+              <span class="mt-[7px] size-1.5 flex-none animate-pulse rounded-full bg-ink/15" />
+              <span class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span class="h-2.5 w-4/5 animate-pulse rounded-full bg-ink/8" />
+                <span class="h-2 w-2/5 animate-pulse rounded-full bg-ink/6" />
+              </span>
+            </li>
+          </ol>
+
+          <ol
+            v-else-if="recent.length > 0"
+            aria-label="Recent activity"
+            class="m-0 flex flex-1 list-none flex-col divide-y divide-line p-0"
+          >
+            <li v-for="event in recent" :key="event.id" class="flex items-start gap-3 py-3 first:pt-0">
+              <span
+                :style="{ background: dotColour(event) }"
+                aria-hidden="true"
+                class="mt-[7px] size-1.5 flex-none rounded-full"
+              />
+              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <p
+                  :title="`${event.actorName} ${phraseFor(event)}`"
+                  class="m-0 truncate text-xs leading-5 text-ink/70"
+                >
+                  <span class="font-medium text-ink">{{ event.actorName }}</span>
+                  {{ phraseFor(event) }}
+                </p>
+                <span class="truncate text-[11px] leading-4 text-ink/45">
+                  <time :datetime="event.createdAt" :title="formatDateTime(event.createdAt)">
+                    {{ relativeTime(event.createdAt, now) }}
+                  </time>
+                  · {{ ACTOR_LABELS[event.actorType] }}
+                  <span v-if="actionInfo(event.action).notable" class="text-warning">
+                    · {{ SENSITIVE_LABEL }}
+                  </span>
+                </span>
+              </div>
+            </li>
+          </ol>
+
+          <!-- Nothing yet, said the way the trail says it: an entry that has just been
+               written may not be here for a few seconds. -->
+          <div v-else class="flex flex-1 flex-col items-center justify-center gap-1 px-4 py-10 text-center">
+            <Icon aria-hidden="true" class="mb-1 text-2xl text-ink/25" name="material-symbols:history" />
+            <p class="m-0 text-sm font-medium text-ink">Nothing in the trail yet</p>
+            <p class="m-0 max-w-xs text-xs leading-5 text-ink/55">
+              Entries arrive seconds after the event, so something that has just happened may
+              not be here yet.
+            </p>
           </div>
 
-          <p class="m-0 text-xs text-ink/45">{{ platforms.note }}</p>
+          <NuxtLink
+            class="mt-auto inline-flex items-center gap-0.5 self-start text-xs font-medium text-ink/55 no-underline transition-colors duration-150 hover:text-ink"
+            to="/audit"
+          >
+            Open the audit log
+            <Icon aria-hidden="true" class="text-base" name="material-symbols:chevron-right" />
+          </NuxtLink>
         </div>
       </v-card>
     </div>

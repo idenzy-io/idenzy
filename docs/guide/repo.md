@@ -28,6 +28,11 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   which means `idenzy_app` cannot read it at all and the owner can read across tenants.
   Copy the two `DO` blocks from `0004_nasty_catseye.sql`; they are dynamic and
   idempotent. Two tests in `packages/testing` fail if you forget.
+- **There are two tenant keys, not one.** `app.project_id` scopes a project's data and
+  `app.org_id` scopes the organisation's — the team, the wallet, the cards, the invoices
+  (ADR-0011). Neither satisfies the other's policy, so a repository built on the wrong
+  base reads nothing rather than reading everything, and `BaseRepository` and
+  `OrgRepository` are deliberately separate classes so the choice is made at construction.
 - **A new tenant table's grant migration is not optional even when the table is config.**
   `sms_policies` holds the spend cap, so a missing grant would not fail loudly: `idenzy_app`
   reads no policy, every project looks unconfigured, and SMS refuses everywhere.
@@ -85,8 +90,11 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
 2. `pnpm db:generate`, then read the generated SQL before committing it.
 3. `pnpm compliance:generate` and commit the regenerated artifacts.
 4. If it is a tenant table, confirm it carries `projectId` and a tenant isolation policy.
+   If it is an organisation table, the same question with `orgId` and `orgIsolationPolicy`
+   (ADR-0011) — the control plane has its own key and `UnitOfWork.runForOrg` sets it.
 5. If it is a *new* table, add the FORCE RLS and grant blocks in a `pnpm db:custom`
-   migration. See the note above; the policy alone is not enough.
+   migration. See the note above; the policy alone is not enough. The two `DO` blocks are
+   dynamic and cover either key, so they need no edit for an org-scoped table.
 
 ## Adding an error
 

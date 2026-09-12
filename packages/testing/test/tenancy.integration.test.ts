@@ -5,6 +5,12 @@ import { PostgresHarness } from "../src/postgres-harness.js";
 const harness = new PostgresHarness();
 const PROJECT_A = "11111111-1111-1111-1111-111111111111";
 const PROJECT_B = "22222222-2222-2222-2222-222222222222";
+const ORG_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const ORG_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+const MEMBER_A = "a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1";
+const MEMBER_B = "b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1";
+const OPEN_INVITE_HASH = "open-invitation-token-hash";
+const SPENT_INVITE_HASH = "spent-invitation-token-hash";
 
 beforeAll(async () => {
   await harness.start();
@@ -12,15 +18,23 @@ beforeAll(async () => {
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
      VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
   );
-  const { rows } = await harness.owner.query<{ id: string }>(
-    `INSERT INTO orgs (id, name, cell_id)
-     VALUES (gen_random_uuid(), 'Acme', (SELECT id FROM region_cells LIMIT 1)) RETURNING id`,
-  );
-  const orgId = rows[0]?.id;
 
-  for (const [projectId, email] of [
-    [PROJECT_A, "alice@a.test"],
-    [PROJECT_B, "bob@b.test"],
+  // One organisation per project, so the two planes can be tested against each other.
+  // Sharing one organisation would make every org-plane assertion below vacuous.
+  for (const [orgId, name] of [
+    [ORG_A, "Acme"],
+    [ORG_B, "Globex"],
+  ]) {
+    await harness.owner.query(
+      `INSERT INTO orgs (id, name, cell_id)
+       VALUES ($1, $2, (SELECT id FROM region_cells LIMIT 1))`,
+      [orgId, name],
+    );
+  }
+
+  for (const [projectId, orgId, email] of [
+    [PROJECT_A, ORG_A, "alice@a.test"],
+    [PROJECT_B, ORG_B, "bob@b.test"],
   ]) {
     await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
     await harness.owner.query(
@@ -33,6 +47,39 @@ beforeAll(async () => {
       email,
     ]);
   }
+
+  for (const [orgId, memberId, last4, note] of [
+    [ORG_A, MEMBER_A, "4242", "Acme trial"],
+    [ORG_B, MEMBER_B, "1881", "Globex trial"],
+  ]) {
+    await harness.owner.query(
+      `INSERT INTO org_members (id, org_id, user_id, role)
+       VALUES ($1, $2, gen_random_uuid(), 'owner')`,
+      [memberId, orgId],
+    );
+    await harness.owner.query(
+      `INSERT INTO payment_methods
+         (org_id, provider, provider_method_id, brand, last4, expiry_month, expiry_year, is_default)
+       VALUES ($1, 'stripe', $2, 'visa', $3, 12, 2030, true)`,
+      [orgId, `pm_${last4}`, last4],
+    );
+    await harness.owner.query(
+      `INSERT INTO credit_grants (org_id, kind, amount_cents, remaining_cents, note)
+       VALUES ($1, 'promotional', 5000, 5000, $2)`,
+      [orgId, note],
+    );
+  }
+
+  await harness.owner.query(
+    `INSERT INTO org_invitations (org_id, email, role, token_hash, invited_by, expires_at)
+     VALUES ($1, 'new@a.test', 'developer', $2, $3, now() + interval '7 days'),
+            ($1, 'gone@a.test', 'viewer', $4, $3, now() + interval '7 days')`,
+    [ORG_A, OPEN_INVITE_HASH, MEMBER_A, SPENT_INVITE_HASH],
+  );
+  await harness.owner.query(
+    `UPDATE org_invitations SET accepted_at = now() WHERE token_hash = $1`,
+    [SPENT_INVITE_HASH],
+  );
 }, 180_000);
 
 afterAll(async () => {
@@ -96,7 +143,7 @@ describe("tenant isolation holds at the database", () => {
    * and this is what notices when one did not: the table is unreadable by the app role,
    * which shows up as a permission error on a route nobody tested yet.
    */
-  it("grants the app role its four privileges on every table except the audit trail", async () => {
+  it("grants the app role its four privileges on every table except the two append-only ones", async () => {
     const { rows } = await harness.owner.query<{ relname: string; missing: string }>(
       `SELECT c.relname,
               string_agg(p.priv, ',') FILTER (
@@ -105,13 +152,32 @@ describe("tenant isolation holds at the database", () => {
        FROM pg_class c
        JOIN pg_namespace n ON n.oid = c.relnamespace
        CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)
-       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relname <> 'audit_events'
+       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+         AND c.relname NOT IN ('audit_events', 'payment_provider_events')
        GROUP BY c.relname
        HAVING count(*) FILTER (
          WHERE NOT has_table_privilege('idenzy_app', c.oid, p.priv)
        ) > 0`,
     );
     expect(rows).toEqual([]);
+  });
+
+  /**
+   * The exclusion above is a claim, so it is asserted rather than trusted. A payment
+   * event is what a disputed charge is reconciled against, and nothing on the request
+   * path has a reason to remove one (migration 0028).
+   */
+  it("withholds delete on payment_provider_events while granting the rest", async () => {
+    const { rows } = await harness.owner.query<{ priv: string; granted: boolean }>(
+      `SELECT p.priv, has_table_privilege('idenzy_app', 'payment_provider_events', p.priv) AS granted
+       FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)`,
+    );
+    expect(rows).toEqual([
+      { priv: "SELECT", granted: true },
+      { priv: "INSERT", granted: true },
+      { priv: "UPDATE", granted: true },
+      { priv: "DELETE", granted: false },
+    ]);
   });
 
   /**
@@ -159,6 +225,144 @@ describe("tenant isolation holds at the database", () => {
        WHERE n.nspname = 'public' AND c.relrowsecurity AND NOT c.relforcerowsecurity`,
     );
     expect(Number(rows[0]?.count)).toBe(0);
+  });
+});
+
+/**
+ * The org-plane mirror of the block above (ADR-0011). Same negative shape, because the
+ * argument is the same one: a wallet and a card list guarded only by a predicate a
+ * developer has to remember are one forgotten `where` from a cross-customer read, and on
+ * the money surface that is the read a customer notices first.
+ */
+describe("organisation isolation holds at the database", () => {
+  async function asOrg<T>(orgId: string, run: () => Promise<T>): Promise<T> {
+    await harness.db.execute(sql`select set_config('app.org_id', ${orgId}, false)`);
+    return run();
+  }
+
+  it("shows an organisation only its own cards", async () => {
+    const result = await asOrg(ORG_A, () =>
+      harness.db.execute<{ last4: string }>(sql`select last4 from payment_methods`),
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.last4).toBe("4242");
+  });
+
+  it("returns nothing when the repository layer is bypassed and another organisation is queried directly", async () => {
+    // Deliberately wrong application code, exactly as the tenant case above. Isolation
+    // holds because the database enforces it, not because the query remembered to.
+    const result = await asOrg(ORG_A, () =>
+      harness.db.execute(sql`select note from credit_grants where org_id = ${ORG_B}::uuid`),
+    );
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it("returns nothing when no organisation context is set at all", async () => {
+    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
+    const result = await harness.db.execute(sql`select last4 from payment_methods`);
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it("refuses to write a row belonging to another organisation", async () => {
+    await expect(
+      asOrg(ORG_A, () =>
+        harness.db.execute(
+          sql`insert into credit_grants (org_id, kind, amount_cents, remaining_cents)
+              values (${ORG_B}::uuid, 'promotional', 100, 100)`,
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("shows an organisation only its own row on orgs, which is keyed on its own id", async () => {
+    const result = await asOrg(ORG_B, () =>
+      harness.db.execute<{ name: string }>(sql`select name from orgs`),
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.name).toBe("Globex");
+  });
+
+  /**
+   * The property that makes two settings safer than one shared `app.tenant_id`: neither
+   * key satisfies the other's policy, so a transaction bound to one plane reads nothing
+   * from the other however wrong the query is.
+   */
+  it("keeps the two keys independent in both directions", async () => {
+    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
+    await harness.db.execute(sql`select set_config('app.project_id', ${PROJECT_A}, false)`);
+    const cards = await harness.db.execute(sql`select last4 from payment_methods`);
+    expect(cards.rows).toHaveLength(0);
+
+    await harness.db.execute(sql`select set_config('app.project_id', '', false)`);
+    await harness.db.execute(sql`select set_config('app.org_id', ${ORG_A}, false)`);
+    const users = await harness.db.execute(sql`select email from users`);
+    expect(users.rows).toHaveLength(0);
+  });
+
+  it("holds one owner per organisation, so a transfer cannot leave two", async () => {
+    await expect(
+      harness.owner.query(
+        `INSERT INTO org_members (org_id, user_id, role) VALUES ($1, gen_random_uuid(), 'owner')`,
+        [ORG_A],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("holds one default card per organisation", async () => {
+    await expect(
+      harness.owner.query(
+        `INSERT INTO payment_methods
+           (org_id, provider, provider_method_id, brand, last4, expiry_month, expiry_year, is_default)
+         VALUES ($1, 'stripe', 'pm_second', 'visa', '9999', 12, 2030, true)`,
+        [ORG_A],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("refuses an automatic top-up that would add less than it triggers on", async () => {
+    await expect(
+      harness.owner.query(
+        `INSERT INTO billing_settings
+           (org_id, auto_top_up_enabled, auto_top_up_threshold_cents, auto_top_up_amount_cents)
+         VALUES ($1, true, 5000, 1000)`,
+        [ORG_A],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("refuses to draw a grant below zero", async () => {
+    await expect(
+      harness.owner.query(`UPDATE credit_grants SET remaining_cents = -1 WHERE org_id = $1`, [
+        ORG_A,
+      ]),
+    ).rejects.toThrow();
+  });
+
+  /**
+   * Somebody following an invite link is not in the organisation yet, so the lookup runs
+   * with no `app.org_id` and RLS would correctly hide the row. Migration 0029 is the
+   * narrow way through, and the point of this test is that it stays narrow: it resolves
+   * an open invitation and nothing else.
+   */
+  it("resolves an open invitation with no organisation bound, and only an open one", async () => {
+    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
+
+    const open = await harness.db.execute<{ org_id: string; email: string }>(
+      sql`select * from resolve_open_invitation(${OPEN_INVITE_HASH}, now())`,
+    );
+    expect(open.rows).toHaveLength(1);
+    expect(open.rows[0]?.org_id).toBe(ORG_A);
+    expect(open.rows[0]?.email).toBe("new@a.test");
+
+    const spent = await harness.db.execute(
+      sql`select * from resolve_open_invitation(${SPENT_INVITE_HASH}, now())`,
+    );
+    expect(spent.rows).toHaveLength(0);
+
+    const unknown = await harness.db.execute(
+      sql`select * from resolve_open_invitation('no-such-hash', now())`,
+    );
+    expect(unknown.rows).toHaveLength(0);
   });
 });
 

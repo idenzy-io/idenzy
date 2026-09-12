@@ -94,6 +94,9 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [x] `UnitOfWork.run(cb)` opening a transaction and setting `app.project_id` via parameterized
       `set_config`, transaction-local
 - [x] Abstract `BaseRepository` owning the tenant predicate, query timing and error translation
+- [x] `OrgContext`, `UnitOfWork.runForOrg` and `OrgRepository`, the control plane's own tenant
+      key (ADR-0011). The org plane holds the team and the money, so it gets the same two
+      lines of defence the project plane has rather than a predicate somebody has to remember
 - [x] Migration runner as a standalone job, forward-only
 - [x] `pnpm db:generate`, `db:migrate`, `db:studio` scripts
 
@@ -550,7 +553,17 @@ template pipeline of its own rather than a branch in the OTP flow.
 - [ ] Flutter, iOS, Android and React Native SDKs. Vue and SvelteKit landed in phase 1
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
-- [ ] Billing on Stripe, metered against usage
+- [~] Billing on Stripe, metered against usage. The schema half is in: the wallet, the
+      cards, the automatic rule, the top-ups, the invoices and their per-project lines, all
+      keyed on `org_id` and isolated by the control plane's own RLS key (ADR-0011), with
+      repositories whose races are closed by single statements rather than by read-then-write.
+      Money is integer cents throughout and the four rules that cost money if broken are
+      constraints: one default card, one owner, a grant that cannot go below zero, and an
+      automatic rule that cannot add less than it triggers on. What is not built is anything
+      that charges: no Stripe client, no checkout, no webhook receiver, no metering job
+      writing `credit_grants`, and `PAYMENTS.running` in the panel is still false. The tables
+      `payment_provider_events` and `top_ups` exist precisely so the webhook half can be
+      idempotent when it lands
 - [ ] `admin` panel v1: tenancy administration, abuse response, spend caps
 - [ ] Status page and public incident communication
 - [ ] External penetration test
@@ -606,8 +619,14 @@ rate is a placeholder and closing it is the first task here.
 
 ## Phase 4: B2B (12 weeks)
 
-- [ ] Organizations, memberships, roles and permissions
-- [ ] Invitations
+- [~] Organizations, memberships, roles and permissions. `org_members` and
+      `org_security_settings` are in, with the four roles in `@idenzy/protocol` and the
+      one-owner rule held by a partial unique index rather than by application code. The
+      permission matrix itself is still the panel's, and the management API that would
+      enforce it is not built
+- [~] Invitations. `org_invitations` and its repository are in, including the
+      `resolve_open_invitation` function a link has to go through because the person
+      following it is not in the organisation yet. Nothing sends the email
 - [ ] SAML and enterprise OIDC SSO
 - [ ] SCIM provisioning
 - [ ] SSO for our own dashboard

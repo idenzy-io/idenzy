@@ -1042,7 +1042,10 @@ Every column is declared through the `classified()` wrapper of §4.13.2, which i
 
 ```
 region_cells(id, code, jurisdiction, endpoint, kms_key_ring, active)
-orgs(id, name, cell_id, billing_customer_id, created_at)                 -- control plane, no personal data
+orgs(id, name, cell_id, billing_customer_id, created_at)                 -- control plane, no tenant personal data
+org_members(id, org_id, user_id, role[owner|admin|developer|viewer], invited_by, last_active_at)
+org_invitations(id, org_id, email, role, token_hash, invited_by, expires_at, accepted_at, revoked_at)
+org_security_settings(org_id, require_mfa, updated_by, updated_at)
 projects(id, org_id, name, cell_id, plan, compliance_tier, settings jsonb,
          kms_key_name, dek_wrapped bytea, created_at)
 project_domains(project_id, domain, type[auth|email], status, dns_records jsonb)
@@ -1070,6 +1073,20 @@ api_keys(id, project_id, kind[publishable|secret], prefix, hash, scopes[], last_
 usage_daily(project_id, day, mau_hll, emails_sent, sms_sent, sms_cost)   -- HyperLogLog sketch for MAU
 outbox(id, project_id, topic, payload jsonb, created_at, published_at, attempts)  -- transactional relay
 
+-- Billing, on the control plane and keyed on org_id (ADR-0011). Money is integer cents.
+payment_methods(id, org_id, provider, provider_method_id, brand, last4, expiry_month, expiry_year,
+                is_default, added_by)                      -- one default per org, partial unique
+credit_grants(id, org_id, kind[purchased|promotional], amount_cents, remaining_cents, currency,
+              top_up_id, note, granted_at, expires_at)     -- the wallet; balance is a sum over these
+billing_settings(org_id, currency, auto_top_up_*, spend_alert_*, updated_by, updated_at)
+top_ups(id, org_id, amount_cents, state, trigger, provider, provider_intent_id, payment_method_id,
+        card_brand, card_last4, failure_code, settled_at)  -- unique intent id: webhooks replay
+invoices(id, org_id, number, period_start, period_end, status, total_cents, provider_invoice_id,
+         pdf_uri, issued_at, due_at, paid_at, voided_at)   -- voided, never deleted
+invoice_lines(id, org_id, invoice_id, project_id, item, quantity, unit_rate_millicents, total_cents)
+payment_provider_events(id, provider, provider_event_id, type, payload jsonb, processed_at)
+                                                           -- outside RLS: no org bound on arrival
+
 -- Compliance surface (4.13)
 audit_events(id, project_id, actor_type, actor_id, action, target, ip, ua, metadata jsonb,
              prev_hash, entry_hash, created_at)      -- partitioned by month, INSERT/SELECT only
@@ -1080,6 +1097,8 @@ staff_access_grants(id, staff_id, scope, granted_by, reason, created_at, expires
 ```
 
 All tenant tables carry `project_id`, are protected by RLS policies keyed on `current_setting('app.project_id')`, and are declared `FORCE ROW LEVEL SECURITY` (§4.10, §9.4).
+
+The control plane has its own key alongside it. Every org-scoped table carries `org_id` and is protected by the same shape of policy keyed on `current_setting('app.org_id')`, set by `UnitOfWork.runForOrg` (ADR-0011). `orgs` is keyed on its own `id`, the way `projects` is. Three tables are outside both by design and say so in their own migration: `region_cells` and `staff_access_grants` have no customer to be scoped to, and `payment_provider_events` receives a webhook before the organisation it concerns is known.
 
 ---
 

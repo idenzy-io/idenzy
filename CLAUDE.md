@@ -54,7 +54,8 @@ target and the disagreement is usually the finding**.
 Architecture decisions are in `docs/adr/`. The ones cited most often: 0002 (no auth UI),
 0006 (origins are their own allowlist), 0007 (no grace window on refresh rotation),
 0008 (the browser SDK stores no refresh token), 0009 (the revocation set is a published
-snapshot), 0010 (an authentication answers with a session or a challenge).
+snapshot), 0010 (an authentication answers with a session or a challenge), 0011 (the
+control plane has its own tenant key).
 
 ## Compliance claims
 

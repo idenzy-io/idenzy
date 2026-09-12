@@ -615,6 +615,48 @@ rate is a placeholder and closing it is the first task here.
       `apps/client/app/stores/usage.ts` (it is deliberately zero today rather than
       invented), and add the ingest ceiling to the free-tier card.
 
+### 3.2 Analytics on ClickHouse
+
+**Decided: analytics and log storage are ClickHouse, not Postgres.** Everything the panel
+shows as a metric, a chart or a trend reads from it once it exists. Postgres keeps the
+things it is good at — the tenant tables, the money, the hash-chained audit trail — and
+stops being asked to answer aggregate questions over event data it was never shaped for.
+
+What the panel does today is the starting point rather than the design. `usage_daily` is a
+daily rollup per project with a HyperLogLog sketch for MAU, and the overview, usage and
+activity screens read placeholder stores on top of it. Those screens are what has to keep
+working, so the split below is by which question is being asked, not by which screen asks.
+
+- [ ] Decide what stays in `usage_daily` and what moves. The billing rollup is a strong
+      candidate to stay: an invoice is a financial record, it has to agree with the ledger
+      in the same transaction that writes it, and it is one row per project per day rather
+      than an analytical volume. What moves is everything the reader explores rather than
+      is billed for.
+- [ ] Ingestion, on the Pub/Sub fan-out the logging product already needs (§3.1) rather
+      than a second path. One pipeline carrying both, with the destination table differing,
+      not two ways for an event to reach the analytics store.
+- [ ] Tenant isolation with no RLS to lean on. This is the part that needs a decision
+      before code: ADR-0003's second line does not exist in ClickHouse, so the `project_id`
+      predicate is structural in the query layer or it is nowhere. Whatever replaces it —
+      a row policy, a per-tenant view, a query builder nothing can bypass — is an ADR, and
+      an analytics store that can answer across tenants is the same incident class as a
+      Postgres query that forgets a `where`.
+- [ ] Residency: a cell is an independent stack (§4.13.5), so an EU project's events go to
+      the EU cell's ClickHouse and a cross-cell query is not a thing that exists.
+- [ ] Column classification. `classified()` is a Drizzle wrapper and ClickHouse is not
+      Drizzle, so the compliance generators reach none of this as it stands. Analytics
+      events carry IP, user agent and user ids — real personal data with a real retention
+      obligation — so either the generators learn a second source or the schema is declared
+      somewhere they already read. Not optional: a column outside `classified()` escapes
+      the RoPA, the data map, the log allowlist and the DSR field lists at once (§4.13.2).
+- [ ] Erasure and retention: a data-subject erasure has to reach the analytics store too,
+      and ClickHouse mutations are not row deletes. TTL by partition plus a delete path
+      that the DSR handler can actually call, or the erasure promise is only true of
+      Postgres.
+- [ ] Panel wiring, last. `apps/client`'s stores are placeholders behind real screens, so
+      the swap is a client change rather than a screen change — which is the point of
+      having built them against a store rather than against a query.
+
 ---
 
 ## Phase 4: B2B (12 weeks)

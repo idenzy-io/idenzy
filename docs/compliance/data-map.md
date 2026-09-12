@@ -11,11 +11,11 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 28 |
+| pii | 29 |
 | phi | 0 |
-| secret | 18 |
-| pseudonymous | 30 |
-| operational | 259 |
+| secret | 19 |
+| pseudonymous | 83 |
+| operational | 304 |
 
 ## `api_keys`
 
@@ -85,6 +85,32 @@ Notes:
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `redirectUri`: The allowlisted target this code was minted for. Kept for the audit trail.
 
+## `billing_settings`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `autoTopUpAmountCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpEnabled` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpMethodId` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpThresholdCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `currency` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `spendAlertEnabled` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `spendAlertSentForMonth` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `spendAlertThresholdCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `updatedBy` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `autoTopUpAmountCents`: How much to add. Below the threshold it would fire on itself.
+- `autoTopUpMethodId`: Which card it charges. Null falls back to the default, and the panel says so.
+- `autoTopUpThresholdCents`: Charge when the spendable balance falls below this.
+- `currency`: Set at the provider and not from here. One currency per account.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `spendAlertSentForMonth`: The month already alerted on, so a threshold crossed once is not mailed hourly.
+- `spendAlertThresholdCents`: An alert and never a cap. Authentication does not stop (5.1).
+
 ## `claim_templates`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -100,6 +126,31 @@ Notes:
 - `claims`: The mappings. Names and source paths only: no user data is stored here.
 - `privateMetadataAcknowledgedAt`: When the customer accepted that mapping metadata_private publishes it into every token. Kept as evidence rather than as a flag, because the question is when somebody agreed and not whether a box is ticked.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `credit_grants`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `amountCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `currency` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `expiresAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `grantedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `kind` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `note` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `remainingCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `topUpId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `amountCents`: What it was worth when granted. Never changes, which is what makes it auditable.
+- `expiresAt`: Null says it does not expire, which is the truth about purchased credit.
+- `kind`: CreditKind. Purchased credit does not expire; promotional credit does.
+- `note`: Why it exists, in the words the wallet screen shows: a top-up, a trial, a credit.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `remainingCents`: What is left. Drawn down by the metering job, never below zero or above amount.
+- `topUpId`: The purchase that created it. Null on a grant nobody paid for.
 
 ## `data_subject_requests`
 
@@ -200,6 +251,56 @@ Notes:
 
 - `encryptedTokens`: Provider access and refresh tokens. Stored only when the customer opts in (4.6).
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `invoice_lines`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `invoiceId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `item` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `projectId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `quantity` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `totalCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `unitRateMillicents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `item`: BillingLineItem, one name per meter in the price list (5.1).
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Which application spent it. No FK: the project is in a cell, this row is not.
+- `quantity`: Users, emails, segments or domains, in the unit the meter counts.
+- `totalCents`: Rounded once, here. The invoice total is the sum of these and never a re-multiplication.
+- `unitRateMillicents`: Thousandths of a cent: MAU is $0.0025, which is a quarter of a cent and not an integer one.
+
+## `invoices`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `currency` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `dueAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `issuedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `number` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `paidAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `pdfUri` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `periodEnd` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `periodStart` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `provider` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `providerInvoiceId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `status` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `totalCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `voidedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `number`: The human number. Unique per organisation and never reused, voids included.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `pdfUri`: At the provider. Null while one is still being produced, which the panel shows.
+- `totalCents`: The sum of each project's own rounded total, so this figure and the usage screen's agree.
 
 ## `magic_link_tokens`
 
@@ -328,6 +429,65 @@ Notes:
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `settings`: Non-secret provider extras: Apple's team and key ids, a Microsoft directory.
 
+## `org_invitations`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `acceptedAt` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `email` | pii | account_management | days_30 | yes | row_deleted | no |
+| `expiresAt` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `invitedBy` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `revokedAt` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+| `role` | operational | account_management | project_lifetime | no | not_applicable | no |
+| `tokenHash` | secret | account_management | days_30 | no | row_deleted | no |
+
+Notes:
+
+- `email`: The invitee's address. Shown back on the members screen, so not hashed.
+- `expiresAt`: A week. Long enough for somebody on holiday, short enough that a link in an unread mailbox is not a way in a year later.
+- `invitedBy`: The org_members row that sent it. Kept when they leave, so the trail survives them.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `role`: MemberRole, never 'owner': ownership moves by transfer (ASSIGNABLE_MEMBER_ROLES).
+- `tokenHash`: SHA-256 of the link's token. The token itself is shown once, in the email.
+
+## `org_members`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `invitedBy` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+| `lastActiveAt` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `role` | operational | account_management | project_lifetime | no | not_applicable | no |
+| `userId` | pseudonymous | account_management | project_lifetime | no | retain_pseudonymous | no |
+
+Notes:
+
+- `invitedBy`: The member who invited them. Null on the founder, who was invited by nobody.
+- `lastActiveAt`: What makes a dormant seat visible on the members screen.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `role`: MemberRole. Exactly one 'owner' per organisation, held by a partial unique index.
+- `userId`: The member's user id in Idenzy's own project. No FK: cells are independent (4.13.5).
+
+## `org_security_settings`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `requireMfa` | operational | security_and_abuse_prevention | project_lifetime | no | not_applicable | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `updatedBy` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `requireMfa`: Our dashboard only. A customer's own users are governed by their project's rules.
+- `updatedBy`: The member who last changed it, for the audit trail as much as for the reader.
+
 ## `orgs`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -381,6 +541,49 @@ Notes:
 Notes:
 
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+
+## `payment_methods`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `addedBy` | operational | audit_and_compliance | project_lifetime | no | not_applicable | no |
+| `brand` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiryMonth` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `expiryYear` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `id` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `isDefault` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `last4` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `provider` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `providerMethodId` | pseudonymous | billing_and_metering | project_lifetime | no | row_deleted | no |
+
+Notes:
+
+- `addedBy`: The org_members row that added it, for the audit trail as much as for the reader.
+- `last4`: The only four digits anybody here ever sees. Not a credential, and not enough to be.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `provider`: PaymentProvider. A column rather than an assumption that there is only ever one.
+- `providerMethodId`: The provider's token for the card. Not the card, and not reversible to one.
+
+## `payment_provider_events`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `failureReason` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `payload` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `processedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `provider` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `providerEventId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `receivedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `type` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `payload`: The provider's body, verbatim. A re-serialised copy is not evidence of a charge.
+- `processedAt`: Null means received and not yet acted on, which is what the retry sweep looks for.
+- `providerEventId`: Unique per provider. The insert is the idempotency check, not a lookup before it.
 
 ## `project_domains`
 
@@ -599,6 +802,37 @@ Notes:
 
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `targetHash`: Hashed, so a suppression list is not a harvestable address list.
+
+## `top_ups`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `amountCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `cardBrand` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `cardLast4` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `currency` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `failureCode` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `paymentMethodId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `provider` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `providerIntentId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `requestedBy` | pseudonymous | audit_and_compliance | years_6 | no | retain_pseudonymous | no |
+| `settledAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `state` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `trigger` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `failureCode`: The provider's decline reason, which is the only thing that tells a customer what to fix.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `paymentMethodId`: Nulled when the card is removed. The brand and last four below outlive it.
+- `providerIntentId`: Unique, which is what makes an at-least-once payment webhook safe to replay.
+- `requestedBy`: Null on an automatic top-up, which nobody asked for personally.
+- `settledAt`: When the provider stopped changing its mind, whichever way it went.
+- `state`: TopUpState. `requires_action` is where 3-D Secure hands the customer to their bank.
+- `trigger`: TopUpTrigger: whether a person asked or the automatic rule fired.
 
 ## `usage_daily`
 

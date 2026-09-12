@@ -14,18 +14,20 @@ certification; see PROJECT.md 4.13.10.
 ## account_management
 
 - **Lawful basis:** art_6_1_b_contract
-- **Retention:** until_account_deletion
-- **Tables:** `mfa_factors`, `webauthn_credentials`
+- **Retention:** days_30, project_lifetime, until_account_deletion
+- **Tables:** `mfa_factors`, `org_invitations`, `org_members`, `webauthn_credentials`
 - **Categories of personal data:**
 
+  - pii: email
   - pii: label
   - pii: name
+  - pseudonymous: userId
 
 ## audit_and_compliance
 
 - **Lawful basis:** art_6_1_c_legal_obligation
 - **Retention:** days_30, years_1, years_6
-- **Tables:** `audit_events`, `data_subject_requests`, `email_templates`, `staff_access_grants`
+- **Tables:** `audit_events`, `data_subject_requests`, `email_templates`, `staff_access_grants`, `top_ups`
 - **Categories of personal data:**
 
   - pii: artifactUri
@@ -41,6 +43,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: id
   - pseudonymous: metadata
   - pseudonymous: prevHash
+  - pseudonymous: requestedBy
   - pseudonymous: seq
   - pseudonymous: subjectUserId
   - pseudonymous: target
@@ -83,12 +86,53 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** project_lifetime, years_6
-- **Tables:** `orgs`, `usage_daily`
+- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_daily`
 - **Categories of personal data:**
 
   - pii: name
+  - pseudonymous: amountCents
   - pseudonymous: billingCustomerId
+  - pseudonymous: cardBrand
+  - pseudonymous: cardLast4
+  - pseudonymous: currency
+  - pseudonymous: dueAt
+  - pseudonymous: expiresAt
+  - pseudonymous: failureCode
+  - pseudonymous: failureReason
+  - pseudonymous: grantedAt
+  - pseudonymous: id
+  - pseudonymous: invoiceId
+  - pseudonymous: issuedAt
+  - pseudonymous: item
+  - pseudonymous: kind
   - pseudonymous: mauHll
+  - pseudonymous: note
+  - pseudonymous: number
+  - pseudonymous: paidAt
+  - pseudonymous: payload
+  - pseudonymous: paymentMethodId
+  - pseudonymous: pdfUri
+  - pseudonymous: periodEnd
+  - pseudonymous: periodStart
+  - pseudonymous: processedAt
+  - pseudonymous: projectId
+  - pseudonymous: provider
+  - pseudonymous: providerEventId
+  - pseudonymous: providerIntentId
+  - pseudonymous: providerInvoiceId
+  - pseudonymous: providerMethodId
+  - pseudonymous: quantity
+  - pseudonymous: receivedAt
+  - pseudonymous: remainingCents
+  - pseudonymous: settledAt
+  - pseudonymous: state
+  - pseudonymous: status
+  - pseudonymous: topUpId
+  - pseudonymous: totalCents
+  - pseudonymous: trigger
+  - pseudonymous: type
+  - pseudonymous: unitRateMillicents
+  - pseudonymous: voidedAt
 
 ## message_delivery
 

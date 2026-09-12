@@ -190,6 +190,20 @@
       "when": 1789225209331,
       "tag": "0026_true_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789225424954,
+      "tag": "0027_white_deadpool",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789225430169,
+      "tag": "0028_amusing_morg",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@
 // table. Application code imports the specific schema module it needs; this file exists
 // for the migration generator, which is why the barrel-file rule is waived here.
 
+export * from "./billing.js";
 export * from "./challenges.js";
 export * from "./claims.js";
 export * from "./compliance.js";

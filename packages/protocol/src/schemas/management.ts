@@ -5,6 +5,7 @@ import {
   ProjectDomainStatus,
   ProjectDomainType,
 } from "../enums/tenancy.js";
+import { isWebhookEventType, WebhookDeliveryOutcome, webhookUrlSchema } from "./webhooks.js";
 
 /**
  * What the dashboard asks the management API for, and what it gets back.
@@ -348,3 +349,181 @@ export type ProjectOriginList = z.infer<typeof projectOriginListSchema>;
 
 export const addProjectOriginSchema = z.object({ origin: browserOriginSchema });
 export type AddProjectOrigin = z.infer<typeof addProjectOriginSchema>;
+
+/*
+ * Webhooks: the endpoints a project registers, and what its deliveries did (ADR-0012).
+ */
+
+/**
+ * An event a subscription may name.
+ *
+ * Checked against the catalogue rather than taken as free text, because a subscription to an event
+ * that does not exist is one that can never fire: it saves, it reads as configured, and nothing
+ * ever arrives. The test event is deliberately not subscribable — it is sent by asking for a test.
+ */
+const subscribedEventSchema = z.string().refine(isWebhookEventType, {
+  message: "That is not an event this API sends.",
+});
+
+/** Why an endpoint is off, as the dashboard reads it. */
+export const webhookDisabledSchema = z.object({
+  /** `paused` is somebody's decision; `failing` is the breaker's. */
+  kind: z.enum(["paused", "failing"]),
+  at: z.iso.datetime(),
+  /**
+   * The membership that paused it, or null where the breaker did.
+   *
+   * A member id and not a name: resolving one to a person is the members endpoint's job, and a
+   * name copied onto this row would be a second place somebody's name has to be kept true.
+   */
+  byMemberId: z.string().nullable(),
+});
+export type WebhookDisabled = z.infer<typeof webhookDisabledSchema>;
+
+/**
+ * An endpoint, as the dashboard lists it. Never its secret.
+ *
+ * The secret appears in exactly two responses — the one that created the endpoint and the one that
+ * rotated it — and nowhere afterwards. It is stored encrypted rather than hashed, because signing
+ * needs the value back, so "shown once" is a promise about what this API will answer and not a
+ * property of the storage (ADR-0012). There is no route that returns it.
+ */
+export const webhookEndpointSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  description: z.string(),
+  enabled: z.boolean(),
+  /** Null exactly while `enabled` is true. */
+  disabled: webhookDisabledSchema.nullable(),
+  events: z.array(z.string()),
+  /** Everything, including events that do not exist yet. `events` is ignored while it is set. */
+  allEvents: z.boolean(),
+  createdAt: z.iso.datetime(),
+  /** When the secret was last replaced. Null means it is the one the endpoint was made with. */
+  rolledAt: z.iso.datetime().nullable(),
+  /** Until when the previous secret also signs. Null outside a rotation window. */
+  previousSecretUntil: z.iso.datetime().nullable(),
+});
+export type WebhookEndpoint = z.infer<typeof webhookEndpointSchema>;
+
+export const webhookEndpointListSchema = z.object({
+  endpoints: z.array(webhookEndpointSchema),
+});
+export type WebhookEndpointList = z.infer<typeof webhookEndpointListSchema>;
+
+/**
+ * What a new endpoint is created from.
+ *
+ * `enabled` defaults to false, which is the screen's rule rather than a shape decision: a test
+ * event should come before real ones, so an endpoint starts off unless somebody says otherwise.
+ *
+ * A draft naming no events and not asking for all of them is refused. It would save, read as
+ * configured, and never fire — the one failure this whole screen exists to make visible.
+ */
+export const createWebhookSchema = z
+  .object({
+    url: webhookUrlSchema,
+    description: z.string().trim().max(200).default(""),
+    events: z.array(subscribedEventSchema).max(64).default([]),
+    allEvents: z.boolean().default(false),
+    enabled: z.boolean().default(false),
+  })
+  .refine((body) => body.allEvents || body.events.length > 0, {
+    message: "Choose at least one event, or subscribe to all of them.",
+  });
+export type CreateWebhook = z.infer<typeof createWebhookSchema>;
+
+/**
+ * What an edit may change, and what it may not.
+ *
+ * The secret is absent: rotating one is its own route, because it is the only edit that hands back
+ * a credential and the only one with a deadline attached. `enabled` is absent for the same kind of
+ * reason — pausing and resuming say why an endpoint is off, and a boolean here could not.
+ */
+export const updateWebhookSchema = z
+  .object({
+    url: webhookUrlSchema.optional(),
+    description: z.string().trim().max(200).optional(),
+    events: z.array(subscribedEventSchema).max(64).optional(),
+    allEvents: z.boolean().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change." })
+  .refine(
+    (body) => body.allEvents !== false || body.events === undefined || body.events.length > 0,
+    {
+      message: "Choose at least one event, or subscribe to all of them.",
+    },
+  );
+export type UpdateWebhook = z.infer<typeof updateWebhookSchema>;
+
+/** The one response that carries a signing secret, and the reason the field is named for it. */
+export const createdWebhookSchema = z.object({
+  endpoint: webhookEndpointSchema,
+  /** Shown once. There is no route that answers with it again. */
+  secret: z.string(),
+});
+export type CreatedWebhook = z.infer<typeof createdWebhookSchema>;
+
+/** A rotation: the new secret, and when the old one stops signing beside it. */
+export const rotatedWebhookSecretSchema = z.object({
+  endpoint: webhookEndpointSchema,
+  secret: z.string(),
+  previousSecretUntil: z.iso.datetime(),
+});
+export type RotatedWebhookSecret = z.infer<typeof rotatedWebhookSecretSchema>;
+
+/** One attempt on a delivery, which is the evidence a developer debugs from. */
+export const webhookAttemptSchema = z.object({
+  /** One is the first call, not the first retry. */
+  n: z.number().int().positive(),
+  at: z.iso.datetime(),
+  /** What the endpoint answered, or null where nothing did. */
+  status: z.number().int().nullable(),
+  /** Why there is no status: a timeout, a refused connection, a name that did not resolve. */
+  error: z.string().nullable(),
+  durationMs: z.number().int().nonnegative(),
+  /** An excerpt of the receiver's own response. Capped before it is stored, never whole. */
+  response: z.string(),
+});
+export type WebhookAttempt = z.infer<typeof webhookAttemptSchema>;
+
+/**
+ * A delivery and its attempts.
+ *
+ * `payload` is nullable and that is the design rather than an omission: the body is kept only
+ * while the delivery is open and cleared the moment it is terminal, so a finished delivery can be
+ * inspected for what happened without keeping a copy of somebody's personal data to do it. It is
+ * also why a retry is refused after that point — see ADR-0012.
+ */
+export const webhookDeliverySchema = z.object({
+  id: z.string(),
+  endpointId: z.string(),
+  event: z.string(),
+  outcome: z.enum(WebhookDeliveryOutcome),
+  attempts: z.array(webhookAttemptSchema),
+  /** When the next attempt is due, for a delivery still owed. */
+  nextRetryAt: z.iso.datetime().nullable(),
+  /** The body as signed, while it is still held. */
+  payload: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.iso.datetime(),
+  /** Sent by asking for a test rather than by something that happened. */
+  test: z.boolean(),
+});
+export type WebhookDelivery = z.infer<typeof webhookDeliverySchema>;
+
+export const webhookDeliveryListSchema = z.object({
+  deliveries: z.array(webhookDeliverySchema),
+});
+export type WebhookDeliveryList = z.infer<typeof webhookDeliveryListSchema>;
+
+/**
+ * How many deliveries a read asks for.
+ *
+ * Coerced because a query string is text, capped because the window behind it is not: a page that
+ * asked for everything would scan a customer's whole delivery history to render fifty rows. The
+ * default is what the screen shows.
+ */
+export const webhookDeliveryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type WebhookDeliveryQuery = z.infer<typeof webhookDeliveryQuerySchema>;

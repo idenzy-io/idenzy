@@ -212,6 +212,48 @@ export function isWebhookTimestampStale(timestamp: number, nowSeconds: number): 
 }
 
 /*
+ * Where a delivery is, said two ways.
+ */
+
+/**
+ * The four states a delivery row holds, which is the pipeline's own vocabulary.
+ *
+ * `queued` and `delivering` are separate because a dispatcher has to tell a delivery nobody has
+ * picked up from one another dispatcher is mid-call on. Nothing outside the pipeline needs that
+ * distinction, which is why it is not what the dashboard is answered with.
+ */
+export const WebhookDeliveryStatus = {
+  Queued: "queued",
+  Delivering: "delivering",
+  Delivered: "delivered",
+  Failed: "failed",
+} as const;
+export type WebhookDeliveryStatus =
+  (typeof WebhookDeliveryStatus)[keyof typeof WebhookDeliveryStatus];
+
+/** The three a reader cares about: it worked, it has not yet, or it is not going to. */
+export const WebhookDeliveryOutcome = {
+  Pending: "pending",
+  Delivered: "delivered",
+  Failed: "failed",
+} as const;
+export type WebhookDeliveryOutcome =
+  (typeof WebhookDeliveryOutcome)[keyof typeof WebhookDeliveryOutcome];
+
+/**
+ * One from the other.
+ *
+ * A function rather than a map written at each reader, because collapsing `delivering` into
+ * `pending` is a decision about what a customer is told and not a formatting detail: a delivery
+ * being attempted right now is still one they are waiting on.
+ */
+export function webhookOutcomeOf(status: WebhookDeliveryStatus): WebhookDeliveryOutcome {
+  if (status === WebhookDeliveryStatus.Delivered) return WebhookDeliveryOutcome.Delivered;
+  if (status === WebhookDeliveryStatus.Failed) return WebhookDeliveryOutcome.Failed;
+  return WebhookDeliveryOutcome.Pending;
+}
+
+/*
  * Retrying.
  */
 

@@ -12,6 +12,9 @@ export const IdPrefix = {
   Domain: "dom",
   /** A row of the CORS allowlist. Addressed by id, because an origin in a path is escaped. */
   Origin: "orn",
+  Webhook: "whk",
+  /** A delivery, and the value of `X-Idenzy-Delivery`: a receiver dedupes on this. */
+  Delivery: "dlv",
   User: "usr",
   Session: "ses",
   Challenge: "chl",
@@ -32,6 +35,16 @@ export const ApiKeyPrefix = {
   Secret: "sk_",
 } as const;
 export type ApiKeyPrefix = (typeof ApiKeyPrefix)[keyof typeof ApiKeyPrefix];
+
+/**
+ * What a webhook signing secret is prefixed with.
+ *
+ * Part of the contract for the same reason the key prefixes are: it is what makes a value found in
+ * a log or an `.env` file recognisable as this kind of credential rather than a key that reaches
+ * our API. It never travels on `Authorization` — a signing secret is presented to nobody, only
+ * used to verify — so nothing resolves a tenant from it.
+ */
+export const WEBHOOK_SECRET_PREFIX = "whsec_";
 
 export function isApiKey(token: string): boolean {
   return Object.values(ApiKeyPrefix).some((prefix) => token.startsWith(prefix));

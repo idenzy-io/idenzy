@@ -509,11 +509,19 @@ client have no server halves to talk to yet.
       test that fails without it says so. The rest of the layer is one statement per transition for
       the same reason: the fan-out is replayable on a unique index, an attempt is appended in SQL
       rather than merged from a list, the failure counter is incremented in the database, and the
-      payload is cleared in the same statement that makes a delivery terminal. Next, in order: the
-      management API routes
-      the panel's store needs, then the pipeline itself — fan-out relay, dispatcher, Cloud Tasks
-      adapter, per-endpoint in-flight caps and the breaker at 20 consecutive failures. Known gap,
-      recorded rather than closed: a
+      payload is cleared in the same statement that makes a delivery terminal. The management API
+      routes are in too: list, create, patch, pause, resume, rotate-secret, delete and the delivery
+      list, all at developer because webhooks sit beside API keys on the panel's matrix. The secret
+      appears in exactly the two responses that mint one and is absent from every other, which is a
+      property of the service rather than of the storage — and verified as both: the stored
+      ciphertext decrypts back to the secret shown once under the project id as additional
+      authenticated data, and refuses another project's. Pausing and resuming are routes rather than
+      a boolean, because `enabled` alone cannot say whether a person or the breaker switched an
+      endpoint off. A test event and a retry are deliberately absent until the dispatcher exists:
+      either would write a delivery nothing sends, and the screen already says both are
+      unavailable. Next: the pipeline itself — fan-out relay, dispatcher, Cloud Tasks adapter,
+      per-endpoint in-flight caps and the breaker at 20 consecutive failures — and then the panel's
+      own store, which models all of this already. Known gap, recorded rather than closed: a
       hostname that *resolves* to a private address is not caught by parsing, so the dispatcher
       owes a resolve-and-refuse check at delivery time (ADR-0012)
 - [ ] Usage metering and the MAU HyperLogLog sketch

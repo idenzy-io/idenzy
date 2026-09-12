@@ -12,6 +12,7 @@ import { OriginsModule } from "./origins/origins.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
+import { WebhooksModule } from "./webhooks/webhooks.module.js";
 
 /**
  * Dashboard, management API and billing control plane (PROJECT.md 9.1).
@@ -38,6 +39,7 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
     ApiKeysModule,
     DomainsModule,
     OriginsModule,
+    WebhooksModule,
   ],
   controllers: [HealthController],
 })

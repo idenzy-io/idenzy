@@ -42,6 +42,45 @@ export const tenantIsolationPolicy = (table: string) =>
     withCheck: sql`project_id = nullif(current_setting('app.project_id', true), '')::uuid`,
   });
 
+/**
+ * The organisation discriminator every control-plane table carries (ADR-0011).
+ *
+ * The same idea as `projectIdColumn`, one plane up. A wallet, a card and an invoice
+ * belong to an organisation and never to one of its projects, so they are keyed on this
+ * and isolated by `orgIsolationPolicy` rather than by the tenant one.
+ *
+ * No `references(() => orgs.id)` here: that would make this module import
+ * `control-plane.js`, which imports this one back. The foreign key is declared on each
+ * table instead, beside the column that uses it.
+ */
+export const orgIdColumn = () =>
+  classified(uuid("org_id").notNull(), {
+    class: DataClass.Operational,
+    purpose: Purpose.BillingAndMetering,
+    retention: Retention.Years6,
+    erasure: Erasure.NotApplicable,
+    loggable: true,
+    note: "Control-plane discriminator. Enforced by RLS as well as by the repository layer.",
+  });
+
+/**
+ * The isolation policy applied to every org-keyed control-plane table (ADR-0011).
+ *
+ * Set per transaction by `UnitOfWork.runForOrg`, and identical in shape to
+ * `tenantIsolationPolicy` down to the two defensive details: `true` makes an unset
+ * variable return NULL rather than raise, and `nullif(..., '')` treats an empty value
+ * the same way, so a query outside an org transaction matches nothing instead of
+ * returning every customer's payment methods.
+ */
+export const orgIsolationPolicy = (table: string) =>
+  pgPolicy(`${table}_org_isolation`, {
+    as: "permissive",
+    for: "all",
+    to: appRole,
+    using: sql`org_id = nullif(current_setting('app.org_id', true), '')::uuid`,
+    withCheck: sql`org_id = nullif(current_setting('app.org_id', true), '')::uuid`,
+  });
+
 export const createdAtColumn = () =>
   classified(timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), {
     class: DataClass.Operational,

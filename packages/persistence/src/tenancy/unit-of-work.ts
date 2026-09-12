@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { OrgContext } from "./org-context.js";
 import type { TenantContext } from "./tenant-context.js";
 
 /** The transaction handle a repository receives. */
@@ -32,8 +33,24 @@ export class UnitOfWork {
   }
 
   /**
-   * For control-plane tables that are not tenant-scoped (region_cells, orgs,
-   * staff_access_grants). Sets no tenant, so any RLS-protected table returns nothing.
+   * Runs work inside a transaction bound to one organisation (ADR-0011).
+   *
+   * The control-plane half of `run`, and deliberately its mirror image: `app.org_id` is
+   * set by the same parameterized, transaction-local, first-in-the-transaction
+   * `set_config` call, for the same three reasons. The two settings are independent, so
+   * a transaction holding an org key matches nothing on a project table and the reverse
+   * also holds.
+   */
+  async runForOrg<T>(context: OrgContext, work: (tx: Transaction) => Promise<T>): Promise<T> {
+    return await this.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.org_id', ${context.orgId}, true)`);
+      return work(tx);
+    });
+  }
+
+  /**
+   * For control-plane tables that are keyed on neither (region_cells, staff_access_grants).
+   * Sets no tenant and no organisation, so every RLS-protected table returns nothing.
    */
   async runGlobal<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
     return await this.db.transaction(async (tx) => work(tx));

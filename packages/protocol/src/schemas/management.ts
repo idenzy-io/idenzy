@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MemberRole } from "../enums/tenancy.js";
+import { ApiKeyKind, MemberRole } from "../enums/tenancy.js";
 
 /**
  * What the dashboard asks the management API for, and what it gets back.
@@ -114,3 +114,46 @@ export const meSchema = z.object({
   projects: z.array(projectSummarySchema),
 });
 export type Me = z.infer<typeof meSchema>;
+
+/*
+ * API keys.
+ */
+
+/**
+ * A key as the panel lists it. Never the key itself.
+ *
+ * `prefix` is the first characters, kind included — enough to pick a row out of a log line
+ * or an `.env` file and far too few to be worth guessing the rest of. The value exists in
+ * exactly one response, the one that created it, and nowhere after.
+ */
+export const apiKeySummarySchema = z.object({
+  id: z.string(),
+  kind: z.enum(ApiKeyKind),
+  prefix: z.string(),
+  /** Nothing reads these yet. Present because the column is, and empty until it is used. */
+  scopes: z.array(z.string()),
+  createdAt: z.iso.datetime(),
+  /** An observation of when it was last presented, never proof of who holds it. */
+  lastUsedAt: z.iso.datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+});
+export type ApiKeySummary = z.infer<typeof apiKeySummarySchema>;
+
+export const apiKeyListSchema = z.object({ keys: z.array(apiKeySummarySchema) });
+export type ApiKeyList = z.infer<typeof apiKeyListSchema>;
+
+export const createApiKeySchema = z.object({ kind: z.enum(ApiKeyKind) });
+export type CreateApiKey = z.infer<typeof createApiKeySchema>;
+
+/**
+ * What creating a key answers with, and the only time the key is ever in a response.
+ *
+ * `secret` is named for what it is rather than `key`, so a log line or a screenshot that
+ * contains this object reads as something that should not have been kept.
+ */
+export const createdApiKeySchema = z.object({
+  key: apiKeySummarySchema,
+  /** Shown once. Only its digest is stored, so nothing can produce it again. */
+  secret: z.string(),
+});
+export type CreatedApiKey = z.infer<typeof createdApiKeySchema>;

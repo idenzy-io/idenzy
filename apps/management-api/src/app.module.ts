@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ApiKeysModule } from "./api-keys/api-keys.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { HealthController } from "./health.controller.js";
 import { HttpModule } from "./http/http.module.js";
@@ -32,6 +33,7 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
     OnboardingModule,
     OrgsModule,
     ProjectsModule,
+    ApiKeysModule,
   ],
   controllers: [HealthController],
 })

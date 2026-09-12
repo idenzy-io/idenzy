@@ -15,6 +15,7 @@
     "@idenzy/compliance": "workspace:*",
     "@idenzy/config": "workspace:*",
     "@idenzy/core": "workspace:*",
+    "@idenzy/crypto": "workspace:*",
     "@idenzy/domain": "workspace:*",
     "@idenzy/node": "workspace:*",
     "@idenzy/observability": "workspace:*",

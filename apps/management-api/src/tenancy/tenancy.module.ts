@@ -7,6 +7,7 @@ import { APP_GUARD } from "@nestjs/core";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { DATABASE } from "../persistence/persistence.module.js";
 import { MembershipGuard } from "./membership.guard.js";
+import { ProjectScope } from "./project-scope.js";
 
 /**
  * Who is asking, and on behalf of which organisation (ADR-0011).
@@ -28,6 +29,7 @@ import { MembershipGuard } from "./membership.guard.js";
       useFactory: (db: NodePgDatabase) => new OrgMembershipReader(db),
     },
     MembershipGuard,
+    ProjectScope,
     { provide: APP_GUARD, useExisting: MembershipGuard },
     {
       provide: AccessTokenVerifier,
@@ -47,6 +49,6 @@ import { MembershipGuard } from "./membership.guard.js";
       },
     },
   ],
-  exports: [OrgMembershipReader, AccessTokenVerifier],
+  exports: [OrgMembershipReader, AccessTokenVerifier, ProjectScope],
 })
 export class TenancyModule {}

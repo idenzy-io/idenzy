@@ -525,6 +525,9 @@ importers:
       '@idenzy/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@idenzy/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@idenzy/domain':
         specifier: workspace:*
         version: link:../../packages/domain

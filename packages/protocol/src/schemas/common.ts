@@ -8,6 +8,7 @@ export const IdPrefix = {
   Org: "org",
   Member: "mem",
   Project: "prj",
+  ApiKey: "key",
   User: "usr",
   Session: "ses",
   Challenge: "chl",

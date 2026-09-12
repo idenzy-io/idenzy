@@ -856,7 +856,6 @@ const missing = computed(() =>
                   v-model="testTarget"
                   :items="[...returnUris]"
                   class="font-mono"
-                  density="compact"
                   hide-details
                   variant="filled"
                 />

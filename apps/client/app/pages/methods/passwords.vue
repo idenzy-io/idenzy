@@ -387,7 +387,6 @@ const GUIDES_URL = "https://idenzy.dev/docs/passwords";
                 :error="minLengthError !== ''"
                 autocomplete="off"
                 class="font-mono"
-                density="compact"
                 hide-details
                 inputmode="numeric"
                 name="idenzy-password-min-length"

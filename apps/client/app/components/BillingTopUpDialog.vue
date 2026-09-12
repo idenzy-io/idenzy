@@ -182,7 +182,6 @@ function confirm() {
             id="topup-method"
             v-model="methodId"
             :items="methodOptions"
-            density="compact"
             hide-details
             item-props
             variant="filled"

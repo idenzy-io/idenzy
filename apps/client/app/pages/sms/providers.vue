@@ -629,7 +629,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/sms";
               aria-label="Search countries"
               class="routes__search"
               clearable
-              density="compact"
+              density="comfortable"
               hide-details
               placeholder="Search a country"
               prepend-inner-icon="material-symbols:search"
@@ -903,9 +903,10 @@ const GUIDES_URL = "https://idenzy.dev/docs/sms";
   min-width: 200px;
 }
 
+/* The height is the `comfortable` density's own 32px rather than a pin here, because the
+   control box around the field takes it from the input root and not from `.v-field`. The
+   same rule the users and members lists carry, because it is the same toolbar. */
 .routes__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
   border-radius: var(--idenzy-radius-small);
   font-size: 0.75rem;
 }
@@ -913,7 +914,6 @@ const GUIDES_URL = "https://idenzy.dev/docs/sms";
 .routes__search :deep(.v-field__input),
 .routes__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .routes__search :deep(.v-field__prepend-inner > .v-icon),

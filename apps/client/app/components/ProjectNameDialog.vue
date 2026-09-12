@@ -79,7 +79,6 @@ const id = useId();
             :error="message !== ''"
             :maxlength="PROJECT_NAME_MAX_LENGTH"
             autocomplete="off"
-            density="compact"
             hide-details
             variant="outlined"
             @blur="touched = true"

@@ -408,7 +408,6 @@ const GUIDES_URL = "https://idenzy.dev/docs/mfa/totp";
               :error="nameError !== ''"
               :placeholder="projects.current.name"
               autocomplete="off"
-              density="compact"
               hide-details
               name="idenzy-authenticator-name"
               variant="filled"

@@ -203,7 +203,6 @@ function confirm() {
               v-model="methodChoice"
               :disabled="!enabled"
               :items="methodOptions"
-              density="compact"
               hide-details
               item-props
               variant="filled"

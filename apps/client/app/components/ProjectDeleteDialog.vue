@@ -126,7 +126,6 @@ const id = useId();
             autocapitalize="off"
             autocomplete="off"
             class="font-mono"
-            density="compact"
             hide-details
             spellcheck="false"
             variant="outlined"

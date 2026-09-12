@@ -89,7 +89,6 @@ const id = useId();
             :error="message !== ''"
             autocapitalize="off"
             autocomplete="email"
-            density="compact"
             hide-details
             inputmode="email"
             spellcheck="false"

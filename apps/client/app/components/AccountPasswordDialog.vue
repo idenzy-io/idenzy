@@ -88,7 +88,6 @@ const nextId = useId();
             ref="field"
             v-model="current"
             autocomplete="current-password"
-            density="compact"
             hide-details
             type="password"
             variant="outlined"
@@ -106,7 +105,6 @@ const nextId = useId();
             :error="sameAsCurrent"
             :type="revealed ? 'text' : 'password'"
             autocomplete="new-password"
-            density="compact"
             hide-details
             variant="outlined"
             @click:append-inner="revealed = !revealed"

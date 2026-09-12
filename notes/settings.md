@@ -70,8 +70,36 @@ Rename and verify sidebar, default issuer and template previews remain truthful.
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+## Settled while implementing
+
+The page is the project's own detail page rather than a stack of settings cards, which is
+closer to this note's desktop arrangement than the first implementation was: that one
+stacked `[Organisation] [Plan]` and `[Data location | Actual endpoint | ...]` as five and
+four rows of prose, where the arrangement above draws each as a line. `PageHeader` therefore
+titles the project by name, as `users/[id].vue` titles a person, and the breadcrumb and the
+settings rail carry "General".
+
+**A fact carries its explanation behind a glyph, and the page surface carries none.** Every
+read-only row here used to be a label, a pill and a paragraph; twenty-one of them turned a
+configuration screen into an article, which is [shared-experience.md](shared-experience.md)'s
+diagnosis word for word. The sentences are unchanged and none was deleted: they moved from
+`SettingRow`'s `description` to a `Fact`'s `info`, read through the same glyph and tooltip
+`Statistic` already used. `FactGrid` is the new primitive, and it also replaces the
+hand-written `grid gap-px` mosaic on ten other pages.
+
+Residency, the compliance tier and key custody were three cards between two things the
+reader can change. They are now one folded section of ten facts, and it states its own
+values in the heading while shut, which this file's own collapsed-section rule requires.
+
+Retention keeps its draft, its `Cancel changes` and its `Save changes` at the section's
+bottom right, and becomes a `RecordTable` so the five ages read as one decision rather than
+five settings. The audit row stays a value with a reason rather than a disabled control.
+
 ## Implementation references
 
+- [FactGrid.vue](../apps/client/app/components/FactGrid.vue)
+- [DangerZone.vue](../apps/client/app/components/DangerZone.vue)
+- [InfoNote.vue](../apps/client/app/components/InfoNote.vue)
 - [ProjectNameDialog.vue](../apps/client/app/components/ProjectNameDialog.vue)
 - [ProjectDeleteDialog.vue](../apps/client/app/components/ProjectDeleteDialog.vue)
 - [project-settings.ts](../apps/client/app/stores/project-settings.ts)

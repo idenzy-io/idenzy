@@ -8,6 +8,13 @@ export interface DashboardPrincipal {
   /** The `users` row in Idenzy's own project. We run the panel on our own product. */
   readonly userId: string;
   readonly sessionId: string;
+  /**
+   * The name on the account, where the token carries one.
+   *
+   * Null is the normal case rather than an error: `name` is a claim a project chooses to
+   * issue, and ours may not. Anything reading this has to have an answer for null.
+   */
+  readonly displayName: string | null;
   /** Absent until a route under `/v1/orgs/:orgId` has had its membership checked. */
   readonly membership: {
     readonly orgId: string;

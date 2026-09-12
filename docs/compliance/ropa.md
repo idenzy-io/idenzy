@@ -156,3 +156,14 @@ certification; see PROJECT.md 4.13.10.
   - pii: deviceName
   - pii: ip
   - pii: userAgent
+
+## service_configuration
+
+- **Lawful basis:** art_6_1_b_contract
+- **Retention:** years_1
+- **Tables:** `onboarding_responses`
+- **Categories of personal data:**
+
+  - pii: heardFrom
+  - pii: useCase
+  - pseudonymous: submittedBy

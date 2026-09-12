@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { OrgContext } from "./org-context.js";
@@ -45,6 +46,35 @@ export class UnitOfWork {
     return await this.db.transaction(async (tx) => {
       await tx.execute(sql`select set_config('app.org_id', ${context.orgId}, true)`);
       return work(tx);
+    });
+  }
+
+  /**
+   * Creates an organisation, binding the key its own rows will be checked against.
+   *
+   * The one transaction that brings a tenant into existence, and the only one that binds
+   * a scope to something not yet in the database. `orgs` is keyed on its own `id` and
+   * `org_members` and `projects` on `org_id`, so an insert passes WITH CHECK exactly when
+   * the row being written matches the bound organisation — which is satisfiable before
+   * the organisation exists, because the id is what binds it.
+   *
+   * **The id is generated here and never accepted from a caller.** That is the whole
+   * safety property, and losing it is not a degradation but a total compromise: a caller
+   * who could choose the value bound to `app.org_id` could bind somebody else's, insert
+   * an `org_members` row naming themselves owner, and walk into an organisation that was
+   * never theirs. A parameter would make that one HTTP field away, so there is no
+   * parameter. The callback is handed the id it must use.
+   *
+   * No SECURITY DEFINER function, unlike the other places this schema reaches past a
+   * policy. It does not need one: nothing here reads across tenants or writes outside the
+   * organisation it just created, so the policies hold as written rather than being
+   * stepped around.
+   */
+  async provision<T>(work: (tx: Transaction, orgId: string) => Promise<T>): Promise<T> {
+    const orgId = randomUUID();
+    return await this.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.org_id', ${orgId}, true)`);
+      return work(tx, orgId);
     });
   }
 

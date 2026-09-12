@@ -65,6 +65,22 @@ export const projects = classifiedTable(
   },
   (t) => [
     index("projects_org_idx").on(t.orgId),
+    // Two permissive policies, which OR together, because a project is reached from two
+    // planes and both readings are legitimate.
+    //
+    // auth-api arrives with one project bound and must see exactly that row. The panel
+    // arrives with an organisation bound and must see the projects it owns — a list the
+    // first policy cannot express, since it is keyed on a project id the caller does not
+    // have yet. The second is also what lets an organisation create another project:
+    // WITH CHECK ties the new row's `org_id` to the bound organisation, so a project can
+    // only ever be added to the one the caller was authorised for (ADR-0011).
+    pgPolicy("projects_org_isolation", {
+      as: "permissive",
+      for: "all",
+      to: appRole,
+      using: sql`org_id = nullif(current_setting('app.org_id', true), '')::uuid`,
+      withCheck: sql`org_id = nullif(current_setting('app.org_id', true), '')::uuid`,
+    }),
     // The tenant key of this table is its own id, not a project_id column, so the
     // shared policy does not fit. Without this, a tenant could read every project row.
     pgPolicy("projects_tenant_isolation", {

@@ -77,9 +77,11 @@ export class MembershipGuard implements CanActivate {
     });
     const userId = PublicId.parse(IdPrefix.User, token.userId).uuid;
 
+    const name = token.claims["name"];
     request.dashboard = {
       userId,
       sessionId: token.sessionId,
+      displayName: typeof name === "string" && name.length > 0 ? name : null,
       membership: role === undefined ? null : await this.bind(request, userId, role),
     };
     return true;

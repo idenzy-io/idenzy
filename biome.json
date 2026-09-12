@@ -285,6 +285,7 @@
       "includes": [
         "packages/config/src/app-config.ts",
         "packages/persistence/src/migrate.ts",
+        "packages/persistence/src/seed.ts",
         "packages/persistence/drizzle.config.ts"
       ],
       "linter": {

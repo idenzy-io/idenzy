@@ -21,7 +21,8 @@
     "db:custom": "drizzle-kit generate --custom",
     "db:migrate": "node src/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "db:seed": "node dist/seed.js"
   },
   "dependencies": {
     "@idenzy/compliance": "workspace:*",

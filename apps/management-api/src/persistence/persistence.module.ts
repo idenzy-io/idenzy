@@ -1,5 +1,6 @@
 import { AppConfig } from "@idenzy/config/app-config";
 import { createPool } from "@idenzy/persistence/connection/pool";
+import { RegionCellReader } from "@idenzy/persistence/repository/region-cell-reader";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { Global, Module } from "@nestjs/common";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -36,7 +37,14 @@ export const DATABASE = "DATABASE";
       inject: [DATABASE],
       useFactory: (db: NodePgDatabase) => new UnitOfWork(db),
     },
+    // Keyed on nothing and the same list for everybody, so it is a provider rather than
+    // something built per transaction: `region_cells` is the registry of stacks we run.
+    {
+      provide: RegionCellReader,
+      inject: [DATABASE],
+      useFactory: (db: NodePgDatabase) => new RegionCellReader(db),
+    },
   ],
-  exports: [DATABASE, UnitOfWork],
+  exports: [DATABASE, UnitOfWork, RegionCellReader],
 })
 export class PersistenceModule {}

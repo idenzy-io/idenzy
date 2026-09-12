@@ -180,3 +180,61 @@ export const orgSecuritySettings = classifiedTable(
   },
   (t) => [primaryKey({ columns: [t.orgId] }), orgIsolationPolicy("org_security_settings")],
 ).enableRLS();
+
+/**
+ * What the person who created the organisation told us on the way in.
+ *
+ * Every field is optional and the row exists only once somebody answered something. The
+ * required half of getting started — the project's name and where it lives — is not here:
+ * that is a `projects` row, and a copy of it in a survey table would be a second answer to
+ * a question with one.
+ *
+ * Classified as personal data rather than as analytics, which is the point of it having a
+ * table instead of a `jsonb` column on `orgs`. These are free-text answers a named person
+ * gave about themselves and their work, they are attributable through `submitted_by`, and
+ * "what are you building" is the field most likely to contain something its author would
+ * not expect to find in an export. A blob would have been one `classified()` declaration
+ * covering fields nobody enumerated, and the generators would have had nothing to list.
+ *
+ * `Retention.Years1` rather than the project's lifetime: this informs what we build next
+ * and stops being worth keeping long before the organisation does.
+ */
+export const onboardingResponses = classifiedTable(
+  "onboarding_responses",
+  {
+    orgId: orgIdColumn(),
+    submittedBy: classified(uuid("submitted_by").notNull(), {
+      class: DataClass.Pseudonymous,
+      purpose: Purpose.ServiceConfiguration,
+      retention: Retention.Years1,
+      erasure: Erasure.RetainPseudonymous,
+      note: "The org_members row that answered. Who said it is part of what makes it useful.",
+    }),
+    useCase: classified(text("use_case"), {
+      class: DataClass.Pii,
+      purpose: Purpose.ServiceConfiguration,
+      retention: Retention.Years1,
+      subjectField: true,
+      erasure: Erasure.NullOut,
+      note: "Free text: what they are building. Optional, and skipping it is a normal answer.",
+    }),
+    heardFrom: classified(text("heard_from"), {
+      class: DataClass.Pii,
+      purpose: Purpose.ServiceConfiguration,
+      retention: Retention.Years1,
+      subjectField: true,
+      erasure: Erasure.NullOut,
+      note: "Free text: how they found us. Optional.",
+    }),
+    submittedAt: classified(
+      timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+      {
+        ...config,
+        purpose: Purpose.ServiceConfiguration,
+        retention: Retention.Years1,
+        loggable: true,
+      },
+    ),
+  },
+  (t) => [primaryKey({ columns: [t.orgId] }), orgIsolationPolicy("onboarding_responses")],
+).enableRLS();

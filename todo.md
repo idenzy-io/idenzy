@@ -438,7 +438,12 @@ client have no server halves to talk to yet.
 - [x] Reuse telemetry on `security.refresh_token_reused`. Nothing branches on it (ADR-0007)
 - [ ] Cookie mode is implemented but unusable in production until custom auth domains exist:
       `SameSite` is a site rule, so it needs the auth API to be same-site with the app
-- [~] Project creation, API keys, custom auth domain provisioning. The management API has
+- [~] Project creation, API keys, custom auth domain provisioning. Project creation is in:
+      `POST /v1/onboarding` makes the organisation, its owner and its first project in one
+      transaction, `POST /v1/orgs/:orgId/projects` adds another, and `GET /v1/regions`
+      offers only the cells we actually run. A person who registers directly gets their own
+      organisation; a person who accepts an invitation joins one and never comes through
+      here. API keys and custom auth domains are next. The management API has
       a spine now: config, persistence, the error contract, and a guard that verifies a
       dashboard access token with `@idenzy/node` — the same server SDK we sell, which is
       the most honest test of it we have — then resolves which organisation the request

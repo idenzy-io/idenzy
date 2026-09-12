@@ -2,8 +2,10 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "./config/config.module.js";
 import { HealthController } from "./health.controller.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
+import { OnboardingModule } from "./onboarding/onboarding.module.js";
 import { OrgsModule } from "./orgs/orgs.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
+import { ProjectsModule } from "./projects/projects.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 
 /**
@@ -18,7 +20,15 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
  * than by remembering to add a decorator.
  */
 @Module({
-  imports: [ConfigModule, ObservabilityModule, PersistenceModule, TenancyModule, OrgsModule],
+  imports: [
+    ConfigModule,
+    ObservabilityModule,
+    PersistenceModule,
+    TenancyModule,
+    OnboardingModule,
+    OrgsModule,
+    ProjectsModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}

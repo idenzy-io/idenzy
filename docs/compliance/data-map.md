@@ -11,11 +11,11 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 29 |
+| pii | 31 |
 | phi | 0 |
 | secret | 19 |
-| pseudonymous | 84 |
-| operational | 305 |
+| pseudonymous | 85 |
+| operational | 307 |
 
 ## `api_keys`
 
@@ -430,6 +430,23 @@ Notes:
 - `mode`: instant mode uses our shared app and is blocked on production domains (4.6).
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `settings`: Non-secret provider extras: Apple's team and key ids, a Microsoft directory.
+
+## `onboarding_responses`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `heardFrom` | pii | service_configuration | years_1 | yes | null_out | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `submittedAt` | operational | service_configuration | years_1 | no | not_applicable | no |
+| `submittedBy` | pseudonymous | service_configuration | years_1 | no | retain_pseudonymous | no |
+| `useCase` | pii | service_configuration | years_1 | yes | null_out | no |
+
+Notes:
+
+- `heardFrom`: Free text: how they found us. Optional.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `submittedBy`: The org_members row that answered. Who said it is part of what makes it useful.
+- `useCase`: Free text: what they are building. Optional, and skipping it is a normal answer.
 
 ## `org_invitations`
 

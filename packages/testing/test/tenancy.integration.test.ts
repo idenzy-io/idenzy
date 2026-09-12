@@ -352,6 +352,91 @@ describe("organisation isolation holds at the database", () => {
     expect(listed.rows[0]?.role).toBe("owner");
   });
 
+  /**
+   * Provisioning: the one transaction that creates a tenant rather than working inside
+   * one, and the only place a scope is bound to something not yet in the database.
+   *
+   * It needs no SECURITY DEFINER function, unlike every other place this schema reaches
+   * past a policy. Binding `app.org_id` to a freshly generated id satisfies every WITH
+   * CHECK the three inserts face, because each row being written names that organisation.
+   */
+  it("creates an organisation, its owner and its first project in one transaction", async () => {
+    const orgId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const userId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+    const cell = await harness.owner.query<{ id: string }>(`SELECT id FROM region_cells LIMIT 1`);
+    const cellId = cell.rows[0]?.id ?? "";
+
+    await harness.db.execute(sql`select set_config('app.project_id', '', false)`);
+    await harness.db.execute(sql`select set_config('app.org_id', ${orgId}, false)`);
+    await harness.db.execute(
+      sql`insert into orgs (id, name, cell_id) values (${orgId}::uuid, 'Provisioned', ${cellId}::uuid)`,
+    );
+    await harness.db.execute(
+      sql`insert into org_members (org_id, user_id, role)
+          values (${orgId}::uuid, ${userId}::uuid, 'owner')`,
+    );
+    await harness.db.execute(
+      sql`insert into projects (id, org_id, name, cell_id, kms_key_name)
+          values (${projectId}::uuid, ${orgId}::uuid, 'First', ${cellId}::uuid, 'k')`,
+    );
+
+    const seen = await harness.db.execute<{ name: string }>(sql`select name from projects`);
+    expect(seen.rows).toHaveLength(1);
+    expect(seen.rows[0]?.name).toBe("First");
+  });
+
+  /**
+   * The attack the design turns on, and the reason `UnitOfWork.provision` generates the
+   * organisation id rather than taking one.
+   *
+   * A caller who could choose what `app.org_id` binds to could bind an organisation that
+   * is not theirs and insert an `org_members` row naming themselves its owner. The
+   * database cannot tell that apart from legitimate provisioning — both are an insert
+   * matching the bound organisation — so nothing here refuses it, and that is exactly why
+   * the id must never come from a request. This asserts the shape of the hole so the
+   * reason the parameter does not exist stays written down.
+   */
+  it("would let a bound organisation id write into that organisation, which is why it is never a parameter", async () => {
+    await harness.db.execute(sql`select set_config('app.org_id', ${ORG_A}, false)`);
+    const intruder = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    await harness.db.execute(
+      sql`insert into org_members (org_id, user_id, role)
+          values (${ORG_A}::uuid, ${intruder}::uuid, 'admin')`,
+    );
+    const team = await harness.db.execute(sql`select id from org_members`);
+    expect(team.rows.length).toBeGreaterThan(1);
+
+    // And the same write against an organisation that is not bound is refused, which is
+    // the half that does hold: the policy, not the application, is what stops it.
+    await expect(
+      harness.db.execute(
+        sql`insert into org_members (org_id, user_id, role)
+            values (${ORG_B}::uuid, ${intruder}::uuid, 'admin')`,
+      ),
+    ).rejects.toThrow();
+    await harness.owner.query(`DELETE FROM org_members WHERE user_id = $1`, [intruder]);
+  });
+
+  /**
+   * `projects` carries a policy for each plane and they OR together, so both questions
+   * have an answer: auth-api asks "the project I am" and the panel asks "the projects I
+   * own". Neither reading widens the other.
+   */
+  it("shows an organisation its own projects, and a project transaction only itself", async () => {
+    await harness.db.execute(sql`select set_config('app.project_id', '', false)`);
+    await harness.db.execute(sql`select set_config('app.org_id', ${ORG_A}, false)`);
+    const owned = await harness.db.execute<{ id: string }>(sql`select id from projects`);
+    expect(owned.rows.map((row) => row.id)).toContain(PROJECT_A);
+    expect(owned.rows.map((row) => row.id)).not.toContain(PROJECT_B);
+
+    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
+    await harness.db.execute(sql`select set_config('app.project_id', ${PROJECT_A}, false)`);
+    const itself = await harness.db.execute<{ id: string }>(sql`select id from projects`);
+    expect(itself.rows).toHaveLength(1);
+    expect(itself.rows[0]?.id).toBe(PROJECT_A);
+  });
+
   it("holds one owner per organisation, so a transfer cannot leave two", async () => {
     await expect(
       harness.owner.query(

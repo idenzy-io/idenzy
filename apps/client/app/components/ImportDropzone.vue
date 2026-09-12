@@ -127,9 +127,12 @@ function remove() {
       @change="onPick"
     />
 
+    <!-- An inset in the dialog, so a tint of the ink with a hairline ring and never the
+         page's own ground: on the dark theme a canvas-toned box cut into the surface is
+         the darkest thing on the screen, over the one file the reader came to check. -->
     <div
       v-if="shown"
-      class="flex items-start gap-4 rounded-(--idenzy-radius) border border-line bg-canvas py-4 pr-5 pl-4"
+      class="flex items-start gap-4 rounded-(--idenzy-radius) bg-ink/4 py-4 pr-5 pl-4 ring-1 ring-ink/6 ring-inset"
     >
       <span aria-hidden="true" class="relative mt-0.5 flex h-12 w-10 flex-none items-center">
         <svg class="ml-1 block" fill="none" height="48" viewBox="0 0 36 48" width="36">

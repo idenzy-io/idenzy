@@ -8,15 +8,18 @@
  * paste all produce a list entry that never matches the header a browser sends, and the
  * failure looks identical to not having added it at all.
  */
+/* The value the list will hold, from the same function the management API's schema
+   canonicalises with: the preview below is a promise about what is about to be stored, and two
+   spellings of it would make that promise a lie. */
+import { canonicalBrowserOrigin } from "@idenzy/protocol/schemas/management";
 import { ALLOWED_ORIGIN_ISSUE_LABELS, validateAllowedOrigin } from "~/utils/origins";
-/* The syntax of an origin is one fact and lives in one place; see the note in
-   `~/utils/origins` about why the rules that make one allowed do not. */
-import { normaliseOrigin } from "~/utils/passkeys";
 
 const props = defineProps<{
   /** What the project already allows, so a duplicate is refused before the call. */
   existing: readonly string[];
   busy: boolean;
+  /** Why the save was refused. The dialog stays open with the value still in the field. */
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -40,7 +43,7 @@ const issue = computed(() => {
 });
 
 const ready = computed(() => typed.value.trim() !== "" && issue.value === "");
-const stored = computed(() => (ready.value ? normaliseOrigin(typed.value) : ""));
+const stored = computed(() => (ready.value ? canonicalBrowserOrigin(typed.value) : ""));
 const changed = computed(() => ready.value && stored.value !== typed.value.trim());
 
 function confirm() {
@@ -95,6 +98,8 @@ function confirm() {
             scheme, the host and the port and nothing else.
           </span>
         </p>
+
+        <p v-if="error" class="m-0 text-xs leading-5 text-error" role="alert">{{ error }}</p>
 
         <footer class="flex items-center justify-end gap-2">
           <v-btn

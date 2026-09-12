@@ -23,6 +23,7 @@
  * deliberate acts was the point of keeping the tables apart, so each row says what
  * accepting it grants.
  */
+import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
   ALLOW_ORIGIN_HEADER,
@@ -36,6 +37,7 @@ import {
   SUGGESTION_GRANT,
   suggestionsFrom,
 } from "~/utils/origins";
+import { isRefusal } from "~/utils/sign-in-errors";
 
 const projects = useProjectStore();
 const store = useOriginsStore();
@@ -44,6 +46,17 @@ const passkeys = usePasskeysStore();
 const providers = useProvidersStore();
 
 const now = useNow({ interval: 60_000 });
+
+const project = computed(() => projects.current.id);
+
+/* Read when the screen opens and again whenever the project changes. `forProject` is
+   deliberately synchronous — six screens read it in a computed, and a fetch inside one is a
+   request per render — so something has to fill the cache, and this is it. */
+watch(project, (id) => void store.load(id), { immediate: true });
+
+function reload() {
+  void store.load(project.value);
+}
 
 const origins = computed(() => store.forProject(projects.current.id));
 const allowed = computed(() => origins.value.map((entry) => entry.origin));
@@ -86,26 +99,76 @@ const suggestions = computed(() =>
  */
 
 const addOpen = ref(false);
+const addError = ref("");
 const removeOpen = ref(false);
 const removing = ref("");
+const removeError = ref("");
+/**
+ * What went wrong on a write with no dialog of its own: a suggestion accepted from its row, or
+ * the checker's own Allow. Both change a permission from a control with no footer to put a
+ * sentence in, so the sentence goes under the list heading.
+ */
+const failure = ref("");
+
+function openAdd() {
+  addError.value = "";
+  addOpen.value = true;
+}
 
 async function confirmAdd(origin: string) {
-  await whileBusy("add", () => store.add(projects.current.id, origin));
-  addOpen.value = false;
+  addError.value = "";
+  failure.value = "";
+  await whileBusy("add", async () => {
+    try {
+      await store.add(projects.current.id, origin);
+      addOpen.value = false;
+    } catch (cause: unknown) {
+      addError.value = refused(cause, origin);
+    }
+  });
 }
 
 function accept(origin: string, source: OriginSource | null) {
-  void whileBusy(origin, () => store.add(projects.current.id, origin, source));
+  failure.value = "";
+  void whileBusy(origin, async () => {
+    try {
+      await store.add(projects.current.id, origin, source);
+    } catch (cause: unknown) {
+      failure.value = refused(cause, origin);
+    }
+  });
 }
 
 function askRemoval(origin: string) {
+  removeError.value = "";
   removing.value = origin;
   removeOpen.value = true;
 }
 
 async function confirmRemoval() {
-  await whileBusy(removing.value, () => store.remove(projects.current.id, removing.value));
-  removeOpen.value = false;
+  removeError.value = "";
+  await whileBusy(removing.value, async () => {
+    try {
+      await store.remove(projects.current.id, removing.value);
+      removeOpen.value = false;
+    } catch {
+      removeError.value =
+        "It was not removed, so a page there can still read what the API answers. Try again.";
+    }
+  });
+}
+
+/**
+ * What a refused write says.
+ *
+ * A conflict is the one worth its own sentence and the one most likely here, because a
+ * suggestion offered from a stale list is exactly how two people racing on one project meet.
+ * Everything else is the same sentence: nothing was granted.
+ */
+function refused(cause: unknown, origin: string): string {
+  return isRefusal(cause, ErrorCode.Conflict)
+    ? `${origin} is already allowed on this project. Reload to see the list as it is now.`
+    : "The origin was not allowed. Nothing changed, so try again.";
 }
 
 /*
@@ -136,9 +199,16 @@ watch(typed, () => {
 function allowChecked() {
   const found = answer.value;
   if (found === null || !found.addable) return;
+  failure.value = "";
   void whileBusy(found.origin, async () => {
-    await store.add(projects.current.id, found.origin, null);
-    asked.value = found.origin;
+    try {
+      await store.add(projects.current.id, found.origin, null);
+      /* Re-asked against the list as it now is, so the verdict above the button changes to
+         match what the button just did. */
+      asked.value = found.origin;
+    } catch (cause: unknown) {
+      failure.value = refused(cause, found.origin);
+    }
   });
 }
 
@@ -162,6 +232,12 @@ const LIST_COLUMNS: readonly RecordColumn[] = [
 
 const listHeading = computed(() => {
   const count = origins.value.length;
+  /* A failed re-read keeps the rows it had, and the heading says which of the two this is:
+     nothing known, or something known and now a read behind. */
+  if (store.refusal !== null)
+    return count === 0
+      ? "This project's origins could not be read"
+      : "The last read failed, so this is the list from before it";
   if (count === 0) return "No origin is allowed";
   return count === 1 ? "One origin is allowed" : `${count} origins are allowed`;
 });
@@ -187,7 +263,15 @@ const GUIDES_URL = "https://idenzy.dev/docs/origins";
   <div class="flex w-full flex-col gap-6">
     <PageHeader title="Allowed origins">
       <template #badge>
+        <!-- "None allowed" over a list we failed to read would be the worst claim on the
+             screen: it is the state an operator is here to fix. -->
         <StatusBadge
+          v-if="store.refusal !== null"
+          label="Not read"
+          tone="warning"
+        />
+        <StatusBadge
+          v-else
           :label="origins.length === 0 ? 'None allowed' : `${origins.length} allowed`"
           :tone="origins.length === 0 ? 'warning' : 'success'"
         />
@@ -211,7 +295,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/origins";
         >
           CORS guide
         </v-btn>
-        <FancyButton :disabled="isBusy('add')" @click="addOpen = true">
+        <FancyButton :disabled="isBusy('add')" @click="openAdd()">
           <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           Allow origin
         </FancyButton>
@@ -270,7 +354,39 @@ const GUIDES_URL = "https://idenzy.dev/docs/origins";
         </p>
       </header>
 
-      <RecordTable :columns="LIST_COLUMNS" framed label="Allowed origins">
+      <!-- A write with no dialog to put a sentence in: a suggestion's own Allow, or the
+           checker's. -->
+      <InfoNote
+        v-if="failure"
+        :text="failure"
+        icon="material-symbols:error-outline"
+        tone="warning"
+      />
+
+      <!-- A read that failed says so and offers the read again. Left to the empty state
+           below, it would tell somebody no origin is allowed, which is the one state this
+           screen exists to fix. Rows already read stay under it. -->
+      <div v-if="store.refusal" class="flex flex-col items-start gap-2.5">
+        <InfoNote :text="store.refusal" icon="material-symbols:error-outline" tone="warning" />
+        <v-btn
+          :loading="store.loading"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:refresh"
+          size="small"
+          variant="outlined"
+          @click="reload()"
+        >
+          Try again
+        </v-btn>
+      </div>
+
+      <RecordTable
+        v-if="store.refusal === null || origins.length > 0"
+        :columns="LIST_COLUMNS"
+        framed
+        label="Allowed origins"
+      >
         <template v-if="store.loading">
           <li v-for="row in 2" :key="row" class="record-row">
             <span class="record-cell record-cell--primary flex items-center gap-3">
@@ -325,7 +441,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/origins";
               localhost is allowed by the deployment while it runs in development. This list is
               for the browser origins you deploy to.
             </p>
-            <FancyButton class="mt-2" @click="addOpen = true">
+            <FancyButton class="mt-2" @click="openAdd()">
               <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
               Allow origin
             </FancyButton>
@@ -574,6 +690,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/origins";
       v-if="addOpen"
       v-model="addOpen"
       :busy="isBusy('add')"
+      :error="addError"
       :existing="allowed"
       @confirm="confirmAdd"
     />
@@ -582,6 +699,7 @@ const GUIDES_URL = "https://idenzy.dev/docs/origins";
       v-if="removeOpen"
       v-model="removeOpen"
       :busy="isBusy(removing)"
+      :error="removeError"
       :last="origins.length === 1"
       :origin="removing"
       @confirm="confirmRemoval"

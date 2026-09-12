@@ -273,7 +273,13 @@ async function addReturnUrl(uri: string, allowOrigin: boolean) {
     await store.addReturnUri(projects.current.id, uri);
     if (!allowOrigin) return;
     const origin = originOf(uri);
-    if (origin !== null) await origins.add(projects.current.id, origin, "oauth");
+    if (origin === null) return;
+    try {
+      await origins.add(projects.current.id, origin, "oauth");
+    } catch {
+      /* The step already says it: a URL whose origin the allowlist does not hold is marked
+         as a gap with what it costs, so a refusal leaves the truth on screen. */
+    }
   } finally {
     returnBusy.value = false;
   }

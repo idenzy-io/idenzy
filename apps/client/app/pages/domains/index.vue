@@ -57,7 +57,16 @@ const project = computed(() => projects.current.id);
 /* Read when the screen opens and again whenever the project changes. `forProject` is
    deliberately synchronous — it is read in a computed, and a fetch inside one is a request
    per render — so something has to fill the cache, and this is it. */
-watch(project, (id) => void store.load(id), { immediate: true });
+watch(
+  project,
+  (id) => {
+    void store.load(id);
+    /* The origins store too: the setup dialog's check says whether the operator's own
+       application origin may call this host, and it reads that list. */
+    void origins.load(id);
+  },
+  { immediate: true },
+);
 
 function reload() {
   void store.load(project.value);

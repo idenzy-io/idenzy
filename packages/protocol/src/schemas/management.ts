@@ -247,18 +247,21 @@ export const browserOriginSchema = z
   .refine((value) => !value.includes("*"), {
     message: "An Origin header is one exact string, so a wildcard would match nothing at all.",
   })
-  .refine((value) => originParts(value) !== null, {
+  .refine((value) => parseBrowserOrigin(value) !== null, {
     message: "A scheme, a host and an optional port, and nothing after them.",
   })
-  .refine((value) => originParts(value)?.scheme !== "http", {
-    message: "Only https: a credentialed response read over http is readable by the network.",
-  })
-  .refine((value) => !LOOPBACK_HOSTS.has(originParts(value)?.host ?? ""), {
+  // Loopback before the scheme, so the dashboard's own check can report the two in this
+  // order: `http://localhost:3000` is a development URL rather than an insecure choice, and
+  // "you do not need to add this" is the sentence worth reading.
+  .refine((value) => !isLoopbackOrigin(value), {
     message: "Loopback is allowed by the deployment outside production, not by this list.",
   })
-  .transform(canonicalOrigin);
+  .refine((value) => parseBrowserOrigin(value)?.scheme !== "http", {
+    message: "Only https: a credentialed response read over http is readable by the network.",
+  })
+  .transform(canonicalBrowserOrigin);
 
-interface OriginParts {
+export interface BrowserOriginParts {
   readonly scheme: string;
   readonly host: string;
   /** As typed, so a default port can be recognised and dropped rather than stored. */
@@ -282,7 +285,14 @@ interface OriginParts {
 const ORIGIN_PATTERN =
   /^(https?):\/\/([a-z\d](?:[a-z\d-]*[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]*[a-z\d])?)*|\[[\da-f:]+\])(?::(\d{1,5}))?$/i;
 
-function originParts(value: string): OriginParts | null {
+/**
+ * Exported because the dashboard asks the same question and must not answer it differently.
+ *
+ * The panel refuses an origin while somebody is typing it and explains which rule it broke,
+ * which is a better message than a 400 — but only while the two agree about what an origin
+ * is. One parser, two readers: the sentences stay the panel's and the syntax stays here.
+ */
+export function parseBrowserOrigin(value: string): BrowserOriginParts | null {
   // One trailing slash is tolerated because every browser address bar shows one, and it is
   // the single character somebody is most likely to copy along with the origin.
   const match = ORIGIN_PATTERN.exec(value.trim().replace(/\/$/, ""));
@@ -292,6 +302,12 @@ function originParts(value: string): OriginParts | null {
   return { scheme: scheme.toLowerCase(), host: host.toLowerCase(), port: port ?? null };
 }
 
+/** Whether an origin names a loopback host, which this list refuses and code allows. */
+export function isLoopbackOrigin(value: string): boolean {
+  const parts = parseBrowserOrigin(value);
+  return parts !== null && LOOPBACK_HOSTS.has(parts.host);
+}
+
 /**
  * What the browser will actually send: lowercase, and with no port where the port is the
  * scheme's own default.
@@ -299,9 +315,12 @@ function originParts(value: string): OriginParts | null {
  * `https://app.example.com:443` is a correct spelling that no browser ever sends, so it is
  * canonicalised rather than refused with a message nobody could act on. Two spellings of one
  * origin stored as two rows would each read as a decision somebody took.
+ *
+ * Exported for the same reason as the parser: the panel shows the value it is about to store
+ * before it stores it, and showing a different one would make that preview a lie.
  */
-function canonicalOrigin(value: string): string {
-  const parts = originParts(value);
+export function canonicalBrowserOrigin(value: string): string {
+  const parts = parseBrowserOrigin(value);
   if (parts === null) return value.trim().toLowerCase();
   const implied = parts.scheme === "https" ? "443" : "80";
   return parts.port === null || parts.port === implied

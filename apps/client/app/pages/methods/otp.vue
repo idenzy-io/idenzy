@@ -56,6 +56,14 @@ const sendingDomains = useSendingDomainsStore();
 const suppressions = useSuppressionsStore();
 const origins = useOriginsStore();
 
+/* The CORS allowlist is read from the management API over a cache, and this screen both
+   reads it — a magic link lands on a page that then calls us — and writes to it. */
+watch(
+  () => projects.current.id,
+  (id) => void origins.load(id),
+  { immediate: true },
+);
+
 const saved = computed(() => store.settingsFor(projects.current.id));
 const stats = computed(() => store.stats(projects.current.id));
 
@@ -220,9 +228,16 @@ function addReturnUrl(uri: string, allowOrigin: boolean) {
   if (!held.includes(uri)) setMagicLink({ redirectUris: [...held, uri] }, "redirectUris");
   if (!allowOrigin) return;
   const origin = originOf(uri);
-  if (origin !== null) {
-    void whileBusy("link.origin", () => origins.add(projects.current.id, origin, "magic_link"));
-  }
+  if (origin === null) return;
+  void whileBusy("link.origin", async () => {
+    try {
+      await origins.add(projects.current.id, origin, "magic_link");
+    } catch {
+      /* The checklist already says it: a return URL whose origin is not allowed shows as a
+         gap with the consequence, so a refusal leaves the state on screen rather than
+         announcing itself and vanishing. */
+    }
+  });
 }
 
 function removeReturnUrl(uri: string) {

@@ -473,10 +473,13 @@ client have no server halves to talk to yet.
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
       can read (ADR-0008), and a global middleware decides who sees which half of the panel.
-      Four stores are off fixtures now: the organisation and project lists, API keys, and
-      auth domains — claiming a hostname, the DNS check and removing one are management API
-      calls, and the panel no longer mints a record value or decides that a domain is
-      verified. What the wiring cost the screen was two claims it could no longer support: a
+      Five stores are off fixtures now: the organisation and project lists, API keys, auth
+      domains and the CORS allowlist — claiming a hostname, the DNS check and removing one are
+      management API calls, and the panel no longer mints a record value or decides that a
+      domain is verified. The origins screen writes the real list too, and what an origin *is*
+      now comes from `browserOriginSchema` rather than from a second copy of the rule in the
+      panel, so the dialog accepts exactly what the API accepts and previews exactly what it
+      stores. What the wiring cost the screen was two claims it could no longer support: a
       resolved authorisation record is not an issued certificate, and nothing checks DNS on a
       schedule, so a check happens because somebody asked. A refusal now carries the
       contract's own code into the panel (`refusalIn`), which is what lets a dialog say "that

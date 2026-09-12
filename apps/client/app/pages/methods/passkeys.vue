@@ -35,6 +35,14 @@ const projects = useProjectStore();
 const store = usePasskeysStore();
 const origins = useOriginsStore();
 
+/* The CORS allowlist is read from the management API over a cache, and this screen's setup
+   check asks whether a ceremony origin may also call us: two lists, one of them real. */
+watch(
+  () => projects.current.id,
+  (id) => void origins.load(id),
+  { immediate: true },
+);
+
 const saved = computed(() => store.settingsFor(projects.current.id));
 const stats = computed(() => store.stats(projects.current.id));
 const configured = computed(() => saved.value.relyingParty !== null);

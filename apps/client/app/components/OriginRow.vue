@@ -58,8 +58,12 @@ const source = computed(() =>
       class="record-cell record-cell--half flex flex-col gap-0.5"
       data-label="Added from"
     >
+      <!-- "Not recorded" and not "Typed in": `project_origins` has no column for how a row
+           got here, so the only row that can say is one accepted from a suggestion in this
+           session. Claiming a row was typed in because we cannot remember otherwise would be
+           inventing the answer. -->
       <span class="text-[11px] leading-4 text-ink/70">
-        {{ entry.source === null ? "Typed in" : ORIGIN_SOURCE_FROM[entry.source] }}
+        {{ entry.source === null ? "Not recorded" : ORIGIN_SOURCE_FROM[entry.source] }}
       </span>
       <v-tooltip :text="formatDateTime(entry.addedAt)" location="top">
         <template #activator="{ props: tip }">

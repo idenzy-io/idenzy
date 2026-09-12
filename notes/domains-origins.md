@@ -93,6 +93,20 @@ Paste a URL containing a path and understand the required origin form. Confirm a
 - **The response-versus-preflight reference is folded.** Origin syntax, the exact match and
   the development loopback lead; the lookup, the timing and where CORS is enforced sit in
   the expandable with the two sample responses, which is the one thing prose cannot carry.
+- **The list is the management API's now, and one claim went with the fixture.** `Added from`
+  says `Not recorded` for a row the server answered with, because `project_origins` has no
+  column for how a row got there; a suggestion accepted in this session keeps its source for
+  that session and does not pretend to after a reload. `Typed in` was the fixture's answer and
+  would have been the panel inventing the one thing it cannot know.
+- **One parser decides what an origin is, and the panel is not it.** `browserOriginSchema` in
+  `@idenzy/protocol` holds the syntax and the canonical form; this screen keeps the sentences,
+  because "which of the four rules you broke" is a better message than a 400 — but only while
+  the two agree, so a test asserts that the dialog accepts exactly what the API accepts and
+  previews exactly what it stores.
+- **A read that failed says so.** The empty state here is a real diagnosis — no origin allowed
+  is the state somebody came to fix — so letting it stand in for a list we could not read would
+  be the most misleading answer on the screen. The notice offers the read again, and rows
+  already read stay under it.
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 

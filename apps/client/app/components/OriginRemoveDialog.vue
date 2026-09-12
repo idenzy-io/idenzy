@@ -16,6 +16,8 @@ const props = defineProps<{
   /** Whether it is the only one left, which is a different sentence. */
   last: boolean;
   busy: boolean;
+  /** Why the removal was refused, which means a page there can still read the response. */
+  error: string;
 }>();
 
 const open = defineModel<boolean>({ required: true });
@@ -70,6 +72,8 @@ function confirm() {
             setting.
           </span>
         </p>
+
+        <p v-if="error" class="m-0 text-xs leading-5 text-error" role="alert">{{ error }}</p>
 
         <footer class="flex items-center justify-end gap-2">
           <v-btn

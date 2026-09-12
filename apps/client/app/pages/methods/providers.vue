@@ -48,6 +48,14 @@ const store = useProvidersStore();
 const origins = useOriginsStore();
 const { copy } = useClipboard({ legacy: true });
 
+/* The CORS allowlist is read from the management API over a cache. This screen needs it
+   filled to say whether a return URL's origin may call us, and the setup dialog adds to it. */
+watch(
+  () => projects.current.id,
+  (id) => void origins.load(id),
+  { immediate: true },
+);
+
 /**
  * Where the provider returns the browser to. It is our host and not the customer's, and
  * it comes from runtime configuration so a deployment on another host says so. The
@@ -227,7 +235,15 @@ async function addReturnUrl(uri: string, allowOrigin: boolean) {
     await store.addReturnUri(projects.current.id, uri);
     if (!allowOrigin) return;
     const origin = originOf(uri);
-    if (origin !== null) await origins.add(projects.current.id, origin, "oauth");
+    if (origin === null) return;
+    try {
+      await origins.add(projects.current.id, origin, "oauth");
+    } catch {
+      /* Caught and not announced, because the row below already says it: the URL is
+         registered and `originGap` marks it as an origin the allowlist does not hold, with
+         the consequence spelled out. A toast would repeat a warning that is already on
+         screen and then disappear. */
+    }
   });
 }
 

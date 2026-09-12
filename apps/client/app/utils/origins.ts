@@ -17,33 +17,49 @@
  * derivation in the schema, which is why `suggestionsFrom` returns candidates and adding
  * one is an ordinary write.
  *
- * `parseOrigin` and `normaliseOrigin` come from `./passkeys` on purpose. What a valid
- * origin *is* syntactically is one fact and belongs in one place; what makes one
- * *allowed* is two different rules and those stay apart. Everything here that has a
- * counterpart there carries a longer name for the same reason: Nuxt auto-imports these
- * files into one namespace, and two exports called `validateOrigin` would leave whichever
- * one it picked answering the other's question.
+ * What a valid origin *is* syntactically comes from `@idenzy/protocol`, which is where the
+ * management API's own schema reads it from: the panel refuses a value while somebody is
+ * typing it and says which rule it broke, and that is a better message than a 400 only while
+ * the two agree about the rule. What makes one *allowed* is a separate set of rules and those
+ * stay here. Everything in this file that has a counterpart in `./passkeys` carries a longer
+ * name, because Nuxt auto-imports both into one namespace and two exports called
+ * `validateOrigin` would leave whichever one it picked answering the other's question — and
+ * the WebAuthn rules really are different: they permit http on loopback and values that are
+ * not URLs at all.
  */
 
-import { normaliseOrigin, parseOrigin } from "./passkeys";
+import {
+  canonicalBrowserOrigin,
+  isLoopbackOrigin,
+  type ProjectOrigin,
+  parseBrowserOrigin,
+} from "@idenzy/protocol/schemas/management";
 
 export interface AllowedOrigin {
+  /** The row's own id, which is what a removal addresses. */
+  id: string;
   /** Scheme, host and port, exactly as it will arrive in the header. */
   origin: string;
   addedAt: string;
-  /** Where it came from, for a row that says how it got here. Null for one typed in. */
+  /**
+   * Where it came from, for a row that says how it got here.
+   *
+   * Null for anything the server answered with, because `project_origins` has no column for
+   * it: a suggestion accepted in this session is remembered by the store and is not a fact
+   * that survives a reload. Deriving it from the other lists afterwards would be the
+   * derivation ADR-0006 exists to refuse.
+   */
   source: OriginSource | null;
+}
+
+/** A row from the management API as this screen's model. */
+export function allowedOriginFrom(row: ProjectOrigin): AllowedOrigin {
+  return { id: row.id, origin: row.origin, addedAt: row.createdAt, source: null };
 }
 
 /*
  * Adding one.
  */
-
-/**
- * The loopback hosts a browser treats as a secure context. The list is here to refuse
- * them rather than to allow them: see `origin_loopback` below.
- */
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 export type AllowedOriginIssue =
   | "origin_invalid"
@@ -67,8 +83,11 @@ export const ALLOWED_ORIGIN_ISSUE_LABELS: Record<AllowedOriginIssue, string> = {
 /**
  * The issue with an origin somebody typed, or null.
  *
- * The wildcard case is checked before parsing, because `https://*.example.com` parses
- * perfectly well as a URL and the refusal has to say what is actually wrong with it.
+ * The same rules in the same order as `browserOriginSchema`, and over the same parser, so a
+ * value this accepts is not one the API then refuses with a code the dialog can only report
+ * as "check the details". The wildcard is checked before parsing, because
+ * `https://*.example.com` fails the parse for the wrong reason and the refusal has to say
+ * what is actually wrong with it.
  */
 export function validateAllowedOrigin(
   value: string,
@@ -77,15 +96,15 @@ export function validateAllowedOrigin(
   const text = value.trim();
   if (text.includes("*")) return "origin_wildcard";
 
-  const url = parseOrigin(text);
-  if (url === null) return "origin_invalid";
+  const parts = parseBrowserOrigin(text);
+  if (parts === null) return "origin_invalid";
+  /* Loopback before the scheme, because `http://localhost:3000` is a development URL rather
+     than an insecure choice, and "you do not need to add this" is the useful sentence. */
+  if (isLoopbackOrigin(text)) return "origin_loopback";
+  if (parts.scheme === "http") return "origin_insecure";
 
-  const host = url.hostname.toLowerCase();
-  if (LOOPBACK_HOSTS.has(host)) return "origin_loopback";
-  if (url.protocol !== "https:") return "origin_insecure";
-
-  const origin = normaliseOrigin(text);
-  if (existing.map(normaliseOrigin).includes(origin)) return "origin_duplicate";
+  const origin = canonicalBrowserOrigin(text);
+  if (existing.map(canonicalBrowserOrigin).includes(origin)) return "origin_duplicate";
   return null;
 }
 
@@ -151,7 +170,7 @@ export function suggestionsFrom(
   from: Partial<Record<OriginSource, readonly string[]>>,
   allowed: readonly string[],
 ): OriginSuggestion[] {
-  const held = new Set(allowed.map(normaliseOrigin));
+  const held = new Set(allowed.map(canonicalBrowserOrigin));
   const seen = new Set<string>();
   const out: OriginSuggestion[] = [];
 
@@ -197,8 +216,8 @@ export function sortOrigins(origins: readonly AllowedOrigin[]): AllowedOrigin[] 
 }
 
 export function isOriginAllowed(origin: string, allowed: readonly string[]): boolean {
-  const value = normaliseOrigin(origin);
-  return allowed.map(normaliseOrigin).includes(value);
+  const value = canonicalBrowserOrigin(origin);
+  return allowed.map(canonicalBrowserOrigin).includes(value);
 }
 
 /*

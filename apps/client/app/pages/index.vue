@@ -45,14 +45,15 @@ const audit = useAuditStore();
 
 const project = computed(() => projects.current.id);
 
-/* Two of the five facts come from the management API, and both stores read over a cache
-   something has to fill. Without this the strip reported a project with keys and a verified
-   domain as having neither, which is a worse answer than a spinner. */
+/* Three of the five facts come from the management API, and each store reads over a cache
+   something has to fill. Without this the strip reported a project with keys, origins and a
+   verified domain as having none of them, which is a worse answer than a spinner. */
 watch(
   project,
   (id) => {
     void keys.load(id);
     void domains.load(id);
+    void origins.load(id);
   },
   { immediate: true },
 );

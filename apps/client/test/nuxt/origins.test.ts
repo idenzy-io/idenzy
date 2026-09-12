@@ -1,8 +1,10 @@
+import { browserOriginSchema } from "@idenzy/protocol/schemas/management";
 import { describe, expect, it } from "vitest";
 import {
   ALLOW_ORIGIN_HEADER,
   ALLOWED_ORIGIN_ISSUE_LABELS,
   type AllowedOrigin,
+  allowedOriginFrom,
   checkOrigin,
   corsSample,
   isOriginAllowed,
@@ -18,8 +20,66 @@ import {
 } from "../../app/utils/origins";
 
 function stored(origin: string): AllowedOrigin {
-  return { origin, addedAt: "2026-06-04T10:12:00.000Z", source: null };
+  return { id: `orn_${origin.length}`, origin, addedAt: "2026-06-04T10:12:00.000Z", source: null };
 }
+
+/**
+ * The panel refuses an origin while it is being typed and the API refuses it with a code, and
+ * the panel's message is only better while the two agree about the rule. They share the
+ * parser; this is the assertion that they also share the answer.
+ */
+describe("validateAllowedOrigin against the API's own schema", () => {
+  const CASES = [
+    "https://app.example.com",
+    "https://app.example.com:8443",
+    "https://app.example.com:443",
+    "https://app.example.com/callback",
+    "https://app.example.com?next=/x",
+    "https://user:pass@app.example.com",
+    "https://my_app.example.com",
+    "https://*.example.com",
+    "http://app.example.com",
+    "https://localhost:3000",
+    "http://127.0.0.1:5173",
+    "myapp://callback",
+    "app.example.com",
+    "https://[2001:db8::1]:8443",
+    "https://app.example.com:70000",
+  ];
+
+  it("accepts exactly what the management API accepts", () => {
+    for (const value of CASES) {
+      const bySchema = browserOriginSchema.safeParse(value).success;
+      expect(validateAllowedOrigin(value, []) === null, value).toBe(bySchema);
+    }
+  });
+
+  /* The panel stores what the dialog previewed, and the API canonicalises again on arrival.
+     A disagreement here would put a row on the list under a spelling nobody chose. */
+  it("previews the value the API would store", () => {
+    for (const value of CASES) {
+      const parsed = browserOriginSchema.safeParse(value);
+      if (!parsed.success) continue;
+      expect(isOriginAllowed(value, [parsed.data]), value).toBe(true);
+    }
+  });
+});
+
+describe("allowedOriginFrom", () => {
+  it("reads a row as the screen's model, and claims no source for it", () => {
+    const mapped = allowedOriginFrom({
+      id: "orn_1",
+      origin: "https://app.example.com",
+      createdAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(mapped).toEqual({
+      id: "orn_1",
+      origin: "https://app.example.com",
+      addedAt: "2026-09-01T00:00:00.000Z",
+      source: null,
+    });
+  });
+});
 
 describe("validateAllowedOrigin", () => {
   it("takes a scheme, a host and an optional port", () => {

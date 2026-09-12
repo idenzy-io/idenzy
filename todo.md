@@ -451,7 +451,9 @@ client have no server halves to talk to yet.
       prove the chain end to end. The three things in the title are next, in that order
 - [ ] Webhooks with HMAC signing, retries and replay safety
 - [ ] Usage metering and the MAU HyperLogLog sketch
-- [ ] `client` panel v1: users, sessions, providers, templates, keys, usage
+- [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
+      built and every store is a placeholder; getting started is the newest and is wired the
+      same way. What is left is the management client itself, at which point the fixtures go
 - [ ] Cloud Armor rules and application rate limits
 
 ---

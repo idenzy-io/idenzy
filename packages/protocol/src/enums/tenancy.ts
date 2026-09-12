@@ -26,3 +26,27 @@ export const RedirectUriKind = {
   PostSignout: "post_signout",
 } as const;
 export type RedirectUriKind = (typeof RedirectUriKind)[keyof typeof RedirectUriKind];
+
+/**
+ * What a person may do inside an organisation's dashboard (PROJECT.md 3.3, 4.13.7).
+ *
+ * A boundary in the panel and not a claim about the management API: anybody who can mint
+ * a secret key has whatever that key's scopes allow, whatever their role says afterwards.
+ */
+export const MemberRole = {
+  Owner: "owner",
+  Admin: "admin",
+  Developer: "developer",
+  Viewer: "viewer",
+} as const;
+export type MemberRole = (typeof MemberRole)[keyof typeof MemberRole];
+
+/**
+ * The roles a member can be given. Ownership moves by transfer and never by assignment,
+ * because a change that assigned it would leave the organisation with two owners or none.
+ */
+export const ASSIGNABLE_MEMBER_ROLES: readonly MemberRole[] = [
+  MemberRole.Admin,
+  MemberRole.Developer,
+  MemberRole.Viewer,
+];

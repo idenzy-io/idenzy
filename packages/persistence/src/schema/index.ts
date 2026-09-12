@@ -9,6 +9,7 @@ export * from "./control-plane.js";
 export * from "./identity.js";
 export * from "./messaging.js";
 export * from "./mfa.js";
+export * from "./organisation.js";
 export * from "./projects.js";
 export * from "./roles.js";
 export * from "./sessions.js";

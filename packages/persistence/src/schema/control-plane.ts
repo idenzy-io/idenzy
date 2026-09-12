@@ -5,7 +5,9 @@ import {
   Purpose,
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
-import { boolean, text, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, pgPolicy, text, uuid } from "drizzle-orm/pg-core";
+import { appRole } from "./roles.js";
 import { createdAtColumn } from "./shared.js";
 
 const operational = {
@@ -37,28 +39,43 @@ export const regionCells = classifiedTable("region_cells", {
  * Control plane: billing identifiers and a cell pointer only. Tenant personal data never
  * lives here, which is the property residency claims rest on (PROJECT.md 4.13.5).
  */
-export const orgs = classifiedTable("orgs", {
-  id: classified(uuid("id").primaryKey().defaultRandom(), { ...operational, loggable: true }),
-  name: classified(text("name").notNull(), {
-    class: DataClass.Pii,
-    purpose: Purpose.BillingAndMetering,
-    retention: Retention.ProjectLifetime,
-    subjectField: true,
-    erasure: Erasure.Tombstone,
-    note: "Customer organisation name. Personal only when a sole trader uses their own name.",
-  }),
-  cellId: classified(
-    uuid("cell_id")
-      .notNull()
-      .references(() => regionCells.id),
-    { ...operational, loggable: true, note: "Immutable after creation (PROJECT.md 4.13.5)." },
-  ),
-  billingCustomerId: classified(text("billing_customer_id"), {
-    class: DataClass.Pseudonymous,
-    purpose: Purpose.BillingAndMetering,
-    retention: Retention.Years6,
-    erasure: Erasure.RetainPseudonymous,
-    note: "Stripe customer id. Retained for statutory financial record keeping.",
-  }),
-  createdAt: createdAtColumn(),
-});
+export const orgs = classifiedTable(
+  "orgs",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), { ...operational, loggable: true }),
+    name: classified(text("name").notNull(), {
+      class: DataClass.Pii,
+      purpose: Purpose.BillingAndMetering,
+      retention: Retention.ProjectLifetime,
+      subjectField: true,
+      erasure: Erasure.Tombstone,
+      note: "Customer organisation name. Personal only when a sole trader uses their own name.",
+    }),
+    cellId: classified(
+      uuid("cell_id")
+        .notNull()
+        .references(() => regionCells.id),
+      { ...operational, loggable: true, note: "Immutable after creation (PROJECT.md 4.13.5)." },
+    ),
+    billingCustomerId: classified(text("billing_customer_id"), {
+      class: DataClass.Pseudonymous,
+      purpose: Purpose.BillingAndMetering,
+      retention: Retention.Years6,
+      erasure: Erasure.RetainPseudonymous,
+      note: "Stripe customer id. Retained for statutory financial record keeping.",
+    }),
+    createdAt: createdAtColumn(),
+  },
+  () => [
+    // The key of this table is its own id, not an org_id column, so the shared policy
+    // does not fit — the same shape `projects` carries one plane down. Without it, an
+    // organisation could read every other organisation's billing identity.
+    pgPolicy("orgs_org_isolation", {
+      as: "permissive",
+      for: "all",
+      to: appRole,
+      using: sql`id = nullif(current_setting('app.org_id', true), '')::uuid`,
+      withCheck: sql`id = nullif(current_setting('app.org_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();

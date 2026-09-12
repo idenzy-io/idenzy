@@ -61,7 +61,7 @@ const replacement = computed(() =>
 
         <!-- Before and after, as the copy itself rather than as a description of it. -->
         <div class="overflow-hidden rounded-(--idenzy-radius-small) border border-line">
-          <div class="flex flex-col gap-1 border-b border-line bg-canvas/60 px-3 py-2.5">
+          <div class="flex flex-col gap-1 border-b border-line bg-ink/3 px-3 py-2.5">
             <span class="text-[10px] leading-4 font-medium text-ink/50">
               After this, a reader in {{ locale }} gets
             </span>

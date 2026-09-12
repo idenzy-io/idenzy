@@ -760,7 +760,7 @@ const GUIDE_URL = "https://idenzy.dev/docs/tokens/revocation";
 
       <!-- Two enforcement summaries, never averaged: ours is a row read on every request
            and theirs is a snapshot something has to fetch. Stacked below sm. -->
-      <div class="grid gap-5 border-y border-line bg-canvas/60 px-4 py-4 sm:grid-cols-2 sm:px-5">
+      <div class="grid gap-5 border-y border-line bg-ink/3 px-4 py-4 sm:grid-cols-2 sm:px-5">
         <LifetimeOutcome
           label="Our API refuses it"
           note="Every authenticated request reads the session row, so a revoked session is refused here at once whatever token it presents. This half needs no integration and cannot be switched off."

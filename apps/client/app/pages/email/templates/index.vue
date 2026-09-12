@@ -591,7 +591,7 @@ const GUIDES = [
         </DataTable>
 
         <div
-          class="grid gap-4 border-t border-line bg-canvas/60 px-4 py-3.5 text-[11px] leading-4 sm:grid-cols-2"
+          class="grid gap-4 border-t border-line bg-ink/3 px-4 py-3.5 text-[11px] leading-4 sm:grid-cols-2"
         >
           <p class="m-0 text-ink/60">
             <!-- The two spans share a line on purpose: Vue's condense mode drops a

@@ -650,7 +650,7 @@ const GUIDES = [
                once, at publish, and never per claim. -->
           <div
             v-if="!store.loading && readsPrivate"
-            class="flex items-start gap-3 border-t border-line bg-canvas/60 px-4 py-3.5"
+            class="flex items-start gap-3 border-t border-line bg-ink/3 px-4 py-3.5"
           >
             <Icon
               aria-hidden="true"

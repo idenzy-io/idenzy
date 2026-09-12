@@ -77,7 +77,7 @@ const document = computed(
       that showed our built-in without saying so is the one way an operator concludes they
       have already written the message.
     -->
-    <div class="flex flex-col gap-1 border-b border-line bg-canvas/60 px-3 py-2.5">
+    <div class="flex flex-col gap-1 border-b border-line bg-ink/3 px-3 py-2.5">
       <div class="flex min-w-0 items-baseline justify-between gap-3">
         <span class="truncate font-mono text-[10px] leading-4 text-ink/50">{{ from }}</span>
         <span class="flex flex-none items-center gap-1.5">

@@ -747,7 +747,7 @@ const chain = computed(() => localeChain(locale.value));
               this row because each belongs to one of the two and only one is on screen.
             -->
             <div
-              class="flex flex-none flex-wrap items-center justify-between gap-2 border-y border-line bg-canvas/60 px-3 py-2"
+              class="flex flex-none flex-wrap items-center justify-between gap-2 border-y border-line bg-ink/3 px-3 py-2"
             >
               <SegmentedControl v-model="bodyTab" :options="BODY_TABS" label="Body" />
 

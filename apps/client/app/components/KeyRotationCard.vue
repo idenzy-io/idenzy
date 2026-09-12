@@ -138,7 +138,7 @@ const halves = computed(() => [
     </div>
 
     <div
-      class="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-canvas/60 px-4 py-3"
+      class="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-ink/3 px-4 py-3"
     >
       <v-btn
         :prepend-icon="copied ? 'material-symbols:check' : 'material-symbols:content-copy-outline'"

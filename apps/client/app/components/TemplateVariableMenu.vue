@@ -75,7 +75,7 @@ function insert(name: TemplateVariable) {
           </button>
         </li>
       </ul>
-      <p class="m-0 border-t border-line bg-canvas/60 px-3 py-2 text-[10px] leading-4 text-ink/50">
+      <p class="m-0 border-t border-line bg-ink/3 px-3 py-2 text-[10px] leading-4 text-ink/50">
         This is the whole list for this message. A name outside it fails the send rather
         than leaving a gap, so the editor marks it as you type.
       </p>

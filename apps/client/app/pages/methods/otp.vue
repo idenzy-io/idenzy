@@ -570,7 +570,7 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
         </div>
 
         <!-- What a user feels, ahead of anything about how a code is stored. -->
-        <div class="grid gap-5 border-y border-line bg-canvas/60 px-5 py-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid gap-5 border-y border-line bg-ink/3 px-5 py-4 sm:grid-cols-2 xl:grid-cols-4">
           <LifetimeOutcome
             v-for="fact in facts"
             :key="fact.label"

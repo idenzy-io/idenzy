@@ -386,7 +386,7 @@ const GUIDES = [
         </div>
 
         <!-- 2. What that lifetime costs, in the two directions it costs anything. -->
-        <div class="order-2 grid gap-5 border-y border-line bg-canvas/60 px-5 py-4 lg:grid-cols-2">
+        <div class="order-2 grid gap-5 border-y border-line bg-ink/3 px-5 py-4 lg:grid-cols-2">
           <div class="flex min-w-0 flex-col gap-2">
             <LifetimeOutcome
               :note="
@@ -500,7 +500,7 @@ const GUIDES = [
 
         <!-- 5. What saving would do, per field, before the button that does it. -->
         <div
-          class="order-5 flex flex-col gap-4 border-t border-line bg-canvas/60 px-5 py-4 lg:flex-row lg:items-end lg:justify-between"
+          class="order-5 flex flex-col gap-4 border-t border-line bg-ink/3 px-5 py-4 lg:flex-row lg:items-end lg:justify-between"
         >
           <div class="flex min-w-0 flex-col gap-2">
             <h3 class="m-0 text-xs font-medium text-ink">

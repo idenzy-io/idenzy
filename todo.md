@@ -501,7 +501,16 @@ client have no server halves to talk to yet.
       land with the pipeline. Writing `0042` also corrected the guide's own advice — copying 0004's
       dynamic grant blocks re-grants the two verbs 0030 withheld from every audit partition and the
       delete `payment_provider_events` must refuse, which the append-only tests caught on a fresh
-      database. Next, in order: the endpoint and delivery repositories, the management API routes
+      database. The three repositories are in — endpoints, deliveries and the daily counters — and
+      writing their integration tests against a real Postgres found the bug worth finding: a claim
+      that stamped the current time left the row it had just taken still due, because `delivering`
+      is in the due predicate so a dead dispatcher's delivery can be recovered. Two sweepers would
+      have called one customer's endpoint about one event. A claim takes a minute's lease now, and a
+      test that fails without it says so. The rest of the layer is one statement per transition for
+      the same reason: the fan-out is replayable on a unique index, an attempt is appended in SQL
+      rather than merged from a list, the failure counter is incremented in the database, and the
+      payload is cleared in the same statement that makes a delivery terminal. Next, in order: the
+      management API routes
       the panel's store needs, then the pipeline itself — fan-out relay, dispatcher, Cloud Tasks
       adapter, per-endpoint in-flight caps and the breaker at 20 consecutive failures. Known gap,
       recorded rather than closed: a

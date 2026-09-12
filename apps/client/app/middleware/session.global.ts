@@ -26,7 +26,11 @@ const GETTING_STARTED = "/getting-started";
 export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith(PUBLIC_PREFIX)) return;
 
-  const session = useSession();
+  // `useSession` reads an injected value, and `inject` outside a component returns
+  // undefined rather than throwing — which surfaces later as a property read on nothing.
+  // Route middleware happens to run inside the app context today; restoring it explicitly
+  // means this does not depend on that continuing to be true.
+  const session = useNuxtApp().vueApp.runWithContext(() => useSession());
 
   // `loading` is a real third state, not a slow `false`. `@idenzy/js` restores a session
   // from the refresh cookie on boot, and treating "not yet known" as "signed out" is what

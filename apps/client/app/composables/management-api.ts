@@ -20,28 +20,32 @@ import { createFetch } from "@vueuse/core";
  * in its CORS policy — there are none to allow.
  */
 
-/** Where the service lives. Its own key: `@idenzy/nuxt` owns the `idenzy` block. */
-function baseUrl(): string {
-  const runtime = useRuntimeConfig();
-  const configured = runtime.public.managementApiUrl;
-  return typeof configured === "string" && configured.length > 0
-    ? configured.replace(/\/$/, "")
-    : "http://localhost:3002";
-}
-
 /**
- * The client, built once per calling scope.
+ * The client, usable from a component, a store action or route middleware.
  *
- * `useIdenzy()` is resolved here, during setup, and the token is read inside `beforeFetch`
- * at request time. That ordering is what keeps this usable from a Pinia store: `inject`
- * needs a component or app context and a request does not have one, so the client is
- * captured while there is still a context to capture it from.
+ * Both `useIdenzy()` and `useRuntimeConfig()` reach for a context that only exists while a
+ * component is being set up — `useIdenzy` through Vue's `inject`, which returns `undefined`
+ * outside one rather than throwing. That undefined then fails as
+ * `Cannot read properties of undefined (reading 'client')`, several frames from the call
+ * that caused it, which is precisely how this was found.
+ *
+ * `runWithContext` is what removes the constraint instead of documenting it. A store action
+ * runs long after setup, and a rule that said "only call this during setup" would be a rule
+ * every future store has to remember; restoring the context here means none of them do.
  */
 export function useManagementApi() {
-  const idenzy = useIdenzy();
+  const nuxt = useNuxtApp();
+  const inContext = <T>(resolve: () => T): T => nuxt.vueApp.runWithContext(resolve);
+
+  const idenzy = inContext(() => useIdenzy());
+  const configured = inContext(() => useRuntimeConfig().public.managementApiUrl);
+  const baseUrl =
+    typeof configured === "string" && configured.length > 0
+      ? configured.replace(/\/$/, "")
+      : "http://localhost:3002";
 
   return createFetch({
-    baseUrl: baseUrl(),
+    baseUrl,
     options: {
       async beforeFetch({ options }) {
         const token = await idenzy.getToken();

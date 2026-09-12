@@ -127,15 +127,14 @@ function sendMagicLink() {
           @click:append-inner="revealed = !revealed"
         />
 
-        <!-- The refusal sits above the button rather than under it, so it is between the
-             fields somebody would change and the control they would press again. -->
-        <InfoNote
-          v-if="refusal !== ''"
-          class="mt-5"
-          icon="material-symbols:error-outline"
-          :text="refusal"
-          tone="warning"
-        />
+        <!-- Above the button, so it sits between the fields somebody would change and the
+             control they would press again. Plain error-coloured text rather than a boxed
+             note, which is what every other form in the panel does: a tinted panel reads as
+             a banner about the page, and this is a sentence about the fields just above it.
+             `role="alert"` because it arrives after a submit and nothing else announces it. -->
+        <p v-if="refusal !== ''" class="m-0 mt-5 text-xs leading-5 text-error" role="alert">
+          {{ refusal }}
+        </p>
 
         <v-btn
           :disabled="!submittable"

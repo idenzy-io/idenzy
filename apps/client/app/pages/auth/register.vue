@@ -138,13 +138,13 @@ function sendSignUpLink() {
           variant="underlined"
         />
 
-        <InfoNote
-          v-if="refusal !== ''"
-          class="mt-5"
-          icon="material-symbols:error-outline"
-          :text="refusal"
-          tone="warning"
-        />
+        <!-- Plain error-coloured text rather than a boxed note, which is what every other
+             form in the panel does: a tinted panel above the button reads as a banner about
+             the page, and this is a sentence about the field just below it. `role="alert"`
+             because it arrives after a submit, so nothing else would announce it. -->
+        <p v-if="refusal !== ''" class="m-0 mt-5 text-xs leading-5 text-error" role="alert">
+          {{ refusal }}
+        </p>
 
         <v-btn
           :disabled="!submittable"

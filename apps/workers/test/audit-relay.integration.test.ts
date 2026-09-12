@@ -214,6 +214,56 @@ describe("building the chain", () => {
     expect(verifyAuditChain(entries)).toEqual({ valid: true });
   });
 
+  /**
+   * A cold start re-reads its lookback window, and that window is the one it has already
+   * chained. Every one of those events must land as a no-op.
+   *
+   * This is the case the relay used to get wrong while looking right. The appended entry
+   * is no longer against the tip it was first hashed against — it *is* the tip — so a
+   * replay computes a different `prev_hash`, a different `entry_hash`, and collided with
+   * nothing. The trail gained each event twice, chained into a sequence that still
+   * verified perfectly: no error, a valid chain, and a record claiming more happened than
+   * did. `audit_events.outbox_seq` and its unique index are what make the second pass do
+   * nothing (0034, 0035).
+   */
+  it("replays a consumed window without duplicating it", async () => {
+    await enqueue(PROJECT_ONE, "first");
+    await enqueue(PROJECT_ONE, "second");
+    await enqueue(PROJECT_ONE, "third");
+    expect(await relay.sweep()).toBe(3);
+    const before = await trail(PROJECT_ONE);
+
+    // Losing the offset row is what a cold start is, and the only thing that makes the
+    // relay read a window twice.
+    await harness.owner.query(`DELETE FROM relay_offsets`);
+    expect(await relay.sweep()).toBe(0);
+
+    const after = await trail(PROJECT_ONE);
+    expect(after.map((entry) => entry.action)).toEqual(["first", "second", "third"]);
+    expect(after.map((entry) => entry.entryHash)).toEqual(before.map((entry) => entry.entryHash));
+    expect(verifyAuditChain(after)).toEqual({ valid: true });
+  });
+
+  /**
+   * The watermark still has to move across a replay. Keyed on entries written rather than
+   * events consumed, a sweep that found only duplicates would advance nothing and the
+   * relay would re-read the same window on every pass for ever, never reaching what came
+   * after it.
+   */
+  it("moves past a window it only replayed", async () => {
+    await enqueue(PROJECT_ONE, "old");
+    await relay.sweep();
+    await harness.owner.query(`DELETE FROM relay_offsets`);
+    expect(await relay.sweep()).toBe(0);
+
+    await enqueue(PROJECT_ONE, "new");
+    expect(await relay.sweep()).toBe(1);
+
+    const entries = await trail(PROJECT_ONE);
+    expect(entries.map((entry) => entry.action)).toEqual(["old", "new"]);
+    expect(verifyAuditChain(entries)).toEqual({ valid: true });
+  });
+
   it("does nothing when there is nothing new", async () => {
     await enqueue(PROJECT_ONE, "only");
     await relay.sweep();

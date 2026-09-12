@@ -120,15 +120,27 @@ export class AuditEventReader {
     }));
   }
 
-  /** Appends one entry. The sequence assigns the order; nothing here chooses it. */
-  async append(entry: NewAuditEntry): Promise<void> {
-    await this.db.execute(
+  /**
+   * Appends one entry, and answers whether this call was the one that wrote it.
+   *
+   * False means the outbox event behind it is already in the trail, which is what any
+   * cold start produces: it re-reads its lookback window, and that window is the one it
+   * has already chained. The caller needs the distinction rather than a void, because on
+   * false the hash it computed was never stored and must not be carried forward as the
+   * project's tip.
+   *
+   * The sequence assigns the order; nothing here chooses it.
+   */
+  async append(entry: NewAuditEntry): Promise<boolean> {
+    const rows = await this.db.execute<{ append_audit_event: boolean }>(
       sql`select append_audit_event(
             ${entry.projectId}::uuid, ${entry.actorType}, ${entry.actorId},
             ${entry.action}, ${entry.target}, ${entry.ip}, ${entry.ua},
             ${JSON.stringify(entry.metadata)}::jsonb,
-            ${entry.prevHash}, ${entry.entryHash}, ${entry.createdAt.toISOString()}::timestamptz)`,
+            ${entry.prevHash}, ${entry.entryHash}, ${entry.createdAt.toISOString()}::timestamptz,
+            ${entry.outboxSeq})`,
     );
+    return rows.rows[0]?.append_audit_event ?? false;
   }
 }
 
@@ -143,6 +155,8 @@ export interface NewAuditEntry {
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly prevHash: string;
   readonly entryHash: string;
+  /** The outbox row this came from. Null where nothing relayed it, and never deduplicated. */
+  readonly outboxSeq: number | null;
   readonly createdAt: Date;
 }
 

@@ -42,6 +42,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: entryHash
   - pseudonymous: id
   - pseudonymous: metadata
+  - pseudonymous: outboxSeq
   - pseudonymous: prevHash
   - pseudonymous: requestedBy
   - pseudonymous: seq

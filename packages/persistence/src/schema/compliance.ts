@@ -6,7 +6,16 @@ import {
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
-import { bigint, index, jsonb, pgPolicy, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  index,
+  jsonb,
+  pgPolicy,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { auditRecord, config } from "./presets.js";
 import { appRole } from "./roles.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
@@ -71,12 +80,22 @@ export const auditEvents = classifiedTable(
       ...auditRecord,
       note: "H(prev_hash || canonical(entry)). Verified on a schedule (4.13.3).",
     }),
+    outboxSeq: classified(bigint("outbox_seq", { mode: "number" }), {
+      ...auditRecord,
+      loggable: true,
+      note: "The outbox row this entry was relayed from, and what makes a replay a no-op instead of a duplicate. Null on an entry with no outbox event behind it.",
+    }),
     createdAt: createdAtColumn(),
   },
   (t) => [
     index("audit_events_project_created_idx").on(t.projectId, t.createdAt),
     index("audit_events_project_seq_idx").on(t.projectId, t.seq),
     index("audit_events_project_actor_idx").on(t.projectId, t.actorId),
+    // One entry per outbox event. `created_at` leads because a unique index on a
+    // partitioned table must contain the partition key, and it costs nothing here: a
+    // replayed event carries the same instant it did the first time, so the pair is
+    // stable and the conflict is detected inside the one partition it belongs to.
+    uniqueIndex("audit_events_outbox_seq_key").on(t.createdAt, t.outboxSeq),
     // Read is tenant-scoped; write permission is controlled by grants, not by policy.
     pgPolicy("audit_events_tenant_isolation", {
       as: "permissive",

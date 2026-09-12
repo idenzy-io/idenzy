@@ -14,7 +14,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | pii | 29 |
 | phi | 0 |
 | secret | 19 |
-| pseudonymous | 83 |
+| pseudonymous | 84 |
 | operational | 305 |
 
 ## `api_keys`
@@ -48,6 +48,7 @@ Notes:
 | `id` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `ip` | pii | audit_and_compliance | years_1 | yes | retain_pseudonymous | no |
 | `metadata` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
+| `outboxSeq` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `prevHash` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `seq` | pseudonymous | audit_and_compliance | years_1 | no | retain_pseudonymous | no |
@@ -59,6 +60,7 @@ Notes:
 - `actorId`: Pseudonymous. Survives erasure so the trail stays attributable.
 - `entryHash`: H(prev_hash || canonical(entry)). Verified on a schedule (4.13.3).
 - `ip`: Retained under legal obligation, so erasure does not clear it (Art.17(3)(b)).
+- `outboxSeq`: The outbox row this entry was relayed from, and what makes a replay a no-op instead of a duplicate. Null on an entry with no outbox event behind it.
 - `prevHash`: Hash of the preceding entry for this project. Genesis is 64 zeroes.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `seq`: Total order across every partition, from one cluster sequence. The chain needs it: created_at ties at millisecond precision, and two entries in the same millisecond would leave the project's tip ambiguous and fork the chain (PROJECT.md 4.13.3).

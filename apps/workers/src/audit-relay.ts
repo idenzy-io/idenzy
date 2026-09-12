@@ -51,6 +51,13 @@ const DEFAULT_COLD_START_MS = 24 * 60 * 60 * 1000;
  * exactly what was consumed. It is also a total order, so the trail's order is the order
  * events were enqueued rather than the order of their random uuids (migration 0031).
  *
+ * Replaying an event is a no-op, and it is the unique index on `audit_events.outbox_seq`
+ * that makes it one rather than anything in this file. The obvious argument — that the
+ * same event produces the same `entry_hash` — is wrong, and wrong in the case that
+ * matters: once the entry is in the trail it is no longer against the same tip, so a
+ * replay hashes differently and collides with nothing. Any cold start re-reads a window
+ * it has already chained, so this is the normal path and not an exotic one (0035).
+ *
  * `audit_events` grants this connection INSERT and SELECT and nothing else, so a bug here
  * can add a wrong entry but cannot remove or alter a right one. That is the property the
  * trail is worth anything for, and it is a database grant rather than a promise.
@@ -109,16 +116,24 @@ export class AuditRelay {
     // be a query per sign-in.
     const tips = new Map<string, string>();
     let written = 0;
+    let consumed = 0;
     let watermark = since;
 
     for (const event of pending) {
       try {
         const previous = tips.get(event.projectId) ?? (await this.tipFor(event.projectId));
         const entry = chainedEntry(event, previous);
-        await this.events.append(entry);
-        tips.set(event.projectId, entry.entryHash);
+        if (await this.events.append(entry)) {
+          tips.set(event.projectId, entry.entryHash);
+          written += 1;
+        } else {
+          // Already chained by an earlier pass. The hash just computed was never stored,
+          // so it must not become the cached tip: the next event for this project has to
+          // read the real one back rather than link to an entry that does not exist.
+          tips.delete(event.projectId);
+        }
         watermark = event.seq;
-        written += 1;
+        consumed += 1;
       } catch (error: unknown) {
         // Stop at the first failure rather than skipping past it. An entry the chain never
         // got is a gap, and carrying on would link the next one to a tip that is missing
@@ -133,7 +148,10 @@ export class AuditRelay {
       }
     }
 
-    if (written > 0) await this.offsets.advance(AUDIT_CONSUMER, watermark);
+    // Consumed rather than written, so a pass that found only events it had already
+    // chained still moves the watermark past them. Keyed on writes, a cold start would
+    // re-read the same window on every sweep for ever and never get past it.
+    if (consumed > 0) await this.offsets.advance(AUDIT_CONSUMER, watermark);
     return written;
   }
 
@@ -184,6 +202,9 @@ function chainedEntry(event: OutboxEvent, previousHash: string): NewAuditEntry {
     ua: readString(payload["userAgent"]),
     prevHash: previousHash,
     entryHash: auditEntryHash(previousHash, digestInput),
+    // Outside the digest, like ip and ua: it identifies the delivery, not the event, and
+    // hashing it would make the same event chain differently on a replay.
+    outboxSeq: event.seq,
   };
 }
 

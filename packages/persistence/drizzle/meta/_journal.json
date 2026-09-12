@@ -239,6 +239,20 @@
       "when": 1789228261001,
       "tag": "0033_soft_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789228934277,
+      "tag": "0034_flawless_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789228941746,
+      "tag": "0035_noisy_shocker",
+      "breakpoints": true
     }
   ]
 }

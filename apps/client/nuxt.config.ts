@@ -1,4 +1,23 @@
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+
+/**
+ * One `.env` for the whole repository, the way every other service reads it.
+ *
+ * Loaded here rather than through Nuxt's own `dotenv` option, which resolves against this
+ * app's directory and reads the file before this config is evaluated — so neither
+ * `fileName` nor `cwd` can point it one level up. A second `.env` beside this file would
+ * be a copy of values the APIs already have, and a copy is a thing that drifts.
+ *
+ * Absent is not an error: CI and production set real variables and have no file. Only
+ * `NUXT_PUBLIC_*` from it reaches the browser, which is the same boundary as always.
+ */
+try {
+  process.loadEnvFile(fileURLToPath(new URL("../../.env", import.meta.url)));
+} catch {
+  // No file, which is the normal case everywhere but a laptop.
+}
+
 import { IDENZY_CODE_DARK, IDENZY_CODE_LIGHT } from "./app/shiki/theme";
 
 /**
@@ -14,13 +33,34 @@ import { IDENZY_CODE_DARK, IDENZY_CODE_LIGHT } from "./app/shiki/theme";
  */
 export default defineNuxtConfig({
   ssr: false,
+
   compatibilityDate: "2026-09-01",
   typescript: { strict: true, typeCheck: false },
 
-  // Only publishable keys ever reach this bundle.
-  runtimeConfig: { public: { idenzyPublishableKey: "", authApiBaseUrl: "" } },
+  /**
+   * How the panel signs in to our own product (PROJECT.md 9.5).
+   *
+   * `@idenzy/nuxt` writes these into `runtimeConfig.public.idenzy`, so the environment
+   * overrides them as `NUXT_PUBLIC_IDENZY_*` without a rebuild. Both values are public by
+   * construction: a publishable key is meant to sit in a browser bundle, and the auth
+   * API's URL is printed in every token we sign. Nothing secret is configured here, and
+   * the module's `server` half — the one place a secret could go — is deliberately absent,
+   * because `ssr: false` means there is no server of ours to hold one.
+   *
+   * `sessionTransport` is left at its default of `auto`, which asks for cookie mode and
+   * accepts the server's answer. Cookie mode is the one where the refresh token is a
+   * `__Host-` HttpOnly cookie no script can read (ADR-0008), and it is available to us
+   * because we control our own DNS: `app.idenzy.dev` to `auth.idenzy.dev` is same-site.
+   * On a laptop everything is loopback, which is same-site by accident and is the
+   * documented development exception.
+   */
+  idenzy: {
+    publishableKey: "",
+    apiUrl: "http://localhost:3001",
+  },
 
   modules: [
+    "@idenzy/nuxt",
     "vuetify-nuxt-module",
     "@vueuse/nuxt",
     "nuxt-echarts",

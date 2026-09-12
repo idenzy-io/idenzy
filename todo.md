@@ -436,8 +436,12 @@ client have no server halves to talk to yet.
       cross-site fallback
 - [x] `GET /v1/users/me`, and `includeUser` on refresh, so an SDK boot is one round trip
 - [x] Reuse telemetry on `security.refresh_token_reused`. Nothing branches on it (ADR-0007)
-- [ ] Cookie mode is implemented but unusable in production until custom auth domains exist:
-      `SameSite` is a site rule, so it needs the auth API to be same-site with the app
+- [~] Cookie mode is implemented but unusable in production until custom auth domains exist:
+      `SameSite` is a site rule, so it needs the auth API to be same-site with the app. Our
+      own panel is the first deployment that will have one — `app.idenzy.dev` to
+      `auth.idenzy.dev` — and it already runs in cookie mode locally, where loopback is
+      same-site by accident and the transport guard's eligibility check is skipped. What is
+      missing is the domain itself and the `project_domains` row that marks it verified
 - [~] Project creation, API keys, custom auth domain provisioning. Project creation is in:
       `POST /v1/onboarding` makes the organisation, its owner and its first project in one
       transaction, `POST /v1/orgs/:orgId/projects` adds another, and `GET /v1/regions`
@@ -452,8 +456,10 @@ client have no server halves to talk to yet.
 - [ ] Webhooks with HMAC signing, retries and replay safety
 - [ ] Usage metering and the MAU HyperLogLog sketch
 - [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
-      built and every store is a placeholder; getting started is the newest and is wired the
-      same way. What is left is the management client itself, at which point the fixtures go
+      built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
+      auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
+      can read (ADR-0008), and a global middleware decides who sees which half of the panel.
+      The data stores are still placeholders; the management client is what replaces them
 - [ ] Cloud Armor rules and application rate limits
 
 ---
@@ -751,6 +757,13 @@ working, so the split below is by which question is being asked, not by which sc
       `apps/workers` is the chain's single writer, which is what the fork problem actually
       needed: serialising on the request path would have queued every sign-in for a busy
       project behind the one before it. What is left is the scheduled verifier, below.
+- [ ] `pnpm dev` cannot start `auth-api`, `management-api` or `workers`. Their dev scripts
+      run `node --watch src/main.ts`, and Node's type stripping does not rewrite a relative
+      `./app.module.js` specifier to the `.ts` file beside it, so the process dies on
+      `ERR_MODULE_NOT_FOUND` before it reaches any of our code. `--experimental-transform-types`
+      is gone in Node 26. The workaround is to build and run `dist/main.js`; the fix is a
+      watch-and-rebuild dev script or a loader, which is a toolchain decision (§7.5) rather
+      than a patch. The `client` panel is unaffected: Vite resolves it.
 - [ ] KMS token issuer, and the per-project data encryption key alongside it. `auth-api`
       refuses to boot outside development rather than sign with an ephemeral in-process
       key (§4.2), and `FieldEncryptor` now refuses on the same terms rather than encrypt

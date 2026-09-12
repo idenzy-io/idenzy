@@ -12,7 +12,17 @@ export const configSchema = z.object({
   IDENZY_ENV: z.enum(["development", "staging", "production"]),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
+  /**
+   * The port this process listens on.
+   *
+   * Cloud Run sets it, and locally every service reads the same `.env`, so a single
+   * shared value would have them all fight for one port. `main.ts` in each app resolves
+   * its own variable first and falls back to this, which keeps the deployed contract
+   * (`PORT`, set by the platform) and makes `pnpm dev` work side by side.
+   */
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  AUTH_API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
+  MANAGEMENT_API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 
   DATABASE_URL: z.string().min(1),

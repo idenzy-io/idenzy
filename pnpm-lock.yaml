@@ -400,6 +400,18 @@ importers:
       '@iconify-json/circle-flags':
         specifier: 'catalog:'
         version: 1.2.11
+      '@idenzy/js':
+        specifier: workspace:*
+        version: link:../../packages/sdk/client/js
+      '@idenzy/nuxt':
+        specifier: workspace:*
+        version: link:../../packages/sdk/client/nuxt
+      '@idenzy/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@idenzy/vue':
+        specifier: workspace:*
+        version: link:../../packages/sdk/client/vue
       '@lezer/highlight':
         specifier: 'catalog:'
         version: 1.2.3
@@ -774,6 +786,9 @@ importers:
       '@idenzy/core':
         specifier: workspace:*
         version: link:../core
+      '@idenzy/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@idenzy/domain':
         specifier: workspace:*
         version: link:../domain

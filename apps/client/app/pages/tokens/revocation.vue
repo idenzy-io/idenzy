@@ -177,7 +177,7 @@ async function refreshStatus() {
  * Where the snapshot is, for this project. Derived rather than written down, so the sample
  * a developer copies names the host their own tokens are issued by.
  */
-const runtime = useRuntimeConfig();
+const authApiBase = useAuthApiBase();
 
 const endpoint = computed(() => {
   const domain =
@@ -186,7 +186,7 @@ const endpoint = computed(() => {
   const facts = settings.factsFor(projectId.value, projects.current.name);
   return snapshotEndpoint({
     authDomain: domain,
-    deploymentBase: runtime.public.authApiBaseUrl || "",
+    deploymentBase: authApiBase.value,
     regionEndpoint: cellByCode(facts.cellCode)?.endpoint ?? "",
   });
 });

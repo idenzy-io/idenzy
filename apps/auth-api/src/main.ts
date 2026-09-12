@@ -46,8 +46,12 @@ async function bootstrap(): Promise<void> {
     process.exit(1);
   });
 
-  await app.listen({ port: config.get("PORT"), host: "0.0.0.0" });
-  logger.info("auth-api listening", config.toSafeSummary());
+  // Its own variable first, so `pnpm dev` can run every service off one `.env`;
+  // `PORT` is what Cloud Run sets and stays the deployed contract. Resolved once and
+  // logged, because a boot line naming a port the process is not on is worse than none.
+  const port = config.get("AUTH_API_PORT") ?? config.get("PORT");
+  await app.listen({ port, host: "0.0.0.0" });
+  logger.info("auth-api listening", { ...config.toSafeSummary(), port });
 }
 
 await bootstrap();

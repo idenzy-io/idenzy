@@ -5,23 +5,74 @@
  *
  * Both columns are offered at once rather than behind a "more options" disclosure,
  * because a provider button is the fastest path for somebody who has one and invisible
- * to somebody who does not know to look. The handlers are shaped and unwired: they call
- * `@idenzy/js` once the panel builds a client, and nothing here posts anywhere yet.
+ * to somebody who does not know to look.
+ *
+ * The password form is real and goes through `@idenzy/js`, which is our own product: we
+ * sign in to the panel the way a customer signs in to theirs (PROJECT.md 9.5). Nothing
+ * here is an authentication widget we ship — this is the application that owns the screen
+ * building its own, which is exactly what ADR-0002 leaves to it.
+ *
+ * A sign-in can end in two places and both are handled. A session means done; a challenge
+ * means a second factor is owed, and the SDK hands back the object that completes it
+ * (ADR-0010). The MFA screen is not built yet, so that branch says so plainly rather than
+ * dropping somebody on a page that cannot finish.
+ *
+ * The passwordless column is still unwired and says nothing about being wired.
  */
+import { MfaChallenge } from "@idenzy/js/mfa/auth-result";
+import { signInMessage } from "~/utils/sign-in-errors";
+
 definePageMeta({ layout: "auth" });
 
 const { mdAndUp } = useDisplay();
+const idenzy = useIdenzy();
+const route = useRoute();
 
 const email = ref("");
 const password = ref("");
 const revealed = ref(false);
+const busy = ref(false);
+const refusal = ref("");
 
 // Enough to stop a submit that cannot succeed. Real validation is the server's answer,
 // which is the only one that knows whether the address exists.
-const submittable = computed(() => email.value.trim().length > 0 && password.value.length > 0);
+const submittable = computed(
+  () => email.value.trim().length > 0 && password.value.length > 0 && !busy.value,
+);
 
-function signIn() {
-  // POST /v1/auth/password through the SDK, which finishes through `establish`.
+/**
+ * Where to land afterwards.
+ *
+ * Read from the query the session guard put there, and only ever a path of ours: an
+ * open redirect on a sign-in screen hands somebody's fresh session to whatever host the
+ * link named, which is the classic way a login page becomes a phishing step.
+ */
+const destination = computed(() => {
+  const redirect = route.query["redirect"];
+  if (typeof redirect !== "string") return "/";
+  return redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/";
+});
+
+async function signIn() {
+  if (!submittable.value) return;
+  busy.value = true;
+  refusal.value = "";
+  try {
+    const result = await idenzy.signIn.withPassword({
+      email: email.value.trim(),
+      password: password.value,
+    });
+    if (result instanceof MfaChallenge) {
+      refusal.value =
+        "This account needs a second factor, and that screen is not built yet. Sign in without it for now.";
+      return;
+    }
+    await navigateTo(destination.value);
+  } catch (error: unknown) {
+    refusal.value = signInMessage(error);
+  } finally {
+    busy.value = false;
+  }
 }
 
 function continueWith(_provider: string) {
@@ -76,8 +127,19 @@ function sendMagicLink() {
           @click:append-inner="revealed = !revealed"
         />
 
+        <!-- The refusal sits above the button rather than under it, so it is between the
+             fields somebody would change and the control they would press again. -->
+        <InfoNote
+          v-if="refusal !== ''"
+          class="mt-5"
+          icon="material-symbols:error-outline"
+          :text="refusal"
+          tone="warning"
+        />
+
         <v-btn
           :disabled="!submittable"
+          :loading="busy"
           class="mt-6 text-sm"
           color="primary"
           type="submit"

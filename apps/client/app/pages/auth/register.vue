@@ -7,9 +7,14 @@
  * password nobody can read costs a reset cycle to find, and only the browser is in a
  * position to catch it.
  *
- * The handlers are shaped and unwired: they call `@idenzy/js` once the panel builds a
- * client, and nothing here posts anywhere yet.
+ * Creating an account creates nothing else. A person who registers directly owns no
+ * organisation until they finish getting started, which is the next screen the session
+ * guard sends them to — and creating one here would leave an organisation behind for
+ * everybody who signed up and changed their mind (notes/getting-started.md).
  */
+import { MfaChallenge } from "@idenzy/js/mfa/auth-result";
+import { signInMessage } from "~/utils/sign-in-errors";
+
 definePageMeta({ layout: "auth" });
 
 const { mdAndUp } = useDisplay();
@@ -36,12 +41,38 @@ const submittable = computed(
     email.value.trim().length > 0 &&
     password.value.length >= PASSWORD_MIN_LENGTH &&
     password.value.length <= PASSWORD_MAX_LENGTH &&
-    confirmation.value === password.value,
+    confirmation.value === password.value &&
+    !busy.value,
 );
 
-function signUp() {
-  // POST /v1/auth/sign-up/password through the SDK, which finishes through `establish`.
-  // `password_breached` comes back here and belongs on the password field.
+const idenzy = useIdenzy();
+const busy = ref(false);
+const refusal = ref("");
+
+async function signUp() {
+  if (!submittable.value || busy.value) return;
+  busy.value = true;
+  refusal.value = "";
+  try {
+    const result = await idenzy.signUp.withPassword({
+      email: email.value.trim(),
+      password: password.value,
+    });
+    // A project can require a second factor of everybody, and a new account cannot have
+    // one yet — but the branch is handled rather than assumed away, because "cannot
+    // happen" is how an unhandled case reaches somebody.
+    if (result instanceof MfaChallenge) {
+      refusal.value = "This account needs a second factor, and that screen is not built yet.";
+      return;
+    }
+    // The session guard takes it from here: a new account has no organisation, so the
+    // onboarding guard sends it to getting started.
+    await navigateTo("/");
+  } catch (error: unknown) {
+    refusal.value = signInMessage(error);
+  } finally {
+    busy.value = false;
+  }
 }
 
 function continueWith(_provider: string) {
@@ -107,8 +138,17 @@ function sendSignUpLink() {
           variant="underlined"
         />
 
+        <InfoNote
+          v-if="refusal !== ''"
+          class="mt-5"
+          icon="material-symbols:error-outline"
+          :text="refusal"
+          tone="warning"
+        />
+
         <v-btn
           :disabled="!submittable"
+          :loading="busy"
           class="mt-6 text-sm"
           color="primary"
           type="submit"

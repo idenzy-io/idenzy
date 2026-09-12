@@ -54,8 +54,7 @@ const { copy } = useClipboard({ legacy: true });
  * fallback is the shared API host, which is where a project without a custom auth domain
  * lives anyway.
  */
-const runtime = useRuntimeConfig();
-const apiBase = computed(() => runtime.public.authApiBaseUrl || "https://api.idenzy.io");
+const apiBase = useAuthApiBase();
 
 const linking = computed(() => store.linkingFor(projects.current.id));
 const stats = computed(() => store.stats(projects.current.id));

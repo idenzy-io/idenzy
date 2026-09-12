@@ -75,8 +75,7 @@ const { copy, copied } = useClipboard({ copiedDuring: 1400, legacy: true });
 
 const now = useNow({ interval: 60_000 });
 
-const runtime = useRuntimeConfig();
-const apiBase = computed(() => runtime.public.authApiBaseUrl || "https://api.idenzy.io");
+const apiBase = useAuthApiBase();
 
 const ADD_STEPS: readonly Step[] = [
   { id: "provider", label: "Provider" },

@@ -8,6 +8,7 @@ import { MeModule } from "./me/me.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 import { OnboardingModule } from "./onboarding/onboarding.module.js";
 import { OrgsModule } from "./orgs/orgs.module.js";
+import { OriginsModule } from "./origins/origins.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
@@ -36,6 +37,7 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
     ProjectsModule,
     ApiKeysModule,
     DomainsModule,
+    OriginsModule,
   ],
   controllers: [HealthController],
 })

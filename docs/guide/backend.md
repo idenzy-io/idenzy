@@ -17,7 +17,11 @@ Five rules, each of which is load-bearing somewhere it is not obvious.
   key header, so it can only be strict where `Host` names a project. An unregistered origin
   gets a normal answer with no `Access-Control-Allow-Origin`, never a 403: the refusal is the
   browser's, and a hard status would tell a prober the difference between "checked and
-  refused" and "never configured".
+  refused" and "never configured". The allowlist itself is `project_origins` (ADR-0006), and
+  nothing caches it: `resolve_project_by_host` and `resolve_project_by_key_hash` read
+  `allowed_origins` on every request, so a row added through the management API is live on the
+  next one. When the project-config cache PROJECT.md 4.2 assumes exists, a removal is the
+  invalidation that matters — a stale allow keeps granting.
 - **Cookie mode needs a custom auth domain, and `SameSite` is why.** It is a *site* rule, so
   `app.customer.com` to `auth.customer.com` works and `app.customer.com` to the shared API host
   never will. Cookie mode is refused where it cannot work rather than granted and dropped,

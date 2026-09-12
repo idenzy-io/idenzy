@@ -212,3 +212,120 @@ export const addProjectDomainSchema = z.object({
     }),
 });
 export type AddProjectDomain = z.infer<typeof addProjectDomainSchema>;
+
+/*
+ * Browser origins: the CORS allowlist (ADR-0006).
+ */
+
+/**
+ * The loopback hosts a browser treats as a secure context.
+ *
+ * Listed in order to refuse them. Loopback is allowed by the deployment while it runs outside
+ * production, in application code and gated on the environment, so it cannot be switched on
+ * by data — which means a row for it grants nothing in production and is not needed anywhere
+ * else.
+ */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * An origin as a browser sends it, and nothing that merely looks like one.
+ *
+ * A scheme, a host and an optional port, with nothing after them. The check at the edge is a
+ * string comparison against the `Origin` header, so an entry carrying a path, a query or
+ * credentials could never match anything a browser sends, and a wildcard even less: refused
+ * here rather than quietly reduced to its origin, because an allowlist holding something
+ * other than what somebody typed is one nobody can audit by reading.
+ *
+ * https only. The response this list unlocks is credentialed, and one returned to a page
+ * served over http is readable by anyone on the network between them.
+ */
+export const browserOriginSchema = z
+  .string()
+  .trim()
+  .min(8)
+  .max(255)
+  .refine((value) => !value.includes("*"), {
+    message: "An Origin header is one exact string, so a wildcard would match nothing at all.",
+  })
+  .refine((value) => originParts(value) !== null, {
+    message: "A scheme, a host and an optional port, and nothing after them.",
+  })
+  .refine((value) => originParts(value)?.scheme !== "http", {
+    message: "Only https: a credentialed response read over http is readable by the network.",
+  })
+  .refine((value) => !LOOPBACK_HOSTS.has(originParts(value)?.host ?? ""), {
+    message: "Loopback is allowed by the deployment outside production, not by this list.",
+  })
+  .transform(canonicalOrigin);
+
+interface OriginParts {
+  readonly scheme: string;
+  readonly host: string;
+  /** As typed, so a default port can be recognised and dropped rather than stored. */
+  readonly port: string | null;
+}
+
+/**
+ * A scheme, a host, an optional port, and nothing else at all.
+ *
+ * A pattern rather than `URL`, which is what an origin check would normally reach for, because
+ * this package declares neither DOM nor node globals: it is parsed by browsers, workers,
+ * React Native and servers, and a schema that needed one runtime's globals would be a schema
+ * one of them could not load. The shape is also small enough to say exactly — a `URL` has to
+ * be interrogated afterwards about the path, the query, the fragment and the userinfo it
+ * helpfully accepted, which is four chances to forget one.
+ *
+ * The host is a run of DNS labels or a bracketed IPv6 literal. An underscore is deliberately
+ * not allowed: it is legal in a DNS name and never in a hostname a browser will put in an
+ * `Origin` header.
+ */
+const ORIGIN_PATTERN =
+  /^(https?):\/\/([a-z\d](?:[a-z\d-]*[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]*[a-z\d])?)*|\[[\da-f:]+\])(?::(\d{1,5}))?$/i;
+
+function originParts(value: string): OriginParts | null {
+  // One trailing slash is tolerated because every browser address bar shows one, and it is
+  // the single character somebody is most likely to copy along with the origin.
+  const match = ORIGIN_PATTERN.exec(value.trim().replace(/\/$/, ""));
+  if (match === null) return null;
+  const [, scheme = "", host = "", port] = match;
+  if (port !== undefined && Number(port) > 65_535) return null;
+  return { scheme: scheme.toLowerCase(), host: host.toLowerCase(), port: port ?? null };
+}
+
+/**
+ * What the browser will actually send: lowercase, and with no port where the port is the
+ * scheme's own default.
+ *
+ * `https://app.example.com:443` is a correct spelling that no browser ever sends, so it is
+ * canonicalised rather than refused with a message nobody could act on. Two spellings of one
+ * origin stored as two rows would each read as a decision somebody took.
+ */
+function canonicalOrigin(value: string): string {
+  const parts = originParts(value);
+  if (parts === null) return value.trim().toLowerCase();
+  const implied = parts.scheme === "https" ? "443" : "80";
+  return parts.port === null || parts.port === implied
+    ? `${parts.scheme}://${parts.host}`
+    : `${parts.scheme}://${parts.host}:${parts.port}`;
+}
+
+/**
+ * One origin on a project's allowlist.
+ *
+ * Who added it is deliberately absent: `project_origins` has no column for it, and the fact
+ * belongs to the audit trail rather than to a second copy on the row. What the panel calls a
+ * suggestion's source is a panel-side reading of the project's other lists, never something
+ * stored here — deriving this list from another is the thing ADR-0006 exists to refuse.
+ */
+export const projectOriginSchema = z.object({
+  id: z.string(),
+  origin: z.string(),
+  createdAt: z.iso.datetime(),
+});
+export type ProjectOrigin = z.infer<typeof projectOriginSchema>;
+
+export const projectOriginListSchema = z.object({ origins: z.array(projectOriginSchema) });
+export type ProjectOriginList = z.infer<typeof projectOriginListSchema>;
+
+export const addProjectOriginSchema = z.object({ origin: browserOriginSchema });
+export type AddProjectOrigin = z.infer<typeof addProjectOriginSchema>;

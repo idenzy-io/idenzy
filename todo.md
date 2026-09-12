@@ -428,7 +428,16 @@ client have no server halves to talk to yet.
       carries the user's token. First-present-wins, and `pk_` only
 - [x] Browser origins as their own exact-match allowlist (`project_origins`, ADR-0006), and
       cross-origin access with credentials. Enforced on the actual response; the preflight is
-      strict only where `Host` names a project, because it cannot see the key header
+      strict only where `Host` names a project, because it cannot see the key header. The list
+      is writable now: `GET/POST /v1/orgs/:orgId/projects/:projectId/origins` and `DELETE
+      .../origins/:originId` on the management API, a developer to write and a viewer to read.
+      `browserOriginSchema` is where the rules live — https only, no wildcard, nothing after
+      the host, loopback refused because the deployment allows it in code outside production —
+      and it canonicalises to what a browser actually sends, so one origin cannot become two
+      rows. Nothing caches the list: the resolution functions read `allowed_origins` per
+      request, so an addition is live on the next one. Verified end to end, which for this list
+      means the auth API answering a request from a newly allowed origin with
+      `Access-Control-Allow-Origin` and an unlisted one without it, at the same status
 - [x] Web first-party cookie mode: `__Host-idenzy-refresh` for the opaque credential and
       `__Host-idenzy-session` for the access token, so SSR verifies offline with no network
       call. CSRF double-submit, Origin and Fetch-Metadata checks, all applied by one

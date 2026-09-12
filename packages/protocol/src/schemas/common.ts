@@ -10,6 +10,8 @@ export const IdPrefix = {
   Project: "prj",
   ApiKey: "key",
   Domain: "dom",
+  /** A row of the CORS allowlist. Addressed by id, because an origin in a path is escaped. */
+  Origin: "orn",
   User: "usr",
   Session: "ses",
   Challenge: "chl",

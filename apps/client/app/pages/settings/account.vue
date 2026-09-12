@@ -61,6 +61,19 @@ const now = useNow({ interval: 30_000 });
 const profile = computed(() => store.profile);
 const factors = computed(() => store.factors);
 
+/**
+ * How many slots the last row of the factor mosaic leaves empty, in its two tracks.
+ *
+ * The mosaic draws each cell's top and left hairline and lets the neighbour below and to
+ * the right close it, so a slot with nothing in it leaves the passkey with no bottom rule
+ * and the recovery code with no right one. A filler cell in that slot draws the two lines
+ * a real cell would have. Zero when the row is full, so nothing renders.
+ */
+const FACTOR_TRACKS = 2;
+const factorFillers = computed(
+  () => (FACTOR_TRACKS - (factors.value.length % FACTOR_TRACKS)) % FACTOR_TRACKS,
+);
+
 const twoFactor = computed(() => twoFactorOn(factors.value));
 const pendingEmail = computed(() => store.emailChange);
 
@@ -437,6 +450,16 @@ const saving = computed(() => busy.value.size > 0);
             </v-tooltip>
           </div>
         </div>
+
+        <!-- The slot an odd count leaves empty, only from `sm` where there are two tracks:
+             its top and left hairlines are the bottom rule of the cell above and the right
+             rule of the cell beside it, which no real cell draws. -->
+        <div
+          v-for="slot in factorFillers"
+          :key="`filler-${slot}`"
+          aria-hidden="true"
+          class="-mt-px -ml-px hidden border-t border-l border-line sm:block"
+        />
       </div>
 
       <InfoNote :text="RECOVERY_FOLLOWS_NOTE" icon="material-symbols:key-vertical-outline" />

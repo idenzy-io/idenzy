@@ -20,17 +20,21 @@
  * daily rows cannot support and which belongs to the analytics store (todo.md 3.2).
  */
 
-import type { ProjectUsage, UsagePeriodList } from "@idenzy/protocol/schemas/management";
+import type {
+  ProjectUsage,
+  ProjectUsageHours,
+  UsagePeriodList,
+} from "@idenzy/protocol/schemas/management";
 import { managementMessage } from "~/utils/sign-in-errors";
-import type { ChartMeterId, UsagePeriod, UsageWindow } from "~/utils/usage";
+import { type ChartMeterId, type UsagePeriod, type UsageWindow, windowDays } from "~/utils/usage";
 
 const DAY = 24 * 3_600_000;
 
 /** Closed months kept beside the open one. */
 const HISTORY_MONTHS = 6;
 
-/** One day's figures, as the chart reads them. */
-interface DayFigures {
+/** One bucket's figures, as the chart reads them. A day and an hour carry the same three. */
+interface BucketFigures {
   mau: number;
   emails: number;
   sms: number;
@@ -40,6 +44,14 @@ export const useUsageStore = defineStore("usage", () => {
   const projects = useProjectStore();
 
   const periods = ref<Record<string, UsagePeriod[]>>({});
+  /**
+   * Hours by project, keyed by the ISO instant the hour starts.
+   *
+   * Kept apart from the periods because they come from their own table with its own retention —
+   * six months of hours against two years of days — and because an hour that was never rolled up
+   * has to stay absent rather than defaulting to nought.
+   */
+  const hours = ref<Record<string, Record<string, BucketFigures>>>({});
   const loading = ref(false);
   const refreshing = ref(false);
   /** Why the last read failed, or null. Figures already held stay on screen. */
@@ -109,9 +121,9 @@ export const useUsageStore = defineStore("usage", () => {
   }
 
   const indexes = computed(() => {
-    const out = new Map<string, Map<number, DayFigures>>();
+    const out = new Map<string, Map<number, BucketFigures>>();
     for (const [projectId, list] of Object.entries(periods.value)) {
-      const days = new Map<number, DayFigures>();
+      const days = new Map<number, BucketFigures>();
       for (const period of list) {
         period.days.forEach((day, index) => {
           days.set(Date.parse(day), {
@@ -127,17 +139,53 @@ export const useUsageStore = defineStore("usage", () => {
   });
 
   /**
+   * The hours a window needs, fetched once per window.
+   *
+   * Two calls for the 1d range rather than one, because the window and what it is compared with
+   * are a calendar month apart and a single span covering both would be past the endpoint's cap.
+   */
+  async function loadHours(projectId: string, windows: readonly UsageWindow[]): Promise<void> {
+    const path = basePath(projectId);
+    if (path === null) return;
+    try {
+      const api = useManagementApi();
+      const found: Record<string, BucketFigures> = { ...(hours.value[projectId] ?? {}) };
+      for (const window of windows) {
+        const { from, to } = windowDays(window);
+        const { data, error } = await api(`${path}/hours?from=${from}&to=${to}`)
+          .get()
+          .json<ProjectUsageHours>();
+        if (error.value !== null) throw error.value;
+        for (const hour of data.value?.hours ?? []) {
+          found[hour.hour] = {
+            mau: hour.activeUsersToDate,
+            emails: hour.emailsSent,
+            sms: hour.smsSent,
+          };
+        }
+      }
+      hours.value = { ...hours.value, [projectId]: found };
+    } catch (cause: unknown) {
+      error.value = managementMessage(cause);
+    }
+  }
+
+  /**
    * One value per bucket, null where nothing was metered.
    *
-   * A bucket is a day and only a day. The meters roll up per day, so an hourly reading would have
-   * to be invented from a curve — which is what this did while the figures were fixtures, and is
-   * exactly the sort of number a customer would reconcile against and find missing.
+   * Null is load-bearing at the hourly resolution and not just a tidy default. An hour with no row
+   * is one the roller never observed, and a level cannot be reconstructed after the fact — so the
+   * chart shows a gap rather than a line drawn through a shape nobody measured.
    */
   function valuesFor(
     projectId: string,
     meter: ChartMeterId,
     window: UsageWindow,
   ): (number | null)[] {
+    if (window.granularity === "hour") {
+      const found = hours.value[projectId] ?? {};
+      return window.buckets.map((bucket) => found[new Date(bucket).toISOString()]?.[meter] ?? null);
+    }
     const days = indexes.value.get(projectId);
     return window.buckets.map(
       (bucket) => days?.get(Math.floor(bucket / DAY) * DAY)?.[meter] ?? null,
@@ -151,6 +199,7 @@ export const useUsageStore = defineStore("usage", () => {
     error,
     updatedAt,
     load,
+    loadHours,
     refresh,
     periodsFor,
     forProject,

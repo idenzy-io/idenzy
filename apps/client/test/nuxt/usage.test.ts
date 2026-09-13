@@ -24,6 +24,7 @@ import {
   usageCsv,
   usageWindow,
   usageWindows,
+  windowDays,
   windowLabel,
 } from "../../app/utils/usage";
 
@@ -243,16 +244,22 @@ describe("the month before", () => {
 describe("the activity windows", () => {
   const anchor = new Date("2026-09-11T14:00:00.000Z");
 
-  /* A bucket is a day and only a day: `usage_daily` rolls up daily, so an hourly range could
-     only have been drawn from a curve nobody metered. */
-  it("ends on the day the figures run into", () => {
+  it("ends on the bucket the figures run into", () => {
     const week = usageWindow("7d", anchor);
+    expect(week.granularity).toBe("day");
     expect(week.buckets).toHaveLength(7);
     expect(new Date(week.buckets.at(-1) ?? 0).toISOString()).toBe("2026-09-11T00:00:00.000Z");
 
-    const month = usageWindow("30d", anchor);
-    expect(month.buckets).toHaveLength(30);
-    expect(new Date(month.buckets[0] ?? 0).toISOString()).toBe("2026-08-13T00:00:00.000Z");
+    const day = usageWindow("1d", anchor);
+    expect(day.granularity).toBe("hour");
+    expect(day.buckets).toHaveLength(24);
+    expect(new Date(day.buckets.at(-1) ?? 0).toISOString()).toBe("2026-09-11T13:00:00.000Z");
+  });
+
+  /* An hourly window is asked for in whole days, because that is how `usage_hourly` is read and
+     24 hours ending mid-afternoon straddles two of them. */
+  it("names the whole days an hourly window touches", () => {
+    expect(windowDays(usageWindow("1d", anchor))).toEqual({ from: "2026-09-10", to: "2026-09-11" });
   });
 
   it("compares with the same dates a month before, not the window before", () => {
@@ -263,6 +270,7 @@ describe("the activity windows", () => {
   it("names a window by its dates", () => {
     expect(windowLabel(usageWindow("7d", anchor))).toBe("Sep 5 to 11");
     expect(windowLabel(usageWindow("30d", anchor))).toBe("Aug 13 to Sep 11");
+    expect(windowLabel(usageWindow("1d", anchor))).toBe("24 hours to Sep 11, 14:00");
   });
 
   it("draws no line for a meter that is not metered", () => {

@@ -196,9 +196,8 @@ const METRIC_OPTIONS: readonly MetricOption[] = CHART_METERS.map((entry) => ({
   description: entry.description,
 }));
 
-/* No 24-hour range: `usage_daily` is a daily rollup, so an hourly reading would have to be
-   invented (see `usageWindow`). Hour-by-hour activity waits on the analytics store. */
 const RANGES: readonly SegmentedOption[] = [
+  { value: "1d", label: "1d", title: "The last 24 hours, by the hour" },
   { value: "7d", label: "7d", title: "The last 7 days" },
   { value: "30d", label: "30d", title: "The last 30 days" },
 ];
@@ -207,6 +206,18 @@ const meter = ref<ChartMeterId>("mau");
 const range = ref<UsageRange>("7d");
 
 const windows = computed(() => usageWindows(range.value, asOf.value));
+
+/* The hourly series comes from its own table and its own route, so it is read when the range asks
+   for it rather than with the rest of the screen. Both windows, because the comparison is a month
+   away from the window and a single span covering the pair is past what the endpoint allows. */
+watch(
+  [project, windows],
+  ([id, { current, previous }]) => {
+    if (current.granularity !== "hour") return;
+    void store.loadHours(id, [current, previous]);
+  },
+  { immediate: true },
+);
 
 const chart = computed(() => {
   const { current, previous } = windows.value;
@@ -225,10 +236,10 @@ const chart = computed(() => {
     },
   ];
   return {
-    categories: current.buckets.map((bucket) => bucketTick(bucket)),
+    categories: current.buckets.map((bucket) => bucketTick(bucket, current.granularity)),
     titles: current.buckets.map(
       (bucket, index) =>
-        `${bucketTitle(bucket)}, against ${bucketTitle(previous.buckets[index] ?? bucket)}`,
+        `${bucketTitle(bucket, current.granularity)}, against ${bucketTitle(previous.buckets[index] ?? bucket, previous.granularity)}`,
     ),
     series,
   };
@@ -236,7 +247,9 @@ const chart = computed(() => {
 
 const activityWords = computed(() => {
   const of = closed.value ? ` of ${month.value}` : "";
-  return `The last ${range.value === "7d" ? 7 : 30} days${of}, against the same dates a month before. UTC.`;
+  return range.value === "1d"
+    ? `The last 24 hours${of} by the hour, against the same hours a month before. An hour with no point is one nothing recorded. UTC.`
+    : `The last ${range.value === "7d" ? 7 : 30} days${of}, against the same dates a month before. UTC.`;
 });
 
 /*
@@ -442,7 +455,7 @@ function exportCsv() {
       <MetricCard
         v-model="meter"
         :categories="chart.categories"
-        category-label="Day"
+        :category-label="range === '1d' ? 'Hour' : 'Day'"
         :loading="loading"
         :options="METRIC_OPTIONS"
         :series="chart.series"

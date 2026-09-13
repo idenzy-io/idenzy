@@ -526,29 +526,47 @@ export function projectBill(period: UsagePeriod, asOf: Date): Bill {
  */
 
 /**
- * A day is the smallest bucket there is, so there is no 24-hour range.
+ * Two resolutions, from two tables, and the difference is what each can be asked.
  *
- * `usage_daily` is a daily rollup and deliberately so: it is the shape a bill is raised from, and
- * an hourly one would be twenty-four times the rows of a table kept for six years. An hourly
- * reading would therefore have to be invented from a curve, which is what this screen did while
- * its figures were fixtures — and a shape nobody metered is exactly the number a customer
- * reconciles against and cannot find. Hour-by-hour activity is a question for the analytics store
- * (todo.md 3.2), which is where metrics go and where a bill does not.
+ * A day comes from `usage_daily` and carries a distinct count of its own. An hour comes from
+ * `usage_hourly`, which stores a *level* rather than a sketch — month-to-date actives as they
+ * stood when the hour ended — because a sketch every hour is seventy megabytes per project over
+ * the six months those rows are kept. So an hour can say how the month's count was climbing and
+ * cannot say how many distinct people were active inside it, and nothing on this screen asks it to.
+ *
+ * A missing hour stays missing. The roller writes one when it observes it and a level cannot be
+ * reconstructed afterwards, so a gap is drawn as a gap rather than as a line through it.
  */
-export type UsageRange = "7d" | "30d";
+export type UsageRange = "1d" | "7d" | "30d";
 
 export interface UsageWindow {
-  /** Bucket starts, oldest first, in epoch milliseconds. Always days. */
+  granularity: "hour" | "day";
+  /** Bucket starts, oldest first, in epoch milliseconds. */
   buckets: number[];
 }
 
-const RANGE_BUCKETS: Record<UsageRange, number> = { "7d": 7, "30d": 30 };
+const RANGE_BUCKETS: Record<UsageRange, number> = { "1d": 24, "7d": 7, "30d": 30 };
 
 /** The buckets that end at `anchor`, which is exclusive: the instant the figures run to. */
 export function usageWindow(range: UsageRange, anchor: Date): UsageWindow {
-  const last = Math.floor((anchor.getTime() - 1) / DAY) * DAY;
+  const granularity = range === "1d" ? "hour" : "day";
+  const step = granularity === "hour" ? HOUR : DAY;
+  const last = Math.floor((anchor.getTime() - 1) / step) * step;
   const length = RANGE_BUCKETS[range];
-  return { buckets: Array.from({ length }, (_, index) => last - (length - 1 - index) * DAY) };
+  return {
+    granularity,
+    buckets: Array.from({ length }, (_, index) => last - (length - 1 - index) * step),
+  };
+}
+
+/** The whole UTC days a window touches, which is how the hourly series is asked for. */
+export function windowDays(window: UsageWindow): { from: string; to: string } {
+  const first = window.buckets[0] ?? 0;
+  const last = window.buckets.at(-1) ?? first;
+  return {
+    from: new Date(first).toISOString().slice(0, 10),
+    to: new Date(last).toISOString().slice(0, 10),
+  };
 }
 
 /**
@@ -561,19 +579,33 @@ export function usageWindows(range: UsageRange, anchor: Date) {
 }
 
 const TICK_DAY = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
-export function bucketTick(bucket: number): string {
-  return TICK_DAY.format(bucket);
+const TICK_HOUR = new Intl.DateTimeFormat("en", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "UTC",
+});
+export function bucketTick(
+  bucket: number,
+  granularity: UsageWindow["granularity"] = "day",
+): string {
+  return (granularity === "hour" ? TICK_HOUR : TICK_DAY).format(bucket);
 }
 
-/** "Sep 11". */
-export function bucketTitle(bucket: number): string {
-  return TICK_DAY.format(bucket);
+/** "Sep 11", or "Sep 11, 14:00" for an hour. */
+export function bucketTitle(
+  bucket: number,
+  granularity: UsageWindow["granularity"] = "day",
+): string {
+  const day = TICK_DAY.format(bucket);
+  return granularity === "hour" ? `${day}, ${TICK_HOUR.format(bucket)}` : day;
 }
 
-/** "Sep 5 to 11", "Aug 13 to Sep 11". */
+/** "Sep 5 to 11", "Aug 13 to Sep 11", "24 hours to Sep 11, 15:00". */
 export function windowLabel(window: UsageWindow): string {
   const first = window.buckets[0] ?? 0;
   const last = window.buckets.at(-1) ?? first;
+  if (window.granularity === "hour") return `24 hours to ${bucketTitle(last + HOUR, "hour")}`;
   const from = TICK_DAY.format(first);
   const to = TICK_DAY.format(last);
   const sameMonth = new Date(first).getUTCMonth() === new Date(last).getUTCMonth();

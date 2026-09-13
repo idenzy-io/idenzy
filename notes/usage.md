@@ -73,7 +73,7 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 - **The chart's control is a range, 1d, 7d and 30d, in place of Daily | Cumulative.** Asked for
   by name. Active users are drawn as the billed level, which is the cumulative reading and the
   one that reconciles with the bill; emails and SMS are drawn per bucket. The card's table view
-  lists every value in either case. (The 1d range did not survive the wiring — see below.)
+  lists every value in either case.
 - **The comparison is the same dates a month before, not the window immediately before.**
   Active users are a level that starts again on the 1st, so the seven days before the 7th of a
   month straddle the reset and compare nothing with anything. The tiles compare with the same
@@ -97,11 +97,14 @@ arbitrary span of dates — a period's figure is the union of that period's sket
 dropped when the month closes. What the wiring cost the screen is worth stating plainly, because
 each item was something the placeholder could show and the meters cannot.
 
-- **The 24-hour range is gone, and with it the hourly chart.** `usage_daily` is a daily rollup and
-  deliberately so: it is the shape a bill is raised from, and an hourly one would be twenty-four
-  times the rows of a table kept for six years. The placeholder drew hours by splitting a day
-  along a plausible curve, which is exactly the number a customer reconciles against and cannot
-  find. Hour-by-hour activity is a question for the analytics store (todo.md 3.2).
+- **The 24-hour range is real rather than drawn from a curve.** The placeholder split a day along
+  a plausible shape, which is exactly the number a customer reconciles against and cannot find.
+  `usage_hourly` is its own table with its own six-month term, and it stores a *level* rather than
+  a sketch: month-to-date actives as they stood when the hour ended. So an hour can say how the
+  month's count was climbing and cannot say how many distinct people were active inside it, and
+  nothing on the screen asks it to. An hour nothing recorded is drawn as a gap, because a level
+  cannot be reconstructed afterwards and a line through it would be an invention of the same kind
+  the placeholder was.
 - **SMS is counted in messages, not segments.** A segment is what a carrier bills by, and nothing
   counts them: `usage_daily` holds messages and the money they cost. The money is still right —
   the cost recorded against each send was priced by segment where it was reserved — so the change

@@ -19,6 +19,7 @@ import { Global, Module } from "@nestjs/common";
       useFactory: (config: AppConfig) =>
         createLogger({
           level: config.get("LOG_LEVEL"),
+          service: "auth-api",
           base: { cell: config.get("CELL_CODE"), env: config.get("IDENZY_ENV") },
         }),
     },

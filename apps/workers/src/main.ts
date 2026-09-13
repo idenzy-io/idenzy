@@ -67,7 +67,8 @@ async function bootstrap(): Promise<void> {
   const config = AppConfig.fromEnvironment();
   const logger = createLogger({
     level: config.get("LOG_LEVEL"),
-    base: { cell: config.get("CELL_CODE"), component: "workers" },
+    service: "workers",
+    base: { cell: config.get("CELL_CODE"), env: config.get("IDENZY_ENV") },
   });
   const clock = new SystemClock();
   const retentionSeconds = config.get("ACCESS_TOKEN_TTL_SECONDS") + SKEW_SECONDS;

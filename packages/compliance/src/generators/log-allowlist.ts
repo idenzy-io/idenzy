@@ -29,6 +29,9 @@ export function generateLogAllowlist(): ReadonlySet<string> {
     // logs nothing but "droppedFields: 5" is how an allowlist earns a bad reputation.
     "env",
     "cell",
+    // Which service wrote the line. Bound once at boot and never per line, so it survives a
+    // `component` that names a subsystem.
+    "service",
     "port",
     "logLevel",
     "accessTokenTtlSeconds",

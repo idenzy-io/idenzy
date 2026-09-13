@@ -114,7 +114,7 @@ async function copyExample() {
   emit("copy", "Server example");
 }
 
-const GUIDE_URL = "https://idenzy.dev/docs/tokens/revocation";
+const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
 </script>
 
 <template>

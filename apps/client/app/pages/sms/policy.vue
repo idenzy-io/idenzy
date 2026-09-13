@@ -275,7 +275,7 @@ watch(
   },
 );
 
-const GUIDES_URL = "https://idenzy.dev/docs/sms/policy";
+const GUIDES_URL = "https://idenzy.io/docs/sms/policy";
 </script>
 
 <template>

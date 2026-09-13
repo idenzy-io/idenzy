@@ -236,7 +236,7 @@ const expanded = reactive({ reset: true, attempts: false });
 const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 const saving = computed(() => busy.value.size > 0);
 
-const GUIDES_URL = "https://idenzy.dev/docs/passwords";
+const GUIDES_URL = "https://idenzy.io/docs/passwords";
 </script>
 
 <template>

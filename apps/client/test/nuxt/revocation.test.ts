@@ -242,7 +242,7 @@ describe("snapshotEndpoint", () => {
   const inputs = {
     authDomain: null,
     deploymentBase: "",
-    regionEndpoint: "https://eu.idenzy.dev",
+    regionEndpoint: "https://eu.idenzy.io",
   };
 
   it("prefers the project's own auth domain, because that is what it is called on", () => {
@@ -255,7 +255,7 @@ describe("snapshotEndpoint", () => {
     expect(snapshotEndpoint({ ...inputs, deploymentBase: "https://api.local" }).issuerUrl).toBe(
       "https://api.local",
     );
-    expect(snapshotEndpoint(inputs).issuerUrl).toBe("https://eu.idenzy.dev");
+    expect(snapshotEndpoint(inputs).issuerUrl).toBe("https://eu.idenzy.io");
     expect(snapshotEndpoint(inputs).source).toBe("region");
   });
 

@@ -2,7 +2,7 @@
 
 > A managed authentication & user-management platform (Firebase Auth / Supabase Auth / Clerk category), delivered as a hosted service on Google Cloud, with first-class SDKs for every major web, mobile and game platform. **Design pillars: extreme security by default, five-minute integration, and the lowest per-MAU price in the market.**
 
-Document status: Architecture & scope blueprint (September 2026). Name finalized: **Idenzy** (`idenzy.dev` for dev surfaces, `idenzy.io` for marketing/dashboard; register both, plus `idenzy.com` defensively).
+Document status: Architecture & scope blueprint (September 2026). Name finalized: **Idenzy**. Both domains are held; **everything runs on `idenzy.io`** and `idenzy.dev` redirects to it (§16). `idenzy.com` is still worth holding defensively.
 
 **How to read this.** Sections 1 to 6 define the product, the security model, the cloud architecture and the economics. Sections 7 to 10 are normative about implementation: the stack is **TypeScript on Node.js**: NestJS on a Fastify HTTP adapter for every service, **Drizzle** for schema and data access, a **pnpm workspace monorepo** for the whole codebase, and **Nuxt (latest)** for the three front-end panels (admin, client, landing). They define the package layout, the mandatory class-based engineering model and the panel split, and they are binding rather than advisory.
 
@@ -304,7 +304,7 @@ One threat class is **absent by construction**: we render no HTML on any custome
 - Provider-issuer validation prevents mix-up attacks.
 - **Account linking rules**: auto-link only when the provider asserts `email_verified=true`, otherwise require proof via email OTP. Configurable per project. This single rule prevents the most common IdP-based account takeover.
 - Provider access and refresh tokens are stored with envelope encryption (KMS-wrapped DEK per project) and only when the customer opts in ("I need the provider token").
-- "Instant dev mode" shared OAuth apps are allowed only for `localhost` and `*.idenzy.dev` preview domains, show our brand on the consent screen, and are blocked for production custom domains.
+- "Instant dev mode" shared OAuth apps are allowed only for `localhost` and `*.idenzy.io` preview domains, show our brand on the consent screen, and are blocked for production custom domains.
 
 **Where the redirect lands.** Our `/oauth/{provider}/start` and `/oauth/{provider}/callback` endpoints do the full dance and then `302` the browser to a redirect URI the customer registered, carrying a single-use authorization code. The SDK exchanges that code for a session. We render nothing at any point in the flow; the only HTML involved belongs to the identity provider.
 
@@ -954,7 +954,7 @@ Three separate Nuxt applications, one shared component library (`@idenzy/ui`), o
 
 - `client` and `admin`: SPA build to immutable hashed assets on GCS, served by CDN with a short-TTL `index.html` and long-TTL assets. Runtime config is injected at build time per environment, and no secrets reach the bundle (publishable keys only).
 - `landing`: Nuxt Nitro server on Cloud Run with route-rules-driven ISR/CDN caching, so most requests are served from the edge and SSR cost stays flat as traffic grows (§5.2 lever 5).
-- Preview deployments per PR on `*.idenzy.dev`, which is also the domain allowlisted for instant-mode OAuth (§4.6).
+- Preview deployments per PR on `*.idenzy.io`, which is also the domain allowlisted for instant-mode OAuth (§4.6).
 
 ---
 
@@ -1014,7 +1014,7 @@ We generate OTPs ourselves rather than using Twilio Verify ($0.05 per verificati
 ### 11.2 AWS SES setup (concrete)
 
 1. Production access requested for a dedicated AWS account (out of sandbox), regions `eu-west-1` and `us-east-1` for redundancy.
-2. Shared sending domain `mail.idenzy.dev` (free tier) with SPF, DKIM (Easy DKIM 2048), DMARC `p=reject`, and a custom MAIL FROM domain for bounce alignment.
+2. Shared sending domain `mail.idenzy.io` (free tier) with SPF, DKIM (Easy DKIM 2048), DMARC `p=reject`, and a custom MAIL FROM domain (`bounce.mail.idenzy.io`) for bounce alignment. A subdomain rather than the apex, because sending reputation is per-domain and a deliverability incident must not reach mail from `idenzy.io` itself. `p=reject` is the end state and not the starting one: it is published only once a real message has shown `dkim=pass header.d=mail.idenzy.io` and `spf=pass`, since a misalignment under `p=reject` sends every one-time code silently to nowhere, on the flow §4.7 makes the default way in.
 3. **Customer custom domains**: the dashboard calls `CreateEmailIdentity`, shows 3 DKIM CNAMEs plus MAIL FROM MX/TXT, and we poll `GetEmailIdentity` until verified. Each customer domain is a separate SES identity under our account, or in the customer's own AWS if BYO.
 4. **Configuration sets** per plan tier with event publishing (send, delivery, bounce, complaint, reject) to SNS, into an HTTPS webhook on our `email-events` worker, into the suppression list. Hard bounces and complaints are never re-sent and surface in the dashboard as `email.bounced` webhooks.
 5. Dedicated IPs only above roughly 500K/day. Before that, shared IP pools with SES reputation monitoring, and Virtual Deliverability Manager once volume justifies it.
@@ -1203,7 +1203,7 @@ Phase 0 is deliberately front-loaded. The class hierarchies, boundary lint rules
 
 Resolved since the first draft:
 
-- ~~Product name and domains~~ **Resolved: "Idenzy".** `idenzy.dev` and `idenzy.io` are both available. Recommended split: `idenzy.dev` for docs, the SDK npm scope and dev-mode preview domains (`*.idenzy.dev`), and `idenzy.io` for the marketing site and dashboard (`app.idenzy.io`), matching the convention Clerk, Supabase and Vercel use. Register both plus `idenzy.com` defensively before any public announcement.
+- ~~Product name and domains~~ **Resolved: "Idenzy", and everything is on `idenzy.io`.** Both domains are registered; `idenzy.dev` redirects to `idenzy.io` and is held defensively rather than used. The earlier draft split them — `.dev` for developer surfaces, `.io` for marketing and the dashboard — and that is what was rejected, for a reason the split had missed: `SameSite` is a *site* rule, so `app.idenzy.io` to `auth.idenzy.dev` is cross-site and the `__Host-` cookies of §4.3 never flow between them. Our own panel is the first cookie-mode deployment we have (ADR-0008), so a split would have had us dogfooding the header-mode fallback while selling the cookie model. One site keeps `app.idenzy.io` → `auth.idenzy.io` same-site. The cost is real and accepted: `.dev` is HSTS-preloaded and `.io` is not, so `idenzy.io` should be submitted to hstspreload.org to get the same guarantee. `idenzy.com` is still worth holding before any public announcement.
 - ~~Query layer: hand-written SQL versus a typed query builder versus an ORM~~ **Resolved: Drizzle** (§9.4, ADR-0001).
 - ~~Whether to ship hosted pages and embeddable components~~ **Resolved: no, and never** (§1.1, ADR-0002).
 - ~~Lint and format toolchain~~ **Resolved: Biome**, with GritQL plugins for the project-specific bans, plus husky, lint-staged and commitlint (§7.5).

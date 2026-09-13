@@ -255,7 +255,7 @@ const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 /* Folded by default: RFC 6238's own rules and the enrolment's, none of them ours. */
 const advanced = ref(false);
 
-const GUIDES_URL = "https://idenzy.dev/docs/mfa/totp";
+const GUIDES_URL = "https://idenzy.io/docs/mfa/totp";
 </script>
 
 <template>

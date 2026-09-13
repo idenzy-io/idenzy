@@ -286,7 +286,7 @@ client have no server halves to talk to yet.
 - [x] Flow store, PKCE, state binding, nonce, exact-match redirect allowlist. State is
       consumed in one statement so it is a one-shot token rather than a value that merely
       matches, and the allowlist is re-checked at the callback and not only at start
-- [x] Instant dev mode restricted to localhost and `*.idenzy.dev`
+- [x] Instant dev mode restricted to localhost and `*.idenzy.io`
 - [x] Provider token storage with envelope encryption, opt-in only via `storeTokens`
 - [x] The provider tail from §4.6 is closed: Facebook, Discord, Twitch, LinkedIn, X,
       GitLab, Bitbucket, Slack, Spotify, Notion, Figma, Kakao, LINE and Zoom. Most are an
@@ -461,6 +461,19 @@ client have no server halves to talk to yet.
 
 ### 1.6 Platform
 
+- [x] Open decision on domains closed, and the code follows it: **everything is on
+      `idenzy.io`**, with `idenzy.dev` redirecting and held defensively. The draft split in
+      §16 — `.dev` for developer surfaces, `.io` for marketing and the dashboard — was
+      rejected on a point it had missed: `SameSite` is a *site* rule, so `app.idenzy.io` to
+      `auth.idenzy.dev` is cross-site and the `__Host-` cookies of 4.3 never flow between
+      them. Our own panel is the first cookie-mode deployment there is (ADR-0008), so the
+      split would have had us dogfooding the header-mode fallback while selling the cookie
+      model. The cost is named rather than swallowed: `.dev` is HSTS-preloaded and `.io` is
+      not, so `idenzy.io` wants submitting to hstspreload.org to get the same guarantee.
+      The shared sending domain is `mail.idenzy.io` — a subdomain and not the apex, because
+      sending reputation is per-domain and a deliverability incident must not reach mail
+      from `idenzy.io` itself
+
 - [x] PKCE on our own exchange codes, for OAuth and deliberately not magic links: a link is
       clicked in a different browser from the one that started it, so a verifier held by the
       starter would fail the normal case every time. Verified after the code is consumed, so a
@@ -488,8 +501,8 @@ client have no server halves to talk to yet.
 - [x] Reuse telemetry on `security.refresh_token_reused`. Nothing branches on it (ADR-0007)
 - [~] Cookie mode is implemented but unusable in production until custom auth domains exist:
       `SameSite` is a site rule, so it needs the auth API to be same-site with the app. Our
-      own panel is the first deployment that will have one — `app.idenzy.dev` to
-      `auth.idenzy.dev` — and it already runs in cookie mode locally, where loopback is
+      own panel is the first deployment that will have one — `app.idenzy.io` to
+      `auth.idenzy.io` — and it already runs in cookie mode locally, where loopback is
       same-site by accident and the transport guard's eligibility check is skipped. What is
       missing is the domain itself and the `project_domains` row that marks it verified
 - [x] Project creation, API keys, custom auth domain provisioning. Project creation is in:

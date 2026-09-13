@@ -315,7 +315,7 @@ const listed = computed(() => {
     .sort((a, b) => applyDirection(compare?.(a, b) ?? 0, active.value.direction));
 });
 
-const GUIDES_URL = "https://idenzy.dev/docs/email/suppressions";
+const GUIDES_URL = "https://idenzy.io/docs/email/suppressions";
 </script>
 
 <template>

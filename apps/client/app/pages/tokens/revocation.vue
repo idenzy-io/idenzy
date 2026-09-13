@@ -469,7 +469,7 @@ async function copyText(text: string, what: string) {
   notify(`${what} copied`);
 }
 
-const GUIDE_URL = "https://idenzy.dev/docs/tokens/revocation";
+const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
 </script>
 
 <template>

@@ -309,7 +309,7 @@ watch(project, () => {
 
 const reference = reactive({ signing: false, failure: false });
 
-const GUIDE_URL = "https://idenzy.dev/docs/hooks";
+const GUIDE_URL = "https://idenzy.io/docs/hooks";
 </script>
 
 <template>

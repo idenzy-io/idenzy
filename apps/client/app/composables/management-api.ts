@@ -16,7 +16,7 @@ import { refusalIn } from "~/utils/sign-in-errors";
  *
  * **The token and not the session cookie, and the reason is not preference.** The
  * `__Host-` cookies the auth API sets are locked to its own hostname: one written by
- * `auth.idenzy.dev` is never sent to `api.idenzy.dev`, by construction. A Bearer token is
+ * `auth.idenzy.io` is never sent to `api.idenzy.io`, by construction. A Bearer token is
  * the only credential that can cross, which is also why this service allows no credentials
  * in its CORS policy — there are none to allow.
  */

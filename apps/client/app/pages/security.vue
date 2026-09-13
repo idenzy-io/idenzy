@@ -544,7 +544,7 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-const GUIDES_URL = "https://idenzy.dev/docs/security";
+const GUIDES_URL = "https://idenzy.io/docs/security";
 
 const GUIDES = [
   {
@@ -557,7 +557,7 @@ const GUIDES = [
     icon: "material-symbols:timer-outline",
     title: "Answering a step-up challenge",
     detail: "The reply your sign-in gets instead of a session, and what to render.",
-    href: "https://idenzy.dev/docs/mfa/step-up",
+    href: "https://idenzy.io/docs/mfa/step-up",
   },
   {
     icon: "material-symbols:key-outline",
@@ -569,7 +569,7 @@ const GUIDES = [
     icon: "material-symbols:webhook",
     title: "Signals over webhooks",
     detail: "Taking these into your own tooling instead of reading them here.",
-    href: "https://idenzy.dev/docs/webhooks",
+    href: "https://idenzy.io/docs/webhooks",
   },
 ];
 </script>

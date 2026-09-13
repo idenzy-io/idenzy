@@ -153,7 +153,7 @@ export interface ProviderInfo {
   available: boolean;
 }
 
-const GUIDES = "https://idenzy.dev/docs/providers";
+const GUIDES = "https://idenzy.io/docs/providers";
 
 export const PROVIDERS: readonly ProviderInfo[] = [
   {
@@ -579,7 +579,7 @@ export const MODE_LABELS: Record<ProviderMode, ModeLook> = {
  * Where instant mode is allowed to return to (PROJECT.md 4.6). The server refuses
  * anything else, so the screen says so rather than letting somebody ship it.
  */
-export const INSTANT_HOSTS = "localhost, 127.0.0.1 and *.idenzy.dev";
+export const INSTANT_HOSTS = "localhost, 127.0.0.1 and *.idenzy.io";
 
 export interface ProviderConfig {
   enabled: boolean;

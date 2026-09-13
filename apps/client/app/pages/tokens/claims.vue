@@ -402,25 +402,25 @@ const GUIDES = [
     icon: "material-symbols:token-outline",
     title: "Claim templates",
     detail: "Sources, required claims, and what the budget is for.",
-    href: "https://idenzy.dev/docs/tokens/claims",
+    href: "https://idenzy.io/docs/tokens/claims",
   },
   {
     icon: "material-symbols:code",
     title: "Reading claims on your server",
     detail: "The claims field in @idenzy/node, and branching on it safely.",
-    href: "https://idenzy.dev/docs/sdk/node/claims",
+    href: "https://idenzy.io/docs/sdk/node/claims",
   },
   {
     icon: "material-symbols:data-object",
     title: "Public and private metadata",
     detail: "Which column to write to, and who can read each.",
-    href: "https://idenzy.dev/docs/users/metadata",
+    href: "https://idenzy.io/docs/users/metadata",
   },
   {
     icon: "material-symbols:database",
     title: "Token claims in Postgres policies",
     detail: "Using a claim inside row-level security without a lookup.",
-    href: "https://idenzy.dev/docs/tokens/rls",
+    href: "https://idenzy.io/docs/tokens/rls",
   },
 ];
 </script>

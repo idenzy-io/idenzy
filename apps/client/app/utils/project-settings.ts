@@ -42,14 +42,14 @@ export const REGION_CELLS: readonly RegionCell[] = [
     code: "eu-west-1",
     label: "Europe (Belgium)",
     jurisdiction: "European Union",
-    endpoint: "https://eu.idenzy.dev",
+    endpoint: "https://eu.idenzy.io",
     kmsKeyRing: "idenzy-eu-west-1",
   },
   {
     code: "us-east-1",
     label: "United States (South Carolina)",
     jurisdiction: "United States",
-    endpoint: "https://us.idenzy.dev",
+    endpoint: "https://us.idenzy.io",
     kmsKeyRing: "idenzy-us-east-1",
   },
 ];

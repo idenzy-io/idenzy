@@ -48,7 +48,7 @@ describe("SigV4", () => {
    * nothing here has yet.
    */
   it("produces the signature an independent implementation produces", () => {
-    expect(sign({}, TEMPORARY).authorization).toBe(
+    expect(sign({}, TEMPORARY)["authorization"]).toBe(
       "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260913/us-east-1/ses/aws4_request, " +
         "SignedHeaders=content-type;host;x-amz-date;x-amz-security-token, " +
         "Signature=08f98d79d9422dde15a87d6f525c8ec933c3b1d8b516eefcc6ea60e00b72cd26",
@@ -62,7 +62,7 @@ describe("SigV4", () => {
    */
   it("names in SignedHeaders exactly the headers it returns", () => {
     const headers = sign({}, TEMPORARY);
-    const named = signedHeadersOf(headers.authorization ?? "");
+    const named = signedHeadersOf(headers["authorization"] ?? "");
     const sent = Object.keys(headers)
       .filter((name) => name !== "authorization")
       .map((name) => name.toLowerCase())
@@ -77,17 +77,17 @@ describe("SigV4", () => {
       url: new URL("https://email.eu-west-1.amazonaws.com/v2/email/outbound-emails"),
     });
 
-    expect(signedHeadersOf(here.authorization ?? "")).toContain("host");
-    expect(signatureOf(here.authorization ?? "")).not.toBe(
-      signatureOf(elsewhere.authorization ?? ""),
+    expect(signedHeadersOf(here["authorization"] ?? "")).toContain("host");
+    expect(signatureOf(here["authorization"] ?? "")).not.toBe(
+      signatureOf(elsewhere["authorization"] ?? ""),
     );
   });
 
   it("signs the body, so the message cannot be swapped after signing", () => {
     const first = sign({ body: '{"to":"someone@example.test"}' });
     const second = sign({ body: '{"to":"attacker@example.test"}' });
-    expect(signatureOf(first.authorization ?? "")).not.toBe(
-      signatureOf(second.authorization ?? ""),
+    expect(signatureOf(first["authorization"] ?? "")).not.toBe(
+      signatureOf(second["authorization"] ?? ""),
     );
   });
 
@@ -95,22 +95,22 @@ describe("SigV4", () => {
     const headers = sign({
       headers: { "x-zzz": "last", "content-type": "application/json", "a-first": "first" },
     });
-    const named = signedHeadersOf(headers.authorization ?? "");
+    const named = signedHeadersOf(headers["authorization"] ?? "");
     expect(named).toEqual([...named].sort());
   });
 
   it("carries a session token as a signed header only when there is one", () => {
     expect(sign({}, TEMPORARY)["x-amz-security-token"]).toBe("tok-123");
-    expect(signedHeadersOf(sign({}, TEMPORARY).authorization ?? "")).toContain(
+    expect(signedHeadersOf(sign({}, TEMPORARY)["authorization"] ?? "")).toContain(
       "x-amz-security-token",
     );
 
     expect(sign()["x-amz-security-token"]).toBeUndefined();
-    expect(signedHeadersOf(sign().authorization ?? "")).not.toContain("x-amz-security-token");
+    expect(signedHeadersOf(sign()["authorization"] ?? "")).not.toContain("x-amz-security-token");
   });
 
   it("scopes the credential to the date, region and service it signed for", () => {
-    expect(sign().authorization).toContain(
+    expect(sign()["authorization"]).toContain(
       "Credential=AKIDEXAMPLE/20260913/us-east-1/ses/aws4_request",
     );
     expect(sign()["x-amz-date"]).toBe("20260913T151200Z");

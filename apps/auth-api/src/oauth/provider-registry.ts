@@ -9,7 +9,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { OAUTH_PROVIDERS } from "./oauth-tokens.js";
 
 /** Hosts our shared OAuth apps may return to. Anything else must use its own app. */
-const INSTANT_MODE_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.idenzy\.dev)$/i;
+const INSTANT_MODE_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.idenzy\.io)$/i;
 
 /**
  * The providers this deployment implements, and the credentials each project gave them

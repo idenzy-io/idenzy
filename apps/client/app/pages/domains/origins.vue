@@ -256,7 +256,7 @@ const samples = computed(() => [
   },
 ]);
 
-const GUIDES_URL = "https://idenzy.dev/docs/origins";
+const GUIDES_URL = "https://idenzy.io/docs/origins";
 </script>
 
 <template>

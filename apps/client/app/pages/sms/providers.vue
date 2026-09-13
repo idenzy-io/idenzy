@@ -298,7 +298,7 @@ const readyCount = computed(
    this holds the sentence, so nothing on the screen is explained by hover alone. */
 const REGISTRATION_LIST = Object.values(REGISTRATIONS);
 
-const GUIDES_URL = "https://idenzy.dev/docs/sms";
+const GUIDES_URL = "https://idenzy.io/docs/sms";
 </script>
 
 <template>

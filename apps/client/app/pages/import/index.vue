@@ -60,7 +60,7 @@ const now = useNow({ interval: 30_000 });
 const jobs = computed(() => store.forProject(projects.current.id));
 const metrics = computed(() => store.metrics(projects.current.id, now.value));
 
-const GUIDES_URL = "https://idenzy.dev/docs/migrate";
+const GUIDES_URL = "https://idenzy.io/docs/migrate";
 
 /* The wizard is a dialog, so the page holds only whether it is up. */
 const wizardOpen = ref(false);

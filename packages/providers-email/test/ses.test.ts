@@ -36,7 +36,7 @@ const provider = () => new SesEmailProvider(allowing, metering, clock, OPTIONS);
 
 const message = {
   to: "recipient@example.test",
-  from: "no-reply@auth.idenzy.dev",
+  from: "no-reply@auth.idenzy.io",
   subject: "Your code",
   html: "<p>123456</p>",
   text: "123456",

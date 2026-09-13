@@ -325,7 +325,7 @@ function confirmDelete() {
 const saving = computed(() => busy.value.size > 0);
 const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 
-const GUIDES_URL = "https://idenzy.dev/docs/projects";
+const GUIDES_URL = "https://idenzy.io/docs/projects";
 </script>
 
 <template>

@@ -31,7 +31,7 @@ const billing = useBillingStore();
 const balance = computed(() => formatCents(billing.balanceFor(projects.currentOrg.id)));
 
 /** The docs shell on the landing site (PROJECT.md 10.1). The host is a placeholder. */
-const DOCS_URL = "https://idenzy.dev/docs";
+const DOCS_URL = "https://idenzy.io/docs";
 </script>
 
 <template>

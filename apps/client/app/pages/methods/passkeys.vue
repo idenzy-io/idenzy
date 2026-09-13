@@ -224,7 +224,7 @@ const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 /* Folded by default: WebAuthn's own rules, none of which anybody here can change. */
 const advanced = ref(false);
 
-const GUIDES_URL = "https://idenzy.dev/docs/passkeys";
+const GUIDES_URL = "https://idenzy.io/docs/passkeys";
 </script>
 
 <template>

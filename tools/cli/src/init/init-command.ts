@@ -7,7 +7,7 @@ import { ScaffoldWriter } from "./scaffold-writer.js";
 import { resolveTemplate, TEMPLATES, templateById } from "./template-registry.js";
 
 /** What the shared API host answers on until a customer points their own domain at us. */
-export const DEFAULT_API_URL = "https://auth.idenzy.dev";
+export const DEFAULT_API_URL = "https://auth.idenzy.io";
 
 /** Obviously not a key, so a run without one leaves something a developer notices. */
 export const PLACEHOLDER_KEY = "pk_test_replace_me";

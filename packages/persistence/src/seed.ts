@@ -28,8 +28,8 @@ import { apiKeys, projects } from "./schema/projects.js";
  *   orgs                Idenzy
  *   projects            Dashboard, pinned to the cell the panel is served from
  *   api_keys            one publishable key, shown once
- *   project_domains     auth.idenzy.dev, type `auth`, verified — cookie mode needs it
- *   project_origins     https://app.idenzy.dev
+ *   project_domains     auth.idenzy.io, type `auth`, verified — cookie mode needs it
+ *   project_origins     https://app.idenzy.io
  *
  * The last two are absent here on purpose rather than forgotten. Outside production the
  * transport guard skips its eligibility check and the CORS policy allows loopback as code
@@ -53,13 +53,13 @@ const CELLS = [
   {
     code: "eu-west-1",
     jurisdiction: "European Union",
-    endpoint: "https://eu.idenzy.dev",
+    endpoint: "https://eu.idenzy.io",
     kmsKeyRing: "idenzy-eu-west-1",
   },
   {
     code: "us-east-1",
     jurisdiction: "United States",
-    endpoint: "https://us.idenzy.dev",
+    endpoint: "https://us.idenzy.io",
     kmsKeyRing: "idenzy-us-east-1",
   },
 ] as const;

@@ -147,7 +147,7 @@ const expanded = reactive({ example: false, challenge: false, claim: false });
 const saving = computed(() => busy.value.size > 0);
 const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 
-const GUIDES_URL = "https://idenzy.dev/docs/mfa/step-up";
+const GUIDES_URL = "https://idenzy.io/docs/mfa/step-up";
 </script>
 
 <template>

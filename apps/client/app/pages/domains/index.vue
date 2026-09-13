@@ -303,7 +303,7 @@ function notify(text: string) {
   toastOpen.value = true;
 }
 
-const GUIDES_URL = "https://idenzy.dev/docs/domains/auth";
+const GUIDES_URL = "https://idenzy.io/docs/domains/auth";
 </script>
 
 <template>

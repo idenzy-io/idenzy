@@ -4,7 +4,7 @@
  * of theirs can send (PROJECT.md 11.1, 11.2).
  *
  * Two facts shape the whole screen. A project is never without a sending domain, because
- * `mail.idenzy.dev` is there from the first day and cannot be taken away, so this is a
+ * `mail.idenzy.io` is there from the first day and cannot be taken away, so this is a
  * change of address and not a setup that has to be finished before anything works. And a
  * domain of your own is not the cheaper option: it is five dollars a month plus a lower
  * rate per thousand, so under fifty thousand mails a month it costs more, and the reason
@@ -31,7 +31,7 @@ import type { BadgeTone } from "~/components/StatusBadge.vue";
  */
 
 /** The shared sending domain, ours, with SPF, DKIM and DMARC `p=reject` already on it. */
-export const SHARED_DOMAIN = "mail.idenzy.dev";
+export const SHARED_DOMAIN = "mail.idenzy.io";
 
 /** The local part every auth mail is sent from. One address, not a per-template choice. */
 export const SENDER_LOCAL_PART = "no-reply";

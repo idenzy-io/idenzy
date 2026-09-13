@@ -273,7 +273,7 @@ describe("starting a flow", () => {
     expect(() =>
       ProviderRegistry.assertInstantModeAllowed("instant", "https://app.test/cb"),
     ).toThrowError(/instant/i);
-    for (const allowed of ["http://localhost:3000/cb", "https://demo.idenzy.dev/cb"]) {
+    for (const allowed of ["http://localhost:3000/cb", "https://demo.idenzy.io/cb"]) {
       expect(() => ProviderRegistry.assertInstantModeAllowed("instant", allowed)).not.toThrow();
     }
     expect(() =>

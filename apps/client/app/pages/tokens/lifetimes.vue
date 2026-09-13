@@ -295,25 +295,25 @@ const GUIDES = [
     icon: "material-symbols:timer-outline",
     title: "Lifetimes, end to end",
     detail: "The three you set, the ones we fix, and what each is measured from.",
-    href: "https://idenzy.dev/docs/tokens/lifetimes",
+    href: "https://idenzy.io/docs/tokens/lifetimes",
   },
   {
     icon: "material-symbols:block",
     title: "The revocation set",
     detail: "RevocationCache, the secret key it needs, and what it fails open to.",
-    href: "https://idenzy.dev/docs/tokens/revocation",
+    href: "https://idenzy.io/docs/tokens/revocation",
   },
   {
     icon: "material-symbols:verified-user-outline",
     title: "Verifying offline",
     detail: "AccessTokenVerifier in @idenzy/node, and why aud is required.",
-    href: "https://idenzy.dev/docs/sdk/node/verify",
+    href: "https://idenzy.io/docs/sdk/node/verify",
   },
   {
     icon: "material-symbols:sync",
     title: "Refresh and rotation",
     detail: "Single-flight, the cross-tab lock, and why a refresh is never retried.",
-    href: "https://idenzy.dev/docs/sdk/js/refresh",
+    href: "https://idenzy.io/docs/sdk/js/refresh",
   },
 ];
 </script>

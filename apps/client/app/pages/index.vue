@@ -322,7 +322,7 @@ watch(project, () => {
         <v-btn
           class="text-xs font-medium"
           color="neutral"
-          href="https://idenzy.dev/docs/quickstart"
+          href="https://idenzy.io/docs/quickstart"
           prepend-icon="material-symbols:book-2-outline"
           rel="noreferrer"
           size="small"

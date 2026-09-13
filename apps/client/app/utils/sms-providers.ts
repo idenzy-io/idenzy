@@ -595,7 +595,7 @@ export interface RouteReadiness {
   fix: { label: string; to?: string; href?: string } | null;
 }
 
-const REGISTRATION_GUIDE = "https://idenzy.dev/docs/sms/registration";
+const REGISTRATION_GUIDE = "https://idenzy.io/docs/sms/registration";
 
 /** What stands between this project and a message to that country. */
 export function routeReadiness(route: SmsRoute, allowed: readonly string[]): RouteReadiness {

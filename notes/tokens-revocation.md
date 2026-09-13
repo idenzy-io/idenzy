@@ -52,7 +52,7 @@ Session IDs, watermarks and expiry countdowns make this look like infrastructure
 
 ### P1 — Copyable URLs disagree with other pages
 
-This page uses auth.idenzy.dev while General and Auth domains show other endpoints. Derive issuer/project examples from current configuration, label placeholders and clearly keep secret-key setup server-side.
+This page uses auth.idenzy.io while General and Auth domains show other endpoints. Derive issuer/project examples from current configuration, label placeholders and clearly keep secret-key setup server-side.
 
 ## Proposed page
 

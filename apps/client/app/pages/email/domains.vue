@@ -13,7 +13,7 @@
  * records, where SPF goes, what a bounce does) is folded away at the foot, because a
  * screen that explains before it answers is one somebody scrolls past.
  *
- * A project is never without a sending domain. `mail.idenzy.dev` is there from the first
+ * A project is never without a sending domain. `mail.idenzy.io` is there from the first
  * day and cannot be removed, so nothing here is a setup that has to be finished before
  * mail works, and every consequence on this screen is a change of sender rather than an
  * outage. That is also why adding a domain and sending from it are two separate acts: a
@@ -228,7 +228,7 @@ const ceilingUsed = computed(() =>
     : Math.min(stats.value.sentToday / stats.value.dailyCeiling, 1),
 );
 
-const GUIDES_URL = "https://idenzy.dev/docs/email";
+const GUIDES_URL = "https://idenzy.io/docs/email";
 </script>
 
 <template>

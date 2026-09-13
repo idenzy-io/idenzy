@@ -50,7 +50,7 @@ export default defineNuxtConfig({
    * `sessionTransport` is left at its default of `auto`, which asks for cookie mode and
    * accepts the server's answer. Cookie mode is the one where the refresh token is a
    * `__Host-` HttpOnly cookie no script can read (ADR-0008), and it is available to us
-   * because we control our own DNS: `app.idenzy.dev` to `auth.idenzy.dev` is same-site.
+   * because we control our own DNS: `app.idenzy.io` to `auth.idenzy.io` is same-site.
    * On a laptop everything is loopback, which is same-site by accident and is the
    * documented development exception.
    */

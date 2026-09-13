@@ -303,7 +303,7 @@ const expanded = reactive({ lifecycle: false, format: false, never: false });
 const saving = computed(() => busy.value.size > 0);
 const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 
-const GUIDES_URL = "https://idenzy.dev/docs/mfa/recovery";
+const GUIDES_URL = "https://idenzy.io/docs/mfa/recovery";
 </script>
 
 <template>

@@ -75,7 +75,7 @@ export const configSchema = z.object({
    * outside production by the CORS policy itself rather than through this, so a deployment
    * cannot be talked into trusting `http://localhost` by setting a variable.
    */
-  DASHBOARD_ORIGIN: z.url().default("https://app.idenzy.dev"),
+  DASHBOARD_ORIGIN: z.url().default("https://app.idenzy.io"),
 
   /** Region cell this process serves. Cross-cell requests are refused (4.13.5). */
   CELL_CODE: z.string().min(1),
@@ -231,7 +231,7 @@ export const configSchema = z.object({
    * until then everything leaves on the shared domain, whose reputation is the reason
    * the suppression list is enforced in the provider base rather than per caller.
    */
-  EMAIL_FROM_ADDRESS: z.email().default("no-reply@auth.idenzy.dev"),
+  EMAIL_FROM_ADDRESS: z.email().default("no-reply@mail.idenzy.io"),
 
   /**
    * Amazon SES, and the four variables that travel together (PROJECT.md 11.1).

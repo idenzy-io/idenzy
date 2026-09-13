@@ -309,12 +309,12 @@ const exchangeLifetime = humanizeSeconds(CODE.exchangeLifetimeSeconds);
 /* Folded by default: how a code is made and kept, none of which anybody here can change. */
 const advanced = ref(false);
 
-const GUIDE_URL = "https://idenzy.dev/docs/otp";
+const GUIDE_URL = "https://idenzy.io/docs/otp";
 const CHANNEL_GUIDES: Record<ChannelId, string> = {
-  email: "https://idenzy.dev/docs/otp",
-  sms: "https://idenzy.dev/docs/sms/fraud",
-  link: "https://idenzy.dev/docs/magic-links",
-  whatsapp: "https://idenzy.dev/docs/otp",
+  email: "https://idenzy.io/docs/otp",
+  sms: "https://idenzy.io/docs/sms/fraud",
+  link: "https://idenzy.io/docs/magic-links",
+  whatsapp: "https://idenzy.io/docs/otp",
 };
 </script>
 

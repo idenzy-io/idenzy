@@ -279,7 +279,7 @@ const oidcCount = computed(
 const saving = computed(() => busy.value.size > 0);
 const lastSaved = computed(() => store.lastSavedAt(projects.current.id));
 
-const GUIDES_URL = "https://idenzy.dev/docs/providers";
+const GUIDES_URL = "https://idenzy.io/docs/providers";
 </script>
 
 <template>

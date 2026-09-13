@@ -94,7 +94,7 @@ describe("validateDomain", () => {
 
   it("refuses one of ours, which nobody else can put a record in", () => {
     expect(validateDomain("auth.idenzy.io", [])).toBe("ours");
-    expect(validateDomain("x.api.idenzy.dev", [])).toBe("ours");
+    expect(validateDomain("x.api.idenzy.io", [])).toBe("ours");
   });
 
   it("refuses a hostname the project already added, whatever the casing", () => {

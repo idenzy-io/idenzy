@@ -90,7 +90,7 @@ Slack, Spotify, Notion, Figma, Kakao, LINE and Zoom. The nineteenth name in the 
 `oidc`, is the generic enterprise connector and belongs to phase 4 with SAML.
 
 We hold no credentials with any of them beyond the shared "instant dev mode" apps, which
-are restricted to `localhost` and `*.idenzy.dev`. In production the OAuth client id and
+are restricted to `localhost` and `*.idenzy.io`. In production the OAuth client id and
 secret belong to the customer's own app, stored envelope encrypted per project.
 
 ## Other outbound calls

@@ -217,7 +217,7 @@ describe("reading the queue out of the environment", () => {
     VALKEY_URL: "redis://localhost:6379",
     CELL_CODE: "eu-1",
     KMS_KEY_RING: "ring",
-    ISSUER_BASE_URL: "https://auth.idenzy.dev",
+    ISSUER_BASE_URL: "https://auth.idenzy.io",
   };
 
   it("answers null when there is no queue, which is what a developer machine has", () => {

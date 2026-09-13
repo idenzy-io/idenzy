@@ -52,7 +52,7 @@ export interface SourceInfo {
   guide: string;
 }
 
-const GUIDES = "https://idenzy.dev/docs/migrate";
+const GUIDES = "https://idenzy.io/docs/migrate";
 
 export const SOURCES: readonly SourceInfo[] = [
   {

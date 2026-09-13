@@ -326,25 +326,25 @@ const GUIDES = [
     icon: "material-symbols:mail-outline",
     title: "Template studio",
     detail: "The types, the variables each carries, and how a locale resolves.",
-    href: "https://idenzy.dev/docs/email/templates",
+    href: "https://idenzy.io/docs/email/templates",
   },
   {
     icon: "material-symbols:code",
     title: "The template language",
     detail: "Substitution only, why there are no conditionals, and what escaping covers.",
-    href: "https://idenzy.dev/docs/email/language",
+    href: "https://idenzy.io/docs/email/language",
   },
   {
     icon: "material-symbols:translate",
     title: "Languages and fallback",
     detail: "The chain, and why your English beats our Turkish.",
-    href: "https://idenzy.dev/docs/email/locales",
+    href: "https://idenzy.io/docs/email/locales",
   },
   {
     icon: "material-symbols:terminal",
     title: "idenzy templates pull/push",
     detail: "Keeping copy in your own repository and shipping it with a release.",
-    href: "https://idenzy.dev/docs/cli/templates",
+    href: "https://idenzy.io/docs/cli/templates",
   },
 ];
 </script>

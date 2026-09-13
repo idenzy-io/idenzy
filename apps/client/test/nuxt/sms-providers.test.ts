@@ -241,7 +241,7 @@ describe("routeReadiness", () => {
     for (const route of SMS_ROUTES) {
       const answer = routeReadiness(route, [route.country]);
       if (answer.fix === null) continue;
-      expect(answer.fix.to ?? answer.fix.href).toMatch(/^(\/sms\/policy|https:\/\/idenzy\.dev\/)/);
+      expect(answer.fix.to ?? answer.fix.href).toMatch(/^(\/sms\/policy|https:\/\/idenzy\.io\/)/);
     }
   });
 });

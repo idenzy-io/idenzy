@@ -13,6 +13,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@idenzy/analytics": "workspace:*",
     "@idenzy/cache": "workspace:*",
     "@idenzy/compliance": "workspace:*",
     "@idenzy/config": "workspace:*",

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AccountModule } from "./account/account.module.js";
+import { AnalyticsModule } from "./analytics/analytics.module.js";
 import { AnonymousModule } from "./anonymous/anonymous.module.js";
 import { CacheModule } from "./cache/cache.module.js";
 import { ClaimsModule } from "./claims/claims.module.js";
@@ -41,6 +42,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     HttpModule,
     FlowsModule,
     TenancyModule,
+    AnalyticsModule,
     UsageModule,
     DeliveryModule,
     SessionModule,

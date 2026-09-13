@@ -5,6 +5,7 @@ import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { Argon2idHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import type { FraudGuard, SpendCap } from "@idenzy/domain/ports/sms-provider";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
@@ -99,6 +100,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
 
   transcript = new CapturingLogger();
@@ -297,6 +299,7 @@ async function sessionsFor(): Promise<SessionService> {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
 }
 

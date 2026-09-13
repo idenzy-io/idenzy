@@ -1,6 +1,7 @@
 import { SystemClock } from "@idenzy/core/time/clock";
 import { Argon2idHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-checker";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
@@ -97,6 +98,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     templates,
+    new NullAnalyticsRecorder(),
   );
   const gate = testMfaGate(uow, clock, config);
   const audit = new OutboxFlowAudit(uow, clock);

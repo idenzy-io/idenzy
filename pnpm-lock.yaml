@@ -273,6 +273,9 @@ importers:
 
   apps/auth-api:
     dependencies:
+      '@idenzy/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@idenzy/cache':
         specifier: workspace:*
         version: link:../../packages/cache
@@ -592,6 +595,9 @@ importers:
 
   apps/workers:
     dependencies:
+      '@idenzy/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@idenzy/cache':
         specifier: workspace:*
         version: link:../../packages/cache

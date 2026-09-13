@@ -4,6 +4,7 @@ import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import { AccountLinkingPolicy } from "@idenzy/domain/policies/account-linking-policy";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import {
   type OAuthCallback,
@@ -154,6 +155,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
 
   const flows = new DatabaseOAuthFlowStore(uow, encryptor);

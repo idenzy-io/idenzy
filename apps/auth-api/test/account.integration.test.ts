@@ -2,6 +2,7 @@ import { SystemClock } from "@idenzy/core/time/clock";
 import { Argon2idHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import { generateOpaqueToken } from "@idenzy/crypto/tokens/random";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-checker";
 import { RedirectUriRepository } from "@idenzy/persistence/repository/redirect-uri-repository";
@@ -89,6 +90,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
 
   mail = new CapturingEmailProvider();

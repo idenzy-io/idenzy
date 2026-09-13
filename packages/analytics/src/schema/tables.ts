@@ -9,3 +9,6 @@ import type { AnalyticsTable } from "./classified-table.js";
  * table that is missing from here is the one failure this design has.
  */
 export const ANALYTICS_TABLES: readonly AnalyticsTable[] = [authEvents];
+
+/** Named so a producer does not spell the table out and drift from what was declared. */
+export const AUTH_EVENTS_TABLE = authEvents.name;

@@ -6,6 +6,7 @@ import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
 import { TokenIssuer } from "@idenzy/crypto/tokens/token-issuer";
 import type { User } from "@idenzy/domain/entities/user";
+import { AnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type {
   AuthenticatedSubject,
   FlowContext,
@@ -46,6 +47,7 @@ export class SessionService implements SessionIssuer {
     private readonly config: AppConfig,
     private readonly revocations: RevocationPublisher,
     private readonly claims: ClaimTemplateService,
+    private readonly analytics: AnalyticsRecorder,
   ) {}
 
   async issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<IssuedSession> {
@@ -102,6 +104,22 @@ export class SessionService implements SessionIssuer {
       subject.amr,
       subject.factorVerifiedAt,
     );
+
+    // After the transaction, like the meter and the revocation publish: an analytics event for a
+    // sign-in that rolled back would be a row nothing else in the system agrees with. Every flow
+    // ends here, so this is the one place a successful authentication can be counted from.
+    await this.analytics.record({
+      projectId: context.projectId,
+      event: "session.created",
+      method: subject.amr[0] ?? null,
+      outcome: "succeeded",
+      userId: subject.userId,
+      sessionId,
+      ip: context.ip,
+      userAgent: context.userAgent,
+      at: now,
+    });
+
     return {
       sessionId,
       userId: subject.userId,

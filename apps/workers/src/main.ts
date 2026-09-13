@@ -1,4 +1,8 @@
 import "reflect-metadata";
+import { ClickHouseClient } from "@idenzy/analytics/client/clickhouse-client";
+import { AnalyticsIngestWorker } from "@idenzy/analytics/ingest/analytics-ingest-worker";
+import type { StreamCommands } from "@idenzy/analytics/ingest/stream-commands";
+import { migrateAnalytics } from "@idenzy/analytics/migrate";
 import { createValkeyClient } from "@idenzy/cache/connection/client";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
 import { AppConfig } from "@idenzy/config/app-config";
@@ -18,6 +22,7 @@ import { UsageRetentionPruner } from "@idenzy/persistence/repository/usage-reten
 import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-reader";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { analyticsSettingsFrom } from "./analytics-settings.js";
 import { AuditRelay } from "./audit-relay.js";
 import { MetadataTokenSource } from "./google/access-token-source.js";
 import { GoogleOidcVerifier } from "./google/task-caller-verifier.js";
@@ -141,6 +146,32 @@ async function bootstrap(): Promise<void> {
    * facts, which until it existed they were not.
    */
   const usageRoller = new HourlyUsageRoller(new UsageActiveProjectsReader(db), uow, clock, logger);
+
+  /*
+   * Analytics ingestion (ADR-0013). A cell with no ClickHouse configured runs without it rather
+   * than failing, because nothing on the authentication path reads that store — but a cell with
+   * *half* of it configured fails at boot, because the symptom would otherwise be an empty chart
+   * nobody is watching.
+   *
+   * The schema is migrated here rather than by a separate step. It is two idempotent statements
+   * per table and one of them is the row policy, which is the one thing that must never be
+   * skipped: a table without it is readable across every project and errors nowhere.
+   */
+  const analytics = analyticsSettingsFrom(config);
+  const ingest =
+    analytics === null
+      ? null
+      : new AnalyticsIngestWorker(
+          valkey as unknown as StreamCommands,
+          new ClickHouseClient({
+            url: analytics.url,
+            database: analytics.database,
+            user: analytics.ingestUser,
+            password: analytics.password,
+          }),
+          clock,
+          logger,
+        );
   const usageRetention = new UsageRetentionSweeper(new UsageRetentionPruner(db), clock, logger);
 
   /*
@@ -218,6 +249,24 @@ async function bootstrap(): Promise<void> {
   await usageCloser.start();
   await usageRoller.start();
   await usageRetention.start();
+  if (analytics !== null && ingest !== null) {
+    await migrateAnalytics(
+      new ClickHouseClient({
+        url: analytics.url,
+        database: analytics.database,
+        user: analytics.ownerUser,
+        password: analytics.password,
+      }),
+      {
+        database: analytics.database,
+        appUser: analytics.appUser,
+        ingestUser: analytics.ingestUser,
+      },
+    );
+    // One consumer name per process. Two workers with the same name share a pending list, which is
+    // the one thing a consumer group cannot tell apart from a single one that keeps crashing.
+    await ingest.start(`workers-${String(process.pid)}`);
+  }
   await server.start();
   logger.info("workers started", config.toSafeSummary());
 }

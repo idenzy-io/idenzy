@@ -1,6 +1,7 @@
 import { SystemClock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
@@ -54,6 +55,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
   refresh = new RefreshService(
     uow,
@@ -63,6 +65,7 @@ beforeAll(async () => {
     new SilentLogger(),
     revocations.publisher,
     actives,
+    new NullAnalyticsRecorder(),
   );
 
   await harness.owner.query(

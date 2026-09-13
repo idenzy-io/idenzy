@@ -3,6 +3,7 @@ import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { AuthCodeRepository } from "@idenzy/persistence/repository/auth-code-repository";
 import { RedirectUriRepository } from "@idenzy/persistence/repository/redirect-uri-repository";
@@ -78,6 +79,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
 
   mail = new CapturingEmailProvider();

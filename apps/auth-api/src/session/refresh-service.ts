@@ -10,6 +10,7 @@ import { Clock } from "@idenzy/core/time/clock";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
 import { RefreshOutcome } from "@idenzy/domain/entities/refresh-token-family";
 import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
+import { AnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext, IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import { OutboxRepository } from "@idenzy/persistence/repository/outbox-repository";
 import { RefreshTokenRepository } from "@idenzy/persistence/repository/refresh-token-repository";
@@ -59,6 +60,7 @@ export class RefreshService {
     private readonly logger: Logger,
     private readonly revocations: RevocationPublisher,
     private readonly actives: ActiveUserMeter,
+    private readonly analytics: AnalyticsRecorder,
   ) {}
 
   async rotate(context: FlowContext, presented: string): Promise<IssuedSession> {
@@ -78,6 +80,19 @@ export class RefreshService {
     if (rotation.kind === "rotated") {
       await this.actives.mark(context.projectId, rotation.session.user);
     }
+    // Refusals are recorded too, and reuse detection is the one worth having: it is the signal
+    // that a refresh token leaked, and a chart of it over time is a question no rollup can answer.
+    await this.analytics.record({
+      projectId: context.projectId,
+      event: rotation.kind === "reused" ? "security.refresh_token_reused" : "session.refreshed",
+      method: null,
+      outcome: rotation.kind === "rotated" ? "succeeded" : "refused",
+      userId: rotation.kind === "rotated" ? rotation.session.userId : null,
+      sessionId: rotation.kind === "rotated" ? rotation.session.sessionId : null,
+      ip: context.ip,
+      userAgent: context.userAgent,
+      at: this.clock.now(),
+    });
     return this.resolve(rotation, context);
   }
 

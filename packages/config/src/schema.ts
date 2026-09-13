@@ -130,6 +130,28 @@ export const configSchema = z.object({
   USAGE_FLUSH_INTERVAL_SECONDS: durationSeconds.min(10).max(3600).default(60),
 
   /**
+   * The analytics store (ADR-0013), and the four variables that travel together.
+   *
+   * All of them or none, like the webhook retry queue and for the same reason: a deployment with
+   * three of the four would not fail, it would run with analytics quietly switched off, and the
+   * symptom is an empty chart nobody is watching. None at all is a valid deployment — nothing on
+   * the authentication path reads this store, so an absent one costs a chart and never a sign-in.
+   *
+   * The user here is the *reading* identity. Whatever writes takes `CLICKHOUSE_INGEST_USER`,
+   * because a row policy filters reads and does not constrain writes, so the two are different
+   * credentials on purpose and a service that held both would be one grant from being able to
+   * plant a row under somebody else's project.
+   */
+  CLICKHOUSE_URL: z.string().min(1).optional(),
+  CLICKHOUSE_DATABASE: z.string().min(1).optional(),
+  CLICKHOUSE_USER: z.string().min(1).optional(),
+  CLICKHOUSE_PASSWORD: z.string().min(1).optional(),
+  /** The write identity, for `apps/workers` alone. Holds INSERT and no SELECT. */
+  CLICKHOUSE_INGEST_USER: z.string().min(1).optional(),
+  /** The DDL identity, for the migration this runs at boot. */
+  CLICKHOUSE_OWNER_USER: z.string().min(1).optional(),
+
+  /**
    * How long a one-time code and a magic link stay usable (PROJECT.md 4.7). Ten minutes
    * is short enough that a code in a mailbox someone else can read is usually already
    * dead, and long enough to survive a slow mail hop.

@@ -6,6 +6,7 @@ import { Argon2idHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { base32Decode } from "@idenzy/crypto/mfa/base32";
 import { Totp } from "@idenzy/crypto/mfa/totp";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
+import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-checker";
 import type { MfaFactor } from "@idenzy/domain/ports/mfa-factor";
@@ -158,6 +159,7 @@ beforeAll(async () => {
     config,
     revocations.publisher,
     claimTemplates(uow, clock),
+    new NullAnalyticsRecorder(),
   );
   _sessionService = sessions;
   signUp = new PasswordSignUpFlow(

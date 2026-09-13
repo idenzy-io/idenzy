@@ -12,6 +12,7 @@ import { OriginsModule } from "./origins/origins.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
+import { UsageModule } from "./usage/usage.module.js";
 import { WebhooksModule } from "./webhooks/webhooks.module.js";
 
 /**
@@ -39,6 +40,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module.js";
     ApiKeysModule,
     DomainsModule,
     OriginsModule,
+    UsageModule,
     WebhooksModule,
   ],
   controllers: [HealthController],

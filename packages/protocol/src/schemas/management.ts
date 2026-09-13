@@ -574,3 +574,68 @@ export type WebhookStatsQuery = z.infer<typeof webhookStatsQuerySchema>;
  */
 export const queuedWebhookDeliverySchema = z.object({ delivery: webhookDeliverySchema });
 export type QueuedWebhookDelivery = z.infer<typeof queuedWebhookDeliverySchema>;
+
+/**
+ * One day of a project's metered usage.
+ *
+ * `activeUsers` is the day's own figure and `activeUsersToDate` is the window's running total,
+ * and both are here because neither can be derived from the other on the client. Active users
+ * are a sketch server-side: two days of 100 may be 100 people or 200, so a chart cannot sum the
+ * daily figures into a month and cannot take the largest either. The level that reconciles with
+ * a bill is the running one, so it is computed where the sketches are and sent.
+ *
+ * The counters beside it are ordinary sums and do add up. `smsCost` is what the providers
+ * charged us, in the currency the invoice is raised in, as a decimal string — a cent is too
+ * coarse for a message that costs $0.0079 and a float is the wrong type for money.
+ */
+export const usageDaySchema = z.object({
+  /** The UTC day, `YYYY-MM-DD`. A meter has no locale. */
+  day: z.string(),
+  activeUsers: z.number().int().nonnegative(),
+  activeUsersToDate: z.number().int().nonnegative(),
+  emailsSent: z.number().int().nonnegative(),
+  smsSent: z.number().int().nonnegative(),
+  /** Codes actually entered. Far below `smsSent` is the pumping signal (PROJECT.md 4.8). */
+  smsVerified: z.number().int().nonnegative(),
+  smsCost: z.string(),
+});
+export type UsageDay = z.infer<typeof usageDaySchema>;
+
+/**
+ * What a project used over a window, and what the bill for it is made of (PROJECT.md 5.1).
+ *
+ * `activeUsers` is the union over the whole window and not the last day's running total: the two
+ * agree only when the window ends on a day that had activity, and a project quiet since Tuesday
+ * still owes for everybody who signed in before it.
+ *
+ * A day with no activity has no row, so `days` is sparse and a reader must not assume one entry
+ * per date. Writing an empty row per project per day would be a write for every project that did
+ * nothing, every day, for the life of the account.
+ */
+export const projectUsageSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  activeUsers: z.number().int().nonnegative(),
+  days: z.array(usageDaySchema),
+});
+export type ProjectUsage = z.infer<typeof projectUsageSchema>;
+
+/**
+ * The window to report on, defaulting to the calendar month in progress.
+ *
+ * Inclusive at both ends, because a caller asking for a month means the 30th and not up to it.
+ * Bounded at 366 days for the same reason the webhook counters are bounded: a longer answer is
+ * the analytics store's, and an unbounded window is a scan of a table that grows for the life of
+ * a project. Validated as a pair rather than field by field, so a reversed window is refused
+ * here instead of answering with nothing and looking like a project that never had any users.
+ */
+export const usageQuerySchema = z
+  .object({
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+  })
+  .refine((query) => query.from === undefined || query.to === undefined || query.from <= query.to, {
+    message: "The window ends before it starts.",
+    path: ["to"],
+  });
+export type UsageQuery = z.infer<typeof usageQuerySchema>;

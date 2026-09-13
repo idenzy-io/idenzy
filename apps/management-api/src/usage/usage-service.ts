@@ -1,5 +1,6 @@
 import { ValidationFailedError } from "@idenzy/core/errors";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
+import { UsageHourlyRepository } from "@idenzy/persistence/repository/usage-hourly-repository";
 import { UsagePeriodRepository } from "@idenzy/persistence/repository/usage-period-repository";
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
@@ -7,6 +8,7 @@ import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { type Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import type {
   ProjectUsage,
+  ProjectUsageHours,
   UsageDay,
   UsagePeriod,
   UsageQuery,
@@ -16,6 +18,15 @@ import { ProjectScope } from "../tenancy/project-scope.js";
 
 /** A leap year of daily rows. Past that the answer belongs to the analytics store. */
 const MAX_WINDOW_DAYS = 366;
+
+/**
+ * A month of hours, which is 744 rows.
+ *
+ * Tighter than the daily cap because the rows are twenty-four times as dense and the question is
+ * different: an hourly series is what somebody watching today looks at, and a month of it is
+ * already past the point where a chart can draw a point per bucket.
+ */
+const MAX_HOUR_WINDOW_DAYS = 31;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PERIODS = 7;
 
@@ -81,19 +92,8 @@ export class UsageService {
    * with no `to` is five years of rows and passes every field-level check there is.
    */
   static windowOf(query: UsageQuery, now: Date): UsageWindow {
-    const month = {
-      from: utcDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
-      to: utcDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))),
-    };
-    const window = { from: query.from ?? month.from, to: query.to ?? month.to };
-    const days =
-      (Date.parse(`${window.to}T00:00:00Z`) - Date.parse(`${window.from}T00:00:00Z`)) / DAY_MS + 1;
-    if (days > MAX_WINDOW_DAYS) {
-      throw new ValidationFailedError({
-        message: "That usage window is longer than a year.",
-        fields: [{ path: "from", code: "too_big" }],
-      });
-    }
+    const window = UsageService.resolve(query, now);
+    UsageService.assertWithin(window, MAX_WINDOW_DAYS, "That usage window is longer than a year.");
     return window;
   }
 
@@ -209,7 +209,72 @@ export class UsageService {
     };
   }
 
+  /**
+   * The hourly series over a window of whole days.
+   *
+   * Asked in days rather than in hours because that is how the rows are found and how the daily
+   * twin is asked, and because an hour is a bucket rather than a boundary a caller picks: the
+   * roller writes one when it ends, so a window of "the last 24 hours" is two calendar days on
+   * this side and a slice on the reader's.
+   *
+   * There is no running level to recompute here. An hour carries the one it was written with, and
+   * that is the only one there is — the sketches it came from are the day's, and a level cannot be
+   * reconstructed after the fact from anything else.
+   */
+  async hoursFor(
+    context: OrgContext,
+    projectId: string,
+    { from, to }: UsageWindow,
+  ): Promise<ProjectUsageHours> {
+    const tenant = await this.scope.of(context, projectId);
+    const rows = await this.uow.run(tenant, (tx) =>
+      new UsageHourlyRepository(tx, tenant).between(
+        new Date(`${from}T00:00:00.000Z`),
+        new Date(`${to}T23:00:00.000Z`),
+      ),
+    );
+    return {
+      from,
+      to,
+      hours: rows.map((row) => ({
+        hour: row.hour.toISOString(),
+        activeUsersToDate: row.mauToDate,
+        emailsSent: row.emailsSent,
+        smsSent: row.smsSent,
+        smsVerified: row.smsVerified,
+        smsCost: row.smsCost,
+      })),
+    };
+  }
+
+  /** The same defaulting as `windowOf`, with the tighter cap an hourly answer carries. */
+  static hourWindowOf(query: UsageQuery, now: Date): UsageWindow {
+    const window = UsageService.resolve(query, now);
+    UsageService.assertWithin(
+      window,
+      MAX_HOUR_WINDOW_DAYS,
+      "That hourly window is longer than a month.",
+    );
+    return window;
+  }
+
   static periodCountOf(limit: number | undefined): number {
     return limit ?? DEFAULT_PERIODS;
+  }
+
+  private static resolve(query: UsageQuery, now: Date): UsageWindow {
+    const month = {
+      from: utcDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+      to: utcDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))),
+    };
+    return { from: query.from ?? month.from, to: query.to ?? month.to };
+  }
+
+  private static assertWithin(window: UsageWindow, maxDays: number, message: string): void {
+    const days =
+      (Date.parse(`${window.to}T00:00:00Z`) - Date.parse(`${window.from}T00:00:00Z`)) / DAY_MS + 1;
+    if (days > maxDays) {
+      throw new ValidationFailedError({ message, fields: [{ path: "from", code: "too_big" }] });
+    }
   }
 }

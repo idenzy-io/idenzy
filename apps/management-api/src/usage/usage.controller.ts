@@ -1,6 +1,7 @@
 import { MemberRole } from "@idenzy/protocol/enums/tenancy";
 import {
   type ProjectUsage,
+  type ProjectUsageHours,
   type UsagePeriodList,
   type UsagePeriodQuery,
   type UsageQuery,
@@ -52,6 +53,25 @@ export class UsageController {
       UsageService.periodCountOf(query.limit),
     );
     return { periods };
+  }
+
+  /**
+   * The hourly series, which is a third route rather than a `granularity` flag on the one below.
+   *
+   * The two answer different shapes and carry different promises. A day has a distinct count of
+   * its own; an hour has only a level, because storing a sketch per hour is seventy megabytes a
+   * project over the six months these are kept. One response that sometimes has a field and
+   * sometimes does not would make that a runtime surprise instead of a type.
+   */
+  @Get("hours")
+  @RequireRole(MemberRole.Viewer)
+  async hours(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Query(new ZodValidationPipe(usageQuerySchema)) query: UsageQuery,
+  ): Promise<ProjectUsageHours> {
+    const window = UsageService.hourWindowOf(query, new Date());
+    return await this.usage.hoursFor(orgContextFrom(request), projectId, window);
   }
 
   @Get()

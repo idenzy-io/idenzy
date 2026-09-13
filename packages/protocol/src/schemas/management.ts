@@ -689,3 +689,43 @@ export const usagePeriodQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(24).optional(),
 });
 export type UsagePeriodQuery = z.infer<typeof usagePeriodQuerySchema>;
+
+/**
+ * One hour of a project's metered usage.
+ *
+ * `activeUsersToDate` is the only active-user figure here, and the absence of a per-hour one is
+ * deliberate rather than an omission. An hour stores a *level* — month-to-date actives as they
+ * stood when the hour was rolled up — because the alternative is a 16 KiB sketch every hour, which
+ * is seventy megabytes per project over the six months these rows are kept. Two levels subtract to
+ * give how many were new in the second hour, which is what a chart draws; a distinct count of an
+ * hour on its own is not recoverable and never will be.
+ *
+ * The counters are the hour's own share and do add up to the day. `smsCost` can be negative: a
+ * provider that came in under its quote settles the difference against the hour the correction
+ * lands in.
+ */
+export const usageHourSchema = z.object({
+  /** The start of the UTC hour. */
+  hour: z.iso.datetime(),
+  activeUsersToDate: z.number().int().nonnegative(),
+  emailsSent: z.number().int().nonnegative(),
+  smsSent: z.number().int().nonnegative(),
+  smsVerified: z.number().int().nonnegative(),
+  smsCost: z.string(),
+});
+export type UsageHour = z.infer<typeof usageHourSchema>;
+
+/**
+ * A project's hourly series.
+ *
+ * Sparse like the daily one, and sparser: an hour with no row is one the roller never observed —
+ * either nothing was metered, or the worker was not running when it ended. The second case is a
+ * gap on purpose. An hour's level cannot be reconstructed after the fact, so drawing a line
+ * through it would be inventing the shape of the traffic rather than reporting it.
+ */
+export const projectUsageHoursSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  hours: z.array(usageHourSchema),
+});
+export type ProjectUsageHours = z.infer<typeof projectUsageHoursSchema>;

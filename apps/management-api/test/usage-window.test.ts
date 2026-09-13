@@ -35,6 +35,22 @@ describe("the usage window", () => {
     ).toThrow(ValidationFailedError);
   });
 
+  /* The hourly twin defaults the same way and caps tighter, because its rows are twenty-four
+     times as dense and the question is what happened today rather than this year. */
+  it("caps an hourly window at a month and defaults it like the daily one", () => {
+    expect(UsageService.hourWindowOf({}, MID_MONTH)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    expect(UsageService.hourWindowOf({ from: "2026-08-01", to: "2026-08-31" }, MID_MONTH)).toEqual({
+      from: "2026-08-01",
+      to: "2026-08-31",
+    });
+    expect(() =>
+      UsageService.hourWindowOf({ from: "2026-08-01", to: "2026-09-30" }, MID_MONTH),
+    ).toThrow(ValidationFailedError);
+  });
+
   it("allows a leap year exactly, because both ends are inclusive", () => {
     expect(UsageService.windowOf({ from: "2027-10-01", to: "2028-09-30" }, MID_MONTH)).toEqual({
       from: "2027-10-01",

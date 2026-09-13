@@ -55,7 +55,8 @@ Architecture decisions are in `docs/adr/`. The ones cited most often: 0002 (no a
 0006 (origins are their own allowlist), 0007 (no grace window on refresh rotation),
 0008 (the browser SDK stores no refresh token), 0009 (the revocation set is a published
 snapshot), 0010 (an authentication answers with a session or a challenge), 0011 (the
-control plane has its own tenant key).
+control plane has its own tenant key), 0013 (ClickHouse has no RLS, so a row policy and a
+client that cannot exist without a tenant stand in for it).
 
 ## Compliance claims
 

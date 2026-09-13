@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!--
+  Local ClickHouse for development. Not a production topology.
+
+  The one line that matters is `custom_settings_prefixes`. Tenant isolation in ClickHouse has no
+  `current_setting` to lean on, so the row policies in `clickhouse-init` compare `project_id`
+  against `getSetting('SQL_idenzy_project_id')` — and a custom setting only exists at all if its
+  prefix is declared here. Without this the policies do not merely fail to match; the server
+  refuses the SET outright, which is the failure direction we want (ADR-0013).
+-->
+<clickhouse>
+  <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+
+  <!--
+    Bound explicitly rather than relying on the image's own `docker_related_config.xml`, which is
+    not present in every tag and is skipped entirely when the entrypoint's user setup is. Without
+    it the server listens on loopback only: the container passes its own healthcheck and resets
+    every connection from the host, which looks like a crash and is not one.
+  -->
+  <listen_host>0.0.0.0</listen_host>
+
+  <!-- A developer laptop, not a cell. Keeps the container out of the way of everything else. -->
+  <max_server_memory_usage_to_ram_ratio>0.3</max_server_memory_usage_to_ram_ratio>
+  <mark_cache_size>268435456</mark_cache_size>
+  <logger>
+    <level>warning</level>
+  </logger>
+</clickhouse>

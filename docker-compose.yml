@@ -31,5 +31,37 @@ services:
       timeout: 3s
       retries: 30
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3-alpine
+    container_name: idenzy-clickhouse
+    # Deliberately no CLICKHOUSE_USER: the entrypoint answers that one by writing into `users.d`,
+    # which is mounted read-only here because access control is SQL-driven. The two users the
+    # services connect as are created by the init script instead, which is also the split a real
+    # cell has — a runtime identity carrying the row policies and an owner that runs DDL.
+    environment:
+      CLICKHOUSE_DB: idenzy
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    ports:
+      - "8123:8123"
+    volumes:
+      - idenzy-chdata:/var/lib/clickhouse
+      # Users, roles and row policies are server-level objects, not schema, so they are created
+      # here rather than by a migration. Same split as postgres-init.
+      - ./infra/docker/clickhouse-init:/docker-entrypoint-initdb.d:ro
+      # Single files and not the directories: mounting either whole hides whatever the image
+      # ships in it, which is how the listener ended up on loopback only the first time.
+      - ./infra/docker/clickhouse/config.d/idenzy.xml:/etc/clickhouse-server/config.d/idenzy.xml:ro
+      - ./infra/docker/clickhouse/users.d/idenzy.xml:/etc/clickhouse-server/users.d/idenzy.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   idenzy-pgdata:
+  idenzy-chdata:

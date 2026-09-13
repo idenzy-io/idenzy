@@ -14,6 +14,8 @@ import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { SEND_MESSAGE_LIMITS, VERIFY_CODE_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { EmailOtpService } from "./email-otp-service.js";
 import { OtpVerification } from "./otp-verification.js";
 import { SmsOtpService } from "./sms-otp-service.js";
@@ -39,6 +41,7 @@ export class OtpController {
   ) {}
 
   @Post("start")
+  @RateLimit(SEND_MESSAGE_LIMITS)
   @HttpCode(202)
   start(
     @Req() request: FastifyRequest,
@@ -66,6 +69,7 @@ export class OtpController {
   }
 
   @Post("verify")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @HttpCode(200)
   async verify(
     @Req() request: FastifyRequest,

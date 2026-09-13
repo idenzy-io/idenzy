@@ -26,6 +26,26 @@ export const configSchema = z.object({
   WORKERS_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 
+  /**
+   * How many proxies of ours sit in front of this process, counted from the right of
+   * `X-Forwarded-For`.
+   *
+   * It exists because a rate limit keyed on a forgeable address is decorative. Fastify
+   * runs with `trustProxy: true`, which makes `request.ip` the *leftmost* entry in that
+   * header — the one the caller wrote — so anyone could take a fresh bucket per request
+   * by inventing an address. `ClientIpResolver` counts from the right instead, where
+   * only a proxy that actually handled the request can have appended anything.
+   *
+   * Zero means trust nothing and use the socket address, which is correct for local
+   * development and for any deployment reachable without a proxy. GCP's global load
+   * balancer appends `<client>, <lb>`, so a service behind it wants 1, and each further
+   * hop that appends its own address adds one. Too high reads an address the client
+   * supplied, which is the bug this prevents; too low reads a proxy's address and buckets
+   * every user together, which is merely useless. Neither is silent, so it is not
+   * defaulted to a deployment shape we have not built yet.
+   */
+  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(8).default(0),
+
   DATABASE_URL: z.string().min(1),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
@@ -212,6 +232,30 @@ export const configSchema = z.object({
    * the suppression list is enforced in the provider base rather than per caller.
    */
   EMAIL_FROM_ADDRESS: z.email().default("no-reply@auth.idenzy.dev"),
+
+  /**
+   * Amazon SES, and the four variables that travel together (PROJECT.md 11.1).
+   *
+   * All of them or none, like the webhook retry queue and the analytics store, and for the
+   * same reason: a deployment with three of the four would not fail, it would fall back to
+   * a transport that refuses to exist outside development, and the symptom is every sign-in
+   * code going nowhere. `DeliveryModule` enforces the pairing at boot.
+   *
+   * The configuration set is not optional among them. Bounces and complaints reach the
+   * suppression list only because a configuration set publishes them, so a message sent
+   * outside one is a message whose hard bounce we never hear about — and the cost of that
+   * lands on the shared sending domain's reputation, which every project shares (4.7).
+   *
+   * The access key is the part that does not match 4.11's "zero static credentials", and it
+   * is named here rather than glossed: the standing intention is federation, where Cloud
+   * Run's own OIDC token is exchanged through `AssumeRoleWithWebIdentity` for credentials
+   * that expire. `AwsCredentialsProvider` is already a function returning a promise so that
+   * arriving is a different provider and not a change to every caller.
+   */
+  AWS_REGION: z.string().min(1).optional(),
+  AWS_ACCESS_KEY_ID: z.string().min(1).optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  SES_CONFIGURATION_SET: z.string().min(1).optional(),
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
 });

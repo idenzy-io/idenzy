@@ -14,6 +14,8 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { StepUpService } from "../mfa/step-up-service.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { SEND_MESSAGE_LIMITS, VERIFY_CODE_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { EmailChangeService } from "./email-change-service.js";
 import { EmailVerificationService } from "./email-verification-service.js";
 
@@ -34,6 +36,7 @@ export class AccountController {
   ) {}
 
   @Post("verification")
+  @RateLimit(SEND_MESSAGE_LIMITS)
   @RequireSession()
   @HttpCode(202)
   requestVerification(@Req() request: FastifyRequest): Promise<void> {
@@ -41,6 +44,7 @@ export class AccountController {
   }
 
   @Post("verification/confirm")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @HttpCode(204)
   confirmVerification(
     @Req() request: FastifyRequest,
@@ -59,6 +63,7 @@ export class AccountController {
    * stolen session on an account whose owner did set one up.
    */
   @Post()
+  @RateLimit(SEND_MESSAGE_LIMITS)
   @RequireSession()
   @HttpCode(202)
   async requestChange(
@@ -72,6 +77,7 @@ export class AccountController {
   }
 
   @Post("confirm")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @HttpCode(200)
   async confirmChange(
     @Req() request: FastifyRequest,

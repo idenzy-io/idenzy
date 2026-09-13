@@ -16,6 +16,8 @@ import { presentOutcome } from "../flows/present-outcome.js";
 import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { OAUTH_START_LIMITS, VERIFY_CODE_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { OAuthCodeFlow } from "./oauth-code.flow.js";
 import { OAuthService } from "./oauth-service.js";
 
@@ -48,6 +50,7 @@ export class OAuthController {
    * with a redirect. Nothing here needs a session: this is the sign-in path.
    */
   @Get(":provider/start")
+  @RateLimit(OAUTH_START_LIMITS)
   @BrowserNavigation()
   @Redirect(undefined, 302)
   async start(
@@ -80,6 +83,7 @@ export class OAuthController {
    * give up because Apple posts its callback with its own `Origin`.
    */
   @Post(":provider/start")
+  @RateLimit(OAUTH_START_LIMITS)
   @HttpCode(200)
   async startAsJson(
     @Req() request: FastifyRequest,
@@ -124,6 +128,7 @@ export class OAuthController {
   }
 
   @Get(":provider/callback")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @BrowserNavigation()
   @Redirect(undefined, 302)
   callback(
@@ -136,6 +141,7 @@ export class OAuthController {
 
   /** Apple, and anything else using `response_mode=form_post`. */
   @Post(":provider/callback")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @BrowserNavigation()
   @Redirect(undefined, 302)
   callbackPosted(
@@ -147,6 +153,7 @@ export class OAuthController {
   }
 
   @Post("exchange")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @HttpCode(200)
   async exchange(
     @Req() request: FastifyRequest,

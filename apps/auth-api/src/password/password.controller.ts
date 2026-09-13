@@ -14,6 +14,13 @@ import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import {
+  SEND_MESSAGE_LIMITS,
+  SIGN_IN_LIMITS,
+  SIGN_UP_LIMITS,
+  VERIFY_CODE_LIMITS,
+} from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { PasswordResetService } from "./password-reset-service.js";
 import { PasswordSignInFlow } from "./password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "./password-sign-up.flow.js";
@@ -34,6 +41,7 @@ export class PasswordController {
   ) {}
 
   @Post("sign-up/password")
+  @RateLimit(SIGN_UP_LIMITS)
   @HttpCode(201)
   async signUp(
     @Req() request: FastifyRequest,
@@ -44,6 +52,7 @@ export class PasswordController {
   }
 
   @Post("sign-in/password")
+  @RateLimit(SIGN_IN_LIMITS)
   @HttpCode(200)
   async signIn(
     @Req() request: FastifyRequest,
@@ -58,6 +67,7 @@ export class PasswordController {
    * classic way a reset form becomes an account enumeration oracle.
    */
   @Post("password/reset")
+  @RateLimit(SEND_MESSAGE_LIMITS)
   @HttpCode(202)
   requestReset(
     @Req() request: FastifyRequest,
@@ -67,6 +77,7 @@ export class PasswordController {
   }
 
   @Post("password/reset/confirm")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @HttpCode(204)
   confirmReset(
     @Req() request: FastifyRequest,

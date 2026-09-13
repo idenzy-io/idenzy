@@ -7,6 +7,8 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { ANONYMOUS_LIMITS, SIGN_UP_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { AnonymousFlow } from "./anonymous.flow.js";
 import { AnonymousUpgradeFlow } from "./anonymous-upgrade.flow.js";
 
@@ -25,12 +27,14 @@ export class AnonymousController {
   ) {}
 
   @Post()
+  @RateLimit(ANONYMOUS_LIMITS)
   @HttpCode(201)
   async create(@Req() request: FastifyRequest): Promise<AuthOutcomeBody> {
     return presentOutcome(await this.flow.authenticate(flowContextFrom(request), {}));
   }
 
   @Post("upgrade")
+  @RateLimit(SIGN_UP_LIMITS)
   @RequireSession()
   @HttpCode(200)
   async upgrade(

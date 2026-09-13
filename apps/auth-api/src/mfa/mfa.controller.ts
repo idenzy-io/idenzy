@@ -24,6 +24,8 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { MFA_VERIFY_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { MfaFactorRegistry } from "./factor-registry.js";
 import { MfaChallengeVerifier } from "./mfa-challenge-verifier.js";
 import { MfaEnrolmentService } from "./mfa-enrolment-service.js";
@@ -63,6 +65,7 @@ export class MfaController {
    * both a sign-in and a step-up can legitimately be answered with a passkey.
    */
   @Post("passkey/options")
+  @RateLimit(MFA_VERIFY_LIMITS)
   @HttpCode(200)
   async passkeyOptions(
     @Req() request: FastifyRequest,
@@ -85,6 +88,7 @@ export class MfaController {
    * endpoint exists to prevent.
    */
   @Post("verify")
+  @RateLimit(MFA_VERIFY_LIMITS)
   @HttpCode(200)
   async verify(
     @Req() request: FastifyRequest,

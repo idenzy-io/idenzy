@@ -13,6 +13,8 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { SEND_MESSAGE_LIMITS, VERIFY_CODE_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { MagicLinkFlow } from "./magic-link.flow.js";
 import { MagicLinkService } from "./magic-link-service.js";
 
@@ -32,6 +34,7 @@ export class MagicLinkController {
   ) {}
 
   @Post("start")
+  @RateLimit(SEND_MESSAGE_LIMITS)
   @HttpCode(202)
   start(
     @Req() request: FastifyRequest,
@@ -46,6 +49,7 @@ export class MagicLinkController {
    * that rendered a page would be the thing PROJECT.md 4.3 has a test against.
    */
   @Get("callback")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @BrowserNavigation()
   @Redirect(undefined, 302)
   async callback(
@@ -57,6 +61,7 @@ export class MagicLinkController {
   }
 
   @Post("exchange")
+  @RateLimit(VERIFY_CODE_LIMITS)
   @HttpCode(200)
   async exchange(
     @Req() request: FastifyRequest,

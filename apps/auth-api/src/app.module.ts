@@ -21,6 +21,7 @@ import { PersistenceModule } from "./persistence/persistence.module.js";
 import { RevocationController } from "./revocation/revocation.controller.js";
 import { SessionModule } from "./session/session.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
+import { ThrottlingModule } from "./throttling/throttling.module.js";
 import { UsageModule } from "./usage/usage.module.js";
 import { WellKnownController } from "./well-known/well-known.controller.js";
 
@@ -42,6 +43,9 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     HttpModule,
     FlowsModule,
     TenancyModule,
+    // After tenant resolution so a limit can be scoped to a project, and before
+    // SessionModule so a flood is refused before it costs a session lookup.
+    ThrottlingModule,
     AnalyticsModule,
     UsageModule,
     DeliveryModule,

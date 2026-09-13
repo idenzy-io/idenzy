@@ -15,6 +15,8 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { CEREMONY_LIMITS } from "../throttling/limits.js";
+import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { PasskeyFlow } from "./passkey.flow.js";
 import { PasskeyService } from "./passkey-service.js";
 
@@ -64,12 +66,14 @@ export class PasskeyController {
    * an account with passkeys and one without (PROJECT.md 4.7).
    */
   @Post("authentication/options")
+  @RateLimit(CEREMONY_LIMITS)
   @HttpCode(200)
   startAuthentication(@Req() request: FastifyRequest): Promise<PasskeyAuthenticationOptions> {
     return this.service.startAuthentication(flowContextFrom(request));
   }
 
   @Post("authentication")
+  @RateLimit(CEREMONY_LIMITS)
   @HttpCode(200)
   async finishAuthentication(
     @Req() request: FastifyRequest,

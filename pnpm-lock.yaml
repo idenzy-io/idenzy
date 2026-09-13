@@ -669,6 +669,9 @@ importers:
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
+      '@idenzy/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@idenzy/testing':
         specifier: workspace:*
         version: link:../testing

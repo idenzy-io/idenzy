@@ -25,6 +25,7 @@
     "@idenzy/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@idenzy/cache": "workspace:*",
     "@idenzy/testing": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",

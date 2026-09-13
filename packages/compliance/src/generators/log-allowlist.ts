@@ -47,6 +47,12 @@ export function generateLogAllowlist(): ReadonlySet<string> {
     "failures",
     "count",
     "queue",
+    // The analytics ingest pipeline's own figures: how many rows a batch carried, how many entries
+    // are still queued behind it, and which table it was for. A table name is ours and a queue
+    // depth is an integer this process counted, so none of them can carry a value out of a row —
+    // and "batch inserted" without the count is a line nobody can act on.
+    "table",
+    "pending",
     // The class of a fatal error, which is a type name and never data. Its *message* is
     // deliberately absent: that is the one field on an exception that can quote a value,
     // and a driver error naming the row it choked on is exactly what must not be logged.

@@ -41,8 +41,8 @@ import {
   filtersToQuery,
   filterUsers,
   isIndefinite,
-  METHOD_ICONS,
   METHOD_LABELS,
+  methodIcon,
   nameOf,
   type ProjectUser,
   STATUS_LABELS,
@@ -322,22 +322,27 @@ function askSuspend(users: readonly ProjectUser[]) {
   if (suspendTargets.value.length > 0) suspendOpen.value = true;
 }
 
-function suspend(until: string, signOut: boolean) {
+/**
+ * Awaited, because the notice reports what the server did and not what was asked for.
+ * Signing out is a second call by design: a suspension is read on token rotation, so an
+ * open session survives it for up to one access-token lifetime.
+ */
+async function suspend(until: string, signOut: boolean) {
   const ids = suspendTargets.value.map((user) => user.id);
-  const count = store.suspend(ids, until);
-  if (signOut) store.signOutEverywhere(ids);
+  const count = await store.suspend(ids, until);
+  if (signOut) await store.signOutEverywhere(ids);
   notify(`Suspended ${plural(count, "user")}`);
   selected.value = [];
 }
 
-function restore(users: readonly ProjectUser[]) {
-  const count = store.restore(users.map((user) => user.id));
+async function restore(users: readonly ProjectUser[]) {
+  const count = await store.restore(users.map((user) => user.id));
   notify(`Lifted ${plural(count, "suspension")}`);
   selected.value = [];
 }
 
-function signOut(users: readonly ProjectUser[]) {
-  const count = store.signOutEverywhere(users.map((user) => user.id));
+async function signOut(users: readonly ProjectUser[]) {
+  const count = await store.signOutEverywhere(users.map((user) => user.id));
   notify(
     count === 0 ? "No open sessions to end" : `Signed out ${plural(count, "user")} everywhere`,
   );
@@ -348,10 +353,15 @@ function askDelete(users: readonly ProjectUser[]) {
   if (deleteTargets.value.length > 0) deleteOpen.value = true;
 }
 
-function erase() {
-  const count = store.remove(deleteTargets.value.map((user) => user.id));
-  notify(`Deleted ${plural(count, "user")}`);
-  selected.value = [];
+/** Erasure has no endpoint yet, so the refusal is shown rather than a fabricated count. */
+async function erase() {
+  try {
+    const count = await store.remove(deleteTargets.value.map((user) => user.id));
+    notify(`Deleted ${plural(count, "user")}`);
+    selected.value = [];
+  } catch {
+    notify("Erasure is not available yet");
+  }
 }
 
 async function copyText(text: string, what: string) {
@@ -627,8 +637,8 @@ function statusDetail(user: ProjectUser): string {
                       role="img"
                     >
                       <Icon
-                        :class="METHOD_ICONS[method].monochrome ? '[.v-theme--dark_&]:invert' : ''"
-                        :name="METHOD_ICONS[method].icon"
+                        :class="methodIcon(method).monochrome ? '[.v-theme--dark_&]:invert' : ''"
+                        :name="methodIcon(method).icon"
                         aria-hidden="true"
                         class="text-[13px]"
                       />

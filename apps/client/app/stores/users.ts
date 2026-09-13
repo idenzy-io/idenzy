@@ -1,144 +1,294 @@
 /**
- * The users of every project the panel can show, and the four things the users screen
- * does to them.
+ * The users of every project the panel can show, and what can be done to them.
  *
- * A store rather than state inside the page, because the dialogs, the row menu and the
- * selection bar all act on the same list and would otherwise each hold a copy, and
- * because this is where the management API client plugs in: each action below becomes
- * one call and the list becomes what the API answered. Until then the list is generated,
- * deterministically, so a screenshot taken today and one taken next week show the same
- * people, and the actions rewrite it in place the way the server would.
+ * The list is the management API's answer now rather than a generated one. Two of the
+ * actions carry a rule the server enforces and the screen has to say. A suspension takes
+ * effect at the next token rotation, so an open session keeps working for up to one
+ * access-token lifetime — the server deliberately does not end the sessions, and
+ * `signOutEverywhere` is the separate thing to call when somebody means both. A deletion is
+ * an erasure (PROJECT.md 4.13.6) and is **not wired**, because the field lists it operates
+ * on come from `classified()` and the worker that runs them does not exist yet.
  *
- * Two of the actions carry a rule the server enforces and the screen has to say. A
- * suspension takes effect at the next token rotation, so an open session keeps working
- * for up to one access-token lifetime (refresh-service.ts). A deletion is an erasure
- * (PROJECT.md 4.13.6): the personal columns are cleared and the row survives as a
- * tombstone with a `deletedAt`, so the audit trail keeps its pseudonymous subject.
+ * `forProject` stays synchronous over a cache, because the screen reads it in a computed
+ * and a fetch inside one is a request per render. `load` fills the cache; `ensure` is what
+ * the screens that only read users indirectly — audit, sessions, security — lean on, since
+ * they watch this list and would otherwise sit empty until somebody opened the Users page.
+ *
+ * Two actions have no endpoint and say so instead of pretending. Creating a user needs
+ * password hashing in the management API, which has no `PasswordHasher`; erasing one needs
+ * the DSR path. Both refuse with a message naming what is missing, which is the whole point
+ * of notes/priorities.md's first row: a fixture switch must not imply working capability.
  */
-import { DURATIONS } from "~/utils/time";
-import { INDEFINITE, type ProjectUser, type SignInMethod } from "~/utils/users";
+
+import { InternalError } from "@idenzy/core/errors";
+import type {
+  ProjectUser as ApiProjectUser,
+  ProjectUserList,
+  RevokedSessions,
+} from "@idenzy/protocol/schemas/management";
+import { managementMessage } from "~/utils/sign-in-errors";
+import type { ProjectUser, SignInMethod } from "~/utils/users";
 
 export interface AddUserInput {
   email: string | null;
   phone: string | null;
   displayName: string | null;
-  /** Given, the account can sign in with it at once; absent, it signs in some other way. */
   password: string | null;
   emailVerified: boolean;
 }
 
-/** How long the placeholder takes to "arrive". A real fetch is about this. */
-const PLACEHOLDER_LATENCY = 700;
+/** How many a page asks for. The API caps at 100 and the screen never shows more. */
+const PAGE_SIZE = 100;
 
-/** What a write costs, so a form's pending state is something a person can see. */
-const WRITE_LATENCY = 420;
-
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, WRITE_LATENCY));
-}
+/** Ten pages of a hundred. Past that the screen is not the right tool anyway. */
+const MAX_PAGES = 10;
 
 export const useUsersStore = defineStore("users", () => {
-  const users = ref<ProjectUser[]>([]);
+  const projects = useProjectStore();
 
-  /* True until the list has been answered, so the screen draws bones and not "no
-     users". The placeholder arrives the way the API will: after a moment, all at once,
-     which is what makes the loading state something that can be seen rather than
-     something that happens to be true for a frame. */
-  const loading = ref(true);
-  setTimeout(() => {
-    users.value = placeholderUsers();
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
-
-  function forProject(projectId: string): ProjectUser[] {
-    return users.value.filter((user) => user.projectId === projectId);
-  }
+  const byProject = ref<Record<string, ProjectUser[]>>({});
+  const loading = ref(false);
+  const refusal = ref<string | null>(null);
 
   /**
-   * Creates the account and answers with it. Asynchronous because the form it belongs to
-   * closes on a settled call and not on a click: a dialog that closes on the click has
-   * reported a success nothing confirmed (notes/dialogs.md).
+   * Projects a load has already been started for.
+   *
+   * Without it `ensure` inside a computed is a request per render, which is the trap the
+   * keys store names. A project appears here before the call resolves, so a second render
+   * during the flight adds nothing.
    */
-  async function add(projectId: string, input: AddUserInput): Promise<ProjectUser> {
-    await settle();
-    const now = stamp();
-    const methods: SignInMethod[] = input.password ? ["password"] : [];
-    if (!input.password && input.email) methods.push("email_otp");
-    if (!input.password && !input.email && input.phone) methods.push("sms_otp");
-    const user: ProjectUser = {
-      id: `usr_${idFrom(Math.random)}`,
-      projectId,
-      email: input.email,
-      emailVerified: input.email !== null && input.emailVerified,
-      phone: input.phone,
-      phoneVerified: false,
-      displayName: input.displayName,
-      avatarUrl: null,
-      methods,
-      mfaEnabled: false,
-      activeSessions: 0,
-      bannedUntil: null,
-      lastSignInAt: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      metadataPublic: {},
+  const requested = ref<Set<string>>(new Set());
+
+  function basePath(projectId: string): string | null {
+    const org = projects.orgOf(projectId);
+    return org === null ? null : `/v1/orgs/${org.id}/projects/${projectId}/users`;
+  }
+
+  function present(user: ApiProjectUser): ProjectUser {
+    return {
+      id: user.id,
+      projectId: user.projectId,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      phone: user.phone,
+      phoneVerified: user.phoneVerified,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      methods: user.methods as readonly SignInMethod[],
+      mfaEnabled: user.mfaEnabled,
+      activeSessions: user.activeSessions,
+      bannedUntil: user.bannedUntil,
+      lastSignInAt: user.lastSignInAt,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      deletedAt: user.deletedAt,
+      metadataPublic: user.metadataPublic,
     };
-    users.value = [user, ...users.value];
-    return user;
-  }
-
-  /** Every listed account that is not a tombstone gets the same end date. */
-  function suspend(ids: readonly string[], until: string): number {
-    return rewrite(ids, (user) =>
-      user.deletedAt === null ? { ...user, bannedUntil: until, updatedAt: stamp() } : user,
-    );
-  }
-
-  function restore(ids: readonly string[]): number {
-    return rewrite(ids, (user) =>
-      user.bannedUntil !== null ? { ...user, bannedUntil: null, updatedAt: stamp() } : user,
-    );
-  }
-
-  function signOutEverywhere(ids: readonly string[]): number {
-    return rewrite(ids, (user) =>
-      user.activeSessions > 0 ? { ...user, activeSessions: 0, updatedAt: stamp() } : user,
-    );
   }
 
   /**
-   * What the sessions screen writes back after ending one of a user's devices, so the
-   * count here stays what it says it is: the sessions still live. No `updatedAt`, because
-   * this is a joined figure and not a column, and nothing about the account changed.
+   * Reads every page the project has, up to the cap.
+   *
+   * The screen filters and sorts client-side, so it wants the set rather than a page; the
+   * cursor is followed here instead of being pushed into the component. A project with more
+   * users than the cap is the point at which this has to become server-side search, and the
+   * loop stops rather than paging forever.
    */
+  /** One page. Split out so `load` is a loop and an error handler and nothing else. */
+  async function page(path: string, cursor: string | null): Promise<ProjectUserList> {
+    const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (cursor !== null) query.set("cursor", cursor);
+    const { data, error } = await useManagementApi()(`${path}?${query.toString()}`)
+      .get()
+      .json<ProjectUserList>();
+    if (error.value !== null) throw error.value;
+    return data.value ?? { users: [], nextCursor: null };
+  }
+
+  async function load(projectId: string): Promise<void> {
+    const path = basePath(projectId);
+    if (path === null) return;
+    loading.value = true;
+    refusal.value = null;
+    try {
+      const collected: ProjectUser[] = [];
+      let cursor: string | null = null;
+      // Ten pages of a hundred. Past that the screen is not the right tool anyway.
+      for (let read = 0; read < MAX_PAGES; read += 1) {
+        const answer: ProjectUserList = await page(path, cursor);
+        collected.push(...answer.users.map(present));
+        cursor = answer.nextCursor;
+        if (cursor === null) break;
+      }
+      byProject.value = { ...byProject.value, [projectId]: collected };
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /** Loads once per project, for the screens that read this list without owning it. */
+  function ensure(projectId: string): void {
+    if (requested.value.has(projectId)) return;
+    requested.value = new Set(requested.value).add(projectId);
+    void load(projectId);
+  }
+
+  /** Every user this store has for the project. Triggers the first load, then is a read. */
+  function forProject(projectId: string): ProjectUser[] {
+    ensure(projectId);
+    return byProject.value[projectId] ?? [];
+  }
+
+  /** Replaces the rows the server just answered with, wherever they are cached. */
+  function absorb(updated: readonly ProjectUser[]): void {
+    if (updated.length === 0) return;
+    const byId = new Map(updated.map((user) => [user.id, user]));
+    const next: Record<string, ProjectUser[]> = {};
+    for (const [projectId, list] of Object.entries(byProject.value)) {
+      next[projectId] = list.map((user) => byId.get(user.id) ?? user);
+    }
+    byProject.value = next;
+  }
+
+  function projectOf(id: string): string | null {
+    for (const [projectId, list] of Object.entries(byProject.value)) {
+      if (list.some((user) => user.id === id)) return projectId;
+    }
+    return null;
+  }
+
+  /**
+   * Runs one call per user and answers with how many succeeded.
+   *
+   * Sequential rather than parallel, and that is the selection bar's semantics: a partial
+   * failure has to leave the rows it did change changed, and a count the screen can report
+   * honestly. `Promise.all` would abandon the remainder on the first refusal.
+   */
+  async function each(
+    ids: readonly string[],
+    call: (path: string, id: string) => Promise<ApiProjectUser | null>,
+  ): Promise<number> {
+    const updated: ProjectUser[] = [];
+    let failed = 0;
+    for (const id of ids) {
+      const projectId = projectOf(id);
+      const path = projectId === null ? null : basePath(projectId);
+      if (path === null) {
+        failed += 1;
+        continue;
+      }
+      try {
+        const answer = await call(path, id);
+        if (answer !== null) updated.push(present(answer));
+      } catch (cause: unknown) {
+        refusal.value = managementMessage(cause);
+        failed += 1;
+      }
+    }
+    absorb(updated);
+    return ids.length - failed;
+  }
+
+  async function suspend(ids: readonly string[], until: string): Promise<number> {
+    const api = useManagementApi();
+    return await each(ids, async (path, id) => {
+      const { data, error } = await api(`${path}/${id}/suspend`)
+        .post({ until })
+        .json<ApiProjectUser>();
+      if (error.value !== null) throw error.value;
+      return data.value;
+    });
+  }
+
+  async function restore(ids: readonly string[]): Promise<number> {
+    const api = useManagementApi();
+    return await each(ids, async (path, id) => {
+      // An empty object rather than no body: Fastify refuses a POST that declares a JSON
+      // content-type and carries nothing, before the handler is ever reached.
+      const { data, error } = await api(`${path}/${id}/restore`).post({}).json<ApiProjectUser>();
+      if (error.value !== null) throw error.value;
+      return data.value;
+    });
+  }
+
+  /**
+   * Ends every session each account holds, and refreshes the counts from the server.
+   *
+   * The count of sessions is not returned by the revoke, so the user is re-read: reporting
+   * "signed out everywhere" while the row on screen still says three live sessions is the
+   * kind of half-truth this whole exercise is about removing.
+   */
+  /** Ends one account's sessions and reads the row back, so the count on screen is real. */
+  async function revokeOne(path: string, id: string): Promise<{ revoked: number }> {
+    const api = useManagementApi();
+    const { data, error } = await api(`${path}/${id}/sessions/revoke`)
+      .post({})
+      .json<RevokedSessions>();
+    if (error.value !== null) throw error.value;
+    return { revoked: data.value?.revoked ?? 0 };
+  }
+
+  /**
+   * Answers with how many sessions were ended, not how many accounts were touched.
+   *
+   * `each` does the caching, so this only has to sum. The re-read inside it is the point:
+   * reporting "signed out everywhere" while the row on screen still says three live
+   * sessions is exactly the half-truth this exercise is about removing.
+   */
+  async function signOutEverywhere(ids: readonly string[]): Promise<number> {
+    let signedOut = 0;
+    await each(ids, async (path, id) => {
+      signedOut += (await revokeOne(path, id)).revoked;
+      const { data, error } = await useManagementApi()(`${path}/${id}`)
+        .get()
+        .json<ApiProjectUser>();
+      if (error.value !== null) throw error.value;
+      return data.value;
+    });
+    return signedOut;
+  }
+
+  /** Kept for the sessions screen, which recounts locally after revoking one session. */
   function setActiveSessions(id: string, count: number): void {
-    rewrite([id], (user) =>
-      user.activeSessions === count ? user : { ...user, activeSessions: count },
+    const projectId = projectOf(id);
+    if (projectId === null) return;
+    byProject.value = {
+      ...byProject.value,
+      [projectId]: (byProject.value[projectId] ?? []).map((user) =>
+        user.id === id ? { ...user, activeSessions: count } : user,
+      ),
+    };
+  }
+
+  /** No endpoint. Creating an account needs password hashing the management API lacks. */
+  function add(_projectId: string, _input: AddUserInput): Promise<ProjectUser> {
+    return Promise.reject(
+      new InternalError({
+        detail: { reason: "creating a user from the panel is not built (todo.md 1.6)" },
+      }),
     );
   }
 
-  /** The erasure: personal columns cleared, the row kept, sessions gone with it. */
-  function remove(ids: readonly string[]): number {
-    return rewrite(ids, (user) => (user.deletedAt === null ? erase(user, stamp()) : user));
+  /** No endpoint. Erasure is the DSR path and its worker does not exist (PROJECT.md 4.13.6). */
+  function remove(_ids: readonly string[]): Promise<number> {
+    return Promise.reject(
+      new InternalError({
+        detail: { reason: "erasure runs through the DSR path, which is not built" },
+      }),
+    );
   }
 
-  /** Applies `change` to the named rows and reports how many it actually altered. */
-  function rewrite(ids: readonly string[], change: (user: ProjectUser) => ProjectUser): number {
-    const wanted = new Set(ids);
-    let changed = 0;
-    users.value = users.value.map((user) => {
-      if (!wanted.has(user.id)) return user;
-      const next = change(user);
-      if (next !== user) changed += 1;
-      return next;
-    });
-    return changed;
-  }
+  /** Every user the store holds, for the screens that watch the whole set. */
+  const users = computed(() => Object.values(byProject.value).flat());
 
   return {
     users,
     loading,
+    refusal,
+    load,
+    ensure,
     forProject,
     add,
     suspend,
@@ -148,230 +298,3 @@ export const useUsersStore = defineStore("users", () => {
     remove,
   };
 });
-
-/**
- * What erasure leaves of a user: the id, the project, the timestamps, and nothing that
- * names a person. Shared by the action and the fixture so a generated tombstone is the
- * same shape as one the action makes.
- */
-function erase(user: ProjectUser, at: string): ProjectUser {
-  return {
-    ...user,
-    email: null,
-    emailVerified: false,
-    phone: null,
-    phoneVerified: false,
-    displayName: null,
-    avatarUrl: null,
-    methods: [],
-    mfaEnabled: false,
-    activeSessions: 0,
-    bannedUntil: null,
-    metadataPublic: {},
-    updatedAt: at,
-    deletedAt: at,
-  };
-}
-
-function stamp(): string {
-  return new Date().toISOString();
-}
-
-/** Crockford's base 32, which is what the public ids look like. */
-const ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
-
-function idFrom(random: () => number, length = 24): string {
-  let out = "";
-  for (let i = 0; i < length; i += 1) {
-    out += ALPHABET[Math.floor(random() * ALPHABET.length)];
-  }
-  return out;
-}
-
-/*
- * Placeholder people. A seeded generator rather than a literal list, because a list long
- * enough to need paging, filtering and sorting is too long to read as code, and the
- * same seed gives the same list on every load, which is what makes a screenshot
- * comparable to the last one. Dates are offsets from the moment the store is built, so
- * "3d ago" stays true. Replaced wholesale by the management API.
- */
-
-const FIRST = [
-  "Nuray",
-  "James",
-  "Sophia",
-  "Emma",
-  "Matthew",
-  "Arthur",
-  "Elif",
-  "Lucas",
-  "Amara",
-  "Noah",
-  "Yuki",
-  "Mateo",
-  "Zara",
-  "Leon",
-  "Priya",
-  "Oscar",
-  "Ines",
-  "Kenji",
-  "Farah",
-  "Hugo",
-  "Mei",
-  "Jonas",
-  "Layla",
-  "Felix",
-  "Aisha",
-  "Ravi",
-  "Clara",
-  "Tomas",
-  "Sena",
-  "Ivan",
-];
-const LAST = [
-  "Aksoy",
-  "Brown",
-  "Williams",
-  "Wright",
-  "Johnson",
-  "Taylor",
-  "Kaya",
-  "Silva",
-  "Okafor",
-  "Schmidt",
-  "Tanaka",
-  "Garcia",
-  "Hussain",
-  "Novak",
-  "Sharma",
-  "Lindqvist",
-  "Moreau",
-  "Sato",
-  "Haddad",
-  "Bernard",
-  "Chen",
-  "Weber",
-  "Rahman",
-  "Keller",
-  "Diallo",
-  "Iyer",
-  "Rossi",
-  "Horvat",
-  "Demir",
-  "Petrov",
-];
-const DOMAINS = ["example.com", "mail.example", "acme.test", "example.org", "corp.example"];
-const COUNTRY_CODES = ["1", "44", "49", "90", "81"];
-const PROVIDERS: readonly SignInMethod[] = ["google", "apple", "microsoft", "github"];
-const PLANS = ["free", "pro", "team"];
-
-interface Dice {
-  random: () => number;
-  chance: (probability: number) => boolean;
-  pick: <T>(list: readonly T[]) => T;
-}
-
-/** mulberry32: small, fast and good enough for a fixture. */
-function dice(seed: number): Dice {
-  let state = seed >>> 0;
-  const random = () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  return {
-    random,
-    chance: (probability) => random() < probability,
-    // A list here is never empty, so the index is always in range.
-    pick: (list) => list[Math.floor(random() * list.length)] as (typeof list)[number],
-  };
-}
-
-function placeholderUsers(): ProjectUser[] {
-  return [...generate("prj_personal", 138, 7), ...generate("prj_acme", 41, 11)];
-}
-
-function generate(projectId: string, count: number, seed: number): ProjectUser[] {
-  const roll = dice(seed);
-  const now = Date.now();
-  return Array.from({ length: count }, (_, index) => {
-    const person = personFor(roll, index);
-    const dates = datesFor(roll, now);
-    const user: ProjectUser = {
-      id: `usr_${idFrom(roll.random)}`,
-      projectId,
-      ...person,
-      avatarUrl: null,
-      methods: methodsFor(roll, person.email !== null, person.phone !== null),
-      mfaEnabled: roll.chance(0.24),
-      activeSessions: dates.lastSignInAt === null ? 0 : Math.floor(roll.random() * 4),
-      bannedUntil: banFor(roll, now),
-      ...dates,
-      deletedAt: null,
-      metadataPublic: roll.chance(0.4) ? { plan: roll.pick(PLANS) } : {},
-    };
-    if (!roll.chance(0.06)) return user;
-    const ageMs = now - new Date(user.createdAt).getTime();
-    const deletedAt = new Date(now - roll.random() * Math.min(ageMs, 90 * DURATIONS.DAY));
-    return erase(user, deletedAt.toISOString());
-  });
-}
-
-function personFor(roll: Dice, index: number) {
-  const first = roll.pick(FIRST);
-  const last = roll.pick(LAST);
-  const hasEmail = roll.chance(0.94);
-  const hasPhone = !hasEmail || roll.chance(0.28);
-  const email = hasEmail
-    ? `${first}.${last}${index % 7 === 0 ? index : ""}@${roll.pick(DOMAINS)}`.toLowerCase()
-    : null;
-  const phone = hasPhone ? `+${roll.pick(COUNTRY_CODES)}${digits(roll, 9)}` : null;
-  return {
-    email,
-    emailVerified: hasEmail && roll.chance(0.86),
-    phone,
-    phoneVerified: hasPhone && roll.chance(0.7),
-    displayName: roll.chance(0.82) ? `${first} ${last}` : null,
-  };
-}
-
-function methodsFor(roll: Dice, hasEmail: boolean, hasPhone: boolean): SignInMethod[] {
-  const methods: SignInMethod[] = [];
-  if (roll.chance(0.55)) methods.push("password");
-  if (roll.chance(0.3)) methods.push("passkey");
-  if (hasEmail && roll.chance(0.35)) methods.push("email_otp");
-  if (hasPhone && roll.chance(0.5)) methods.push("sms_otp");
-  if (roll.chance(0.45)) methods.push(roll.pick(PROVIDERS));
-  if (methods.length === 0) methods.push(hasEmail ? "email_otp" : "sms_otp");
-  return [...new Set(methods)];
-}
-
-function datesFor(roll: Dice, now: number) {
-  const ago = (ms: number) => new Date(now - ms).toISOString();
-  const createdMs = roll.random() * 400 * DURATIONS.DAY + DURATIONS.HOUR;
-  const signedIn = roll.chance(0.84);
-  const lastSignInMs = signedIn ? roll.random() * Math.min(createdMs, 60 * DURATIONS.DAY) : null;
-  return {
-    createdAt: ago(createdMs),
-    updatedAt: ago(lastSignInMs ?? roll.random() * createdMs),
-    lastSignInAt: lastSignInMs === null ? null : ago(lastSignInMs),
-  };
-}
-
-/** Most accounts are not banned; of those that are, a few for good, most for a while,
-    and some whose ban has already lapsed, so the screen shows every case. */
-function banFor(roll: Dice, now: number): string | null {
-  if (!roll.chance(0.07)) return null;
-  const kind = roll.random();
-  if (kind < 0.3) return INDEFINITE;
-  const span = roll.random() * 30 * DURATIONS.DAY;
-  return new Date(kind < 0.85 ? now + span : now - span / 3).toISOString();
-}
-
-function digits(roll: Dice, length: number): string {
-  let out = "";
-  for (let i = 0; i < length; i += 1) out += Math.floor(roll.random() * 10);
-  return out;
-}

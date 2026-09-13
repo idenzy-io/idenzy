@@ -11,7 +11,7 @@
  */
 import type { Refusal } from "~/stores/data-requests";
 import { type DataSubjectRequest, ERASURE_KEEPS } from "~/utils/data-requests";
-import { METHOD_LABELS, nameOf, type ProjectUser } from "~/utils/users";
+import { methodLabel, nameOf, type ProjectUser } from "~/utils/users";
 
 const props = defineProps<{
   request: DataSubjectRequest;
@@ -48,7 +48,7 @@ const fields = computed(() => {
   return text === "" ? "" : `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 });
 
-const methods = computed(() => sentence(props.user.methods.map((method) => METHOD_LABELS[method])));
+const methods = computed(() => sentence(props.user.methods.map((method) => methodLabel(method))));
 
 const action = computed(() =>
   name.value.length > 24 ? "Erase their data" : `Erase ${name.value}'s data`,

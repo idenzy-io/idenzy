@@ -14,9 +14,9 @@
  * that started at the logo's edge would put every name at a different x.
  */
 import type { MethodStanding } from "~/utils/sign-in-paths";
-import { METHOD_ICONS, METHOD_LABELS, type SignInMethod } from "~/utils/users";
+import { METHOD_LABELS, methodIcon, type SignInMethod } from "~/utils/users";
 
-const descriptions: Record<SignInMethod, string> = {
+const descriptions: Record<string, string> = {
   password: "A password saved on this account",
   passkey: "A passkey registered to this account",
   email_otp: "A one-time code delivered by email",
@@ -41,8 +41,8 @@ defineProps<{
     >
       <span aria-hidden="true" class="method-list__icon">
         <Icon
-          :class="METHOD_ICONS[standing.method].monochrome ? '[.v-theme--dark_&]:invert' : ''"
-          :name="METHOD_ICONS[standing.method].icon"
+          :class="methodIcon(standing.method).monochrome ? '[.v-theme--dark_&]:invert' : ''"
+          :name="methodIcon(standing.method).icon"
           class="text-xl text-ink/75"
         />
       </span>

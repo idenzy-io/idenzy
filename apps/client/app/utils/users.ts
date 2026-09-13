@@ -17,15 +17,23 @@ import { csvCell, type TimeWindow, type Tristate, tristate, within } from "./fil
 
 export type UserStatus = "active" | "suspended" | "deleted";
 
+/**
+ * A way into an account, as the API names it.
+ *
+ * The credential kinds are closed; the provider half is not, because a linked identity is
+ * named by its provider and there are eighteen of those with more to come. A union of
+ * every one would have to be edited every time a provider is added, and the screen would
+ * crash on the first account that used the nineteenth — which is exactly what happened
+ * with `magic_link`, so this is a string and `methodIcon` is total.
+ */
 export type SignInMethod =
   | "password"
   | "passkey"
   | "email_otp"
   | "sms_otp"
-  | "google"
-  | "apple"
-  | "microsoft"
-  | "github";
+  | "magic_link"
+  | "anonymous"
+  | (string & {});
 
 export interface ProjectUser {
   /** The public id, `usr_` and an opaque body, as every API surface names a user. */
@@ -80,7 +88,7 @@ export const STATUS_LABELS: Record<UserStatus, string> = {
 /** For sorting a status column: the states in the order a reader wants them grouped. */
 export const STATUS_RANK: Record<UserStatus, number> = { active: 0, suspended: 1, deleted: 2 };
 
-export const METHOD_LABELS: Record<SignInMethod, string> = {
+export const METHOD_LABELS: Record<string, string> = {
   password: "Password",
   passkey: "Passkey",
   email_otp: "Email code",
@@ -89,23 +97,49 @@ export const METHOD_LABELS: Record<SignInMethod, string> = {
   apple: "Apple",
   microsoft: "Microsoft",
   github: "GitHub",
+  magic_link: "Magic link",
+  anonymous: "Anonymous",
 };
+
+/**
+ * The name for a method, for any method.
+ *
+ * Falls back to the provider catalogue, then to the id itself, so a provider added to the
+ * API tomorrow reads as its own name here instead of leaving a blank — or, as it did
+ * before this was total, taking the render down.
+ */
+export function methodLabel(method: SignInMethod): string {
+  const known = METHOD_LABELS[method];
+  if (known !== undefined) return known;
+  return AUTH_PROVIDERS.find((entry) => entry.id === method)?.label ?? method;
+}
 
 /**
  * A glyph per method, written out so @nuxt/icon bundles it. The providers reuse the
  * marks the sign-in screens use, monochrome flag included, so the two never disagree
  * about what Google looks like.
  */
-export const METHOD_ICONS: Record<SignInMethod, { icon: string; monochrome: boolean }> = {
+export const METHOD_ICONS: Record<string, { icon: string; monochrome: boolean }> = {
   password: { icon: "material-symbols:password", monochrome: false },
   passkey: { icon: "material-symbols:passkey", monochrome: false },
   email_otp: { icon: "material-symbols:mail-outline", monochrome: false },
   sms_otp: { icon: "material-symbols:sms-outline", monochrome: false },
-  google: providerIcon("google"),
-  apple: providerIcon("apple"),
-  microsoft: providerIcon("microsoft"),
-  github: providerIcon("github"),
+  magic_link: { icon: "material-symbols:link", monochrome: false },
+  anonymous: { icon: "material-symbols:person-outline", monochrome: false },
 };
+
+/**
+ * The mark for a method, for any method.
+ *
+ * Indexing `METHOD_ICONS` directly is what took the Users page down: an account signed in
+ * with a magic link produced `undefined`, and reading `.monochrome` off it threw inside a
+ * render, which Vue reports as an unhandled render error rather than as a missing icon. A
+ * lookup that cannot fail is the fix; a longer record would only move the crash to the
+ * next method somebody adds.
+ */
+export function methodIcon(method: SignInMethod): { icon: string; monochrome: boolean } {
+  return METHOD_ICONS[method] ?? providerIcon(method);
+}
 
 function providerIcon(id: string): { icon: string; monochrome: boolean } {
   const provider = AUTH_PROVIDERS.find((entry) => entry.id === id);

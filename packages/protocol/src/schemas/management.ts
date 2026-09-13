@@ -5,6 +5,13 @@ import {
   ProjectDomainStatus,
   ProjectDomainType,
 } from "../enums/tenancy.js";
+import {
+  emailSchema,
+  isoDateTimeSchema,
+  phoneSchema,
+  projectIdSchema,
+  userIdSchema,
+} from "./common.js";
 import { isWebhookEventType, WebhookDeliveryOutcome, webhookUrlSchema } from "./webhooks.js";
 
 /**
@@ -729,3 +736,109 @@ export const projectUsageHoursSchema = z.object({
   hours: z.array(usageHourSchema),
 });
 export type ProjectUsageHours = z.infer<typeof projectUsageHoursSchema>;
+
+// ── Project users ────────────────────────────────────────────────────────────────────
+//
+// The end users of a customer's project, as the panel's Users screen shows them. Distinct
+// from `publicUserSchema`, which is what an end user's own SDK receives: this carries the
+// operational facts a support person needs and an end user must never see their own
+// version of — how many live sessions there are, whether an authenticator is enrolled,
+// whether the account is suspended.
+
+/**
+ * How somebody can get in. Derived from what is stored, never from a column of its own.
+ *
+ * A string rather than an enum, and deliberately. The credential kinds are closed —
+ * `password`, `passkey`, `email_otp`, `sms_otp`, `magic_link`, `anonymous` — but the rest
+ * are provider ids, and there are eighteen of those with more arriving. An enum would have
+ * to be edited for each, and every consumer that exhaustively matched on it would break on
+ * the one nobody updated. The panel's `methodIcon` is total for the same reason.
+ */
+export const signInMethodSchema = z.string().min(1).max(40);
+export type SignInMethod = z.infer<typeof signInMethodSchema>;
+
+export const projectUserSchema = z.object({
+  id: userIdSchema,
+  projectId: projectIdSchema,
+  email: emailSchema.nullable(),
+  emailVerified: z.boolean(),
+  phone: phoneSchema.nullable(),
+  phoneVerified: z.boolean(),
+  displayName: z.string().max(200).nullable(),
+  avatarUrl: z.url().nullable(),
+  /** Sorted and de-duplicated, so two accounts with the same ways in compare equal. */
+  methods: z.array(signInMethodSchema),
+  mfaEnabled: z.boolean(),
+  /** Sessions neither revoked nor past their absolute expiry, counted at read time. */
+  activeSessions: z.number().int().min(0),
+  /** A suspension. In the past means it has lapsed, which is why the instant is returned. */
+  bannedUntil: isoDateTimeSchema.nullable(),
+  lastSignInAt: isoDateTimeSchema.nullable(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  /** The erasure tombstone. A row with one has had its personal columns cleared. */
+  deletedAt: isoDateTimeSchema.nullable(),
+  metadataPublic: z.record(z.string(), z.unknown()),
+});
+export type ProjectUser = z.infer<typeof projectUserSchema>;
+
+/**
+ * A page of users.
+ *
+ * `nextCursor` rather than an offset, because the list is ordered by creation and a busy
+ * project inserts while somebody is paging: an offset would skip a row for every account
+ * created behind the reader. Null means this was the last page.
+ */
+export const projectUserListSchema = z.object({
+  users: z.array(projectUserSchema),
+  nextCursor: z.string().nullable(),
+});
+export type ProjectUserList = z.infer<typeof projectUserListSchema>;
+
+export const projectUserQuerySchema = z.object({
+  /** Matches an address, a phone number or a display name. Trimmed, case-insensitive. */
+  search: z.string().trim().max(320).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+});
+export type ProjectUserQuery = z.infer<typeof projectUserQuerySchema>;
+
+/**
+ * Suspends an account until an instant.
+ *
+ * An instant and not a boolean, because every suspension this product can express has an
+ * end: "indefinite" is a date far enough out that a person reading the screen understands
+ * it is not coming back on its own. A flag would have needed a second column to say when,
+ * and the two would drift.
+ */
+export const suspendUserSchema = z.object({
+  until: isoDateTimeSchema,
+});
+export type SuspendUser = z.infer<typeof suspendUserSchema>;
+
+/**
+ * One of an end user's sessions, for the panel's session list.
+ *
+ * The device name is the client's to give and is never derived here: parsing a user agent
+ * rots, and a wrong guess on a security screen is worse than a blank.
+ */
+export const userSessionSchema = z.object({
+  id: z.string(),
+  deviceName: z.string().nullable(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  amr: z.array(z.string()),
+  createdAt: isoDateTimeSchema,
+  lastActiveAt: isoDateTimeSchema,
+  absoluteExpiresAt: isoDateTimeSchema,
+  revokedAt: isoDateTimeSchema.nullable(),
+  revokeReason: z.string().nullable(),
+});
+export type UserSession = z.infer<typeof userSessionSchema>;
+
+export const userSessionListSchema = z.object({ sessions: z.array(userSessionSchema) });
+export type UserSessionList = z.infer<typeof userSessionListSchema>;
+
+/** How many sessions a revoke ended. Zero is a normal answer, not a failure. */
+export const revokedSessionsSchema = z.object({ revoked: z.number().int().min(0) });
+export type RevokedSessions = z.infer<typeof revokedSessionsSchema>;

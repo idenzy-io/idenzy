@@ -798,7 +798,37 @@ client have no server halves to talk to yet.
       plan; and the analytics half of 3.2 has not started, so the daily series is served from
       Postgres
 - [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
-      built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
+      built. **Users is off fixtures now**, which is the first of the customer-operations
+      family: `GET/POST /v1/orgs/:orgId/projects/:projectId/users` and the five routes under
+      it, all at developer because `members.ts` puts "your users and their sessions" at
+      owner/admin/developer and a matrix that lies about one row is not worth showing.
+      `ProjectUserRepository` is a read model kept apart from `UserRepository` on purpose:
+      that one is on the sign-in path and every method is a key lookup, this one scans,
+      sorts and joins, and one class would invite a list query from inside an
+      authentication. Three of the columns are not columns — the ways in, whether an
+      authenticator is enrolled, how many sessions are live — so they are assembled in four
+      grouped reads per page rather than four per row. Paging is a keyset on
+      `(created_at, id)`: an offset skips a row for every account created behind the reader,
+      silently and only under load. Suspension writes `banned_until`, which nothing had ever
+      written, and deliberately does **not** end the sessions — it is read on rotation, so
+      an issued token lives out its lifetime, and a test says so because the other reading
+      is what a screen would quietly promise.
+      Four bugs worth keeping. `tenantScope()` names `users.project_id`, so using it for the
+      four joined tables emitted `"users"."project_id"` against `identities` and Postgres
+      refused the statement — the row policies would have scoped them anyway, which is
+      exactly why the second line of defence has to name the table it filters. The panel's
+      method vocabulary was a closed union of eight and the API sent `magic_link`, so
+      `METHOD_ICONS[method]` was `undefined` and reading `.monochrome` off it threw inside a
+      render: the vocabulary is open now and `methodIcon`/`methodLabel` are total, because a
+      longer record would only move the crash to the nineteenth provider. The API sends the
+      provider's own id rather than a generic `oauth`, since "signs in with GitHub" is the
+      fact a support screen needs. And two calls used `.post()` where Fastify refuses a JSON
+      content-type with no body — `keys.ts` had already documented that trap and the HTTP
+      test found it before the screen did.
+      `add` and `remove` refuse with a reason instead of pretending: creating an account
+      needs a `PasswordHasher` the management API does not have, and erasure is the DSR path
+      (4.13.6), whose worker does not exist. The remaining stores are placeholders, and each
+      one waits on an endpoint rather than on the panel. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
       can read (ADR-0008), and a global middleware decides who sees which half of the panel.
       Seven stores are off fixtures now: the organisation and project lists, API keys, auth

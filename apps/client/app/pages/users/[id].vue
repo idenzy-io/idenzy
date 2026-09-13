@@ -309,19 +309,19 @@ function notify(text: string) {
   toastOpen.value = true;
 }
 
-function suspend(until: string, signOut: boolean) {
-  store.suspend([id.value], until);
-  if (signOut) store.signOutEverywhere([id.value]);
+async function suspend(until: string, signOut: boolean) {
+  await store.suspend([id.value], until);
+  if (signOut) await store.signOutEverywhere([id.value]);
   notify(signOut ? "Suspended and signed out everywhere" : "Suspended");
 }
 
-function restore() {
-  store.restore([id.value]);
+async function restore() {
+  await store.restore([id.value]);
   notify("Suspension lifted");
 }
 
-function signOutEverywhere() {
-  const count = store.signOutEverywhere([id.value]);
+async function signOutEverywhere() {
+  const count = await store.signOutEverywhere([id.value]);
   notify(count === 0 ? "No open sessions to end" : "Signed out everywhere");
 }
 
@@ -329,9 +329,13 @@ function signOutEverywhere() {
  * The erasure leaves the row, so the page stays: sending the operator back to the list
  * would hide the tombstone they just made, and the tombstone is the point.
  */
-function erase() {
-  store.remove([id.value]);
-  notify("Account erased");
+async function erase() {
+  try {
+    await store.remove([id.value]);
+    notify("Account erased");
+  } catch {
+    notify("Erasure is not available yet");
+  }
 }
 
 function askRevoke(session: SessionRow) {

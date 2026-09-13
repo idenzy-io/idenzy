@@ -11,6 +11,7 @@ import { OrgsModule } from "./orgs/orgs.module.js";
 import { OriginsModule } from "./origins/origins.module.js";
 import { PersistenceModule } from "./persistence/persistence.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
+import { SessionsModule } from "./sessions/sessions.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 import { UsageModule } from "./usage/usage.module.js";
 import { UsersModule } from "./users/users.module.js";
@@ -41,6 +42,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module.js";
     ApiKeysModule,
     DomainsModule,
     OriginsModule,
+    SessionsModule,
     UsageModule,
     UsersModule,
     WebhooksModule,

@@ -825,6 +825,26 @@ client have no server halves to talk to yet.
       fact a support screen needs. And two calls used `.post()` where Fastify refuses a JSON
       content-type with no body — `keys.ts` had already documented that trap and the HTTP
       test found it before the screen did.
+      **Sessions is off fixtures too.** `GET .../projects/:projectId/sessions` with
+      `userId`, `includeRevoked` and a keyset cursor on `(last_active_at, id)`, and
+      `POST .../sessions/revoke` taking a list — a list and not a DELETE per id, because the
+      selection bar ends a set and a request per row half-succeeds on a slow link and leaves
+      the operator no single answer during the incident that made them press it. Revoking is
+      one statement with the already-revoked excluded by the predicate, so two people on the
+      same incident are not both told they ended it. The property worth having is
+      cross-screen: `ProjectUser.activeSessions` and the rows on this screen now derive from
+      the same predicate, so revoking one moves the other — verified live, 2 to 1.
+      Two fields are absences rather than guesses, and the generator invented both.
+      `deviceBound` is false everywhere because device-bound refresh tokens are 4.4 and phase
+      3 with no column to read; `network` is null because the IP intelligence behind it is a
+      lookup over a provider we do not have.
+      **Import is not a wiring job and was not attempted.** It has no backend at all: no
+      table, no worker, no service, nothing server-side mentions it. The screen describes a
+      job — file up, a worker parses, rows written, the panel polls — so wiring it means
+      building Phase 2's migration importers: an `import_jobs` table through `classified()`
+      with its own FORCE RLS and grant migration, upload handling, a parser per source
+      (Firebase, Supabase, Auth0, Clerk, Cognito), hash import for bcrypt/scrypt/argon2 against
+      `passwordAlgoVersion`, a worker, and progress polling. That is a feature, not a store swap
       `add` and `remove` refuse with a reason instead of pretending: creating an account
       needs a `PasswordHasher` the management API does not have, and erasure is the DSR path
       (4.13.6), whose worker does not exist. The remaining stores are placeholders, and each

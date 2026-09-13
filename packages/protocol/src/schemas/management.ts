@@ -842,3 +842,65 @@ export type UserSessionList = z.infer<typeof userSessionListSchema>;
 /** How many sessions a revoke ended. Zero is a normal answer, not a failure. */
 export const revokedSessionsSchema = z.object({ revoked: z.number().int().min(0) });
 export type RevokedSessions = z.infer<typeof revokedSessionsSchema>;
+
+// ── Project sessions ─────────────────────────────────────────────────────────────────
+//
+// The project-wide session list behind the panel's Sessions & devices screen. Wider than
+// `userSessionSchema`, which answers "this account's sessions" from inside a user's page:
+// this one carries the account each session belongs to, because the screen is read by
+// somebody looking for a device rather than for a person.
+
+export const projectSessionSchema = z.object({
+  id: z.string(),
+  projectId: projectIdSchema,
+  userId: userIdSchema,
+  deviceId: z.string().nullable(),
+  deviceName: z.string().nullable(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  amr: z.array(z.string()),
+  factorVerifiedAt: isoDateTimeSchema.nullable(),
+  /**
+   * Whether the refresh token is bound to a device key.
+   *
+   * Always false, and honestly so: device-bound refresh tokens are PROJECT.md 4.4 and
+   * phase 3, and no column records one. Sent rather than omitted because the screen has a
+   * column for it and "no" is the true answer for every session that exists today.
+   */
+  deviceBound: z.boolean(),
+  lastActiveAt: isoDateTimeSchema,
+  idleExpiresAt: isoDateTimeSchema,
+  absoluteExpiresAt: isoDateTimeSchema,
+  revokedAt: isoDateTimeSchema.nullable(),
+  revokeReason: z.string().nullable(),
+  createdAt: isoDateTimeSchema,
+});
+export type ProjectSession = z.infer<typeof projectSessionSchema>;
+
+export const projectSessionListSchema = z.object({
+  sessions: z.array(projectSessionSchema),
+  nextCursor: z.string().nullable(),
+});
+export type ProjectSessionList = z.infer<typeof projectSessionListSchema>;
+
+export const projectSessionQuerySchema = z.object({
+  /** Narrows to one account. The screen uses it when arriving from a user's page. */
+  userId: userIdSchema.optional(),
+  /** Revoked sessions are excluded by default: the screen is about what is live. */
+  includeRevoked: z.stringbool().default(false),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+  cursor: z.string().optional(),
+});
+export type ProjectSessionQuery = z.infer<typeof projectSessionQuerySchema>;
+
+/**
+ * Ends specific sessions.
+ *
+ * A list rather than one id, because the screen's selection bar ends a set and the
+ * alternative is a request per row — which on a slow link half-succeeds and leaves the
+ * operator with no single answer about what happened.
+ */
+export const revokeSessionsSchema = z.object({
+  sessionIds: z.array(z.string()).min(1).max(200),
+});
+export type RevokeSessionsRequest = z.infer<typeof revokeSessionsSchema>;

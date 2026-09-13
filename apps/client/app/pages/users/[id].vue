@@ -343,8 +343,8 @@ function askRevoke(session: SessionRow) {
   revokeOpen.value = true;
 }
 
-function revoke() {
-  const count = sessions.revoke(revokeTargets.value.map((session) => session.id));
+async function revoke() {
+  const count = await sessions.revoke(revokeTargets.value.map((session) => session.id));
   notify(count === 0 ? "That session had already ended" : "Session revoked");
 }
 

@@ -385,8 +385,9 @@ function askRevoke(sessions: readonly SessionRow[]) {
   if (revokeTargets.value.length > 0) revokeOpen.value = true;
 }
 
-function revoke() {
-  const count = store.revoke(revokeTargets.value.map((session) => session.id));
+/** Awaited: the notice reports what the server ended, not what was selected. */
+async function revoke() {
+  const count = await store.revoke(revokeTargets.value.map((session) => session.id));
   notify(`Revoked ${plural(count, "session")}`);
   selected.value = [];
 }

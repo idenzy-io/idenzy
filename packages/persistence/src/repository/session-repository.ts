@@ -1,13 +1,14 @@
 import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { Session, type SessionState } from "@idenzy/domain/entities/session";
 import type { AuthMethod, SessionRevokeReason } from "@idenzy/protocol/enums/auth";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import { sessions } from "../schema/sessions.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
-type SessionRow = typeof sessions.$inferSelect;
+/** A raw session row, as the operator list hands it out before wire shaping. */
+export type SessionRow = typeof sessions.$inferSelect;
 
 export interface NewSession {
   readonly userId: string;
@@ -21,7 +22,6 @@ export interface NewSession {
   readonly absoluteExpiresAt: Date;
 }
 
-/** A session row as the "your devices" list needs it, before it is shaped for the wire. */
 export interface SessionListItem {
   readonly id: string;
   readonly deviceName: string | null;
@@ -99,6 +99,77 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
       revokedAt: row.revokedAt,
       revokeReason: row.revokeReason as SessionRevokeReason | null,
     }));
+  }
+
+  /**
+   * Every session in the project, newest activity first, for the operator's list.
+   *
+   * `listForUser` answers the account's own question and this one answers the project's,
+   * which is why it is a second method rather than a nullable parameter on the first: the
+   * ordering differs — a person reading their own devices wants the one they are on, an
+   * operator hunting a device wants whatever moved last — and the predicate differs too,
+   * because this one defaults to hiding what is already revoked.
+   *
+   * Keyset paging on `(last_active_at, id)`, for the reason the users list uses one: an
+   * offset skips a row for every session that becomes active behind the reader, which on
+   * this table is constant.
+   */
+  async listForProject(options: {
+    readonly userId?: string | undefined;
+    readonly includeRevoked: boolean;
+    readonly limit: number;
+    readonly cursor?: string | undefined;
+  }): Promise<{ readonly sessions: readonly SessionRow[]; readonly nextCursor: string | null }> {
+    const predicates: (SQL | undefined)[] = [this.tenantScope()];
+    if (options.userId !== undefined) predicates.push(eq(sessions.userId, options.userId));
+    if (!options.includeRevoked) predicates.push(isNull(sessions.revokedAt));
+
+    const cursor = decodeSessionCursor(options.cursor);
+    if (cursor !== null) {
+      predicates.push(
+        or(
+          lt(sessions.lastActiveAt, cursor.lastActiveAt),
+          and(eq(sessions.lastActiveAt, cursor.lastActiveAt), lt(sessions.id, cursor.id)),
+        ),
+      );
+    }
+
+    const rows = await this.tx
+      .select()
+      .from(sessions)
+      .where(and(...predicates))
+      .orderBy(desc(sessions.lastActiveAt), desc(sessions.id))
+      .limit(options.limit + 1);
+
+    const page = rows.slice(0, options.limit);
+    const last = page.at(-1);
+    const nextCursor =
+      rows.length > options.limit && last !== undefined
+        ? encodeSessionCursor(last.lastActiveAt, last.id)
+        : null;
+
+    return { sessions: page, nextCursor };
+  }
+
+  /**
+   * Ends the named sessions and answers with the ids it actually ended.
+   *
+   * One statement, and the already-revoked are excluded by the predicate rather than
+   * filtered afterwards: two operators pressing the same button must not both be told they
+   * ended it. The ids come back so the caller can report a number it can stand behind.
+   */
+  async revokeMany(
+    ids: readonly string[],
+    reason: SessionRevokeReason,
+    at: Date,
+  ): Promise<readonly string[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.tx
+      .update(sessions)
+      .set({ revokedAt: at, revokeReason: reason })
+      .where(and(this.tenantScope(), inArray(sessions.id, ids), isNull(sessions.revokedAt)))
+      .returning({ id: sessions.id });
+    return rows.map((row) => row.id);
   }
 
   /** Slides the idle window. Called on refresh, which is the only proof of liveness we get. */
@@ -190,5 +261,25 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
    */
   private toAmr(value: readonly string[]): readonly AuthMethod[] {
     return value as readonly AuthMethod[];
+  }
+}
+
+function encodeSessionCursor(lastActiveAt: Date, id: string): string {
+  return Buffer.from(`${lastActiveAt.toISOString()}|${id}`, "utf8").toString("base64url");
+}
+
+/** A cursor we cannot read is the first page, not an error. See the users list for why. */
+function decodeSessionCursor(
+  cursor: string | undefined,
+): { lastActiveAt: Date; id: string } | null {
+  if (cursor === undefined || cursor.length === 0) return null;
+  try {
+    const [at, id] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
+    if (at === undefined || id === undefined) return null;
+    const lastActiveAt = new Date(at);
+    if (Number.isNaN(lastActiveAt.getTime())) return null;
+    return { lastActiveAt, id };
+  } catch {
+    return null;
   }
 }

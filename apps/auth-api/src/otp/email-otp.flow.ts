@@ -1,6 +1,7 @@
 import { Clock } from "@idenzy/core/time/clock";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import type {
   AuthenticatedSubject,
   FlowAudit,
@@ -36,12 +37,13 @@ export class EmailOtpFlow extends OtpFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     uow: UnitOfWork,
     clock: Clock,
     hasher: PasswordHasher,
     encryptor: FieldEncryptor,
   ) {
-    super(sessions, hooks, audit, mfa, uow, clock, hasher, encryptor);
+    super(sessions, hooks, audit, mfa, actives, uow, clock, hasher, encryptor);
   }
 
   protected override async resolveSubject(

@@ -17,11 +17,18 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const hasher = new Argon2idHasher();
@@ -66,10 +73,28 @@ beforeAll(async () => {
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
 
-  anonymous = new AnonymousFlow(sessions, hooks, audit, gate, uow);
-  upgrade = new AnonymousUpgradeFlow(sessions, hooks, audit, gate, uow, hasher, new NoBreaches());
-  signUp = new PasswordSignUpFlow(sessions, hooks, audit, gate, uow, hasher, new NoBreaches());
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, uow, hasher, clock);
+  anonymous = new AnonymousFlow(sessions, hooks, audit, gate, actives, uow);
+  upgrade = new AnonymousUpgradeFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    new NoBreaches(),
+  );
+  signUp = new PasswordSignUpFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    new NoBreaches(),
+  );
+  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, actives, uow, hasher, clock);
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
@@ -236,6 +261,7 @@ describe("upgrading one", () => {
       new NullFlowHooks(),
       new OutboxFlowAudit(uow, clock),
       gate,
+      actives,
       uow,
       hasher,
       new AlwaysBreached(),

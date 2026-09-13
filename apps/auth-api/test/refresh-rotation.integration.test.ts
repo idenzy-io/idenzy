@@ -12,12 +12,19 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RefreshService } from "../dist/session/refresh-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, SilentLogger, testConfig, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  SilentLogger,
+  testActives,
+  testConfig,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const clock = new SystemClock();
 const revocations = testRevocations(clock);
+const actives = testActives(clock);
 const config = testConfig();
 
 let uow: UnitOfWork;
@@ -55,6 +62,7 @@ beforeAll(async () => {
     config,
     new SilentLogger(),
     revocations.publisher,
+    actives,
   );
 
   await harness.owner.query(

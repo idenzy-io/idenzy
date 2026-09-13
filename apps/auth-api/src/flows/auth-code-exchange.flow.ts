@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { ChallengeExpiredError, ChallengeInvalidError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { hashToken, safeCompareHex } from "@idenzy/crypto/tokens/random";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -38,10 +39,11 @@ export abstract class AuthCodeExchangeFlow extends AuthFlow {
     hooks: FlowHooks,
     audit: FlowAudit,
     mfa: MfaGate,
+    actives: ActiveUserMeter,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   protected override async verify(

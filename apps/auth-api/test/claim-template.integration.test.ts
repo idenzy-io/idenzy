@@ -15,11 +15,18 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "44444444-4444-4444-4444-444444444444";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const config = testConfig();
 const revocations = testRevocations(clock);
 
@@ -98,6 +105,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     audit,
     gate,
+    actives,
     uow,
     new Argon2idHasher(),
     new NoBreaches(),
@@ -107,6 +115,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     audit,
     gate,
+    actives,
     uow,
     new Argon2idHasher(),
     clock,

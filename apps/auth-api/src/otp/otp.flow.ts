@@ -7,6 +7,7 @@ import type { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import type { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import type { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -46,12 +47,13 @@ export abstract class OtpFlow extends AuthFlow {
     hooks: FlowHooks,
     audit: FlowAudit,
     mfa: MfaGate,
+    actives: ActiveUserMeter,
     protected readonly uow: UnitOfWork,
     protected readonly clock: Clock,
     private readonly hasher: PasswordHasher,
     private readonly encryptor: FieldEncryptor,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   /**

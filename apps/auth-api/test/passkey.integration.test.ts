@@ -17,10 +17,17 @@ import { PasskeyService } from "../dist/passkey/passkey-service.js";
 import { RelyingPartyResolver } from "../dist/passkey/relying-party-resolver.js";
 import { encodeUserHandle } from "../dist/passkey/user-handle.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 
@@ -90,6 +97,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     clock,
     ceremony,

@@ -9,6 +9,7 @@ import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
 import { generateOpaqueToken, hashToken } from "@idenzy/crypto/tokens/random";
 import { RefreshOutcome } from "@idenzy/domain/entities/refresh-token-family";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import type { FlowContext, IssuedSession } from "@idenzy/domain/ports/auth-flow";
 import { OutboxRepository } from "@idenzy/persistence/repository/outbox-repository";
 import { RefreshTokenRepository } from "@idenzy/persistence/repository/refresh-token-repository";
@@ -57,6 +58,7 @@ export class RefreshService {
     private readonly config: AppConfig,
     private readonly logger: Logger,
     private readonly revocations: RevocationPublisher,
+    private readonly actives: ActiveUserMeter,
   ) {}
 
   async rotate(context: FlowContext, presented: string): Promise<IssuedSession> {
@@ -69,6 +71,12 @@ export class RefreshService {
     // has no other way to hear about (ADR-0009).
     if (rotation.kind === "reused") {
       await this.revocations.sessionsRevoked(tenant, [rotation.sessionId], rotation.at);
+    }
+    // A refresh is an authentication for billing (PROJECT.md 5.1), and it is the one that keeps a
+    // long-lived session counted in a month it did not start in. Outside the transaction, like the
+    // publish above: the rotation is committed and a meter must not be able to roll one back.
+    if (rotation.kind === "rotated") {
+      await this.actives.mark(context.projectId, rotation.session.user);
     }
     return this.resolve(rotation, context);
   }

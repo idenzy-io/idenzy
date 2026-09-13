@@ -1,5 +1,6 @@
 import { PasswordBreachedError } from "@idenzy/core/errors";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -40,11 +41,12 @@ export class PasswordSignUpFlow extends AuthFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     private readonly uow: UnitOfWork,
     private readonly hasher: PasswordHasher,
     private readonly breached: BreachedPasswordChecker,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   protected override async verify(

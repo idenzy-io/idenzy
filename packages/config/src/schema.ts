@@ -117,6 +117,19 @@ export const configSchema = z.object({
   SESSION_ABSOLUTE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 90),
 
   /**
+   * How long an active user may sit in a meter's memory before the sketch is written down
+   * (PROJECT.md 5.1).
+   *
+   * It buys write rate with exposure, and both ends are bounded by what the failure looks like.
+   * Longer means fewer writes to the busiest row in the system and more users lost when an
+   * instance is killed; shorter means the opposite, and never anything worse than a bill that
+   * is slightly under. Capped at an hour because past that the loss stops being a rounding
+   * error, and at least ten seconds because below it the flush is the write per sign-in this
+   * exists to avoid.
+   */
+  USAGE_FLUSH_INTERVAL_SECONDS: durationSeconds.min(10).max(3600).default(60),
+
+  /**
    * How long a one-time code and a magic link stay usable (PROJECT.md 4.7). Ten minutes
    * is short enough that a code in a mailbox someone else can read is usually already
    * dead, and long enough to survive a slow mail hop.

@@ -15,11 +15,18 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const hasher = new Argon2idHasher();
@@ -77,13 +84,23 @@ beforeAll(async () => {
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
-  signUp = new PasswordSignUpFlow(sessions, hooks, audit, gate, uow, hasher, new StubChecker());
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, uow, hasher, clock);
+  signUp = new PasswordSignUpFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    new StubChecker(),
+  );
+  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, actives, uow, hasher, clock);
   signUpRefusing = new PasswordSignUpFlow(
     sessions,
     hooks,
     audit,
     gate,
+    actives,
     uow,
     hasher,
     new AlwaysBreachedChecker(),
@@ -145,6 +162,29 @@ describe("signing up", () => {
     sessionOf(await signIn.authenticate(context, { email, password: "a-long-enough-password" }));
     // A sign-in is `session.created`, which is its own event. An account is created once.
     expect(await created()).toBe("1");
+  });
+
+  /**
+   * First-day-free, asserted where a sign-in actually happens (PROJECT.md 5.1).
+   *
+   * The rule lives on the `ActiveUserMeter` base and the meter is inherited by `AuthFlow`, so
+   * this is the test that says both halves are connected: somebody who signs up, signs in and
+   * leaves costs the customer nothing, and the same account costs them one MAU the day it comes
+   * back. Backdating the row is the only way to be that account within one test run.
+   */
+  it("bills nobody on the day they signed up, and bills them when they return", async () => {
+    const email = "metered@a.test";
+    const before = actives.marked.length;
+    sessionOf(await signUp.authenticate(context, { email, password: "a-long-enough-password" }));
+    sessionOf(await signIn.authenticate(context, { email, password: "a-long-enough-password" }));
+    expect(actives.marked).toHaveLength(before);
+
+    await harness.owner.query(
+      "UPDATE users SET created_at = now() - interval '2 days' WHERE email = $1",
+      [email],
+    );
+    sessionOf(await signIn.authenticate(context, { email, password: "a-long-enough-password" }));
+    expect(actives.marked).toHaveLength(before + 1);
   });
 
   it("stores an Argon2id hash and never the password", async () => {

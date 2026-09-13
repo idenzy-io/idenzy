@@ -25,7 +25,13 @@ import { PasswordResetService } from "../dist/password/password-reset-service.js
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -33,6 +39,7 @@ const RESET_PAGE = "https://app.test/reset";
 const VERIFY_PAGE = "https://app.test/verify";
 const CHANGE_PAGE = "https://app.test/email";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const hasher = new Argon2idHasher();
@@ -104,8 +111,17 @@ beforeAll(async () => {
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
-  signUp = new PasswordSignUpFlow(sessions, hooks, audit, gate, uow, hasher, new NoBreaches());
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, uow, hasher, clock);
+  signUp = new PasswordSignUpFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    new NoBreaches(),
+  );
+  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, actives, uow, hasher, clock);
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)

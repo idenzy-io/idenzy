@@ -20,6 +20,7 @@ import { PersistenceModule } from "./persistence/persistence.module.js";
 import { RevocationController } from "./revocation/revocation.controller.js";
 import { SessionModule } from "./session/session.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
+import { UsageModule } from "./usage/usage.module.js";
 import { WellKnownController } from "./well-known/well-known.controller.js";
 
 /**
@@ -40,6 +41,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     HttpModule,
     FlowsModule,
     TenancyModule,
+    UsageModule,
     DeliveryModule,
     SessionModule,
     PasswordModule,

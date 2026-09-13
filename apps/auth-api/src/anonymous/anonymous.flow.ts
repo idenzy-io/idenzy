@@ -1,3 +1,4 @@
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -36,9 +37,10 @@ export class AnonymousFlow extends AuthFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     private readonly uow: UnitOfWork,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   protected override verify(context: FlowContext): Promise<AuthenticatedSubject> {

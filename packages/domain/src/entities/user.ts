@@ -94,6 +94,11 @@ export class User {
     );
   }
 
+  /** Read by metering, where an account's own first day is the one that is not billed (5.1). */
+  get createdAt(): Date {
+    return this.state.createdAt;
+  }
+
   isDeleted(): boolean {
     return this.state.deletedAt !== null;
   }

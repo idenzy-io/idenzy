@@ -21,11 +21,18 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { EmailOtpFlow } from "../dist/otp/email-otp.flow.js";
 import { EmailOtpService } from "../dist/otp/email-otp-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const hasher = new Argon2idHasher();
@@ -80,6 +87,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     clock,
     hasher,

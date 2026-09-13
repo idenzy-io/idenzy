@@ -1,5 +1,6 @@
 import { ChallengeInvalidError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -43,12 +44,13 @@ export class MfaVerificationFlow extends AuthFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly factors: MfaFactorRegistry,
     private readonly challenges: MfaChallengeVerifier,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   protected override async verify(

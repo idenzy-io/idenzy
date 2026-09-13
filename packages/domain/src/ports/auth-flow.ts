@@ -1,5 +1,6 @@
 import type { AuthMethod, MfaChallengePurpose, MfaFactorType } from "@idenzy/protocol/enums/auth";
 import type { User } from "../entities/user.js";
+import type { ActiveUserMeter } from "./active-user-meter.js";
 
 export interface AuthenticatedSubject {
   readonly userId: string;
@@ -142,6 +143,7 @@ export abstract class AuthFlow {
     protected readonly hooks: FlowHooks,
     protected readonly audit: FlowAudit,
     protected readonly mfa: MfaGate,
+    protected readonly actives: ActiveUserMeter,
   ) {}
 
   abstract readonly method: AuthMethod;
@@ -170,6 +172,11 @@ export abstract class AuthFlow {
 
     await this.hooks.beforeSignIn(context, subject.userId);
     const session = await this.sessions.issueSession(context, subject);
+    // Inherited for the same reason the audit write is: eight flows sign somebody in today and
+    // the ninth is written by whoever has not read this. A meter each of them has to remember
+    // is a revenue line that silently loses a sign-in method (PROJECT.md 7.3). The user is
+    // already in hand, so this costs no read.
+    await this.actives.mark(context.projectId, session.user);
     await this.audit.record(context, {
       action: "session.created",
       actorId: subject.userId,

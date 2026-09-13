@@ -23,11 +23,18 @@ import { OtpVerification } from "../dist/otp/otp-verification.js";
 import { SmsOtpFlow } from "../dist/otp/sms-otp.flow.js";
 import { SmsOtpService } from "../dist/otp/sms-otp-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "55555555-5555-5555-5555-555555555555";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const hasher = new Argon2idHasher();
@@ -107,10 +114,10 @@ beforeAll(async () => {
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
-  smsFlow = new SmsOtpFlow(sessions, hooks, audit, gate, uow, clock, hasher, encryptor);
+  smsFlow = new SmsOtpFlow(sessions, hooks, audit, gate, actives, uow, clock, hasher, encryptor);
   verification = new OtpVerification(
     uow,
-    new EmailOtpFlow(sessions, hooks, audit, gate, uow, clock, hasher, encryptor),
+    new EmailOtpFlow(sessions, hooks, audit, gate, actives, uow, clock, hasher, encryptor),
     smsFlow,
   );
 
@@ -259,6 +266,7 @@ describe("verifying an sms challenge", () => {
       new NullFlowHooks(),
       new OutboxFlowAudit(uow, clock),
       gate,
+      actives,
       uow,
       clock,
       hasher,

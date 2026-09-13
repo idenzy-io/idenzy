@@ -20,12 +20,19 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
 import { MAGIC_LINK_REDIRECT, MagicLinkService } from "../dist/magic-link/magic-link-service.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const REGISTERED = "https://app.test/auth/finish";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const encryptor = new FieldEncryptor(developmentDataKey("test"));
@@ -81,6 +88,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     clock,
   );

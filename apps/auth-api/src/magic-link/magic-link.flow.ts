@@ -1,4 +1,5 @@
 import { Clock } from "@idenzy/core/time/clock";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import type { FlowAudit, FlowHooks, MfaGate } from "@idenzy/domain/ports/auth-flow";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
@@ -23,9 +24,10 @@ export class MagicLinkFlow extends AuthCodeExchangeFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     uow: UnitOfWork,
     clock: Clock,
   ) {
-    super(sessions, hooks, audit, mfa, uow, clock);
+    super(sessions, hooks, audit, mfa, actives, uow, clock);
   }
 }

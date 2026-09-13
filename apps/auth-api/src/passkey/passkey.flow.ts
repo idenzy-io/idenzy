@@ -6,6 +6,7 @@ import {
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { hashToken, safeCompareHex } from "@idenzy/crypto/tokens/random";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -55,12 +56,13 @@ export class PasskeyFlow extends AuthFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly ceremony: PasskeyCeremony,
     private readonly relyingParties: RelyingPartyResolver,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   protected override async verify(

@@ -41,7 +41,13 @@ import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
 import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import type { SessionPrincipal } from "../dist/session/session.guard.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -49,6 +55,7 @@ const RP_ID = "app.example.test";
 const ORIGIN = "https://app.example.test";
 const config = testConfig();
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const encryptor = new FieldEncryptor(developmentDataKey(config.get("CELL_CODE")));
 
@@ -158,6 +165,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     new Argon2idHasher(),
     new NoBreaches(),
@@ -167,6 +175,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     new Argon2idHasher(),
     clock,
@@ -184,6 +193,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     clock,
     registry,

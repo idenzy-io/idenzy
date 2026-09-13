@@ -3,6 +3,7 @@ import { InvalidCredentialsError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import type { User } from "@idenzy/domain/entities/user";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
   type AuthenticatedSubject,
   AuthFlow,
@@ -41,11 +42,12 @@ export class PasswordSignInFlow extends AuthFlow {
     @Inject(FLOW_HOOKS) hooks: FlowHooks,
     @Inject(FLOW_AUDIT) audit: FlowAudit,
     @Inject(MFA_GATE) mfa: MfaGate,
+    actives: ActiveUserMeter,
     private readonly uow: UnitOfWork,
     private readonly hasher: PasswordHasher,
     private readonly clock: Clock,
   ) {
-    super(sessions, hooks, audit, mfa);
+    super(sessions, hooks, audit, mfa, actives);
   }
 
   protected override verify(

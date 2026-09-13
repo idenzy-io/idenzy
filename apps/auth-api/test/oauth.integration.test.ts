@@ -35,12 +35,19 @@ import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
 import { OAuthService } from "../dist/oauth/oauth-service.js";
 import { ProviderRegistry } from "../dist/oauth/provider-registry.js";
 import { SessionService } from "../dist/session/session-service.js";
-import { claimTemplates, testConfig, testMfaGate, testRevocations } from "./fixtures.js";
+import {
+  claimTemplates,
+  testActives,
+  testConfig,
+  testMfaGate,
+  testRevocations,
+} from "./fixtures.js";
 
 const harness = new PostgresHarness();
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const REGISTERED = "https://app.test/auth/social";
 const clock = new SystemClock();
+const actives = testActives(clock);
 const revocations = testRevocations(clock);
 const config = testConfig();
 const encryptor = new FieldEncryptor(developmentDataKey("test"));
@@ -167,6 +174,7 @@ beforeAll(async () => {
     new NullFlowHooks(),
     new OutboxFlowAudit(uow, clock),
     gate,
+    actives,
     uow,
     clock,
   );

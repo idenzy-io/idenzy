@@ -4,6 +4,7 @@ import { Logger } from "@idenzy/core/logging/logger";
 import type { Clock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
+import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 // From `dist`, like every other app test: Vitest transforms with Rolldown, which does not
 // apply the decorator semantics NestJS needs, and a class imported from `src` here would be
@@ -149,4 +150,30 @@ export function testMfaGate(uow: UnitOfWork, clock: Clock, config: AppConfig): M
  */
 export function claimTemplates(uow: UnitOfWork, clock: Clock): ClaimTemplateService {
   return new ClaimTemplateService(uow, clock);
+}
+
+/**
+ * The meter every `AuthFlow` now inherits, recording instead of writing.
+ *
+ * The rules it applies are the real ones — this subclasses the same base production does — so a
+ * test that signs somebody in on the day they were created sees an empty list, which is what
+ * PROJECT.md 5.1 promises. What it substitutes is only the destination, because a flow test has
+ * no business asserting on a `bytea` column.
+ */
+export class RecordingActiveUserMeter extends ActiveUserMeter {
+  readonly marked: { projectId: string; userId: string; at: Date }[] = [];
+
+  // biome-ignore lint/complexity/noUselessConstructor: it widens the abstract base's protected constructor to public, which is what lets a test build one.
+  constructor(clock: Clock) {
+    super(clock);
+  }
+
+  protected override record(projectId: string, userId: string, at: Date): Promise<void> {
+    this.marked.push({ projectId, userId, at });
+    return Promise.resolve();
+  }
+}
+
+export function testActives(clock: Clock): RecordingActiveUserMeter {
+  return new RecordingActiveUserMeter(clock);
 }

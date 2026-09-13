@@ -49,8 +49,7 @@ function period(part: Partial<UsagePeriod> = {}): UsagePeriod {
     mau: [400, 900],
     emails: [100, 150],
     smsMessages: [10, 20],
-    smsSegments: [12, 22],
-    smsCostCents: [25, 46],
+    smsVendorCostCents: [25, 46],
     customDomains: 0,
     ownDomain: false,
     byoEmail: false,
@@ -123,13 +122,11 @@ describe("the bill", () => {
       period({ mau: [FREE_MAU + 2], emails: [10], customDomains: 1 }),
     );
     expect(totalCents).toBe(sum(lines.map((line) => line.cents ?? 0)));
-    expect(totalCents).toBe(1 + 1 + 500 + 71);
+    expect(totalCents).toBe(1 + 1 + 500 + 89);
   });
 
   it("tells four kinds of nothing apart", () => {
-    const quiet = billFor(
-      period({ smsMessages: zeros(2), smsSegments: zeros(2), smsCostCents: zeros(2) }),
-    );
+    const quiet = billFor(period({ smsMessages: zeros(2), smsVendorCostCents: zeros(2) }));
     expect(lineOf(quiet, "mau")?.state).toBe("allowance");
     expect(lineOf(quiet, "sms")?.state).toBe("no_usage");
     expect(lineOf(quiet, "logging")?.state).toBe("unmetered");
@@ -143,11 +140,15 @@ describe("the bill", () => {
     expect(line?.note).toBe("Charged by Idenzy. Twilio bills you separately.");
   });
 
-  it("charges what the routing table priced each segment at, and counts segments", () => {
+  /*
+   * Messages, not segments, because segments are not metered: `usage_daily` counts messages and
+   * what they cost. The cost it records is the carrier's, so the charge adds the published margin.
+   */
+  it("counts messages and charges the carrier's price plus the margin", () => {
     const line = lineOf(billFor(period()), "sms");
-    expect(line?.cents).toBe(71);
-    expect(line && quantityWords(line)).toBe("34 segments");
-    expect(line?.detail).toBe("30 messages");
+    expect(line?.cents).toBe(89);
+    expect(line && quantityWords(line)).toBe("30 messages");
+    expect(line?.detail).toBe("Priced by segment at the destination's rate");
   });
 
   it("carries logging as unmetered rather than as a zero", () => {
@@ -171,8 +172,7 @@ describe("where the month lands", () => {
     mau: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 9500],
     emails: [100, 100, 100, 100, 100, 100, 100, 100, 100, 50],
     smsMessages: zeros(10),
-    smsSegments: zeros(10),
-    smsCostCents: zeros(10),
+    smsVendorCostCents: zeros(10),
     customDomains: 1,
     ownDomain: true,
   });
@@ -232,8 +232,7 @@ describe("the month before", () => {
       mau: Array.from({ length: 31 }, (_, index) => (index + 1) * 100),
       emails: Array.from({ length: 31 }, () => 100),
       smsMessages: zeros(31),
-      smsSegments: zeros(31),
-      smsCostCents: zeros(31),
+      smsVendorCostCents: zeros(31),
     });
     const point = periodAt(august, new Date("2026-08-11T12:00:00.000Z"));
     expect(sum(point.emails)).toBe(1050);
@@ -244,15 +243,16 @@ describe("the month before", () => {
 describe("the activity windows", () => {
   const anchor = new Date("2026-09-11T14:00:00.000Z");
 
-  it("ends on the bucket the figures run into", () => {
+  /* A bucket is a day and only a day: `usage_daily` rolls up daily, so an hourly range could
+     only have been drawn from a curve nobody metered. */
+  it("ends on the day the figures run into", () => {
     const week = usageWindow("7d", anchor);
-    expect(week.granularity).toBe("day");
     expect(week.buckets).toHaveLength(7);
     expect(new Date(week.buckets.at(-1) ?? 0).toISOString()).toBe("2026-09-11T00:00:00.000Z");
 
-    const day = usageWindow("1d", anchor);
-    expect(day.buckets).toHaveLength(24);
-    expect(new Date(day.buckets.at(-1) ?? 0).toISOString()).toBe("2026-09-11T13:00:00.000Z");
+    const month = usageWindow("30d", anchor);
+    expect(month.buckets).toHaveLength(30);
+    expect(new Date(month.buckets[0] ?? 0).toISOString()).toBe("2026-08-13T00:00:00.000Z");
   });
 
   it("compares with the same dates a month before, not the window before", () => {
@@ -263,7 +263,6 @@ describe("the activity windows", () => {
   it("names a window by its dates", () => {
     expect(windowLabel(usageWindow("7d", anchor))).toBe("Sep 5 to 11");
     expect(windowLabel(usageWindow("30d", anchor))).toBe("Aug 13 to Sep 11");
-    expect(windowLabel(usageWindow("1d", anchor))).toBe("24 hours to Sep 11, 14:00");
   });
 
   it("draws no line for a meter that is not metered", () => {

@@ -62,6 +62,11 @@ const now = useNow({ interval: 60_000 });
 const project = computed(() => projects.current.id);
 const periods = computed(() => store.periodsFor(project.value));
 
+/* Read on open and whenever the project changes, like every screen backed by the management API.
+   The store no longer fills itself: it has an organisation in its path now, so there is nothing
+   it could have read before a project was chosen. */
+watch(project, (id) => void store.load(id), { immediate: true });
+
 /*
  * The period, in the URL. The open month is the page's own address and carries no query.
  */
@@ -129,7 +134,7 @@ const comparison = computed(() => {
     finalMau: totalsOf(prior).mau,
     words: closed.value
       ? `vs ${priorMonth}`
-      : `vs ${bucketTitle(monthBefore(asOf.value).getTime(), "day")}`,
+      : `vs ${bucketTitle(monthBefore(asOf.value).getTime())}`,
     finalWords: `vs all of ${priorMonth}`,
   };
 });
@@ -171,18 +176,15 @@ const projectedMauInfo = computed(
 /*
  * When the figures are from, and what to do when they could not be read.
  */
-const updatedHour = computed(() =>
-  store.updatedAt === null ? null : bucketTick(Date.parse(store.updatedAt), "hour"),
-);
 const updatedDay = computed(() =>
-  store.updatedAt === null ? "" : bucketTitle(Date.parse(store.updatedAt), "day"),
+  store.updatedAt === null ? "" : bucketTitle(Date.parse(store.updatedAt)),
 );
-const closedAt = computed(() => bucketTitle(Date.parse(period.value.end), "day"));
+const closedAt = computed(() => bucketTitle(Date.parse(period.value.end)));
 
 const staleWords = computed(() =>
   store.updatedAt === null
     ? "Nothing has been read yet, so the figures are unknown rather than nought."
-    : `The figures below are as of ${updatedDay.value}, ${updatedHour.value} UTC.`,
+    : `The figures below are as of ${updatedDay.value} UTC, and the day in progress is still moving.`,
 );
 
 /*
@@ -194,8 +196,9 @@ const METRIC_OPTIONS: readonly MetricOption[] = CHART_METERS.map((entry) => ({
   description: entry.description,
 }));
 
+/* No 24-hour range: `usage_daily` is a daily rollup, so an hourly reading would have to be
+   invented (see `usageWindow`). Hour-by-hour activity waits on the analytics store. */
 const RANGES: readonly SegmentedOption[] = [
-  { value: "1d", label: "1d", title: "The last 24 hours, by the hour" },
   { value: "7d", label: "7d", title: "The last 7 days" },
   { value: "30d", label: "30d", title: "The last 30 days" },
 ];
@@ -222,10 +225,10 @@ const chart = computed(() => {
     },
   ];
   return {
-    categories: current.buckets.map((bucket) => bucketTick(bucket, current.granularity)),
+    categories: current.buckets.map((bucket) => bucketTick(bucket)),
     titles: current.buckets.map(
       (bucket, index) =>
-        `${bucketTitle(bucket, current.granularity)}, against ${bucketTitle(previous.buckets[index] ?? bucket, previous.granularity)}`,
+        `${bucketTitle(bucket)}, against ${bucketTitle(previous.buckets[index] ?? bucket)}`,
     ),
     series,
   };
@@ -233,9 +236,7 @@ const chart = computed(() => {
 
 const activityWords = computed(() => {
   const of = closed.value ? ` of ${month.value}` : "";
-  return range.value === "1d"
-    ? `The last 24 hours${of} by the hour, against the same hours a month before. UTC.`
-    : `The last ${range.value === "7d" ? 7 : 30} days${of}, against the same dates a month before. UTC.`;
+  return `The last ${range.value === "7d" ? 7 : 30} days${of}, against the same dates a month before. UTC.`;
 });
 
 /*
@@ -369,12 +370,11 @@ function exportCsv() {
 
         <Statistic
           v-if="!closed"
-          :description="updatedDay ? `${updatedDay}, metered hourly` : 'Not read yet'"
+          :description="updatedDay ? 'Metered by UTC day' : 'Not read yet'"
           :loading="loading"
-          :value="updatedHour"
-          info="Metered hourly, so the hour in progress is not in these figures yet."
-          label="Data updated"
-          unit="UTC"
+          :value="updatedDay || '—'"
+          info="Counted by UTC day and written down every minute or so, so the day in progress is still moving."
+          label="Figures as of"
         />
         <Statistic
           v-else
@@ -442,7 +442,7 @@ function exportCsv() {
       <MetricCard
         v-model="meter"
         :categories="chart.categories"
-        :category-label="range === '1d' ? 'Hour' : 'Day'"
+        category-label="Day"
         :loading="loading"
         :options="METRIC_OPTIONS"
         :series="chart.series"
@@ -455,8 +455,9 @@ function exportCsv() {
       </MetricCard>
 
       <p class="m-0 text-xs text-ink/45">
-        {{ closed ? "Times are UTC." : "Times are UTC and the last hour is not in yet." }}
-        These figures are sample data until the management API reports this project's usage.
+        {{ closed ? "Days are UTC." : "Days are UTC and the day in progress is still moving." }}
+        Which sending domain carried an email and whose account carried an SMS are not metered, so
+        the email rate and the SMS owner below assume our shared domain and our routing.
       </p>
     </section>
 

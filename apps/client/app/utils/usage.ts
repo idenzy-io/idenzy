@@ -62,6 +62,20 @@ export function domainsCents(customDomains: number): number {
   return customDomains * DOMAIN_CENTS;
 }
 
+/** On top of what the carrier charged, which is the published SMS price (PROJECT.md 5.1). */
+export const SMS_MARGIN = 0.25;
+
+/**
+ * What an SMS costs the customer: what it cost us, plus the margin.
+ *
+ * The meter records the provider's own charge and nothing else, which is the honest thing for it
+ * to store — a margin is a pricing decision and pricing decisions change, while what Twilio
+ * invoiced in March does not.
+ */
+export function smsCents(vendorCostCents: number): number {
+  return Math.round(vendorCostCents * (1 + SMS_MARGIN));
+}
+
 /*
  * What a meter means. Written once, here, and read by every screen that counts it.
  */
@@ -122,9 +136,9 @@ export const METER_DEFINITIONS: readonly MeterDefinition[] = [
   {
     id: "sms",
     label: "SMS",
-    badge: "Per segment",
+    badge: "Per message",
     description:
-      "Billed per segment at the destination's rate, which the routing table on SMS providers publishes. A message past 160 plain characters, or 70 with a single character outside the GSM set, is more than one segment. Through your own Twilio or Vonage account, Idenzy charges nothing and the vendor bills you.",
+      "Priced by segment at the destination's rate, which the routing table on SMS providers publishes, plus 25%. A message past 160 plain characters, or 70 with a single character outside the GSM set, costs more than one segment. The line item counts messages, because that is what is metered; the segments are in the price and not in the quantity. Through your own Twilio or Vonage account, Idenzy charges nothing and the vendor bills you.",
   },
   {
     id: "logging",
@@ -137,7 +151,7 @@ export const METER_DEFINITIONS: readonly MeterDefinition[] = [
     id: "timing",
     label: "Timing and rounding",
     badge: "UTC",
-    description: `Metered hourly, so the last hour is not in the figures yet. A month closes at 00:00 UTC on the 1st and its invoice is issued the next day. ${ROUNDING_RULE}`,
+    description: `Metered by UTC day and written down every minute or so, so the day in progress is still moving. A month closes at 00:00 UTC on the 1st, is totalled a few hours later once every meter has flushed, and its invoice follows. ${ROUNDING_RULE}`,
   },
 ];
 
@@ -160,9 +174,11 @@ export interface UsagePeriod {
   emails: number[];
   smsMessages: number[];
   /** What SMS is billed by: a long or non-GSM message is more than one. */
-  smsSegments: number[];
-  /** What the segments cost at the destinations' own rates, in cents. */
-  smsCostCents: number[];
+  /**
+   * What the providers charged us for them, in cents. Not what the customer pays: the published
+   * price is this plus a margin (PROJECT.md 5.1), and `smsCents` is where that is applied.
+   */
+  smsVendorCostCents: number[];
   /** Sending domains of the customer's own on the project this month, each billed for it. */
   customDomains: number;
   /** Mail left from a domain of theirs, at the lower rate. */
@@ -177,8 +193,7 @@ export interface UsageTotals {
   mau: number;
   emails: number;
   smsMessages: number;
-  smsSegments: number;
-  smsCostCents: number;
+  smsVendorCostCents: number;
 }
 
 export function sum(values: readonly number[]): number {
@@ -195,8 +210,7 @@ export function totalsOf(period: UsagePeriod): UsageTotals {
     mau: latest(period.mau),
     emails: sum(period.emails),
     smsMessages: sum(period.smsMessages),
-    smsSegments: sum(period.smsSegments),
-    smsCostCents: sum(period.smsCostCents),
+    smsVendorCostCents: sum(period.smsVendorCostCents),
   };
 }
 
@@ -257,8 +271,7 @@ export function periodAt(period: UsagePeriod, at: Date): UsagePeriod {
     mau,
     emails: counter(period.emails),
     smsMessages: counter(period.smsMessages),
-    smsSegments: counter(period.smsSegments),
-    smsCostCents: counter(period.smsCostCents),
+    smsVendorCostCents: counter(period.smsVendorCostCents),
   };
 }
 
@@ -373,14 +386,23 @@ function domainsLine(period: UsagePeriod): BillLine[] {
   ];
 }
 
+/**
+ * Messages and not segments, which is a change the meters forced.
+ *
+ * A segment is what a carrier bills by — the 161st plain character costs a second one, and one
+ * curly apostrophe drops a message from 160 characters to 70 — and `usage_daily` counts messages
+ * and the money they cost, never the segments in between. The money is still right, because the
+ * cost recorded against each send was priced by segment where it was reserved. The quantity was
+ * not, so the column now says what is actually counted rather than a number nobody measures.
+ */
 function smsLine(period: UsagePeriod, totals: UsageTotals): BillLine {
   const vendor = period.smsVendor === null ? null : byoVendorInfo(period.smsVendor);
   const shared = {
     id: "sms" as const,
     label: "SMS",
-    quantity: totals.smsSegments,
-    unit: plural(totals.smsSegments, "segment", "segments"),
-    detail: `${count(totals.smsMessages)} ${plural(totals.smsMessages, "message", "messages")}`,
+    quantity: totals.smsMessages,
+    unit: plural(totals.smsMessages, "message", "messages"),
+    detail: "Priced by segment at the destination's rate",
   };
   if (vendor) {
     return {
@@ -394,11 +416,11 @@ function smsLine(period: UsagePeriod, totals: UsageTotals): BillLine {
   }
   return {
     ...shared,
-    rate: "The destination's rate per segment",
-    cents: totals.smsCostCents,
+    rate: `The destination's rate plus ${Math.round(SMS_MARGIN * 100)}%`,
+    cents: smsCents(totals.smsVendorCostCents),
     owner: "Idenzy",
-    state: totals.smsSegments === 0 ? "no_usage" : "charged",
-    note: totals.smsSegments === 0 ? "Nothing sent" : "",
+    state: totals.smsMessages === 0 ? "no_usage" : "charged",
+    note: totals.smsMessages === 0 ? "Nothing sent" : "",
   };
 }
 
@@ -490,8 +512,7 @@ export function projectTotals(period: UsagePeriod, asOf: Date): UsageTotals {
     mau: Math.round(so.mau + ahead(additions)),
     emails: Math.round(so.emails + ahead(period.emails)),
     smsMessages: Math.round(so.smsMessages + ahead(period.smsMessages)),
-    smsSegments: Math.round(so.smsSegments + ahead(period.smsSegments)),
-    smsCostCents: Math.round(so.smsCostCents + ahead(period.smsCostCents)),
+    smsVendorCostCents: Math.round(so.smsVendorCostCents + ahead(period.smsVendorCostCents)),
   };
 }
 
@@ -504,26 +525,30 @@ export function projectBill(period: UsagePeriod, asOf: Date): Bill {
  * The activity chart.
  */
 
-export type UsageRange = "1d" | "7d" | "30d";
+/**
+ * A day is the smallest bucket there is, so there is no 24-hour range.
+ *
+ * `usage_daily` is a daily rollup and deliberately so: it is the shape a bill is raised from, and
+ * an hourly one would be twenty-four times the rows of a table kept for six years. An hourly
+ * reading would therefore have to be invented from a curve, which is what this screen did while
+ * its figures were fixtures — and a shape nobody metered is exactly the number a customer
+ * reconciles against and cannot find. Hour-by-hour activity is a question for the analytics store
+ * (todo.md 3.2), which is where metrics go and where a bill does not.
+ */
+export type UsageRange = "7d" | "30d";
 
 export interface UsageWindow {
-  granularity: "hour" | "day";
-  /** Bucket starts, oldest first, in epoch milliseconds. */
+  /** Bucket starts, oldest first, in epoch milliseconds. Always days. */
   buckets: number[];
 }
 
-const RANGE_BUCKETS: Record<UsageRange, number> = { "1d": 24, "7d": 7, "30d": 30 };
+const RANGE_BUCKETS: Record<UsageRange, number> = { "7d": 7, "30d": 30 };
 
 /** The buckets that end at `anchor`, which is exclusive: the instant the figures run to. */
 export function usageWindow(range: UsageRange, anchor: Date): UsageWindow {
-  const granularity = range === "1d" ? "hour" : "day";
-  const step = granularity === "hour" ? HOUR : DAY;
-  const last = Math.floor((anchor.getTime() - 1) / step) * step;
+  const last = Math.floor((anchor.getTime() - 1) / DAY) * DAY;
   const length = RANGE_BUCKETS[range];
-  return {
-    granularity,
-    buckets: Array.from({ length }, (_, index) => last - (length - 1 - index) * step),
-  };
+  return { buckets: Array.from({ length }, (_, index) => last - (length - 1 - index) * DAY) };
 }
 
 /**
@@ -536,28 +561,19 @@ export function usageWindows(range: UsageRange, anchor: Date) {
 }
 
 const TICK_DAY = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
-const TICK_HOUR = new Intl.DateTimeFormat("en", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-  timeZone: "UTC",
-});
-
-export function bucketTick(bucket: number, granularity: UsageWindow["granularity"]): string {
-  return (granularity === "hour" ? TICK_HOUR : TICK_DAY).format(bucket);
+export function bucketTick(bucket: number): string {
+  return TICK_DAY.format(bucket);
 }
 
-/** "Sep 11", or "Sep 11, 14:00" for an hour. */
-export function bucketTitle(bucket: number, granularity: UsageWindow["granularity"]): string {
-  const day = TICK_DAY.format(bucket);
-  return granularity === "hour" ? `${day}, ${TICK_HOUR.format(bucket)}` : day;
+/** "Sep 11". */
+export function bucketTitle(bucket: number): string {
+  return TICK_DAY.format(bucket);
 }
 
-/** "Sep 5 to 11", "Aug 13 to Sep 11", "24 hours to Sep 11, 15:00". */
+/** "Sep 5 to 11", "Aug 13 to Sep 11". */
 export function windowLabel(window: UsageWindow): string {
   const first = window.buckets[0] ?? 0;
   const last = window.buckets.at(-1) ?? first;
-  if (window.granularity === "hour") return `24 hours to ${bucketTitle(last + HOUR, "hour")}`;
   const from = TICK_DAY.format(first);
   const to = TICK_DAY.format(last);
   const sameMonth = new Date(first).getUTCMonth() === new Date(last).getUTCMonth();
@@ -587,8 +603,9 @@ export const CHART_METERS: readonly ChartMeter[] = [
   },
   {
     id: "sms",
-    label: "SMS segments",
-    description: "Segments sent, which is the unit an SMS is billed by.",
+    label: "SMS messages",
+    description:
+      "Messages sent. What each one costs is priced by segment where it was sent, but the segments themselves are not counted.",
   },
 ];
 

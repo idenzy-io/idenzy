@@ -58,7 +58,7 @@ export class ClickHouseClient {
   }
 
   /**
-   * Appends rows for one project. **A batch, and never one row.**
+   * Appends a batch of rows. **A batch, and never one row.**
    *
    * This is the single most important thing to get right about writing to ClickHouse, and the
    * signature is shaped to make the mistake awkward rather than to document it: every INSERT
@@ -66,23 +66,23 @@ export class ClickHouseClient {
    * faster than merges can consume them until the server refuses with `TOO_MANY_PARTS`. It is not
    * a slow path that degrades — it is a working system that stops accepting writes under load.
    *
-   * Nothing calls this from a request path. `AnalyticsIngestQueue` is what stands between the two,
-   * and the batching is its whole reason for existing.
+   * **The rows carry their own `project_id` and this does not stamp it**, which is only safe
+   * because of who calls it. A batch drained from the ingest queue holds rows for many projects at
+   * once, so the identity that writes it cannot be tenant-scoped; it is the pipeline's, it holds
+   * INSERT and no SELECT, and the tenant was stamped at enqueue where a request knew it. A row
+   * policy would not have helped here either way — it filters reads and does not constrain writes
+   * (ADR-0013).
    *
-   * The tenant is stamped onto every row here rather than trusted from the caller, so a row cannot
-   * be written under a project the writer was not scoped to. The row policy would refuse it
-   * anyway — a policy applies to INSERT as well as SELECT — but failing at the write is a bug
-   * report and failing here is a line of code that cannot express the mistake.
+   * Nothing calls this from a request path. `AnalyticsIngestQueue` is what stands between the two.
    */
-  async insert(
-    projectId: string,
+  async insertBatch(
     table: string,
     rows: readonly Readonly<Record<string, unknown>>[],
   ): Promise<void> {
     if (rows.length === 0) return;
-    const payload = rows.map((row) => JSON.stringify({ ...row, project_id: projectId })).join("\n");
+    const payload = rows.map((row) => JSON.stringify(row)).join("\n");
     await this.send(
-      projectId,
+      null,
       `INSERT INTO ${this.settings.database}.${table} FORMAT JSONEachRow\n${payload}`,
     );
   }

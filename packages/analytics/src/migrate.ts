@@ -4,8 +4,10 @@ import { ANALYTICS_TABLES } from "./schema/tables.js";
 
 export interface MigrateSettings {
   readonly database: string;
-  /** The runtime identity every row policy is attached to. */
+  /** The reading identity every row policy is attached to. Holds SELECT and no INSERT. */
   readonly appUser: string;
+  /** The pipeline's identity. Holds INSERT and no SELECT, and carries no policy. */
+  readonly ingestUser: string;
 }
 
 /** What one run created, for the log line that says whether anything changed. */
@@ -32,11 +34,12 @@ export async function migrateAnalytics(
   settings: MigrateSettings,
 ): Promise<MigrationResult> {
   await client.execute(`CREATE DATABASE IF NOT EXISTS ${settings.database}`);
-  // The runtime user's access travels with the database rather than being a provisioning step
-  // somebody repeats. Forgetting it is the Postgres trap in the other direction: there a missing
-  // grant makes a table unreadable, which is loud; here a missing *policy* makes it readable by
-  // everyone, which is not — so the two statements that matter are issued together, below.
-  await client.execute(`GRANT SELECT, INSERT ON ${settings.database}.* TO ${settings.appUser}`);
+  // Access travels with the database rather than being a provisioning step somebody repeats, and
+  // it is one verb each. The reader cannot write, because a row policy filters reads and does not
+  // constrain writes — a tenant-scoped identity holding INSERT could plant a row under another
+  // project and the policy would then serve it to them faithfully. The writer cannot read.
+  await client.execute(`GRANT SELECT ON ${settings.database}.* TO ${settings.appUser}`);
+  await client.execute(`GRANT INSERT ON ${settings.database}.* TO ${settings.ingestUser}`);
 
   for (const table of ANALYTICS_TABLES) {
     await client.execute(table.createTable(settings.database));

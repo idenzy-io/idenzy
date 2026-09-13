@@ -18,7 +18,19 @@ CREATE USER IF NOT EXISTS idenzy_app IDENTIFIED WITH plaintext_password BY 'iden
 -- Schema owner. Runs migrations, never serves requests.
 CREATE USER IF NOT EXISTS idenzy_owner IDENTIFIED WITH plaintext_password BY 'idenzy';
 
-GRANT SELECT, INSERT ON idenzy.* TO idenzy_app;
+-- The ingest identity. It writes and cannot read: a batch drained from the queue carries rows for
+-- many projects at once, which no tenant-scoped writer may do, so the pipeline gets an identity of
+-- its own — the same shape the audit and webhook relays have in Postgres, where a cross-tenant
+-- writer goes through a narrow SECURITY DEFINER function rather than through the app role.
+CREATE USER IF NOT EXISTS idenzy_ingest IDENTIFIED WITH plaintext_password BY 'idenzy';
+
+-- SELECT and no INSERT, which is the half that is not obvious and is verified in
+-- `tenant-isolation.integration.test.ts`. A ClickHouse row policy filters reads and does **not**
+-- constrain writes the way a Postgres `WITH CHECK` clause does, so a tenant-scoped identity holding
+-- INSERT could plant a row under somebody else's project and the policy would then faithfully serve
+-- it to them. Taking the verb away is what closes that; the pipeline writes instead (ADR-0013).
+GRANT SELECT ON idenzy.* TO idenzy_app;
+GRANT INSERT ON idenzy.* TO idenzy_ingest;
 
 -- The owner runs DDL and nothing else, which is why this is a list rather than `ALL`: no ACCESS
 -- MANAGEMENT, so a migration cannot create a user or detach a row policy from one. `WITH GRANT

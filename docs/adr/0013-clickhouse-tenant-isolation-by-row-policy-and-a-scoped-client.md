@@ -58,10 +58,33 @@ threw on an unset tenant would turn a forgotten scope into a 500 that reads like
 the nil uuid matches no project's rows and gives the same answer Postgres gives when
 `app.project_id` was never set.
 
-`idenzy_app` holds `SELECT` and `INSERT` on the analytics database and nothing else — no
-`ACCESS MANAGEMENT`, no DDL — so the policy is not something the runtime identity can detach.
-`idenzy_owner` runs DDL and is the only identity that reads across tenants, exactly as it is in
-Postgres.
+### The difference from RLS that matters: a policy filters reads and does not constrain writes
+
+Postgres RLS policies carry `USING` *and* `WITH CHECK`, so a tenant-scoped connection cannot write
+a row it would not be allowed to read. **ClickHouse row policies have no equivalent.** Verified,
+because it is the kind of thing that reads as obvious in both directions: a client scoped to
+project A inserted a row carrying project B's id, the server accepted it, and B then read it back.
+
+That is not a flaw in the mechanism, it is the boundary of it — and it decides the privilege split:
+
+- `idenzy_app` holds **`SELECT` and no `INSERT`**. It is the identity every row policy is attached
+  to, and taking the write verb away is what closes the hole above. A reader that cannot write
+  cannot plant a row under somebody else's project for the policy to serve faithfully later.
+- `idenzy_ingest` holds **`INSERT` and no `SELECT`**, and carries no policy. A batch drained from
+  the ingest queue holds rows for many projects at once, which no tenant-scoped writer may do, so
+  the pipeline gets an identity of its own — the same shape the audit and webhook relays already
+  have in Postgres, where a cross-tenant writer goes through a narrow `SECURITY DEFINER` function
+  rather than through the app role. It can add rows and can read nothing, which is a small blast
+  radius for a credential that is inherently cross-tenant.
+- `idenzy_owner` runs DDL and is the only identity that reads across tenants, as in Postgres.
+
+None of the three holds `ACCESS MANAGEMENT`, so the policy is not something a runtime identity can
+detach.
+
+**What binds a written row to its tenant is therefore the producer, not the database.** The queue
+entry is stamped where a request knows its `TenantContext`, and the write path from there is
+append-only and blind. That is a weaker guarantee than Postgres gives on the write side and it is
+stated rather than glossed: the store's isolation is a read-side guarantee.
 
 ### What was verified, rather than assumed
 
@@ -75,8 +98,12 @@ written, because a mechanism nobody has executed is a design note and not a deci
 | Scoped to B | B's rows only |
 | Scoped to A, query explicitly asks for B's rows | `0` — the policy ANDs and cannot be widened |
 | A setting that is not a uuid | parse error, never a wide read |
-| Runtime user drops its own row policy | `ACCESS_DENIED` |
-| Runtime user creates a table | `ACCESS_DENIED` |
+| Reading user drops its own row policy | `ACCESS_DENIED` |
+| Reading user creates a table | `ACCESS_DENIED` |
+| **Scoped client inserts a row for another project** | **accepted — a policy does not constrain writes** |
+| Reading user attempts any insert | `ACCESS_DENIED`, which is what closes the line above |
+| Ingest user inserts one batch spanning many projects | accepted, which is the point of it |
+| Ingest user reads anything at all | `ACCESS_DENIED` |
 | Owner reads across tenants | all rows, which migrations need |
 
 ## Consequences
@@ -92,6 +119,9 @@ written, because a mechanism nobody has executed is a design note and not a deci
   too. Neither RLS nor a row policy defends against a *wrong* tenant id; both defend against a
   *missing* predicate, which is the failure that actually happens. The value comes from the same
   `TenantContext` the Postgres side already resolves, so there is one place it is decided.
+- **Reads and writes are different identities, and code that wants both is doing something wrong.**
+  A service that needs to read analytics takes the scoped client; the ingest worker takes the
+  writing one. Nothing is given both, so "this query could have inserted" is not a review question.
 - **Residency falls out of the topology rather than out of a predicate.** A cell is an independent
   stack (PROJECT.md 4.13.5), so an EU project's events go to the EU cell's ClickHouse and a
   cross-cell query is not a thing that exists to be forgotten.

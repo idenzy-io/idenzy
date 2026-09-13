@@ -19,11 +19,13 @@ import { ANALYTICS_TABLES } from "../src/schema/tables.js";
 const harness = new ClickHouseHarness();
 const DATABASE = "idenzy_analytics";
 const APP_USER = "idenzy_app";
+const INGEST_USER = "idenzy_ingest";
 const A = "11111111-1111-1111-1111-111111111111";
 const B = "22222222-2222-2222-2222-222222222222";
 
 let owner: ClickHouseClient;
 let app: ClickHouseClient;
+let ingest: ClickHouseClient;
 
 interface EventRow {
   readonly project_id: string;
@@ -49,14 +51,21 @@ beforeAll(async () => {
   const shared = { database: DATABASE, password: "idenzy" };
   owner = new ClickHouseClient({ ...shared, url: harness.url, user: "idenzy_owner" });
   app = new ClickHouseClient({ ...shared, url: harness.url, user: APP_USER });
+  ingest = new ClickHouseClient({ ...shared, url: harness.url, user: INGEST_USER });
 
-  await migrateAnalytics(owner, { database: DATABASE, appUser: APP_USER });
+  await migrateAnalytics(owner, {
+    database: DATABASE,
+    appUser: APP_USER,
+    ingestUser: INGEST_USER,
+  });
 
-  await app.insert(A, "auth_events", [
-    event("2026-03-01 09:00:00.000", "session.created"),
-    event("2026-03-01 10:00:00.000", "user.created"),
+  // One batch, many projects, which is the shape the queue drains and the reason the writer is
+  // not tenant-scoped.
+  await ingest.insertBatch("auth_events", [
+    { ...event("2026-03-01 09:00:00.000", "session.created"), project_id: A },
+    { ...event("2026-03-01 10:00:00.000", "user.created"), project_id: A },
+    { ...event("2026-03-01 09:00:00.000", "session.created"), project_id: B },
   ]);
-  await app.insert(B, "auth_events", [event("2026-03-01 09:00:00.000", "session.created")]);
 }, 180_000);
 
 afterAll(async () => {
@@ -93,19 +102,27 @@ describe("the analytics store's tenant isolation", () => {
     expect((await response.text()).trim()).toBe("0");
   });
 
-  it("stamps the tenant onto a written row rather than trusting the caller", async () => {
-    // The row claims to belong to B and is written by a client scoped to A.
-    await app.insert(A, "auth_events", [
-      { ...event("2026-03-02 09:00:00.000", "session.created"), project_id: B },
-    ]);
-    const mine = await app.query<{ n: string }>(A, {
-      sql: `SELECT count() AS n FROM ${DATABASE}.auth_events WHERE toDate(at) = '2026-03-02'`,
-    });
-    const theirs = await app.query<{ n: string }>(B, {
-      sql: `SELECT count() AS n FROM ${DATABASE}.auth_events WHERE toDate(at) = '2026-03-02'`,
-    });
-    expect(mine[0]?.n).toBe("1");
-    expect(theirs[0]?.n).toBe("0");
+  /**
+   * The finding that decided the privilege split, asserted so it cannot quietly come back.
+   *
+   * A ClickHouse row policy filters reads and — unlike a Postgres `WITH CHECK` clause — does not
+   * constrain writes at all. A reader holding INSERT could therefore plant a row under another
+   * project and the policy would serve it to them faithfully afterwards. Taking the verb away is
+   * the whole mitigation, so this asserts the verb is gone rather than asserting the policy
+   * catches it, which it does not.
+   */
+  it("refuses the reading identity any write at all", async () => {
+    await expect(
+      app.insertBatch("auth_events", [
+        { ...event("2026-03-09 09:00:00.000", "session.created"), project_id: B },
+      ]),
+    ).rejects.toThrow(AnalyticsUnavailableError);
+  });
+
+  it("refuses the writing identity any read at all", async () => {
+    await expect(
+      ingest.query(A, { sql: `SELECT count() FROM ${DATABASE}.auth_events` }),
+    ).rejects.toThrow(AnalyticsUnavailableError);
   });
 
   it("refuses the runtime user the privileges that would undo the policy", async () => {

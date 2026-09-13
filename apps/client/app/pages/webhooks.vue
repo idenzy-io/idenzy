@@ -52,12 +52,27 @@ const now = useNow({ interval: 30_000 });
 const { copy, copied } = useClipboard({ copiedDuring: 1600, legacy: true });
 
 const project = computed(() => projects.current.id);
+
+/* The endpoints and the counters, when the screen opens and whenever the project changes. The
+   deliveries are per endpoint and wait for a selection, below. */
+watch(project, (id) => void store.load(id), { immediate: true });
+
+function reload() {
+  void store.load(project.value);
+}
+
+/** The reader's own membership on this organisation, so a pause they made reads as theirs. */
+const bootstrap = useBootstrapStore();
+const viewerMemberId = computed(
+  () => bootstrap.organisations.find((org) => org.id === projects.currentOrg.id)?.memberId ?? null,
+);
+
 const endpoints = computed(() => store.forProject(project.value));
 const deliveries = computed(() => store.deliveriesFor(project.value));
 const running = WEBHOOK_DELIVERY.running;
 
-/** A week across every endpoint, by outcome. No data rather than nought while nothing runs. */
-const figures = computed(() => deliveryFigures(deliveries.value, now.value));
+/** A week across every endpoint, from the counters rather than from the deliveries on screen. */
+const figures = computed(() => deliveryFigures(store.statsFor(project.value), now.value));
 
 /*
  * Which endpoint is open, in the URL. The first one with a failure, else the first.
@@ -80,6 +95,16 @@ const selectedId = computed<string | null>({
 
 const selected = computed(
   () => endpoints.value.find((entry) => entry.id === selectedId.value) ?? null,
+);
+
+/* One endpoint's deliveries are the expensive read, so they follow the selection rather than
+   loading for every endpoint the moment the screen opens. */
+watch(
+  [project, selectedId],
+  ([id, endpointId]) => {
+    if (endpointId !== null) void store.loadDeliveries(id, endpointId);
+  },
+  { immediate: true },
 );
 
 const ENDPOINT_COLUMNS: readonly RecordColumn[] = [
@@ -173,10 +198,15 @@ function setPaused(endpoint: WebhookEndpoint, paused: boolean) {
   );
 }
 
+/**
+ * Unreachable while `testEvent` is false, which is every deployment today: the route that would
+ * send one does not exist, and a control that queued a delivery nothing sends would be worse than
+ * the one that says why it is off.
+ */
 function sendTest() {
   const target = selected.value;
-  if (!target || !running) return;
-  void whileBusy(`test:${target.id}`, () => store.sendTest(project.value, target.id));
+  if (!target || !WEBHOOK_DELIVERY.testEvent) return;
+  void whileBusy(`test:${target.id}`, () => store.loadDeliveries(project.value, target.id, true));
 }
 
 /*
@@ -327,11 +357,13 @@ function openDetail(id: string) {
 
 async function retryDelivery() {
   const target = detail.value;
-  if (!target || !running) return;
+  if (!target || !WEBHOOK_DELIVERY.replay) return;
   retrying.value = true;
   detailError.value = "";
   try {
-    await store.retry(project.value, target.id);
+    // Unreachable while `replay` is false. Re-reading is what follows the replay once the route
+    // exists, so the attempt it added is on screen.
+    await store.loadDeliveries(project.value, target.endpointId, true);
   } catch {
     detailError.value = "The retry was not sent. The delivery is as it was, so try again.";
   } finally {
@@ -381,21 +413,35 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
       </template>
     </PageHeader>
 
-    <!-- Before anything else: an endpoint list with health beside it would otherwise read
-         as a pipeline that runs. -->
+    <!-- What is not built, said before the list rather than discovered at a disabled button. It no
+         longer says nothing is delivered, because deliveries are what the table below now holds. -->
     <div
-      v-if="!running"
+      v-if="!WEBHOOK_DELIVERY.testEvent || !WEBHOOK_DELIVERY.replay"
       class="flex items-start gap-2.5 rounded-(--idenzy-radius) border border-line bg-surface px-4 py-3"
       role="status"
     >
       <span aria-hidden="true" class="mt-1.5 size-1.5 flex-none rounded-full bg-warning" />
       <p class="m-0 text-sm text-ink">
-        Nothing is delivered yet.
-        <span class="text-ink/60">
-          {{ WEBHOOK_DELIVERY.reason }} Send test event and Retry delivery are unavailable
-          until it runs.
-        </span>
+        Two controls are not built yet.
+        <span class="text-ink/60">{{ WEBHOOK_DELIVERY.reason }}</span>
       </p>
+    </div>
+
+    <!-- A read that failed says so and offers the read again, because an endpoint list that came
+         back empty for the wrong reason reads as a project with no webhooks. -->
+    <div v-if="store.refusal" class="flex flex-col items-start gap-2.5">
+      <InfoNote :text="store.refusal" icon="material-symbols:error-outline" tone="warning" />
+      <v-btn
+        :loading="store.loading"
+        class="text-xs font-medium"
+        color="neutral"
+        prepend-icon="material-symbols:refresh"
+        size="small"
+        variant="outlined"
+        @click="reload()"
+      >
+        Try again
+      </v-btn>
     </div>
 
     <!-- Observed delivery leads, as on the allowed origins screen. While nothing runs every
@@ -461,6 +507,7 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
             :endpoint="endpoint"
             :health="healthOf(deliveries, endpoint.id)"
             :selected="endpoint.id === selectedId"
+            :viewer-member-id="viewerMemberId"
             @edit="editEndpoint(endpoint)"
             @manage="selectedId = endpoint.id"
             @pause="setPaused(endpoint, true)"

@@ -20,6 +20,8 @@ const props = defineProps<{
   health: EndpointHealth;
   selected: boolean;
   busy: boolean;
+  /** The reader's own membership, so a pause they made reads as theirs. Null when unknown. */
+  viewerMemberId: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -32,7 +34,7 @@ const emit = defineEmits<{
 
 const now = useNow({ interval: 30_000 });
 
-const state = computed(() => endpointState(props.endpoint));
+const state = computed(() => endpointState(props.endpoint, props.viewerMemberId));
 const health = computed(() => healthWords(props.health));
 
 const last = computed(() => {

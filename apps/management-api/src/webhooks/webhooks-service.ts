@@ -10,6 +10,11 @@ import {
   WebhookRepository,
   type WebhookRow,
 } from "@idenzy/persistence/repository/webhook-repository";
+import {
+  statsDay,
+  type WebhookDayStats as WebhookDayStatsRow,
+  WebhookStatsRepository,
+} from "@idenzy/persistence/repository/webhook-stats-repository";
 import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
@@ -19,6 +24,7 @@ import type {
   CreateWebhook,
   RotatedWebhookSecret,
   UpdateWebhook,
+  WebhookDayStats,
   WebhookDelivery,
   WebhookEndpoint,
 } from "@idenzy/protocol/schemas/management";
@@ -221,6 +227,26 @@ export class WebhooksService {
     return rows.map(presentDelivery);
   }
 
+  /**
+   * The endpoints' daily counters since a day, for the figures strip.
+   *
+   * Project-wide in one read, because the strip is about the project rather than about whichever
+   * endpoint is selected. A day per endpoint is a few dozen bytes, so a month of a project with ten
+   * endpoints is three hundred rows — which is why this can be a read rather than an aggregate.
+   */
+  async stats(context: OrgContext, projectId: string, since: string): Promise<WebhookDayStats[]> {
+    const tenant = await this.scope.of(context, projectId);
+    const rows = await this.uow.run(tenant, (tx) =>
+      new WebhookStatsRepository(tx, tenant).forProject(since),
+    );
+    return rows.map(presentStats);
+  }
+
+  /** The default window: a week back, which is what the screen opens on. */
+  static defaultStatsSince(now: Date): string {
+    return statsDay(new Date(now.getTime() - 6 * 86_400_000));
+  }
+
   private encrypt(secret: string, tenant: TenantContext): string {
     return this.encryptor.encrypt(secret, tenant.projectId);
   }
@@ -269,5 +295,17 @@ function presentDelivery(row: WebhookDeliveryRow): WebhookDelivery {
     payload: row.payload === null ? null : { ...row.payload },
     createdAt: row.createdAt.toISOString(),
     test: row.test,
+  };
+}
+
+function presentStats(row: WebhookDayStatsRow): WebhookDayStats {
+  return {
+    endpointId: PublicId.encode(IdPrefix.Webhook, row.webhookId).value,
+    day: row.day,
+    delivered: row.delivered,
+    failed: row.failed,
+    attempts: row.attempts,
+    lastDeliveredAt: row.lastDeliveredAt?.toISOString() ?? null,
+    lastFailedAt: row.lastFailedAt?.toISOString() ?? null,
   };
 }

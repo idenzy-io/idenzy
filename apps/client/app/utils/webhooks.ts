@@ -2,32 +2,63 @@
  * Endpoints a project wants told about things, and what happened when we told them
  * (`webhooks`, `webhook_deliveries`, PROJECT.md 3.3, 9.4, notes/webhooks.md).
  *
- * Nothing delivers yet. No worker consumes the webhook topic, and `webhooks.secret_hash` is a
- * digest, which can check a secret and cannot sign with one, so where the signing key lives
- * is itself undecided (notes/webhooks.md P1). `WEBHOOK_DELIVERY` says so, and every figure and
- * action that would need a delivery reads it: an endpoint is saved and never called, health
- * is not measured, and a test event or a retry is unavailable rather than pretending to run.
+ * Delivery runs now, which changes what this screen is for: it was a form that saved endpoints
+ * nothing called, and it is a diagnostics screen. The relay fans events out to subscribed
+ * endpoints, the dispatcher signs and sends them, failures come back on the published schedule,
+ * and twenty failed attempts in a row switch an endpoint off with a reason (ADR-0012).
  *
- * What the screen does state are the properties a receiver is written against: at least once,
- * no order, 2xx only, signed over the timestamp and the raw body. Those are the design, and the
- * verifier sample below is executed by the tests against it, malformed signatures included.
+ * Two controls are still off and say why rather than pretending: asking for a test event, and
+ * sending a delivery again. Both need routes that do not exist, which `WEBHOOK_DELIVERY` states
+ * as its own flag each.
+ *
+ * The contract itself is read from `@idenzy/protocol` rather than restated here. The header names,
+ * the tolerance, the schedule and the attempt ceiling are the same constants the signer and the
+ * SDK's verifier use, so this screen cannot document a version of our own product that is not the
+ * one running.
  */
 
+import {
+  isWebhookTimestampStale,
+  WEBHOOK_DELIVERY_HEADER,
+  WEBHOOK_FAILURES_BEFORE_DISABLED,
+  WEBHOOK_MAX_ATTEMPTS,
+  WEBHOOK_RETRY_SCHEDULE,
+  WEBHOOK_ROTATION_OVERLAP_HOURS,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+  WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS,
+  webhookRetryDelaySeconds,
+  webhookSignatureHeader,
+  webhookSignedPayload,
+} from "@idenzy/protocol/schemas/webhooks";
 /*
  * Whether anything is sent.
  */
 
 export interface DeliveryCapability {
+  /** Whether events reach endpoints at all. */
   running: boolean;
-  /** Why not, in the reader's words, for the strip that says so. */
+  /** Whether a delivery of the test event can be asked for. */
+  testEvent: boolean;
+  /** Whether an existing delivery can be sent again. */
+  replay: boolean;
+  /** What is unavailable and why, in the reader's words, for the strip that says so. */
   reason: string;
 }
 
-/** Read by every figure and action that would need a delivery to have happened. */
+/**
+ * What the pipeline can do, one flag per thing the screen offers.
+ *
+ * Delivery runs: the relay fans events out and the dispatcher signs and sends them (ADR-0012). A
+ * test event and a replay are separate flags rather than part of `running`, because they need routes
+ * that do not exist yet — and a control that pretends is worse than one that says why it is off.
+ */
 export const WEBHOOK_DELIVERY: DeliveryCapability = {
-  running: false,
+  running: true,
+  testEvent: false,
+  replay: false,
   reason:
-    "No worker delivers webhooks yet, and how the signing secret is kept so it can sign is not settled. Endpoints are saved and nothing is sent to them.",
+    "Asking for a test event and sending a delivery again are not built yet. Everything else is live: events reach your endpoints, failures are retried on the schedule below, and what happened is here.",
 };
 
 /*
@@ -193,8 +224,15 @@ export function subscriptionLabel(events: readonly string[], all: boolean): stri
 export interface EndpointDisabled {
   kind: "paused" | "failing";
   at: string;
-  /** Who paused it. Null for the automatic switch-off. */
-  by: string | null;
+  /**
+   * The membership that paused it, or null where the breaker did.
+   *
+   * A member id and not a name, which is what the API answers: resolving one to a person belongs to
+   * the members screen, and a name copied onto this row would be a second place somebody's name has
+   * to be kept true. The row says "you" where it is the reader's own membership and "a team member"
+   * otherwise, which is all this screen needs to say.
+   */
+  byMemberId: string | null;
 }
 
 export interface WebhookEndpoint {
@@ -219,7 +257,10 @@ export interface WebhookEndpoint {
 export type StateTone = "success" | "warning" | "error" | "neutral";
 
 /** The enabled-state column: what the endpoint is set to, and why when it is off. */
-export function endpointState(endpoint: WebhookEndpoint): {
+export function endpointState(
+  endpoint: WebhookEndpoint,
+  viewerMemberId: string | null = null,
+): {
   label: string;
   tone: StateTone;
   detail: string;
@@ -230,10 +271,18 @@ export function endpointState(endpoint: WebhookEndpoint): {
       : { label: "On", tone: "neutral", detail: "Saved, nothing sent" };
   }
   if (endpoint.disabled?.kind === "failing") {
-    return { label: "Off", tone: "error", detail: `After ${FAILURES_BEFORE_DISABLED} failures` };
+    return {
+      label: "Off",
+      tone: "error",
+      detail: `After ${FAILURES_BEFORE_DISABLED} failed attempts`,
+    };
   }
-  const by = endpoint.disabled?.by;
-  return { label: "Paused", tone: "neutral", detail: by ? `By ${by}` : "" };
+  /* "By you" where it was the reader, and "a team member" otherwise. The API answers a membership
+     id rather than a name, so the alternative would be putting somebody's id on a row or keeping a
+     second copy of their name — and which of the two it was is what a reader actually wants. */
+  const by = endpoint.disabled?.byMemberId ?? null;
+  const detail = by === null ? "" : by === viewerMemberId ? "By you" : "By a team member";
+  return { label: "Paused", tone: "neutral", detail };
 }
 
 /*
@@ -292,71 +341,72 @@ export function validateEndpointUrl(
 
 /*
  * How a delivery is signed.
+ *
+ * Read from `@idenzy/protocol`, which is where the signer and the SDK's verifier read it too. The
+ * panel used to keep its own copy of the header names, the tolerance and the schedule; a screen
+ * documenting a contract from a second copy of it is a screen that can be wrong about our own
+ * product, which is the shape of the first finding on this page.
  */
 
-export const SIGNATURE_HEADER = "X-Idenzy-Signature";
-export const TIMESTAMP_HEADER = "X-Idenzy-Timestamp";
-export const DELIVERY_HEADER = "X-Idenzy-Delivery";
+export const SIGNATURE_HEADER = WEBHOOK_SIGNATURE_HEADER;
+export const TIMESTAMP_HEADER = WEBHOOK_TIMESTAMP_HEADER;
+export const DELIVERY_HEADER = WEBHOOK_DELIVERY_HEADER;
+export const TIMESTAMP_TOLERANCE_SECONDS = WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS;
+export const ROTATION_OVERLAP_HOURS = WEBHOOK_ROTATION_OVERLAP_HOURS;
 
-/**
- * How far out of step a timestamp may be before a receiver refuses the delivery. Enough for a
- * clock nobody synchronised, short enough that a captured request is not a credential a week
- * later: refusing on it is what makes the signature replay-safe rather than merely authentic.
- */
-export const TIMESTAMP_TOLERANCE_SECONDS = 300;
-
-/** How long both secrets sign each delivery after a rotation. */
-export const ROTATION_OVERLAP_HOURS = 24;
-
-/**
- * Exactly what a signature covers: the timestamp, a dot, then the raw body. The timestamp is
- * inside the signed string, or a captured signature could be kept and its timestamp moved.
- */
-export function signedPayload(timestamp: number, body: string): string {
-  return `${timestamp}.${body}`;
-}
-
-/** The header as sent: one `sha256=<hex>` per secret in force, the newest first. */
-export function signatureHeader(hexDigests: readonly string[]): string {
-  return hexDigests.map((hex) => `sha256=${hex}`).join(", ");
-}
+export const signedPayload = webhookSignedPayload;
+export const signatureHeader = webhookSignatureHeader;
 
 /** Whether a delivery is too old to accept, which a receiver checks before the digest. */
 export function isStale(timestamp: number, now: Date): boolean {
-  return Math.abs(now.getTime() / 1000 - timestamp) > TIMESTAMP_TOLERANCE_SECONDS;
+  return isWebhookTimestampStale(timestamp, now.getTime() / 1000);
 }
 
-export const VERIFY_IMPORT = `import { createHmac, timingSafeEqual } from "node:crypto";`;
-
 /**
- * The verifier customers copy (notes/webhooks.md P1), as plain JavaScript so the tests can
- * run this exact text. It parses the `sha256=` scheme rather than comparing the header whole,
- * takes every signature a rotation sends, and checks the length before `timingSafeEqual`,
- * which throws on buffers of different sizes.
+ * The verifier a customer copies, which is now a call rather than a re-implementation.
+ *
+ * This is the note's first finding answered properly (notes/webhooks.md P1). The old sample was
+ * thirty lines of hand-written HMAC, and the finding was that it disagreed with the header it
+ * documented; a corrected copy would have been a second implementation to keep in step with the
+ * signer. `verifyWebhook` ships in `@idenzy/node`, is tested against the signer that produces these
+ * deliveries, and refuses the cases a hand-rolled check gets wrong — a stale timestamp, a malformed
+ * header, a body re-serialised from parsed JSON, and a length mismatch that makes `timingSafeEqual`
+ * throw rather than answer.
  */
-export const VERIFY_BODY = `function verifyIdenzyWebhook(rawBody, headers, secret, now = Date.now()) {
-  // Node's req.headers and a fetch Headers object both work.
-  const read = (name) =>
-    (typeof headers.get === "function" ? headers.get(name) : headers[name]) ?? "";
+export const VERIFY_IMPORT = `import { verifyWebhook } from "@idenzy/node/webhooks";`;
 
-  // Refuse a stale delivery first, so a captured one cannot be replayed later.
-  const timestamp = Number(read("${TIMESTAMP_HEADER.toLowerCase()}"));
-  if (!Number.isInteger(timestamp) || Math.abs(now / 1000 - timestamp) > ${TIMESTAMP_TOLERANCE_SECONDS}) {
-    return false;
+export const VERIFY_BODY = `async function handleIdenzyWebhook(request, response) {
+  // The body exactly as it arrived. Express: express.raw({ type: "application/json" }).
+  // Re-serialising parsed JSON signs a different string and every delivery fails.
+  const rawBody = await readRawBody(request);
+
+  let delivery;
+  try {
+    delivery = verifyWebhook({
+      rawBody,
+      headers: request.headers,
+      // Both while a rotation is open, so neither secret's deliveries fail.
+      secrets: [process.env.IDENZY_WEBHOOK_SECRET],
+    });
+  } catch {
+    // Not ours, or too old to accept. Answer 400 and do nothing.
+    return response.status(400).end();
   }
 
-  // The raw body as it arrived: parsing and re-serialising the JSON signs a different string.
-  const expected = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest();
+  // At least once: the same delivery can arrive twice, so act on first sight of the id.
+  if (await alreadyHandled(delivery.deliveryId)) return response.status(200).end();
 
-  // One signature per secret in force, so a rotation does not break verification.
-  return String(read("${SIGNATURE_HEADER.toLowerCase()}"))
-    .split(",")
-    .some((part) => {
-      const [scheme, hex] = part.trim().split("=");
-      // 64 hex characters is 32 bytes, the length timingSafeEqual needs to compare.
-      if (scheme !== "sha256" || !/^[0-9a-f]{64}$/.test(hex ?? "")) return false;
-      return timingSafeEqual(Buffer.from(hex, "hex"), expected);
-    });
+  switch (delivery.envelope.type) {
+    case "user.created":
+      await onUserCreated(delivery.envelope.data);
+      break;
+    case "session.created":
+      await onSignIn(delivery.envelope.data);
+      break;
+  }
+
+  // Anything but a 2xx is retried on the schedule above, so answer before slow work.
+  response.status(200).end();
 }`;
 
 export const VERIFY_SNIPPET = `${VERIFY_IMPORT}\n\nexport ${VERIFY_BODY}`;
@@ -470,22 +520,27 @@ export function outcomeCounts(
  * it written down so the screen can state it. A little over a day, so an endpoint down for an
  * afternoon loses nothing.
  */
-export const RETRY_SCHEDULE: readonly number[] = [10, 60, 300, 1800, 7200, 21600, 86400];
+export const RETRY_SCHEDULE = WEBHOOK_RETRY_SCHEDULE;
 
 /** Including the first call, which is not a retry. */
-export const MAX_ATTEMPTS = RETRY_SCHEDULE.length + 1;
+export const MAX_ATTEMPTS = WEBHOOK_MAX_ATTEMPTS;
 
 export function retryWindowSeconds(): number {
   return RETRY_SCHEDULE.reduce((total, delay) => total + delay, 0);
 }
 
 /** How long after attempt `n` the next one is, or null once there are none left. */
-export function nextRetrySeconds(attempt: number): number | null {
-  return RETRY_SCHEDULE[attempt - 1] ?? null;
-}
+export const nextRetrySeconds = webhookRetryDelaySeconds;
 
-/** Failed deliveries in a row before an endpoint is switched off. */
-export const FAILURES_BEFORE_DISABLED = 20;
+/**
+ * Failed attempts in a row before an endpoint is switched off.
+ *
+ * Attempts and not deliveries, which is what the dispatcher counts and a deliberate correction to
+ * what this said before: a delivery only dies after every attempt on the schedule above, so twenty
+ * dead deliveries would be weeks of calling an endpoint that has never answered. Any success clears
+ * the run, so an endpoint that answers some of the time is never switched off.
+ */
+export const FAILURES_BEFORE_DISABLED = WEBHOOK_FAILURES_BEFORE_DISABLED;
 
 /*
  * How an endpoint is doing.
@@ -524,7 +579,7 @@ export function healthOf(
 export const FIGURE_DAYS = 7;
 
 export interface DeliveryFigure {
-  id: "deliveries" | "delivered" | "failed" | "pending";
+  id: "deliveries" | "delivered" | "failed" | "attempts";
   label: string;
   /** Tells one tile's stand-in wave from the next one's. */
   seed: number;
@@ -532,6 +587,15 @@ export interface DeliveryFigure {
   value: number;
   /** One count a day, oldest first. Empty where nothing was counted. */
   series: number[];
+}
+
+/** A day of one endpoint's counters, as the management API answers it. */
+export interface DayStats {
+  endpointId: string;
+  day: string;
+  delivered: number;
+  failed: number;
+  attempts: number;
 }
 
 function figureOf(
@@ -546,22 +610,27 @@ function figureOf(
 }
 
 /**
- * A week of deliveries across every endpoint, by outcome, each counted once however many
- * times it was tried. With nothing delivered every figure is nought with no series, which a
- * `UsageTile` draws as No data rather than as a clean record.
+ * A week across every endpoint, from the counters rather than from the deliveries on screen.
+ *
+ * This used to count the delivery list, which was honest only while that list was every delivery
+ * there had ever been. It is now the latest fifty per endpoint, so counting it would have reported
+ * a busy week as fifty deliveries — a figure that gets less true the more traffic a customer has.
+ * The counters are a row per endpoint per day and exist for exactly this (ADR-0012).
+ *
+ * `Waiting to retry` is gone from the strip and `Attempts` has its place. A count of deliveries
+ * between attempts is a live number rather than a day's total, and it is already on the table below
+ * as the pending tab; attempts against deliveries is the ratio that says whether an endpoint is
+ * answering first time.
  */
-export function deliveryFigures(
-  deliveries: readonly WebhookDelivery[],
-  now: Date,
-): DeliveryFigure[] {
-  const day = 86_400_000;
-  const first = Math.floor(now.getTime() / day) * day - (FIGURE_DAYS - 1) * day;
-  const daily = (keep: (delivery: WebhookDelivery) => boolean) => {
+export function deliveryFigures(days: readonly DayStats[], now: Date): DeliveryFigure[] {
+  const dayMs = 86_400_000;
+  const first = Math.floor(now.getTime() / dayMs) * dayMs - (FIGURE_DAYS - 1) * dayMs;
+  const daily = (count: (stats: DayStats) => number) => {
     const counts = Array.from({ length: FIGURE_DAYS }, () => 0);
-    for (const delivery of deliveries) {
-      const index = Math.floor((Date.parse(delivery.createdAt) - first) / day);
-      if (index >= 0 && index < FIGURE_DAYS && keep(delivery)) {
-        counts[index] = (counts[index] ?? 0) + 1;
+    for (const stats of days) {
+      const index = Math.floor((Date.parse(`${stats.day}T00:00:00.000Z`) - first) / dayMs);
+      if (index >= 0 && index < FIGURE_DAYS) {
+        counts[index] = (counts[index] ?? 0) + count(stats);
       }
     }
     return counts;
@@ -571,34 +640,33 @@ export function deliveryFigures(
       "deliveries",
       "Deliveries",
       13,
-      "Every delivery to this project's endpoints, counted once however many times it was tried.",
-      daily(() => true),
+      "Every delivery that finished, counted once however many times it was tried.",
+      daily((stats) => stats.delivered + stats.failed),
     ),
     figureOf(
       "delivered",
       "Delivered",
       19,
       "Deliveries an endpoint answered with a 2xx, on the first try or a later one.",
-      daily((delivery) => delivery.outcome === "delivered"),
+      daily((stats) => stats.delivered),
     ),
     figureOf(
       "failed",
       "Failed",
       23,
-      `Deliveries that used all ${MAX_ATTEMPTS} attempts without a 2xx.`,
-      daily((delivery) => delivery.outcome === "failed"),
+      `Deliveries that used all ${WEBHOOK_MAX_ATTEMPTS} attempts without a 2xx.`,
+      daily((stats) => stats.failed),
     ),
     figureOf(
-      "pending",
-      "Waiting to retry",
+      "attempts",
+      "Attempts",
       29,
-      "Deliveries between attempts, with the next try scheduled.",
-      daily((delivery) => delivery.outcome === "pending"),
+      "Calls made. More than deliveries means retries: a delivery answered on its third try is one delivery and three attempts.",
+      daily((stats) => stats.attempts),
     ),
   ];
 }
 
-/** Under this and the row says so. Not a threshold anything enforces. */
 export const HEALTHY_RATE = 0.95;
 
 /** The health column's words and tone. Unknown is never drawn as healthy. */

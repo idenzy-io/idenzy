@@ -527,3 +527,40 @@ export const webhookDeliveryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type WebhookDeliveryQuery = z.infer<typeof webhookDeliveryQuerySchema>;
+
+/**
+ * A day of an endpoint's counters, which is what the figures on the screen are made of.
+ *
+ * Counters rather than arithmetic over the delivery window, because "97% delivered over seven days"
+ * computed from deliveries means scanning every delivery a project made (ADR-0012). They also
+ * outlive the window: a delivery is gone after three days and the fact that four thousand of them
+ * landed on Tuesday is a row of a few dozen bytes.
+ */
+export const webhookDayStatsSchema = z.object({
+  endpointId: z.string(),
+  /** The UTC day, `YYYY-MM-DD`. A counter has no locale. */
+  day: z.string(),
+  delivered: z.number().int().nonnegative(),
+  /** Deliveries that used every attempt without a 2xx. Not the same as failed attempts. */
+  failed: z.number().int().nonnegative(),
+  /** Attempts made, which is more than deliveries: a retry is an attempt and not a delivery. */
+  attempts: z.number().int().nonnegative(),
+  lastDeliveredAt: z.iso.datetime().nullable(),
+  lastFailedAt: z.iso.datetime().nullable(),
+});
+export type WebhookDayStats = z.infer<typeof webhookDayStatsSchema>;
+
+export const webhookStatsSchema = z.object({ days: z.array(webhookDayStatsSchema) });
+export type WebhookStats = z.infer<typeof webhookStatsSchema>;
+
+/**
+ * How far back the counters are read.
+ *
+ * A date rather than a period, so the caller says what it wants rather than learning our idea of a
+ * week. Capped at a year: past that the answer belongs to the analytics store, and an unbounded
+ * `since` is a full scan of a table that grows for the life of a project.
+ */
+export const webhookStatsQuerySchema = z.object({
+  since: z.iso.date().optional(),
+});
+export type WebhookStatsQuery = z.infer<typeof webhookStatsQuerySchema>;

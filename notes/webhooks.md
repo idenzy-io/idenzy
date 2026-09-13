@@ -71,10 +71,26 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 ## Settled while implementing
 
-- **Delivery is not running, and the page leads with that.** No worker consumes the webhook
-  topic and the stored digest cannot sign. So no attempt is shown, health is "Not measured", and
-  Send test event and Retry delivery are disabled with the reason beside them. The sample
-  attempts stay behind `WEBHOOK_DELIVERY`, for the day it runs.
+- **Delivery runs, and the page is a diagnostics screen rather than a form.** The relay fans events
+  out, the dispatcher signs and sends, failures come back on the published schedule, and the table
+  holds real attempts (ADR-0012). What is still off is `testEvent` and `replay`, each its own flag on
+  `WEBHOOK_DELIVERY` so a control is disabled for its own reason rather than for delivery's; the strip
+  above the list names the two rather than claiming nothing is sent.
+- **The figures are counters, not a count of the deliveries on screen.** The table holds the latest
+  fifty per endpoint, so counting it would report a busy week as fifty — less true the more traffic a
+  customer has. `webhook_endpoint_stats` is a row per endpoint per day and the strip reads it, which
+  is also why `Waiting to retry` gave its tile to `Attempts`: a count of deliveries between attempts
+  is a live number rather than a day's total, and it is already the pending tab below.
+- **The verifier sample is a call, which is the first finding answered properly.** It was thirty lines
+  of hand-written HMAC that disagreed with the header it documented; correcting it would have left a
+  second implementation to keep in step with the signer. It is now `verifyWebhook` from
+  `@idenzy/node`, tested where it lives and against the real signer over a socket in `apps/workers`.
+- **A pause says whether the reader made it.** The API answers the membership id rather than a name,
+  so the row reads "By you" or "By a team member" — resolving a person belongs to the members screen,
+  and a name copied here would be a second place it has to be kept true.
+- **The breaker counts failed attempts, not failed deliveries.** A delivery only dies after every
+  attempt on the schedule, so twenty of those would be weeks of calling an endpoint that has never
+  answered. The wording on the row changed with it.
 - **Event groups are an accordion,** at the user's request: the first group open, any number
   open at once, a line per group, a group checkbox, and a count on each folded header.
 - **A new endpoint starts off unless somebody ticks otherwise,** which is the initial enabled
@@ -83,9 +99,10 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
   repeats it and has a safe exit. Custody is stated as unsettled rather than promised.
 - **A row is a delivery, with its attempts in the detail.** The table shows each delivery's latest
   attempt, the latest fifty in the period, with no pager.
-- **Not in the schema yet:** the description, the all-events choice, why an endpoint is off, the
-  rotation fields, and an attempt's duration, answer and next retry. The panel models them as the
-  management API would answer.
+- **All of it is in the schema now:** the description, the all-events choice, why an endpoint is off
+  and who switched it off, the rotation fields, and an attempt's duration, answer and next retry. The
+  store reads and writes them through the management API, and the shapes the panel modelled are the
+  ones it answers.
 - **Observed delivery leads as a figures strip,** at the user's request, as on the allowed origins
   screen: deliveries, delivered, failed and waiting to retry over seven days, each reading No data
   while nothing is delivered.

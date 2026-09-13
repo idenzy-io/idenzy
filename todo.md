@@ -536,8 +536,18 @@ client have no server halves to talk to yet.
       twenty of those is a month of calling an endpoint that has never answered. Verified end to end
       against a real Postgres and a real HTTP receiver that verifies every delivery with
       `verifyWebhook` from the SDK we publish — our signer and our customers' verifier agreeing over
-      a socket, which is the one thing no unit test can say. Next: the panel's own store, which
-      models all of this already, and then the event types nothing emits yet
+      a socket, which is the one thing no unit test can say. **The panel is wired**: endpoints and the
+      day counters load with the screen, one endpoint's deliveries follow the selection because that
+      is the expensive read, and every write is a real call. The figures strip reads
+      `webhook_endpoint_stats` rather than counting the deliveries on screen — which was honest only
+      while that list was every delivery there had ever been, and would have reported a busy week as
+      fifty. `Waiting to retry` gave its tile to `Attempts` for the same reason: attempts against
+      deliveries is what says whether an endpoint answers first time. The verifier sample is now a
+      call to `verifyWebhook` rather than thirty lines of hand-written HMAC, which is the screen's
+      first P1 answered properly — a corrected copy would have been a second implementation to keep in
+      step with the signer. `GET .../webhooks/stats` is the one route this needed. What stays off, each
+      its own flag: asking for a test event, and sending a delivery again. Next: the event types
+      nothing emits yet
       (`WEBHOOK_EVENTS_WITHOUT_EMITTER` lists them: account creation, deletion and suspension write
       no outbox row, and the three delivery events wait on the SES and SMS paths). Known gap, recorded rather than closed: a
       hostname that *resolves* to a private address is not caught by parsing, so the dispatcher
@@ -547,8 +557,8 @@ client have no server halves to talk to yet.
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
       can read (ADR-0008), and a global middleware decides who sees which half of the panel.
-      Five stores are off fixtures now: the organisation and project lists, API keys, auth
-      domains and the CORS allowlist — claiming a hostname, the DNS check and removing one are
+      Six stores are off fixtures now: the organisation and project lists, API keys, auth
+      domains, the CORS allowlist and webhooks — claiming a hostname, the DNS check and removing one are
       management API calls, and the panel no longer mints a record value or decides that a
       domain is verified. The origins screen writes the real list too, and what an origin *is*
       now comes from `browserOriginSchema` rather than from a second copy of the rule in the

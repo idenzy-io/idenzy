@@ -10,7 +10,10 @@ import {
   type WebhookDeliveryQuery,
   type WebhookEndpoint,
   type WebhookEndpointList,
+  type WebhookStats,
+  type WebhookStatsQuery,
   webhookDeliveryQuerySchema,
+  webhookStatsQuerySchema,
 } from "@idenzy/protocol/schemas/management";
 import {
   Body,
@@ -77,6 +80,23 @@ export class WebhooksController {
     @Body(new ZodValidationPipe(createWebhookSchema)) body: CreateWebhook,
   ): Promise<CreatedWebhook> {
     return await this.webhooks.create(orgContextFrom(request), projectId, body);
+  }
+
+  /**
+   * The daily counters, project-wide, for the figures on the screen.
+   *
+   * Before the `:webhookId` routes below it, because a path segment is matched in the order the
+   * routes are declared and `stats` would otherwise be read as an endpoint id.
+   */
+  @Get("stats")
+  @RequireRole(MemberRole.Developer)
+  async stats(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Query(new ZodValidationPipe(webhookStatsQuerySchema)) query: WebhookStatsQuery,
+  ): Promise<WebhookStats> {
+    const since = query.since ?? WebhooksService.defaultStatsSince(new Date());
+    return { days: await this.webhooks.stats(orgContextFrom(request), projectId, since) };
   }
 
   @Patch(":webhookId")

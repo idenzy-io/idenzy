@@ -1,202 +1,281 @@
 /**
- * Each project's webhook endpoints, and the deliveries made to them.
+ * Each project's webhook endpoints and their deliveries, read and written through the management
+ * API (ADR-0012).
  *
- * Endpoints are saved like any setting. Deliveries are a different matter: nothing sends one
- * yet (`WEBHOOK_DELIVERY`), so `deliveriesFor` answers nothing, and a test event or a retry
- * does nothing, rather than the sample attempts kept below. An attempt on this screen would
- * be a claim that we called somebody's URL, and the note's acceptance check is that an
- * unavailable pipeline makes no such claim. The samples stay for the day it runs, and for
- * flipping the flag to see the workspace populated.
+ * Three reads rather than one, because they answer different questions and cost different amounts.
+ * The endpoints are a small list and load with the screen. The counters are a row per endpoint per
+ * day and load with it too, which is what the figures strip is made of. The deliveries are the
+ * expensive one — the latest fifty for one endpoint — so they load for the endpoint somebody
+ * selected and not for all of them at once.
  *
- * The signing secret goes one way: the store hands it to the caller when it is made or
- * rotated and never keeps it.
- *
- * A placeholder until the management client exists, like every store here.
+ * A test event and a replay are not here, because neither has a route: they would be a delivery
+ * nothing sends and a screen showing it stuck on pending for ever. `WEBHOOK_DELIVERY` says so and
+ * the controls are off, which is the same answer this store gave before delivery ran — for a
+ * different and much smaller reason.
  */
 
-import {
-  ALL_EVENTS,
-  type DeliveryAttempt,
-  type DeliveryOutcome,
-  MAX_ATTEMPTS,
-  nextRetrySeconds,
-  ROTATION_OVERLAP_HOURS,
-  samplePayload,
-  TEST_EVENT,
-  WEBHOOK_DELIVERY,
-  type WebhookDelivery,
-  type WebhookEndpoint,
-} from "~/utils/webhooks";
+import { InternalError } from "@idenzy/core/errors";
+import type {
+  CreatedWebhook,
+  RotatedWebhookSecret,
+  WebhookDeliveryList,
+  WebhookDelivery as WebhookDeliveryPayload,
+  WebhookEndpointList,
+  WebhookEndpoint as WebhookEndpointPayload,
+  WebhookStats,
+} from "@idenzy/protocol/schemas/management";
+import { managementMessage } from "~/utils/sign-in-errors";
+import type { DayStats, DeliveryAttempt, WebhookDelivery, WebhookEndpoint } from "~/utils/webhooks";
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 600;
-
-export type EndpointDraft = Pick<
-  WebhookEndpoint,
-  "url" | "description" | "events" | "allEvents" | "enabled"
->;
+/** What the add dialog hands over. The secret is ours to mint, not theirs to choose. */
+export interface EndpointDraft {
+  url: string;
+  description: string;
+  events: string[];
+  allEvents: boolean;
+  enabled: boolean;
+}
 
 export const useWebhooksStore = defineStore("webhooks", () => {
-  const account = useAccountStore();
-  const endpoints = ref<Record<string, WebhookEndpoint[]>>({});
+  const projects = useProjectStore();
+
+  const byProject = ref<Record<string, WebhookEndpoint[]>>({});
+  /** Deliveries by project, filled per endpoint as each is selected. */
   const deliveries = ref<Record<string, WebhookDelivery[]>>({});
-  const loading = ref(true);
+  /** Which endpoints' deliveries have been read, so a second visit does not re-read them. */
+  const loadedFor = ref<Record<string, string[]>>({});
+  const stats = ref<Record<string, DayStats[]>>({});
+  const loading = ref(false);
+  /** Whether the selected endpoint's deliveries are on their way. */
+  const loadingDeliveries = ref(false);
+  /** Why the list could not be read, for a screen that must not claim it knows. */
+  const refusal = ref<string | null>(null);
 
-  setTimeout(() => {
-    endpoints.value = { prj_personal: [], prj_acme: acmeEndpoints() };
-    deliveries.value = WEBHOOK_DELIVERY.running ? { prj_acme: sampleDeliveries(ACME_IDS) } : {};
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
-
-  function forProject(projectId: string): WebhookEndpoint[] {
-    return endpoints.value[projectId] ?? [];
+  function basePath(projectId: string): string | null {
+    const org = projects.orgOf(projectId);
+    return org === null ? null : `/v1/orgs/${org.id}/projects/${projectId}/webhooks`;
   }
 
+  /**
+   * The same route for a write, or a throw.
+   *
+   * Thrown rather than returned quietly: every caller is a dialog, and a silent no-op would close
+   * one as though an endpoint had been saved.
+   */
+  function writePath(projectId: string): string {
+    const path = basePath(projectId);
+    if (path === null)
+      throw new InternalError({ detail: { reason: "the project's organisation is not loaded" } });
+    return path;
+  }
+
+  /** The endpoints and the counters, which are what the screen needs before it can draw. */
+  async function load(projectId: string): Promise<void> {
+    const path = basePath(projectId);
+    if (path === null) return;
+    loading.value = true;
+    refusal.value = null;
+    try {
+      const api = useManagementApi();
+      const [endpoints, counters] = await Promise.all([
+        api(path).get().json<WebhookEndpointList>(),
+        api(`${path}/stats`).get().json<WebhookStats>(),
+      ]);
+      if (endpoints.error.value !== null) throw endpoints.error.value;
+      if (counters.error.value !== null) throw counters.error.value;
+
+      byProject.value = {
+        ...byProject.value,
+        [projectId]: (endpoints.data.value?.endpoints ?? []).map(presentEndpoint),
+      };
+      stats.value = {
+        ...stats.value,
+        [projectId]: (counters.data.value?.days ?? []).map((day) => ({
+          endpointId: day.endpointId,
+          day: day.day,
+          delivered: day.delivered,
+          failed: day.failed,
+          attempts: day.attempts,
+        })),
+      };
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  function forProject(projectId: string): WebhookEndpoint[] {
+    return byProject.value[projectId] ?? [];
+  }
+
+  function statsFor(projectId: string): DayStats[] {
+    return stats.value[projectId] ?? [];
+  }
+
+  /**
+   * Every delivery this store has read for the project.
+   *
+   * Per endpoint underneath, joined here because the screen asks its questions per endpoint anyway
+   * and a caller that had to know which endpoints were loaded would be a caller that had to load
+   * them. What it is not is every delivery a project ever made: the window behind it is three days
+   * and this is the latest fifty of what is in it (ADR-0012).
+   */
   function deliveriesFor(projectId: string): WebhookDelivery[] {
-    if (!WEBHOOK_DELIVERY.running) return [];
     return deliveries.value[projectId] ?? [];
   }
 
-  function write(projectId: string, next: WebhookEndpoint[]) {
-    endpoints.value = { ...endpoints.value, [projectId]: next };
+  /**
+   * Reads one endpoint's deliveries, unless they are already held.
+   *
+   * `force` is for after a write that changes them — a retry, when it exists — where the held copy
+   * is the thing being replaced rather than a saving.
+   */
+  async function loadDeliveries(
+    projectId: string,
+    endpointId: string,
+    force = false,
+  ): Promise<void> {
+    const path = basePath(projectId);
+    if (path === null) return;
+    const held = loadedFor.value[projectId] ?? [];
+    if (!force && held.includes(endpointId)) return;
+
+    loadingDeliveries.value = true;
+    try {
+      const api = useManagementApi();
+      const { data, error } = await api(`${path}/${endpointId}/deliveries`)
+        .get()
+        .json<WebhookDeliveryList>();
+      if (error.value !== null) throw error.value;
+
+      const fresh = (data.value?.deliveries ?? []).map(presentDelivery);
+      const others = deliveriesFor(projectId).filter((entry) => entry.endpointId !== endpointId);
+      deliveries.value = { ...deliveries.value, [projectId]: [...others, ...fresh] };
+      loadedFor.value = {
+        ...loadedFor.value,
+        [projectId]: held.includes(endpointId) ? held : [...held, endpointId],
+      };
+    } catch (cause: unknown) {
+      // The endpoint list is the screen; its deliveries are a panel on it. A refusal here says so
+      // in the same place a failed read of the list would, rather than emptying the screen.
+      refusal.value = managementMessage(cause);
+    } finally {
+      loadingDeliveries.value = false;
+    }
   }
 
-  function writeDeliveries(projectId: string, next: WebhookDelivery[]) {
-    deliveries.value = { ...deliveries.value, [projectId]: next };
-  }
-
-  async function settle() {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-  }
-
-  /** Creates the endpoint and hands back its signing secret, the only moment anybody has it. */
+  /** Creates an endpoint and hands back the secret, the only moment anybody has it. */
   async function add(
     projectId: string,
     draft: EndpointDraft,
   ): Promise<{ endpoint: WebhookEndpoint; secret: string }> {
-    await settle();
-    const now = new Date().toISOString();
-    const endpoint: WebhookEndpoint = {
-      ...draft,
-      id: `whk_${randomHex(16)}`,
-      disabled: draft.enabled ? null : { kind: "paused", at: now, by: account.profile.name },
-      createdAt: now,
-      rolledAt: null,
-      previousSecretUntil: null,
-    };
-    write(projectId, [...forProject(projectId), endpoint]);
-    return { endpoint, secret: newSecret() };
+    const api = useManagementApi();
+    const { data, error } = await api(writePath(projectId)).post(draft).json<CreatedWebhook>();
+    if (error.value !== null) throw error.value;
+    const created = data.value;
+    if (created === null)
+      throw new InternalError({ detail: { reason: "the server returned no endpoint" } });
+
+    const endpoint = presentEndpoint(created.endpoint);
+    byProject.value = { ...byProject.value, [projectId]: [...forProject(projectId), endpoint] };
+    // The secret travels to the caller and is never written into the store, for the same reason the
+    // keys store does not keep one: a ref holding it is a ref something could log.
+    return { endpoint, secret: created.secret };
   }
 
   async function update(
     projectId: string,
     id: string,
-    change: Partial<Omit<WebhookEndpoint, "id">>,
+    change: Partial<Pick<WebhookEndpoint, "url" | "description" | "events" | "allEvents">>,
   ): Promise<void> {
-    await settle();
-    write(
-      projectId,
-      forProject(projectId).map((endpoint) =>
-        endpoint.id === id ? { ...endpoint, ...change } : endpoint,
-      ),
-    );
+    const api = useManagementApi();
+    const { data, error } = await api(`${writePath(projectId)}/${id}`)
+      .patch(change)
+      .json<WebhookEndpointPayload>();
+    if (error.value !== null) throw error.value;
+    if (data.value !== null) replace(projectId, presentEndpoint(data.value));
   }
 
   /** Off by a person's hand, which the row names. Nothing queues while it is paused. */
-  function pause(projectId: string, id: string) {
-    return update(projectId, id, {
-      enabled: false,
-      disabled: { kind: "paused", at: new Date().toISOString(), by: account.profile.name },
-    });
-  }
-
-  /** On again. What happened while it was off is not replayed. */
-  function resume(projectId: string, id: string) {
-    return update(projectId, id, { enabled: true, disabled: null });
+  function pause(projectId: string, id: string): Promise<void> {
+    return act(projectId, id, "pause");
   }
 
   /**
-   * Replaces the secret. The previous one keeps signing beside it until the deadline, so a
-   * receiver can deploy the new one without a delivery in between failing verification.
+   * On again, which also clears the run of failures.
+   *
+   * What happened while it was off is not replayed, and nothing was queued for it: the fan-out
+   * writes a delivery for enabled endpoints only.
+   */
+  function resume(projectId: string, id: string): Promise<void> {
+    return act(projectId, id, "resume");
+  }
+
+  /**
+   * Replaces the secret. The previous one keeps signing beside it until the deadline, so a receiver
+   * can deploy the new one without a delivery in between failing verification.
    */
   async function rotateSecret(
     projectId: string,
     id: string,
   ): Promise<{ secret: string; until: string }> {
-    await settle();
-    const until = new Date(Date.now() + ROTATION_OVERLAP_HOURS * 3_600_000).toISOString();
-    write(
-      projectId,
-      forProject(projectId).map((endpoint) =>
-        endpoint.id === id
-          ? { ...endpoint, rolledAt: new Date().toISOString(), previousSecretUntil: until }
-          : endpoint,
-      ),
-    );
-    return { secret: newSecret(), until };
+    const api = useManagementApi();
+    const { data, error } = await api(`${writePath(projectId)}/${id}/rotate-secret`)
+      .post({})
+      .json<RotatedWebhookSecret>();
+    if (error.value !== null) throw error.value;
+    const rotated = data.value;
+    if (rotated === null)
+      throw new InternalError({ detail: { reason: "the server returned no secret" } });
+    replace(projectId, presentEndpoint(rotated.endpoint));
+    return { secret: rotated.secret, until: rotated.previousSecretUntil };
   }
 
   async function remove(projectId: string, id: string): Promise<void> {
-    await settle();
-    write(
-      projectId,
-      forProject(projectId).filter((endpoint) => endpoint.id !== id),
-    );
-    writeDeliveries(
-      projectId,
-      (deliveries.value[projectId] ?? []).filter((entry) => entry.endpointId !== id),
-    );
-  }
-
-  /** A new delivery of the test event. Does nothing while delivery is not running. */
-  async function sendTest(projectId: string, endpointId: string): Promise<void> {
-    if (!WEBHOOK_DELIVERY.running) return;
-    await settle();
-    const id = `dlv_${randomHex(6)}`;
-    const at = new Date().toISOString();
-    const test: WebhookDelivery = {
-      id,
-      endpointId,
-      event: TEST_EVENT,
-      outcome: "delivered",
-      attempts: [{ n: 1, at, status: 200, error: null, durationMs: 140, response: '{"ok":true}' }],
-      nextRetryAt: null,
-      payload: samplePayload(TEST_EVENT, id, at),
-      createdAt: at,
-      test: true,
+    const api = useManagementApi();
+    // Deliberately not `.json()`: success is 204 with no body, and asking for JSON reads an empty
+    // body as a parse failure — reporting a removal that happened as one that did not.
+    const { error } = await api(`${writePath(projectId)}/${id}`).delete();
+    if (error.value !== null) throw error.value;
+    byProject.value = {
+      ...byProject.value,
+      [projectId]: forProject(projectId).filter((entry) => entry.id !== id),
     };
-    writeDeliveries(projectId, [test, ...(deliveries.value[projectId] ?? [])]);
+    // Its deliveries went with it in the database, and they go here too rather than lingering as
+    // rows pointing at an endpoint the screen no longer lists.
+    deliveries.value = {
+      ...deliveries.value,
+      [projectId]: deliveriesFor(projectId).filter((entry) => entry.endpointId !== id),
+    };
   }
 
-  /** The same delivery again, same id, as one more attempt. Nothing while delivery is off. */
-  async function retry(projectId: string, deliveryId: string): Promise<void> {
-    if (!WEBHOOK_DELIVERY.running) return;
-    await settle();
-    writeDeliveries(
-      projectId,
-      (deliveries.value[projectId] ?? []).map((entry) => {
-        if (entry.id !== deliveryId) return entry;
-        const attempt: DeliveryAttempt = {
-          n: entry.attempts.length + 1,
-          at: new Date().toISOString(),
-          status: 200,
-          error: null,
-          durationMs: 160,
-          response: '{"received":true}',
-        };
-        return {
-          ...entry,
-          outcome: "delivered",
-          attempts: [...entry.attempts, attempt],
-          nextRetryAt: null,
-        };
-      }),
-    );
+  async function act(projectId: string, id: string, action: "pause" | "resume"): Promise<void> {
+    const api = useManagementApi();
+    const { data, error } = await api(`${writePath(projectId)}/${id}/${action}`)
+      .post({})
+      .json<WebhookEndpointPayload>();
+    if (error.value !== null) throw error.value;
+    if (data.value !== null) replace(projectId, presentEndpoint(data.value));
+  }
+
+  function replace(projectId: string, endpoint: WebhookEndpoint) {
+    byProject.value = {
+      ...byProject.value,
+      [projectId]: forProject(projectId).map((entry) =>
+        entry.id === endpoint.id ? endpoint : entry,
+      ),
+    };
   }
 
   return {
     loading,
+    loadingDeliveries,
+    refusal,
+    load,
+    loadDeliveries,
     forProject,
+    statsFor,
     deliveriesFor,
     add,
     update,
@@ -204,159 +283,53 @@ export const useWebhooksStore = defineStore("webhooks", () => {
     resume,
     rotateSecret,
     remove,
-    sendTest,
-    retry,
   };
 });
 
-/*
- * The placeholder.
- */
-
-function randomHex(bytes: number): string {
-  let out = "";
-  for (let index = 0; index < bytes * 2; index += 1) {
-    out += Math.floor(Math.random() * 16).toString(16);
-  }
-  return out;
-}
-
-/** The shape a signing secret arrives in, prefixed the way every credential we mint is. */
-function newSecret(): string {
-  return `whsec_${randomHex(24)}`;
-}
-
-function seeded(seed: number): () => number {
-  let state = seed >>> 0 || 1;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 0x100000000;
+/** An endpoint as the API answers it. The shapes agree; the mapper is where that is checked. */
+function presentEndpoint(payload: WebhookEndpointPayload): WebhookEndpoint {
+  return {
+    id: payload.id,
+    url: payload.url,
+    description: payload.description,
+    enabled: payload.enabled,
+    disabled:
+      payload.disabled === null
+        ? null
+        : {
+            kind: payload.disabled.kind,
+            at: payload.disabled.at,
+            byMemberId: payload.disabled.byMemberId,
+          },
+    events: [...payload.events],
+    allEvents: payload.allEvents,
+    createdAt: payload.createdAt,
+    rolledAt: payload.rolledAt,
+    previousSecretUntil: payload.previousSecretUntil,
   };
 }
 
-function pick<T>(next: () => number, values: readonly T[]): T {
-  return values[Math.floor(next() * values.length)] ?? (values[0] as T);
-}
-
-const ACME_IDS = ["whk_a1b2c3d4e5f60718", "whk_9f8e7d6c5b4a3021", "whk_1122334455667788"];
-
-function acmeEndpoints(): WebhookEndpoint[] {
-  return [
-    {
-      id: "whk_a1b2c3d4e5f60718",
-      url: "https://api.acme.com/hooks/idenzy",
-      description: "Provisioning and account sync",
-      enabled: true,
-      disabled: null,
-      events: [...ALL_EVENTS],
-      allEvents: true,
-      createdAt: "2026-06-11T09:20:00.000Z",
-      rolledAt: "2026-08-30T14:02:00.000Z",
-      previousSecretUntil: null,
-    },
-    {
-      id: "whk_9f8e7d6c5b4a3021",
-      url: "https://ops.acme.com/alerts/idenzy-security",
-      description: "Pages the on-call for a token reuse",
-      enabled: true,
-      disabled: null,
-      events: ["security.refresh_token_reused", "security.staff_access_granted", "mfa.removed"],
-      allEvents: false,
-      createdAt: "2026-07-02T11:45:00.000Z",
-      rolledAt: null,
-      previousSecretUntil: null,
-    },
-    {
-      id: "whk_1122334455667788",
-      url: "https://acme-staging.example.dev/hooks/idenzy",
-      description: "Staging, paused while it is redeployed",
-      enabled: false,
-      disabled: { kind: "paused", at: "2026-09-03T08:15:00.000Z", by: "Mei Tanaka" },
-      events: ["user.created", "user.updated", "session.created"],
-      allEvents: false,
-      createdAt: "2026-08-19T16:10:00.000Z",
-      rolledAt: null,
-      previousSecretUntil: null,
-    },
-  ];
-}
-
-const EVENTS_SEEN = ["user.created", "user.updated", "session.created", "session.revoked"];
-
-const FAILURES = [
-  {
-    status: 500,
-    error: null,
-    response: "<html><head><title>500 Internal Server Error</title></head></html>",
-  },
-  { status: 502, error: null, response: "<html><body><h1>502 Bad Gateway</h1></body></html>" },
-  { status: 404, error: null, response: "Cannot POST /hooks/idenzy" },
-  { status: null, error: "Timed out after 10s", response: "" },
-  { status: null, error: "Connection refused", response: "" },
-];
-
-function outcomeFrom(roll: number): DeliveryOutcome {
-  if (roll > 0.9) return "failed";
-  return roll > 0.8 ? "pending" : "delivered";
-}
-
-function triesFor(outcome: DeliveryOutcome, next: () => number): number {
-  if (outcome === "failed") return MAX_ATTEMPTS;
-  return outcome === "pending" ? 2 + Math.floor(next() * 3) : 1;
-}
-
-/** Every try of one delivery, the gaps from the schedule, only the last of a delivered one landing. */
-function attemptsFor(
-  next: () => number,
-  outcome: DeliveryOutcome,
-  created: number,
-  now: number,
-): DeliveryAttempt[] {
-  const tries = triesFor(outcome, next);
-  const failure = pick(next, FAILURES);
-  let at = created;
-  return Array.from({ length: tries }, (_, index): DeliveryAttempt => {
-    if (index > 0) at += (nextRetrySeconds(index) ?? 0) * 1000;
-    const landed = outcome === "delivered" && index === tries - 1;
-    return {
-      n: index + 1,
-      at: new Date(Math.min(at, now)).toISOString(),
-      status: landed ? 200 : failure.status,
-      error: landed ? null : failure.error,
-      durationMs: Math.round(landed ? 80 + next() * 300 : 400 + next() * 9000),
-      response: landed ? '{"received":true}' : failure.response,
-    };
-  });
-}
-
-/** A week of deliveries, only loaded while `WEBHOOK_DELIVERY.running` is true. */
-function sampleDeliveries(endpointIds: readonly string[]): WebhookDelivery[] {
-  const next = seeded(37);
-  const now = Date.now();
-  return Array.from({ length: 36 }, (): WebhookDelivery => {
-    const created = now - Math.round(next() * 6 * 86_400_000) - 60_000;
-    const outcome = outcomeFrom(next());
-    const attempts = attemptsFor(next, outcome, created, now);
-    const tries = attempts.length;
-    const id = `dlv_${Math.floor(next() * 0xffffffffffff)
-      .toString(16)
-      .padStart(12, "0")}`;
-    const event = pick(next, EVENTS_SEEN);
-    const delay = nextRetrySeconds(tries);
-    return {
-      id,
-      endpointId: next() < 0.7 ? (endpointIds[0] ?? "") : pick(next, endpointIds.slice(1)),
-      event,
-      outcome,
-      attempts,
-      nextRetryAt:
-        outcome === "pending" && delay !== null ? new Date(now + delay * 1000).toISOString() : null,
-      payload: samplePayload(event, id, new Date(created).toISOString()).replace(
-        '"id": "usr_2f9c41e0b7d84a63"',
-        '"id": "usr_2f9c41e0b7d84a63",\n    "email": "ana@acme.com"',
-      ),
-      createdAt: new Date(created).toISOString(),
-      test: false,
-    };
-  });
+function presentDelivery(payload: WebhookDeliveryPayload): WebhookDelivery {
+  return {
+    id: payload.id,
+    endpointId: payload.endpointId,
+    event: payload.event,
+    outcome: payload.outcome,
+    attempts: payload.attempts.map(
+      (attempt): DeliveryAttempt => ({
+        n: attempt.n,
+        at: attempt.at,
+        status: attempt.status,
+        error: attempt.error,
+        durationMs: attempt.durationMs,
+        response: attempt.response,
+      }),
+    ),
+    nextRetryAt: payload.nextRetryAt,
+    // The body as sent, and null once the delivery is finished: it is cleared on a terminal outcome
+    // rather than kept for a month, which is why a replay of a finished delivery is refused.
+    payload: payload.payload === null ? "" : JSON.stringify(payload.payload, null, 2),
+    createdAt: payload.createdAt,
+    test: payload.test,
+  };
 }

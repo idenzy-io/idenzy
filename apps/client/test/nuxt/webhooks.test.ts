@@ -1,7 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   ALL_EVENTS,
+  type DayStats,
   deliveriesIn,
   deliveryFigures,
   deliveryPercent,
@@ -24,13 +24,12 @@ import {
   redactPayload,
   responseExcerpt,
   retryWindowSeconds,
-  signatureHeader,
-  signedPayload,
   subscriptionLabel,
   TIMESTAMP_TOLERANCE_SECONDS,
   toggleEvent,
   toggleGroup,
   VERIFY_BODY,
+  VERIFY_IMPORT,
   VERIFY_SNIPPET,
   validateEndpointUrl,
   WEBHOOK_DELIVERY,
@@ -140,79 +139,40 @@ describe("naming an endpoint", () => {
   });
 });
 
-/*
- * The documented verifier, run as the text customers copy.
- */
-
-type Verify = (
-  body: string,
-  headers: Record<string, string> | Headers,
-  secret: string,
-  now?: number,
-) => boolean;
-
-/* The published sample is executed as written, to prove it verifies its own request. */
-const verify = new Function(
-  "createHmac",
-  "timingSafeEqual",
-  `${VERIFY_BODY}\nreturn verifyIdenzyWebhook;`,
-)(createHmac, timingSafeEqual) as Verify;
-
-const SECRET = "whsec_test_4f1c9e0b7a2d";
-const OTHER = "whsec_test_previous_0000";
-const BODY = '{"id":"dlv_1","type":"user.created"}';
 const STAMP = Math.floor(NOW.getTime() / 1000);
 
-function sign(secret: string, body = BODY, stamp = STAMP): string {
-  return createHmac("sha256", secret).update(signedPayload(stamp, body)).digest("hex");
-}
-
-function request(signature: string, stamp = STAMP) {
-  return { "x-idenzy-timestamp": String(stamp), "x-idenzy-signature": signature };
-}
-
+/**
+ * The sample a customer copies, which is now a call rather than a re-implementation.
+ *
+ * The old block executed the sample's own text against the signer's rules, because the sample *was*
+ * an implementation — thirty lines of HMAC that the note found disagreeing with the header it
+ * documented. It is now `verifyWebhook` from `@idenzy/node`, so the behaviour is tested where it
+ * lives (`packages/sdk/server/node/test/webhooks.test.ts`) and against the real signer over a socket
+ * in `apps/workers`. What is left to check here is that the sample teaches the four things a
+ * receiver gets wrong on its own.
+ */
 describe("the verifier customers copy", () => {
-  it("accepts the documented request, signed the way the header says", () => {
-    expect(verify(BODY, request(signatureHeader([sign(SECRET)])), SECRET, NOW.getTime())).toBe(
-      true,
-    );
+  it("calls the SDK rather than re-implementing the digest", () => {
+    expect(VERIFY_IMPORT).toBe('import { verifyWebhook } from "@idenzy/node/webhooks";');
+    expect(VERIFY_SNIPPET.startsWith(VERIFY_IMPORT)).toBe(true);
+    expect(VERIFY_BODY).toContain("verifyWebhook({");
+    expect(VERIFY_BODY).not.toContain("createHmac");
   });
 
-  it("accepts either signature during a rotation, and reads a fetch Headers object", () => {
-    const both = signatureHeader([sign(SECRET), sign(OTHER)]);
-    expect(verify(BODY, request(both), OTHER, NOW.getTime())).toBe(true);
-    expect(verify(BODY, new Headers(request(both)), SECRET, NOW.getTime())).toBe(true);
+  it("insists on the raw body, because a re-serialised one signs a different string", () => {
+    expect(VERIFY_BODY).toContain("rawBody");
+    expect(VERIFY_BODY).toContain("Re-serialising parsed JSON");
   });
 
-  it("refuses malformed signatures without throwing", () => {
-    const hex = sign(SECRET);
-    for (const header of [
-      "",
-      hex,
-      `sha1=${hex}`,
-      `sha256=${hex.slice(2)}`,
-      "sha256=zz",
-      "sha256=",
-    ]) {
-      expect(() => verify(BODY, request(header), SECRET, NOW.getTime())).not.toThrow();
-      expect(verify(BODY, request(header), SECRET, NOW.getTime())).toBe(false);
-    }
+  it("passes both secrets, so a rotation does not break verification", () => {
+    expect(VERIFY_BODY).toContain("secrets: [");
+    expect(VERIFY_BODY.toLowerCase()).toContain("rotation");
   });
 
-  it("refuses a tampered body, a wrong secret and a stale or missing timestamp", () => {
-    const header = signatureHeader([sign(SECRET)]);
-    expect(verify(`${BODY} `, request(header), SECRET, NOW.getTime())).toBe(false);
-    expect(verify(BODY, request(header), OTHER, NOW.getTime())).toBe(false);
-    const late = NOW.getTime() + (TIMESTAMP_TOLERANCE_SECONDS + 10) * 1000;
-    expect(verify(BODY, request(header), SECRET, late)).toBe(false);
-    expect(verify(BODY, { "x-idenzy-signature": header }, SECRET, NOW.getTime())).toBe(false);
-  });
-
-  it("is published with its import and as an export", () => {
-    expect(
-      VERIFY_SNIPPET.startsWith('import { createHmac, timingSafeEqual } from "node:crypto";'),
-    ).toBe(true);
-    expect(VERIFY_SNIPPET).toContain("export function verifyIdenzyWebhook");
+  it("answers 400 on a refusal and dedupes on the delivery id", () => {
+    expect(VERIFY_BODY).toContain("status(400)");
+    expect(VERIFY_BODY).toContain("delivery.deliveryId");
+    expect(VERIFY_BODY.toLowerCase()).toContain("at least once");
   });
 
   it("agrees with the staleness rule the screen states", () => {
@@ -237,28 +197,44 @@ describe("what counts as taken, and when it is tried again", () => {
   });
 });
 
-describe("while nothing delivers", () => {
-  it("claims no delivery: health is not measured and an enabled endpoint says nothing is sent", () => {
-    expect(WEBHOOK_DELIVERY.running).toBe(false);
-    expect(healthWords(healthOf([], "whk_1")).label).toBe("Not measured");
-    expect(endpointState(endpoint())).toEqual({
-      label: "On",
-      tone: "neutral",
-      detail: "Saved, nothing sent",
-    });
+describe("what the pipeline can and cannot do", () => {
+  /* Delivery runs. What does not is asking for a test event and sending a delivery again, and each
+     is its own flag so a control is off for its own reason rather than for delivery's. */
+  it("says delivery runs and names the two controls that are not built", () => {
+    expect(WEBHOOK_DELIVERY.running).toBe(true);
+    expect(WEBHOOK_DELIVERY.testEvent).toBe(false);
+    expect(WEBHOOK_DELIVERY.replay).toBe(false);
+    expect(WEBHOOK_DELIVERY.reason.length).toBeGreaterThan(0);
   });
 
-  it("says why an endpoint is off and who paused it", () => {
-    const paused = endpoint({
+  it("calls an enabled endpoint on, with nothing to excuse", () => {
+    expect(endpointState(endpoint())).toEqual({ label: "On", tone: "success", detail: "" });
+  });
+
+  it("has no health to report until something has been tried", () => {
+    expect(healthWords(healthOf([], "whk_1")).label).toBe("No attempts yet");
+  });
+
+  /* The API answers a membership id, not a name, so the row says which of the two it was and keeps
+     nobody's name in a second place. */
+  it("says whether the reader paused it or somebody else did", () => {
+    const mine = endpoint({
       enabled: false,
-      disabled: { kind: "paused", at: NOW.toISOString(), by: "Mei Tanaka" },
+      disabled: { kind: "paused", at: NOW.toISOString(), byMemberId: "mem_1" },
     });
-    expect(endpointState(paused)).toMatchObject({ label: "Paused", detail: "By Mei Tanaka" });
+    expect(endpointState(mine, "mem_1")).toMatchObject({ label: "Paused", detail: "By you" });
+    expect(endpointState(mine, "mem_2")).toMatchObject({ detail: "By a team member" });
+    expect(endpointState(mine)).toMatchObject({ detail: "By a team member" });
+  });
+
+  it("says the breaker switched it off, and counts attempts rather than deliveries", () => {
     const failing = endpoint({
       enabled: false,
-      disabled: { kind: "failing", at: NOW.toISOString(), by: null },
+      disabled: { kind: "failing", at: NOW.toISOString(), byMemberId: null },
     });
-    expect(endpointState(failing)).toMatchObject({ label: "Off", tone: "error" });
+    const state = endpointState(failing);
+    expect(state).toMatchObject({ label: "Off", tone: "error" });
+    expect(state.detail).toContain("failed attempts");
   });
 });
 
@@ -312,28 +288,51 @@ describe("the evidence in an attempt", () => {
   });
 });
 
+/**
+ * The strip reads the counters rather than the deliveries on screen.
+ *
+ * It used to count the delivery list, which was honest only while that list was every delivery there
+ * had ever been. It is now the latest fifty per endpoint, so counting it would report a busy week as
+ * fifty — a figure that gets less true the more traffic a customer has (ADR-0012).
+ */
 describe("the figures strip", () => {
-  it("draws nothing rather than nought while nothing is delivered", () => {
+  function day(part: Partial<DayStats> & Pick<DayStats, "day">): DayStats {
+    return { endpointId: "whk_1", delivered: 0, failed: 0, attempts: 0, ...part };
+  }
+
+  it("draws nothing rather than nought where nothing was counted", () => {
     for (const figure of deliveryFigures([], NOW)) {
       expect(figure.value).toBe(0);
       expect(figure.series).toEqual([]);
     }
   });
 
-  it("counts a week of deliveries by outcome, each delivery once", () => {
+  it("adds up a week, and leaves anything older out of it", () => {
     const figures = deliveryFigures(
       [
-        delivery({ id: "1" }),
-        delivery({ id: "2", outcome: "failed" }),
-        delivery({ id: "3", createdAt: "2026-08-01T00:00:00.000Z" }),
+        day({ day: "2026-09-09", delivered: 3, attempts: 4 }),
+        day({ day: "2026-09-08", failed: 1, attempts: 8 }),
+        day({ day: "2026-08-01", delivered: 99, attempts: 99 }),
       ],
       NOW,
     );
     const value = (id: string) => figures.find((figure) => figure.id === id)?.value;
-    expect(value("deliveries")).toBe(2);
-    expect(value("delivered")).toBe(1);
+    expect(value("deliveries")).toBe(4);
+    expect(value("delivered")).toBe(3);
     expect(value("failed")).toBe(1);
-    expect(value("pending")).toBe(0);
+    // Attempts exceed deliveries exactly when something was retried.
+    expect(value("attempts")).toBe(12);
     expect(figures[0]?.series).toHaveLength(7);
+  });
+
+  it("adds several endpoints' counters into one day", () => {
+    const figures = deliveryFigures(
+      [
+        day({ day: "2026-09-09", endpointId: "whk_1", delivered: 2, attempts: 2 }),
+        day({ day: "2026-09-09", endpointId: "whk_2", delivered: 5, attempts: 6 }),
+      ],
+      NOW,
+    );
+    expect(figures.find((figure) => figure.id === "delivered")?.value).toBe(7);
   });
 });

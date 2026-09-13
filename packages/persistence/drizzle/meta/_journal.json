@@ -351,6 +351,13 @@
       "when": 1789295711176,
       "tag": "0049_usage_hourly_grants_and_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789295885804,
+      "tag": "0050_usage_projects_with_activity",
+      "breakpoints": true
     }
   ]
 }

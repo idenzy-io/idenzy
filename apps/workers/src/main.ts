@@ -12,16 +12,20 @@ import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
+import { UsageActiveProjectsReader } from "@idenzy/persistence/repository/usage-active-projects-reader";
 import { UsageClosableReader } from "@idenzy/persistence/repository/usage-closable-reader";
+import { UsageRetentionPruner } from "@idenzy/persistence/repository/usage-retention-pruner";
 import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-reader";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { AuditRelay } from "./audit-relay.js";
 import { MetadataTokenSource } from "./google/access-token-source.js";
 import { GoogleOidcVerifier } from "./google/task-caller-verifier.js";
+import { HourlyUsageRoller } from "./hourly-usage-roller.js";
 import { InternalServer } from "./http/internal-server.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
 import { UsagePeriodCloser } from "./usage-period-closer.js";
+import { UsageRetentionSweeper } from "./usage-retention-sweeper.js";
 import { CloudTasksScheduler } from "./webhooks/cloud-tasks-scheduler.js";
 import { type DeliveryScheduler, SweepingScheduler } from "./webhooks/delivery-scheduler.js";
 import { WebhookDispatcher } from "./webhooks/webhook-dispatcher.js";
@@ -130,6 +134,15 @@ async function bootstrap(): Promise<void> {
   const usageCloser = new UsagePeriodCloser(new UsageClosableReader(db), uow, clock, logger);
 
   /*
+   * The other two halves of metering. The roller writes an hour the first time it sees one
+   * complete, because an hour's level and its share of the day's counters are only true at the
+   * moment they are taken; the sweeper is what turns three declared retention tiers into three
+   * facts, which until it existed they were not.
+   */
+  const usageRoller = new HourlyUsageRoller(new UsageActiveProjectsReader(db), uow, clock, logger);
+  const usageRetention = new UsageRetentionSweeper(new UsageRetentionPruner(db), clock, logger);
+
+  /*
    * Cloud Tasks if this deployment was given queues, and the sweeper if it was not. Both are correct:
    * the queue arms a retry to the second, the sweeper finds it on its interval, and only the second
    * of those is a delivery guarantee. A half-configured queue is the one case that fails here rather
@@ -202,6 +215,8 @@ async function bootstrap(): Promise<void> {
   await webhookRelay.start();
   await webhookSweeper.start();
   await usageCloser.start();
+  await usageRoller.start();
+  await usageRetention.start();
   await server.start();
   logger.info("workers started", config.toSafeSummary());
 }

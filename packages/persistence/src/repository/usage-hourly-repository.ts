@@ -20,32 +20,28 @@ export type NewHourlyUsage = HourlyUsage;
 /**
  * The finest usage rollup (PROJECT.md 5.1).
  *
- * Written by the roller in `apps/workers` and by nothing else, one row per completed hour. The
- * write is an upsert that overwrites rather than accumulating, because a roller re-running over an
- * hour it has already written is recomputing the same answer from the same rows — unlike the daily
- * counters, where two sends genuinely add.
+ * Written by the roller in `apps/workers` and by nothing else, one row per completed hour.
  */
 export class UsageHourlyRepository extends BaseRepository<typeof usageHourly> {
   constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, usageHourly);
   }
 
-  /** Records a completed hour, replacing whatever a previous pass wrote for it. */
+  /**
+   * Records a completed hour, once.
+   *
+   * Nothing on conflict, and that is a semantic rather than a safeguard: an hour's level is what
+   * was *observed* when the hour ended, and its counters are what the day's cumulative figures had
+   * not yet been attributed to an earlier hour. Both are true only at the moment they are taken.
+   * A second pass over the same hour, minutes later, would compute them from figures that have
+   * since moved on and would quietly reattribute the next hour's traffic to this one.
+   */
   async record(row: NewHourlyUsage): Promise<void> {
     await this.guard(() =>
       this.tx
         .insert(usageHourly)
         .values({ projectId: this.context.projectId, ...row })
-        .onConflictDoUpdate({
-          target: [usageHourly.projectId, usageHourly.hour],
-          set: {
-            mauToDate: row.mauToDate,
-            emailsSent: row.emailsSent,
-            smsSent: row.smsSent,
-            smsVerified: row.smsVerified,
-            smsCost: row.smsCost,
-          },
-        }),
+        .onConflictDoNothing({ target: [usageHourly.projectId, usageHourly.hour] }),
     );
   }
 

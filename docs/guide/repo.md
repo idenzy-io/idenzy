@@ -16,6 +16,18 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   statements, so a migration that also created the role could not run on a fresh cluster.
 - **TypeScript is pinned to 6.0.x**, not 7. `@nestjs/cli` 12 depends on `typescript
   ~6.0.2` and Nest DI needs `emitDecoratorMetadata`.
+- **Node cannot run this source, so `pnpm dev` compiles.** Two reasons and both are
+  structural: NodeNext makes every first-party import a `./x.js` specifier, which Node does
+  not resolve to the sibling `./x.ts`, and strip-only mode refuses a constructor parameter
+  property — which is how every class in the codebase takes its dependencies (PROJECT.md
+  7.2.2). That also rules out a stripping-based runner such as `tsx`: esbuild declines to
+  emit the `design:paramtypes` metadata Nest's DI reads. The three services therefore run
+  `node ../../tools/dev/src/serve.ts`, which pairs `tsc --watch` with `node --watch dist/main.js`.
+  The script exists rather than the two commands sitting in `package.json` because
+  `a & b` in a shell **orphans both** the moment whatever started it is killed: a stray
+  compiler and a stray service still holding a port, reparented to init. Measured, not
+  assumed. `turbo run dev` also builds workspace dependencies first, like every other task
+  that compiles, because the apps consume `@idenzy/*` from `dist`.
 - **App tests import from `dist`.** Vitest 4 transforms with Rolldown, which does not
   apply the legacy decorator semantics NestJS needs, so decorated classes fail to parse
   from source. Compiling first also means tests exercise the artifact that ships.

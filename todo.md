@@ -865,6 +865,35 @@ client have no server halves to talk to yet.
       to take authentication down. Verified live — minLength 20 refused a sixteen-character
       sign-up and accepted a twenty, `allowSignUp: false` refused a new account while an
       existing one still reached the password check, and `enabled: false` refused everybody.
+      **Five more sections followed, and the flows obey them.** `otp` (email, SMS and magic
+      link, each with its own `enabled` and `allowSignUp`), `passkeys`, `mfa`, `recovery`
+      and `lifetimes`. Each channel is refused at the earliest possible point rather than
+      the most convenient: the email code before one is generated or hashed, the SMS code
+      before `SmsFraudGuard` reaches the spend cap or the counters, the passkey before a
+      challenge is minted — a nonce handed out and refused a moment later reads as a broken
+      browser rather than as a setting.
+      **`lifetimes` is the one that closes a promise 4.2 has been making since phase 0.**
+      The access-token TTL was `ACCESS_TOKEN_TTL_SECONDS`, one value for a whole deployment,
+      while the document said "customer configurable from 60 s to 60 min". `TokenIssuer.issue`
+      now takes an optional per-call lifetime — per call rather than an issuer per project,
+      since the only thing that would differ between them is an integer — and clamps it to
+      60..3600 itself, because that is the last place before a signature and a token minted
+      from a value that got past validation elsewhere is a live credential with a lifetime
+      nobody chose. `SessionService` reads the project's windows for the session row too.
+      Verified live: 300 by default, 60 and 3600 when set, 90 days refused by the schema, and
+      an idle window longer than the absolute lifetime refused by the refine — a project with
+      one could never have had it take effect.
+      That is two primary-key reads per token on the refresh path, which is exactly what the
+      project-config cache 4.2 assumes is for; it now has a single place to land.
+      `useSettingsSection` in the panel is one composable behind five stores, because the
+      patch semantics are the part worth having once: the API replaces a section whole, so a
+      store that sent a partial one would silently reset the fields it left out.
+      What each of those screens still cannot do is named in its store rather than implied:
+      the passkey relying party is a row in `webauthn_relying_parties` with a unique index
+      behind it and has no endpoint, step-up's max age is still deployment-wide, a recovery
+      set belongs to a user and `mfa_recovery_codes` has no route, and nothing records when
+      a verifier last polled the revocation snapshot — so that timestamp is null rather than
+      invented.
       One knob is deliberately stored and not yet enforced: `lockout` and `lockoutAttempts`
       need a counter on the sign-in path, which is the rate limiter's shape and not the
       policy's. `resetLifetime`, `signOutOnReset` and `notifyOnChange` are stored and read

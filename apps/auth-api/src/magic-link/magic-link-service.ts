@@ -3,6 +3,7 @@ import {
   ChallengeExpiredError,
   ChallengeInvalidError,
   RedirectUriNotAllowedError,
+  SignInMethodDisabledError,
 } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
@@ -19,6 +20,7 @@ import { TemplateType } from "@idenzy/protocol/enums/delivery";
 import type { ChallengeStarted } from "@idenzy/protocol/schemas/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Injectable } from "@nestjs/common";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { Mailer } from "../delivery/mailer.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -46,9 +48,13 @@ export class MagicLinkService {
     private readonly encryptor: FieldEncryptor,
     private readonly mailer: Mailer,
     private readonly config: AppConfig,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   async start(context: FlowContext, email: string, redirectUri: string): Promise<ChallengeStarted> {
+    const link = (await this.settings.for(context)).otp.magicLink;
+    if (!link.enabled) throw new SignInMethodDisabledError({ detail: { method: "magic_link" } });
+
     const tenant = tenantContextFrom(context);
     const ttl = this.config.get("MAGIC_LINK_TTL_SECONDS");
     const expiresAt = this.clock.inSeconds(ttl);

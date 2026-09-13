@@ -1,4 +1,5 @@
 import { AppConfig } from "@idenzy/config/app-config";
+import { SignInMethodDisabledError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
@@ -11,6 +12,7 @@ import { Channel, TemplateType } from "@idenzy/protocol/enums/delivery";
 import type { ChallengeStarted } from "@idenzy/protocol/schemas/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Injectable } from "@nestjs/common";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { Mailer } from "../delivery/mailer.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -34,9 +36,15 @@ export class EmailOtpService {
     private readonly encryptor: FieldEncryptor,
     private readonly mailer: Mailer,
     private readonly config: AppConfig,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   async start(context: FlowContext, email: string): Promise<ChallengeStarted> {
+    // Before a code is generated, hashed or sent: a channel the project switched off must
+    // not cost us an Argon2 run and an email to find that out.
+    const channel = (await this.settings.for(context)).otp.email;
+    if (!channel.enabled) throw new SignInMethodDisabledError({ detail: { method: "email_otp" } });
+
     const tenant = tenantContextFrom(context);
     const ttl = this.config.get("OTP_TTL_SECONDS");
     const expiresAt = this.clock.inSeconds(ttl);

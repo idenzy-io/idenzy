@@ -34,8 +34,20 @@ import { Injectable } from "@nestjs/common";
 export class ProjectSettingsReader {
   constructor(private readonly uow: UnitOfWork) {}
 
+  /** For a flow, which carries the request's own context. */
   async for(context: FlowContext): Promise<ProjectSettings> {
-    const tenant = new TenantContext(context.projectId, context.requestId, "system");
+    return await this.forProject(context.projectId, context.requestId);
+  }
+
+  /**
+   * For a caller that already holds a tenant scope rather than a flow context.
+   *
+   * The two exist because `FlowContext` carries a request's IP, user agent and locale, none
+   * of which a settings read wants — and inventing them to satisfy the type would be a lie
+   * about where the call came from.
+   */
+  async forProject(projectId: string, requestId: string): Promise<ProjectSettings> {
+    const tenant = new TenantContext(projectId, requestId, "system");
     const row = await this.uow.run(tenant, (tx) => new ProjectRepository(tx, tenant).current());
     if (row === null) return DEFAULT_PROJECT_SETTINGS;
     const parsed = projectSettingsSchema.safeParse(row.settings);

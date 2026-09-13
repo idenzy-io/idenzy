@@ -36,69 +36,57 @@ export interface OtpStats {
   smsVerified: number;
 }
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 600;
+const _PLACEHOLDER_LATENCY = 700;
+const _SAVE_LATENCY = 600;
 
 export const useOtpStore = defineStore("otp", () => {
-  const settings = ref<Record<string, OtpSettings>>({});
-  const loading = ref(true);
-  const lastSaved = ref<Record<string, string>>({});
-
-  setTimeout(() => {
-    settings.value = {
-      prj_personal: {
-        email: { enabled: true, allowSignUp: true },
-        sms: { enabled: false, allowSignUp: true },
-        magicLink: { enabled: false, allowSignUp: true, redirectUris: [] },
-      },
-      prj_acme: {
-        email: { enabled: true, allowSignUp: true },
-        sms: { enabled: true, allowSignUp: false },
-        magicLink: {
-          enabled: true,
-          allowSignUp: true,
-          redirectUris: [
-            "https://app.acme.com/auth/callback",
-            "https://staging.acme.com/auth/callback",
-          ],
-        },
-      },
-    };
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
+  const section = useSettingsSection("otp", () => copy(DEFAULT_OTP_SETTINGS));
 
   function settingsFor(projectId: string): OtpSettings {
-    return settings.value[projectId] ?? copy(DEFAULT_OTP_SETTINGS);
+    return section.valueFor(projectId);
   }
 
-  /** Writes the fields given and leaves the rest; resolves once the server has them. */
+  /**
+   * Writes the fields given and leaves the rest.
+   *
+   * The whole section goes up, because the API replaces sections rather than deep-merging.
+   * The merge is here and not in the composable so it stays visible: `redirectUris` is an
+   * array, and an array spread into an object is the one case where "leave the rest alone"
+   * quietly means "replace it".
+   */
   async function patch(projectId: string, change: OtpSettingsChange): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const current = settingsFor(projectId);
-    settings.value = {
-      ...settings.value,
-      [projectId]: {
-        email: { ...current.email, ...change.email },
-        sms: { ...current.sms, ...change.sms },
-        magicLink: {
-          ...current.magicLink,
-          ...change.magicLink,
-          redirectUris: [...(change.magicLink?.redirectUris ?? current.magicLink.redirectUris)],
-        },
+    await section.save(projectId, {
+      email: { ...current.email, ...change.email },
+      sms: { ...current.sms, ...change.sms },
+      magicLink: {
+        ...current.magicLink,
+        ...change.magicLink,
+        redirectUris: [...(change.magicLink?.redirectUris ?? current.magicLink.redirectUris)],
       },
-    };
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
+    });
   }
 
-  function lastSavedAt(projectId: string): string | null {
-    return lastSaved.value[projectId] ?? null;
-  }
-
+  /**
+   * The figures beside the settings, still generated.
+   *
+   * Counts of codes sent, verified and expired live in the analytics store (ADR-0013) and
+   * wait on 3.2's panel wiring, not on an endpoint that could exist today.
+   */
   function stats(projectId: string): OtpStats {
     return projectId === "prj_acme" ? ACME_STATS : PERSONAL_STATS;
   }
 
-  return { settings, loading, settingsFor, patch, lastSavedAt, stats };
+  return {
+    settings: section.byProject,
+    loading: section.loading,
+    refusal: section.refusal,
+    load: section.load,
+    settingsFor,
+    patch,
+    lastSavedAt: section.lastSavedAt,
+    stats,
+  };
 });
 
 function copy(settings: OtpSettings): OtpSettings {

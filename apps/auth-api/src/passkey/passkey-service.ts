@@ -2,6 +2,7 @@ import { AppConfig } from "@idenzy/config/app-config";
 import {
   ChallengeExpiredError,
   ResourceNotFoundError,
+  SignInMethodDisabledError,
   WebauthnAssertionInvalidError,
 } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
@@ -26,6 +27,7 @@ import type {
   PasskeyRegistrationOptions,
 } from "@idenzy/protocol/schemas/webauthn";
 import { Injectable } from "@nestjs/common";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 import { PasskeyCeremony } from "./passkey-ceremony.js";
 import { RelyingPartyResolver } from "./relying-party-resolver.js";
@@ -51,6 +53,7 @@ export class PasskeyService {
     private readonly config: AppConfig,
     private readonly ceremony: PasskeyCeremony,
     private readonly relyingParties: RelyingPartyResolver,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   /**
@@ -158,6 +161,13 @@ export class PasskeyService {
 
   /** Options for a sign-in that does not yet know whose it is. */
   async startAuthentication(context: FlowContext): Promise<PasskeyAuthenticationOptions> {
+    // Refused before a challenge is minted. A project with passkeys off must not hand out
+    // a nonce that a later ceremony would then have to refuse, which reads as a broken
+    // browser rather than as a setting.
+    if (!(await this.settings.for(context)).passkeys.enabled) {
+      throw new SignInMethodDisabledError({ detail: { method: "passkey" } });
+    }
+
     const rp = await this.relyingParties.resolve(context);
     const tenant = tenantContextFrom(context);
     const challenge = generateOpaqueToken();

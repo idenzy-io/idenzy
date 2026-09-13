@@ -41,9 +41,17 @@ export interface RecoveryStats {
 const SAVE_LATENCY = 600;
 
 export const useRecoveryStore = defineStore("recovery", () => {
+  /**
+   * The threshold is a real setting; the sets below it are not yet.
+   *
+   * A recovery set belongs to a user and lives in `mfa_recovery_codes`, which has no
+   * management endpoint — so the list of who is running low stays generated while the
+   * number that decides "low" is the project's own.
+   */
+  const section = useSettingsSection("recovery", () => ({ ...DEFAULT_RECOVERY_SETTINGS }));
   const users = useUsersStore();
 
-  const settings = ref<Record<string, RecoverySettings>>({});
+  const _settings = ref<Record<string, RecoverySettings>>({});
   const lastSaved = ref<Record<string, string>>({});
   /** Sets an operator has cleared this session, so the list shows what it did. */
   const cleared = ref<Record<string, string[]>>({});
@@ -51,7 +59,7 @@ export const useRecoveryStore = defineStore("recovery", () => {
   const loading = computed(() => users.loading);
 
   function settingsFor(projectId: string): RecoverySettings {
-    return settings.value[projectId] ?? { ...DEFAULT_RECOVERY_SETTINGS };
+    return section.valueFor(projectId);
   }
 
   /**
@@ -76,11 +84,7 @@ export const useRecoveryStore = defineStore("recovery", () => {
 
   /** Writes the fields given and leaves the rest; resolves once the server has them. */
   async function patch(projectId: string, change: Partial<RecoverySettings>): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    settings.value = {
-      ...settings.value,
-      [projectId]: { ...settingsFor(projectId), ...change },
-    };
+    await section.save(projectId, { ...settingsFor(projectId), ...change });
     stamp(projectId);
   }
 
@@ -121,7 +125,7 @@ export const useRecoveryStore = defineStore("recovery", () => {
   }
 
   return {
-    settings,
+    settings: section.byProject,
     loading,
     settingsFor,
     setsFor,

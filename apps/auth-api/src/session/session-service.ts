@@ -24,6 +24,7 @@ import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import type { SessionList } from "@idenzy/protocol/schemas/session";
 import { Injectable } from "@nestjs/common";
 import { ClaimTemplateService } from "../claims/claim-template-service.js";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 import { RevocationPublisher } from "./revocation-publisher.js";
 import type { SessionPrincipal } from "./session.guard.js";
@@ -48,12 +49,16 @@ export class SessionService implements SessionIssuer {
     private readonly revocations: RevocationPublisher,
     private readonly claims: ClaimTemplateService,
     private readonly analytics: AnalyticsRecorder,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   async issueSession(context: FlowContext, subject: AuthenticatedSubject): Promise<IssuedSession> {
     const tenant = tenantContextFrom(context);
     const refreshToken = generateOpaqueToken();
     const now = this.clock.now();
+    // The project's own windows. §4.2 promised these were the customer's to set and they
+    // were a deployment-wide environment variable until the settings document existed.
+    const lifetimes = (await this.settings.for(context)).lifetimes;
 
     const { sessionId, user } = await this.uow.run(tenant, async (tx) => {
       const users = new UserRepository(tx, tenant);
@@ -72,8 +77,8 @@ export class SessionService implements SessionIssuer {
         deviceId: null,
         deviceName: context.deviceName,
         factorVerifiedAt: subject.factorVerifiedAt,
-        idleExpiresAt: this.clock.inSeconds(this.config.get("SESSION_IDLE_TTL_SECONDS")),
-        absoluteExpiresAt: this.clock.inSeconds(this.config.get("SESSION_ABSOLUTE_TTL_SECONDS")),
+        idleExpiresAt: this.clock.inSeconds(lifetimes.idleSeconds),
+        absoluteExpiresAt: this.clock.inSeconds(lifetimes.absoluteSeconds),
       });
 
       await new RefreshTokenRepository(tx, tenant).issue({
@@ -269,16 +274,23 @@ export class SessionService implements SessionIssuer {
     factorVerifiedAt: Date | null,
   ): Promise<{ token: string; expiresAt: Date }> {
     const custom = (await this.claims.load(tenant)).render(user);
-    const issued = await this.tokens.issue({
-      sub: PublicId.encode(IdPrefix.User, user.id).value,
-      sid: PublicId.encode(IdPrefix.Session, sessionId).value,
-      aud: PublicId.encode(IdPrefix.Project, tenant.projectId).value,
-      amr,
-      ...(factorVerifiedAt === null
-        ? {}
-        : { fva: Math.floor((this.clock.nowMs() - factorVerifiedAt.getTime()) / 1000) }),
-      custom,
-    });
+    // Two primary-key reads per token, which is what the project-config cache §4.2 assumes
+    // is for. Both are on the refresh path, so this is the place that cache has to land.
+    const lifetimes = (await this.settings.forProject(tenant.projectId, tenant.requestId))
+      .lifetimes;
+    const issued = await this.tokens.issue(
+      {
+        sub: PublicId.encode(IdPrefix.User, user.id).value,
+        sid: PublicId.encode(IdPrefix.Session, sessionId).value,
+        aud: PublicId.encode(IdPrefix.Project, tenant.projectId).value,
+        amr,
+        ...(factorVerifiedAt === null
+          ? {}
+          : { fva: Math.floor((this.clock.nowMs() - factorVerifiedAt.getTime()) / 1000) }),
+        custom,
+      },
+      lifetimes.accessTokenSeconds,
+    );
     return { token: issued.token, expiresAt: issued.expiresAt };
   }
 }

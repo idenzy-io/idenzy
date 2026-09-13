@@ -53,6 +53,14 @@ const PLACEHOLDER_LATENCY = 700;
 const SAVE_LATENCY = 600;
 
 export const useMfaStore = defineStore("mfa", () => {
+  /**
+   * The authenticator half is a real setting. Step-up is not, and cannot be yet: it is
+   * `STEP_UP_MAX_AGE_SECONDS`, a deployment-wide value the `fva` claim is compared
+   * against, and making it per-project means the same surgery the token lifetimes needed.
+   */
+  const section = useSettingsSection("mfa", () => ({
+    authenticator: { ...DEFAULT_AUTHENTICATOR_SETTINGS },
+  }));
   const authenticator = ref<Record<string, AuthenticatorSettings>>({});
   const stepUp = ref<Record<string, StepUpSettings>>({});
   const loading = ref(true);
@@ -71,7 +79,7 @@ export const useMfaStore = defineStore("mfa", () => {
   }, PLACEHOLDER_LATENCY);
 
   function authenticatorFor(projectId: string): AuthenticatorSettings {
-    return authenticator.value[projectId] ?? { ...DEFAULT_AUTHENTICATOR_SETTINGS };
+    return section.valueFor(projectId).authenticator;
   }
 
   /** Writes the fields given and leaves the rest; resolves once the server has them. */
@@ -79,12 +87,9 @@ export const useMfaStore = defineStore("mfa", () => {
     projectId: string,
     change: Partial<AuthenticatorSettings>,
   ): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    authenticator.value = {
-      ...authenticator.value,
-      [projectId]: { ...authenticatorFor(projectId), ...change },
-    };
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
+    await section.save(projectId, {
+      authenticator: { ...authenticatorFor(projectId), ...change },
+    });
   }
 
   function lastSavedAt(projectId: string): string | null {
@@ -110,7 +115,7 @@ export const useMfaStore = defineStore("mfa", () => {
   }
 
   return {
-    authenticator,
+    authenticator: section.byProject,
     stepUp,
     loading,
     authenticatorFor,

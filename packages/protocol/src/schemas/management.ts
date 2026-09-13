@@ -960,8 +960,126 @@ export const passwordPolicySchema = z.object({
 });
 export type PasswordPolicy = z.infer<typeof passwordPolicySchema>;
 
+/**
+ * One passwordless channel: whether it may be used, and whether it may create accounts.
+ *
+ * The two are separate for the reason the password policy keeps them separate — closing
+ * registration must not lock out the people already inside — and they matter more here,
+ * because a code channel signs in and signs up through the same call. The code proves the
+ * same thing either way, so the flow cannot tell them apart until it looks for the account.
+ */
+export const codeChannelSchema = z.object({
+  enabled: z.boolean().default(true),
+  allowSignUp: z.boolean().default(true),
+});
+export type CodeChannel = z.infer<typeof codeChannelSchema>;
+
+export const magicLinkSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  allowSignUp: z.boolean().default(true),
+  /**
+   * Where a clicked link may land, matched exactly.
+   *
+   * Empty means no link can be started at all, which is the safe default rather than an
+   * oversight: a link with nowhere registered to land is an open redirect waiting for
+   * somebody to supply the destination (PROJECT.md 4.6).
+   */
+  redirectUris: z.array(z.url()).max(20).default([]),
+});
+export type MagicLinkSettings = z.infer<typeof magicLinkSettingsSchema>;
+
+/**
+ * The passwordless channels.
+ *
+ * Email on, SMS and links off. SMS costs money before it reaches anybody and sends nothing
+ * without a policy in any case; links are the second choice to codes (4.7) and need a route
+ * of the customer's own before one can be sent.
+ */
+export const otpSettingsSchema = z.object({
+  email: codeChannelSchema.default(codeChannelSchema.parse({})),
+  sms: codeChannelSchema.default({ enabled: false, allowSignUp: true }),
+  magicLink: magicLinkSettingsSchema.default(magicLinkSettingsSchema.parse({})),
+});
+export type OtpSettings = z.infer<typeof otpSettingsSchema>;
+
+/**
+ * Passkeys.
+ *
+ * Only the switch lives here. The relying party is a row in `webauthn_relying_parties` with
+ * a unique index behind it, because one project may have exactly one — a second would split
+ * a customer's passkeys into two sets that cannot substitute for each other — and a unique
+ * index is a guarantee a jsonb document cannot make.
+ */
+export const passkeySettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+});
+export type PasskeySettings = z.infer<typeof passkeySettingsSchema>;
+
+export const authenticatorSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  /**
+   * What the authenticator app files the account under. Null falls back to the project name.
+   *
+   * Short because every app truncates a long one, and a colon is allowed because the server
+   * percent-encodes the label — which is what stops one from splitting the otpauth URI into
+   * a different account.
+   */
+  issuer: z.string().min(1).max(64).nullable().default(null),
+});
+export type AuthenticatorSettings = z.infer<typeof authenticatorSettingsSchema>;
+
+export const mfaSettingsSchema = z.object({
+  authenticator: authenticatorSettingsSchema.default(authenticatorSettingsSchema.parse({})),
+});
+export type MfaSettings = z.infer<typeof mfaSettingsSchema>;
+
+export const recoverySettingsSchema = z.object({
+  /** Below this many unspent codes the account is shown as low. A display rule, not a gate. */
+  lowThreshold: z.number().int().min(1).max(10).default(3),
+});
+export type RecoverySettings = z.infer<typeof recoverySettingsSchema>;
+
+/**
+ * Session and token lifetimes (PROJECT.md 4.2).
+ *
+ * The access token's bounds are a decision rather than a range somebody liked: below a
+ * minute the refresh traffic stops paying for itself, and above an hour the revocation
+ * latency stops being defensible. This is the setting §4.2 promised was "configurable from
+ * 60 s to 60 min" and which was a deployment-wide environment variable until now.
+ *
+ * Both session expiries are enforced and whichever falls first ends the session, so the
+ * idle window is capped at the absolute one — a project whose idle timeout outlives its
+ * absolute lifetime has one setting that can never take effect.
+ */
+export const lifetimeSettingsSchema = z
+  .object({
+    accessTokenSeconds: z.number().int().min(60).max(3600).default(300),
+    idleSeconds: z
+      .number()
+      .int()
+      .min(300)
+      .max(60 * 60 * 24 * 90)
+      .default(60 * 60 * 24 * 14),
+    absoluteSeconds: z
+      .number()
+      .int()
+      .min(3600)
+      .max(60 * 60 * 24 * 365)
+      .default(60 * 60 * 24 * 90),
+  })
+  .refine((l) => l.idleSeconds <= l.absoluteSeconds, {
+    message: "the idle window cannot outlive the absolute lifetime",
+    path: ["idleSeconds"],
+  });
+export type LifetimeSettings = z.infer<typeof lifetimeSettingsSchema>;
+
 export const projectSettingsSchema = z.object({
   password: passwordPolicySchema.default(passwordPolicySchema.parse({})),
+  otp: otpSettingsSchema.default(otpSettingsSchema.parse({})),
+  passkeys: passkeySettingsSchema.default(passkeySettingsSchema.parse({})),
+  mfa: mfaSettingsSchema.default(mfaSettingsSchema.parse({})),
+  recovery: recoverySettingsSchema.default(recoverySettingsSchema.parse({})),
+  lifetimes: lifetimeSettingsSchema.default(lifetimeSettingsSchema.parse({})),
 });
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 
@@ -973,7 +1091,14 @@ export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
  * express, which is the usual way a settings API acquires a `null` that means three things.
  */
 export const patchProjectSettingsSchema = z
-  .object({ password: passwordPolicySchema.optional() })
+  .object({
+    password: passwordPolicySchema.optional(),
+    otp: otpSettingsSchema.optional(),
+    passkeys: passkeySettingsSchema.optional(),
+    mfa: mfaSettingsSchema.optional(),
+    recovery: recoverySettingsSchema.optional(),
+    lifetimes: lifetimeSettingsSchema.optional(),
+  })
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "a patch must name at least one section",
   });

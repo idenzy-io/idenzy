@@ -9,11 +9,8 @@
  * the passwords screen does.
  */
 
-import {
-  DEFAULT_PASSKEY_SETTINGS,
-  type PasskeySettings,
-  type RelyingParty,
-} from "~/utils/passkeys";
+import { InternalError } from "@idenzy/core/errors";
+import type { PasskeySettings, RelyingParty } from "~/utils/passkeys";
 
 export interface PasskeyStats {
   /** Over the last thirty days, oldest day first. */
@@ -39,59 +36,55 @@ export interface PasskeyStats {
   byAuthenticator: { aaguid: string | null; count: number; backedUp: number }[];
 }
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 600;
+const _PLACEHOLDER_LATENCY = 700;
+const _SAVE_LATENCY = 600;
 
 export const usePasskeysStore = defineStore("passkeys", () => {
-  const settings = ref<Record<string, PasskeySettings>>({});
-  const loading = ref(true);
-  const lastSaved = ref<Record<string, string>>({});
+  const section = useSettingsSection("passkeys", () => ({ enabled: true }));
 
-  setTimeout(() => {
-    settings.value = {
-      prj_personal: {
-        enabled: true,
-        relyingParty: {
-          rpId: "example.com",
-          rpName: "Example",
-          origins: ["https://example.com", "https://app.example.com"],
-        },
-      },
-      prj_acme: { enabled: true, relyingParty: null },
-    };
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
-
+  /**
+   * The switch from settings, and the relying party from nowhere yet.
+   *
+   * `relyingParty` is a row in `webauthn_relying_parties` with a unique index behind it —
+   * one project may have exactly one, because a second would split a customer's passkeys
+   * into two sets that cannot substitute for each other — so it is not a section of the
+   * settings document and cannot be. Null until that table has an endpoint, which is the
+   * honest answer: the screen already says nothing passkey works without one.
+   */
   function settingsFor(projectId: string): PasskeySettings {
-    return settings.value[projectId] ?? { ...DEFAULT_PASSKEY_SETTINGS };
+    return { ...section.valueFor(projectId), relyingParty: null };
   }
 
-  /** Writes the fields given and leaves the rest; resolves once the server has them. */
   async function patch(projectId: string, change: Partial<PasskeySettings>): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    settings.value = {
-      ...settings.value,
-      [projectId]: { ...settingsFor(projectId), ...change },
-    };
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
+    if (change.enabled === undefined) return;
+    await section.save(projectId, { enabled: change.enabled });
   }
 
-  /** The relying party as one write, because its three fields are validated together. */
-  function setRelyingParty(projectId: string, party: RelyingParty): Promise<void> {
-    return patch(projectId, {
-      relyingParty: { rpId: party.rpId, rpName: party.rpName, origins: [...party.origins] },
-    });
+  /** No endpoint: `webauthn_relying_parties` has no management route (todo.md 1.6). */
+  function setRelyingParty(_projectId: string, _party: RelyingParty): Promise<void> {
+    return Promise.reject(
+      new InternalError({
+        detail: { reason: "the relying party has no management endpoint yet" },
+      }),
+    );
   }
 
-  function lastSavedAt(projectId: string): string | null {
-    return lastSaved.value[projectId] ?? null;
-  }
-
+  /** Counts of ceremonies live in the analytics store (ADR-0013), not in Postgres. */
   function stats(projectId: string): PasskeyStats {
     return projectId === "prj_acme" ? ACME_STATS : PERSONAL_STATS;
   }
 
-  return { settings, loading, settingsFor, patch, setRelyingParty, lastSavedAt, stats };
+  return {
+    settings: section.byProject,
+    loading: section.loading,
+    refusal: section.refusal,
+    load: section.load,
+    settingsFor,
+    patch,
+    setRelyingParty,
+    lastSavedAt: section.lastSavedAt,
+    stats,
+  };
 });
 
 /*

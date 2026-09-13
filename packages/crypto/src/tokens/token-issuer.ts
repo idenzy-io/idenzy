@@ -26,6 +26,16 @@ export interface IssuedToken {
  * token with a missing `sid` or an unbounded expiry. Subclasses only sign bytes, which
  * is the one part that differs between KMS and a local key.
  */
+/**
+ * What an access token's lifetime may ever be (PROJECT.md 4.2).
+ *
+ * Below a minute the refresh traffic stops paying for itself; above an hour the revocation
+ * latency stops being defensible, since an offline verifier cannot see a revocation until
+ * the token expires.
+ */
+const MIN_TTL_SECONDS = 60;
+const MAX_TTL_SECONDS = 3600;
+
 export abstract class TokenIssuer {
   protected constructor(
     protected readonly clock: Clock,
@@ -82,10 +92,27 @@ export abstract class TokenIssuer {
     return { token: jwt, expiresAt: new Date(expiresAt * 1000), keyId: kid };
   }
 
-  /** Template method: claims and lifetime are inherited, signing is not. */
-  async issue(claims: AccessTokenClaims): Promise<IssuedToken> {
+  /**
+   * Template method: claims and lifetime are inherited, signing is not.
+   *
+   * `ttlSeconds` overrides the deployment's default for one token, because the lifetime is
+   * the project's to choose (PROJECT.md 4.2) and this class is constructed once per process.
+   * Passing it per call rather than holding a per-project issuer is deliberate: an issuer
+   * per project would be a cache of objects keyed on a tenant, and the only thing that
+   * differs between them is an integer.
+   *
+   * The bound is applied here rather than trusted from the caller. The settings schema
+   * already refuses anything outside sixty seconds to an hour, but this is the last place
+   * before a signature: a token minted from a value that got past validation some other way
+   * would be a live credential with a lifetime nobody chose.
+   */
+  async issue(claims: AccessTokenClaims, ttlSeconds?: number): Promise<IssuedToken> {
     const issuedAt = Math.floor(this.clock.nowMs() / 1000);
-    const expiresAt = issuedAt + this.ttlSeconds;
+    const lifetime =
+      ttlSeconds === undefined
+        ? this.ttlSeconds
+        : Math.min(Math.max(Math.trunc(ttlSeconds), MIN_TTL_SECONDS), MAX_TTL_SECONDS);
+    const expiresAt = issuedAt + lifetime;
 
     const { jwt, kid } = await this.sign(
       { alg: "ES256", typ: "JWT" },

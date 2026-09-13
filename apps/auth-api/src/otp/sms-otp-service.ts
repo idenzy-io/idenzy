@@ -1,4 +1,5 @@
 import { AppConfig } from "@idenzy/config/app-config";
+import { SignInMethodDisabledError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import type { E164PhoneNumber } from "@idenzy/core/value-objects/e164-phone-number";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
@@ -12,6 +13,7 @@ import { Channel, TemplateType } from "@idenzy/protocol/enums/delivery";
 import type { ChallengeStarted } from "@idenzy/protocol/schemas/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Injectable } from "@nestjs/common";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { Texter } from "../delivery/texter.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
@@ -37,9 +39,15 @@ export class SmsOtpService {
     private readonly encryptor: FieldEncryptor,
     private readonly texter: Texter,
     private readonly config: AppConfig,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   async start(context: FlowContext, phone: E164PhoneNumber): Promise<ChallengeStarted> {
+    // First of all the SMS checks, and before `SmsFraudGuard`'s: a channel the project
+    // switched off must not reach the spend cap, the attestation check or the counters.
+    const channel = (await this.settings.for(context)).otp.sms;
+    if (!channel.enabled) throw new SignInMethodDisabledError({ detail: { method: "sms_otp" } });
+
     const tenant = tenantContextFrom(context);
     const ttl = this.config.get("OTP_TTL_SECONDS");
     const expiresAt = this.clock.inSeconds(ttl);

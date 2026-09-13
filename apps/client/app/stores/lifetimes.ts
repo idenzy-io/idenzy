@@ -18,69 +18,52 @@
  * bug the moment somebody compares this one with a session's expiry column.
  */
 
-import {
-  DEFAULT_LIFETIME_SETTINGS,
-  type LifetimeSettings,
-  REVOCATION_POLL_SECONDS,
-} from "~/utils/lifetimes";
+import { DEFAULT_LIFETIME_SETTINGS, type LifetimeSettings } from "~/utils/lifetimes";
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 600;
+const _PLACEHOLDER_LATENCY = 700;
+const _SAVE_LATENCY = 600;
 
 export const useLifetimesStore = defineStore("lifetimes", () => {
-  const settings = ref<Record<string, LifetimeSettings>>({});
-  /** When a verifier holding this project's secret key last read the snapshot. */
-  const polled = ref<Record<string, string>>({});
-  const loading = ref(true);
-  const lastSaved = ref<Record<string, string>>({});
-
-  setTimeout(() => {
-    settings.value = {
-      prj_personal: { ...DEFAULT_LIFETIME_SETTINGS },
-      /* A backend that polls the set, which is what buys the longer token. */
-      prj_acme: { accessTokenSeconds: 900, idleSeconds: 14 * 86_400, absoluteSeconds: 90 * 86_400 },
-    };
-    polled.value = { prj_acme: new Date(Date.now() - 4_000).toISOString() };
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
-
-  /*
-   * A poller that is polling keeps polling. Without this the seeded read ages while the
-   * panel is open and a connected project drifts into the stale state, which is the one
-   * thing the revocation screen has to be able to tell apart from a real one. Goes with
-   * the rest of the placeholder when the management client lands.
-   */
-  if (import.meta.client) {
-    setInterval(() => {
-      const at = new Date().toISOString();
-      const moved: Record<string, string> = {};
-      for (const projectId of Object.keys(polled.value)) moved[projectId] = at;
-      if (Object.keys(moved).length > 0) polled.value = moved;
-    }, REVOCATION_POLL_SECONDS * 1000);
-  }
+  const section = useSettingsSection("lifetimes", () => ({ ...DEFAULT_LIFETIME_SETTINGS }));
 
   function settingsFor(projectId: string): LifetimeSettings {
-    return settings.value[projectId] ?? { ...DEFAULT_LIFETIME_SETTINGS };
+    return section.valueFor(projectId);
   }
 
-  /** Writes the fields given and leaves the rest; resolves once the server has them. */
+  /**
+   * Writes the fields given and leaves the rest.
+   *
+   * The server refuses an idle window that outlives the absolute lifetime, and refuses
+   * anything outside sixty seconds to an hour for the access token — so a value the screen
+   * lets through and the API does not comes back as a refusal rather than as a save that
+   * did nothing.
+   */
   async function patch(projectId: string, change: Partial<LifetimeSettings>): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    settings.value = {
-      ...settings.value,
-      [projectId]: { ...settingsFor(projectId), ...change },
-    };
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
+    await section.save(projectId, { ...settingsFor(projectId), ...change });
   }
 
-  /** Null where nothing has ever polled, which is a different state from polling slowly. */
-  function revocationPolledAt(projectId: string): string | null {
-    return polled.value[projectId] ?? null;
+  /**
+   * When a verifier last fetched this project's revocation snapshot.
+   *
+   * Always null, and that is the true answer rather than a missing one: nothing records a
+   * poll. `GET /v1/revocations` is served with an ETag and a secret key, and the fetch is
+   * not written down anywhere — so the screen can say "we have never seen one" and cannot
+   * yet distinguish that from "one polled an hour ago". Recording it means a write on a
+   * read path that exists to be cheap, which is a decision worth making deliberately
+   * rather than for a timestamp on a screen.
+   */
+  function revocationPolledAt(_projectId: string): string | null {
+    return null;
   }
 
-  function lastSavedAt(projectId: string): string | null {
-    return lastSaved.value[projectId] ?? null;
-  }
-
-  return { settings, loading, settingsFor, patch, revocationPolledAt, lastSavedAt };
+  return {
+    settings: section.byProject,
+    loading: section.loading,
+    refusal: section.refusal,
+    load: section.load,
+    settingsFor,
+    patch,
+    revocationPolledAt,
+    lastSavedAt: section.lastSavedAt,
+  };
 });

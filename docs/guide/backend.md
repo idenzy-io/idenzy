@@ -390,6 +390,44 @@ because a HyperLogLog cannot be asked the obvious question.
   explores goes to the analytics store; what an invoice rests on stays in Postgres, with the ledger
   it has to agree with in the same transaction.
 
+## Working on the analytics store
+
+ClickHouse, for everything the reader explores rather than is billed for. Read
+[ADR-0013](../adr/0013-clickhouse-tenant-isolation-by-row-policy-and-a-scoped-client.md) first —
+two of these are decisions that look arbitrary until you know what they are avoiding.
+
+- **Never write a row at a time, and the signature says so.** Every INSERT creates a part, merges
+  run behind, and a writer that outruns them is refused with `TOO_MANY_PARTS`. That is not a slow
+  path that degrades: it is a working system that stops accepting writes under load. `insertBatch`
+  is the only write method and nothing calls it from a request path — `AnalyticsIngestQueue` stands
+  between the two, and batching is its whole reason for existing.
+- **A row policy filters reads and does not constrain writes.** Postgres RLS has `WITH CHECK`;
+  ClickHouse has no equivalent, so a tenant-scoped identity holding INSERT can plant a row under
+  another project and the policy will then serve it to them faithfully. The mitigation is the verb:
+  the reader holds SELECT and no INSERT, the pipeline holds INSERT and no SELECT. What binds a row
+  to its tenant is the producer, stamped where a request still has its `TenantContext`.
+- **A new table needs its own row policy**, exactly as a new Postgres tenant table needs its own
+  FORCE RLS and grant — and it fails the same silent way: the policy is absent, every project's
+  rows are readable, and nothing errors. `migrateAnalytics` creates the table and the policy in one
+  step with no way to do only the first, and the integration test sweeps `system.row_policies`
+  rather than trusting it.
+- **A queue entry is acknowledged after the insert, never before.** A crash in between replays the
+  batch; ClickHouse has no unique constraint to violate, so a replay is a duplicated row in a chart
+  and that is the cheaper of the two failures by a distance.
+- **The dead letter is not for a store that is down.** Those entries come back on the next pass on
+  their own. It is for the row ClickHouse will never accept, which would otherwise fail its batch
+  forever and block every healthy row queued behind it.
+- **Enqueuing never throws, and that is the same trade `RateLimitStrategy.check` makes.** Nothing
+  on a request path may fail because a chart will be missing a point. The opposite call is the SMS
+  spend cap's, and what decides it in all three is what sits on the other side.
+- **A deployment with no ClickHouse is correct, not degraded.** `NullAnalyticsRecorder` is the
+  reason no call site branches on whether analytics exist. Six environment variables travel
+  together or not at all: a half-configured store would start and run with ingestion quietly off,
+  and the symptom is an empty chart nobody is watching.
+- **Retention is a TTL derived from `classified()`**, with `ttl_only_drop_parts` so ageing out
+  drops whole monthly partitions instead of rewriting the table. Erasure is a different promise and
+  is not kept yet: the columns say `row_deleted` and nothing calls it.
+
 ## Working on webhook delivery
 
 The architecture and the numbers are in [ADR-0012](../adr/0012-webhook-delivery-is-a-queue-not-a-log.md);

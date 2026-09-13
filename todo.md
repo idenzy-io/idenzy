@@ -952,27 +952,68 @@ working, so the split below is by which question is being asked, not by which sc
       wants a dimension `usage_*` does not carry, and anything whose answer is a scan rather than a
       lookup. The rule is the same as it was — what is billed stays, what is explored moves — and
       what changed is that the billed half now bounds itself instead of growing forever.
-- [ ] Ingestion, on the Pub/Sub fan-out the logging product already needs (§3.1) rather
-      than a second path. One pipeline carrying both, with the destination table differing,
-      not two ways for an event to reach the analytics store.
-- [ ] Tenant isolation with no RLS to lean on. This is the part that needs a decision
-      before code: ADR-0003's second line does not exist in ClickHouse, so the `project_id`
-      predicate is structural in the query layer or it is nowhere. Whatever replaces it —
-      a row policy, a per-tenant view, a query builder nothing can bypass — is an ADR, and
-      an analytics store that can answer across tenants is the same incident class as a
-      Postgres query that forgets a `where`.
+- [x] Ingestion. **Built, and on a Valkey stream rather than the Pub/Sub fan-out this line
+      originally assumed.** The constraint that decided it is ClickHouse's and not ours: every
+      INSERT creates a part, merges run behind, and a writer that outruns them is refused with
+      `TOO_MANY_PARTS` — so the naive path does not degrade under load, it stops accepting writes.
+      What ingestion has to be, therefore, is a batcher, and a stream with a consumer group is
+      that with at-least-once attached. `LPOP` would have handed a batch over and forgotten it;
+      an entry here stays pending until it is acknowledged and `XAUTOCLAIM` is how the next worker
+      picks up what a dead one was carrying. The insert happens before the acknowledgement, so a
+      crash between them replays rather than drops — ClickHouse has no unique constraint to
+      violate, so a replay is a duplicated row in a chart, which is the cheaper failure by a
+      distance. Retry is the pass interval rather than a sleep, because a store that is down is
+      not helped by a worker spinning; the dead letter exists for the other failure, the one that
+      never resolves, where a row ClickHouse will never accept would otherwise fail its batch
+      forever and block every healthy row behind it. Enqueuing never throws and the stream is
+      capped with `MAXLEN ~`: nothing on a request path may fail because a chart will be missing
+      a point, and a worker that is down must not exhaust a cache that also serves rate limits and
+      the revocation set. It is still **one** pipeline, which is what the line asked for — the
+      transport is Valkey rather than Pub/Sub, and Pub/Sub remains right for §3.1's logging fan-out
+      if that lands on a different shape. `AnalyticsRecorder` is the port with two real
+      implementations, and the null one matters: a cell with no ClickHouse configured serves
+      sign-ins and draws no charts rather than failing. Both producers fire after their
+      transaction commits — `SessionService.issueSession`, where every flow ends, and
+      `RefreshService.rotate`, which records refusals too because reuse detection is the one worth
+      charting. `apps/workers` migrates the schema at boot and drains with a consumer name per
+      process. Verified live as well as in tests: four events queued, drained as batches, read
+      back scoped per project, and the reading identity refused a write. **BullMQ was considered
+      and rejected**: it is a job queue, one job is one unit of work, so it would have produced
+      either an INSERT per event or a hand-rolled batcher on top of it — grouped batching is a
+      paid feature — and it would have brought ioredis into a tree that already ships iovalkey
+- [x] Tenant isolation with no RLS to lean on. **ADR-0013**, and it is two lines again: a client
+      with no unscoped method, and a row policy keyed on a custom setting the client supplies per
+      request — which is what `set_config(..., true)` buys in Postgres and what a connection-level
+      `SET` would have thrown away on the first pool reuse. The default is the nil uuid rather than
+      unset, so a forgotten scope reads nothing instead of throwing something that looks like an
+      outage. **The finding worth having is on the write side**: a ClickHouse row policy filters
+      reads and, unlike a Postgres `WITH CHECK`, does not constrain writes at all — verified by
+      inserting a row for project B from a client scoped to A and watching B read it back. So the
+      identities are split by verb: the reader holds SELECT and no INSERT, the pipeline holds
+      INSERT and no SELECT, and what binds a row to its tenant is the producer rather than the
+      database. Stated in the ADR rather than glossed: the store's isolation is a read-side
+      guarantee.
 - [ ] Residency: a cell is an independent stack (§4.13.5), so an EU project's events go to
       the EU cell's ClickHouse and a cross-cell query is not a thing that exists.
-- [ ] Column classification. `classified()` is a Drizzle wrapper and ClickHouse is not
-      Drizzle, so the compliance generators reach none of this as it stands. Analytics
-      events carry IP, user agent and user ids — real personal data with a real retention
-      obligation — so either the generators learn a second source or the schema is declared
-      somewhere they already read. Not optional: a column outside `classified()` escapes
-      the RoPA, the data map, the log allowlist and the DSR field lists at once (§4.13.2).
-- [ ] Erasure and retention: a data-subject erasure has to reach the analytics store too,
-      and ClickHouse mutations are not row deletes. TTL by partition plus a delete path
-      that the DSR handler can actually call, or the erasure promise is only true of
-      Postgres.
+- [x] Column classification. **The registry rather than a second generator.**
+      `classifiedAnalyticsTable` registers into the same map `classifiedTable` does, under an
+      `analytics.` prefix so a ClickHouse table cannot collide with a Postgres one and a reader of
+      the data map can tell which store an answer came from; `tools/compliance-cli` imports both
+      schemas. `analytics.auth_events` is in the generated data map and RoPA now, with `ip` and
+      `user_agent` as pii. The brand moved from the builder to the descriptor — there is no builder
+      here — so `column()` is the only thing that can make one and it takes a classification as an
+      argument: an unclassified analytics column is a value that cannot be constructed. Three
+      refusals at module load: a column whose retention differs from its table's, because ClickHouse
+      drops rows and a data map claiming otherwise describes something the engine cannot do; a
+      retention with no interval to express it; and a TTL measured from a column the table lacks.
+- [~] Erasure and retention. **Retention is done and erasure is not.** Every table carries
+      `TTL … + INTERVAL` with `ttl_only_drop_parts`, so ageing out drops whole monthly partitions
+      rather than rewriting the table on a schedule — the same reasoning partition-dropping has for
+      `audit_events` — and the interval is derived from the same `classified()` declaration the data
+      map is generated from, so the two cannot disagree. What is owed is the delete path: the
+      columns say `row_deleted` because a row keyed on a user with the user removed is not anonymous
+      (the timing alone re-identifies), and nothing yet lets the DSR handler call it. Until it does,
+      the erasure promise is true of Postgres and not of this store, which is the honest statement
 - [ ] Panel wiring, last. `apps/client`'s stores are placeholders behind real screens, so
       the swap is a client change rather than a screen change — which is the point of
       having built them against a store rather than against a query.

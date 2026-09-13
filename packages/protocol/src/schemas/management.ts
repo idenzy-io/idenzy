@@ -564,3 +564,13 @@ export const webhookStatsQuerySchema = z.object({
   since: z.iso.date().optional(),
 });
 export type WebhookStatsQuery = z.infer<typeof webhookStatsQuerySchema>;
+
+/**
+ * What a test event or a replay answers with: the delivery, queued.
+ *
+ * 202 rather than 200, and the delivery rather than a bare acknowledgement. Sending is the
+ * pipeline's job and happens after the response, so the honest answer is "here is the delivery that
+ * will be attempted" — which is also the row the screen puts at the top of its table.
+ */
+export const queuedWebhookDeliverySchema = z.object({ delivery: webhookDeliverySchema });
+export type QueuedWebhookDelivery = z.infer<typeof queuedWebhookDeliverySchema>;

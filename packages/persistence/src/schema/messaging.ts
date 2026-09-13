@@ -294,18 +294,20 @@ export const webhookDeliveries = classifiedTable(
       loggable: true,
     }),
     /**
-     * The body as signed, and only while the delivery is open.
+     * The body as signed, while the delivery might still be sent.
      *
-     * Cleared on a terminal outcome, which is both cheaper and less exposure: an event payload
-     * names a user, and keeping it for a month would put a copy of their data in the erasure
-     * path for the sake of a record that a 200 came back (PROJECT.md 4.13.6).
+     * Cleared the moment a delivery is taken, which is both cheaper and less exposure: an event
+     * payload names a user, and keeping it for a month would put a copy of their data in the
+     * erasure path for the sake of a record that a 200 came back (PROJECT.md 4.13.6). A *failed*
+     * delivery keeps it until the window drops the row, because a replay sends the body it was
+     * signed from — clearing it on either outcome made the replay route impossible to honour.
      */
     payload: classified(jsonb("payload"), {
       class: DataClass.Pii,
       purpose: Purpose.MessageDelivery,
       retention: Retention.Hours72,
       erasure: Erasure.RowDeleted,
-      note: "Held only while the delivery is open, then cleared. Never re-signed from storage.",
+      note: "Cleared when a delivery is taken; a failed one keeps it for the window, so a replay can send it.",
     }),
     attemptCount: classified(integer("attempt_count").notNull().default(0), {
       ...delivery,

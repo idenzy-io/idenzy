@@ -73,9 +73,10 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
 - **Delivery runs, and the page is a diagnostics screen rather than a form.** The relay fans events
   out, the dispatcher signs and sends, failures come back on the published schedule, and the table
-  holds real attempts (ADR-0012). What is still off is `testEvent` and `replay`, each its own flag on
-  `WEBHOOK_DELIVERY` so a control is disabled for its own reason rather than for delivery's; the strip
-  above the list names the two rather than claiming nothing is sent.
+  holds real attempts (ADR-0012). Send test event and Retry are live too: each
+  writes a delivery and the worker sends it, so both go down the same path a real event does. The flags
+  on `WEBHOOK_DELIVERY` stay one per control, because the next thing to arrive before its backend will
+  want the same sentence in the same place.
 - **The figures are counters, not a count of the deliveries on screen.** The table holds the latest
   fifty per endpoint, so counting it would report a busy week as fifty — less true the more traffic a
   customer has. `webhook_endpoint_stats` is a row per endpoint per day and the strip reads it, which
@@ -99,6 +100,10 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
   repeats it and has a safe exit. Custody is stated as unsettled rather than promised.
 - **A row is a delivery, with its attempts in the detail.** The table shows each delivery's latest
   attempt, the latest fifty in the period, with no pager.
+- **Retry is offered on a failed delivery and refused on a taken one**, which is a correction the
+  route forced: a replay sends the body it was signed from, so a delivery whose body went when it was
+  delivered has nothing to send again. The refusal says which of the three it is — still being
+  attempted, already taken, or a body the window has cleared.
 - **All of it is in the schema now:** the description, the all-events choice, why an endpoint is off
   and who switched it off, the rotation fields, and an attempt's duration, answer and next retry. The
   store reads and writes them through the management API, and the shapes the panel modelled are the

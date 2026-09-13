@@ -1,4 +1,4 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors";
+import { ResourceConflictError, ResourceNotFoundError } from "@idenzy/core/errors";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { generateOpaqueToken } from "@idenzy/crypto/tokens/random";
@@ -30,7 +30,9 @@ import type {
 } from "@idenzy/protocol/schemas/management";
 import {
   WEBHOOK_ROTATION_OVERLAP_HOURS,
+  WEBHOOK_TEST_EVENT,
   webhookOutcomeOf,
+  webhookTestData,
 } from "@idenzy/protocol/schemas/webhooks";
 import { Injectable } from "@nestjs/common";
 import { ProjectScope } from "../tenancy/project-scope.js";
@@ -245,6 +247,92 @@ export class WebhooksService {
   /** The default window: a week back, which is what the screen opens on. */
   static defaultStatsSince(now: Date): string {
     return statsDay(new Date(now.getTime() - 6 * 86_400_000));
+  }
+
+  /**
+   * Queues a test delivery, which the pipeline sends like any other.
+   *
+   * Written as a delivery rather than dispatched here, and that is the whole design: this service is
+   * the control plane and has no signing key, no transport and no business holding either. It writes
+   * a row that is due now, and the sweeper in `apps/workers` picks it up on its next pass — the same
+   * path a retry takes, so a test proves the real pipeline rather than a shortcut through it.
+   *
+   * Allowed on a disabled endpoint, because that is when it is most useful: a new endpoint starts off
+   * so that a test can come before real events reach it.
+   */
+  async sendTest(
+    context: OrgContext,
+    projectId: string,
+    webhookId: string,
+  ): Promise<WebhookDelivery> {
+    const tenant = await this.scope.of(context, projectId);
+    const id = this.uuidOf(webhookId);
+    const row = await this.uow.run(tenant, async (tx) => {
+      const endpoint = await new WebhookRepository(tx, tenant).findById(id);
+      if (endpoint === null) return null;
+      return await new WebhookDeliveryRepository(tx, tenant).createTest(
+        id,
+        WEBHOOK_TEST_EVENT,
+        webhookTestData(PublicId.encode(IdPrefix.Project, tenant.projectId).value),
+        new Date(),
+      );
+    });
+    if (row === null) throw new ResourceNotFoundError({ detail: { webhookId } });
+    return presentDelivery(row);
+  }
+
+  /**
+   * Sends a finished delivery again, with the same id and the same body.
+   *
+   * The same id is the point: a receiver that already took it recognises it and does nothing, which
+   * is what makes a replay safe to offer at all.
+   *
+   * Three refusals, each the honest answer rather than an obstacle. A delivery still being attempted
+   * does not need replaying. One that was taken has nothing to send again, and its body is gone for
+   * that reason. And one whose body a retention pass has cleared cannot be replayed at all, because
+   * re-signing something assembled now would be a different delivery wearing an old id (ADR-0012).
+   */
+  async replay(
+    context: OrgContext,
+    projectId: string,
+    webhookId: string,
+    deliveryId: string,
+  ): Promise<WebhookDelivery> {
+    const tenant = await this.scope.of(context, projectId);
+    const endpoint = this.uuidOf(webhookId);
+    const delivery = PublicId.parse(IdPrefix.Delivery, deliveryId).uuid;
+
+    const row = await this.uow.run(tenant, async (tx) => {
+      const deliveries = new WebhookDeliveryRepository(tx, tenant);
+      const held = await deliveries.findById(delivery);
+      // Not this endpoint's is the same answer as not there, so a delivery id cannot be used to
+      // learn which endpoint it belongs to.
+      if (held === null || held.webhookId !== endpoint) {
+        throw new ResourceNotFoundError({ detail: { deliveryId } });
+      }
+      if (held.status === "queued" || held.status === "delivering") {
+        throw new ResourceConflictError({
+          message: "That delivery has not finished yet, so it is already going to be attempted.",
+          detail: { deliveryId },
+        });
+      }
+      if (held.status === "delivered") {
+        throw new ResourceConflictError({
+          message: "That delivery was taken, so there is nothing to send again.",
+          detail: { deliveryId },
+        });
+      }
+      if (held.payload === null) {
+        throw new ResourceConflictError({
+          message:
+            "That delivery's body is no longer held, so it cannot be sent again. Send a test event instead.",
+          detail: { deliveryId },
+        });
+      }
+      return await deliveries.reopen(delivery, new Date());
+    });
+    if (row === null) throw new ResourceNotFoundError({ detail: { deliveryId } });
+    return presentDelivery(row);
   }
 
   private encrypt(secret: string, tenant: TenantContext): string {

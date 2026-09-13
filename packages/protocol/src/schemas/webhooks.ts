@@ -58,6 +58,20 @@ export type WebhookEventType = (typeof WebhookEventType)[keyof typeof WebhookEve
  */
 export const WEBHOOK_TEST_EVENT = "webhook.test";
 
+/**
+ * What a test event carries.
+ *
+ * Enough for a receiver to prove the whole path — it parses, the signature verifies, the id is there
+ * to dedupe on — and nothing that looks like a user. A test payload shaped like a real event is one
+ * somebody's production handler acts on, which is exactly what a test must not do.
+ */
+export function webhookTestData(projectId: string): Readonly<Record<string, unknown>> {
+  return {
+    message: "This is a test delivery from Idenzy. Nothing about your project changed.",
+    project: projectId,
+  };
+}
+
 export const WEBHOOK_EVENT_GROUP_OF: Record<WebhookEventType, WebhookEventGroup> = {
   [WebhookEventType.UserCreated]: WebhookEventGroup.Accounts,
   [WebhookEventType.UserUpdated]: WebhookEventGroup.Accounts,

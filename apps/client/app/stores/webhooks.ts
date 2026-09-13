@@ -8,15 +8,16 @@
  * expensive one — the latest fifty for one endpoint — so they load for the endpoint somebody
  * selected and not for all of them at once.
  *
- * A test event and a replay are not here, because neither has a route: they would be a delivery
- * nothing sends and a screen showing it stuck on pending for ever. `WEBHOOK_DELIVERY` says so and
- * the controls are off, which is the same answer this store gave before delivery ran — for a
- * different and much smaller reason.
+ * A test event and a replay both write a delivery and answer with it, queued: the worker sends it a
+ * moment later, like any other. So each puts the row it was given at the top of the list rather than
+ * re-reading — the screen shows the delivery it just asked for, pending, and the next read of that
+ * endpoint's deliveries shows what came of it.
  */
 
 import { InternalError } from "@idenzy/core/errors";
 import type {
   CreatedWebhook,
+  QueuedWebhookDelivery,
   RotatedWebhookSecret,
   WebhookDeliveryList,
   WebhookDelivery as WebhookDeliveryPayload,
@@ -250,6 +251,59 @@ export const useWebhooksStore = defineStore("webhooks", () => {
     };
   }
 
+  /**
+   * Asks for a test event and puts it at the top of the list.
+   *
+   * The delivery comes back queued rather than delivered, which is what 202 means: sending is the
+   * worker's and happens after the answer. Holding the row it gave us is how the screen shows a
+   * pending test immediately instead of an empty table until the next read.
+   */
+  async function sendTest(projectId: string, endpointId: string): Promise<WebhookDelivery> {
+    const api = useManagementApi();
+    const { data, error } = await api(`${writePath(projectId)}/${endpointId}/test`)
+      .post({})
+      .json<QueuedWebhookDelivery>();
+    if (error.value !== null) throw error.value;
+    const queued = data.value;
+    if (queued === null)
+      throw new InternalError({ detail: { reason: "the server returned no delivery" } });
+    const delivery = presentDelivery(queued.delivery);
+    prepend(projectId, delivery);
+    return delivery;
+  }
+
+  /**
+   * Sends a finished delivery again, with the same id.
+   *
+   * The row that comes back replaces the one on screen rather than joining it: the same delivery id
+   * means the same delivery, now pending again with the attempts it already made.
+   */
+  async function replay(
+    projectId: string,
+    endpointId: string,
+    deliveryId: string,
+  ): Promise<WebhookDelivery> {
+    const api = useManagementApi();
+    const { data, error } = await api(
+      `${writePath(projectId)}/${endpointId}/deliveries/${deliveryId}/replay`,
+    )
+      .post({})
+      .json<QueuedWebhookDelivery>();
+    if (error.value !== null) throw error.value;
+    const queued = data.value;
+    if (queued === null)
+      throw new InternalError({ detail: { reason: "the server returned no delivery" } });
+    const delivery = presentDelivery(queued.delivery);
+    prepend(projectId, delivery);
+    return delivery;
+  }
+
+  /** Newest first, and one row per delivery id: a replay replaces rather than duplicates. */
+  function prepend(projectId: string, delivery: WebhookDelivery) {
+    const rest = deliveriesFor(projectId).filter((entry) => entry.id !== delivery.id);
+    deliveries.value = { ...deliveries.value, [projectId]: [delivery, ...rest] };
+  }
+
   async function act(projectId: string, id: string, action: "pause" | "resume"): Promise<void> {
     const api = useManagementApi();
     const { data, error } = await api(`${writePath(projectId)}/${id}/${action}`)
@@ -283,6 +337,8 @@ export const useWebhooksStore = defineStore("webhooks", () => {
     resume,
     rotateSecret,
     remove,
+    sendTest,
+    replay,
   };
 });
 

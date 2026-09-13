@@ -197,14 +197,15 @@ describe("what counts as taken, and when it is tried again", () => {
   });
 });
 
-describe("what the pipeline can and cannot do", () => {
-  /* Delivery runs. What does not is asking for a test event and sending a delivery again, and each
-     is its own flag so a control is off for its own reason rather than for delivery's. */
-  it("says delivery runs and names the two controls that are not built", () => {
+describe("what the pipeline can do", () => {
+  /* A flag each rather than one for the screen, so a control that is off can say why. All three are
+     on now; the shape stays for the next thing that arrives before its backend. */
+  it("has a flag for every control, and all of them are on", () => {
     expect(WEBHOOK_DELIVERY.running).toBe(true);
-    expect(WEBHOOK_DELIVERY.testEvent).toBe(false);
-    expect(WEBHOOK_DELIVERY.replay).toBe(false);
-    expect(WEBHOOK_DELIVERY.reason.length).toBeGreaterThan(0);
+    expect(WEBHOOK_DELIVERY.testEvent).toBe(true);
+    expect(WEBHOOK_DELIVERY.replay).toBe(true);
+    // Nothing to excuse, so nothing to say.
+    expect(WEBHOOK_DELIVERY.reason).toBe("");
   });
 
   it("calls an enabled endpoint on, with nothing to excuse", () => {

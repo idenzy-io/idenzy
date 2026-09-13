@@ -1,3 +1,4 @@
+import { InternalError } from "@idenzy/core/errors";
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { webhookDeliveries } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
@@ -174,6 +175,46 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
     return rows.map(toRow);
   }
 
+  /**
+   * One delivery nobody's event asked for: a test, sent because somebody pressed a button.
+   *
+   * Its sequence comes from the same cluster sequence the outbox uses, rather than being made up or
+   * left at zero. Two reasons, and the first is just correctness: the unique index is
+   * `(webhook_id, sequence)`, so a fixed value would collide with the next test on the same endpoint
+   * and quietly write nothing. The second is that a receiver ordering on `sequence` should be able
+   * to put a test where it actually happened rather than before everything.
+   *
+   * Allowed on a disabled endpoint on purpose. A new endpoint starts off so that a test can come
+   * before real events, which is the whole point of having one.
+   */
+  async createTest(
+    webhookId: string,
+    event: string,
+    payload: Readonly<Record<string, unknown>>,
+    due: Date,
+  ): Promise<WebhookDeliveryRow> {
+    const rows = await this.guard(() =>
+      this.tx
+        .insert(webhookDeliveries)
+        .values({
+          projectId: this.context.projectId,
+          webhookId,
+          event,
+          sequence: sql`nextval('outbox_seq')`,
+          payload,
+          status: "queued",
+          nextAttemptAt: due,
+          test: true,
+        })
+        .returning(),
+    );
+    const row = rows[0];
+    if (row === undefined) {
+      throw new InternalError({ detail: { reason: "the test delivery was not written" } });
+    }
+    return toRow(row);
+  }
+
   async findById(id: string): Promise<WebhookDeliveryRow | null> {
     const rows = await this.tx
       .select()
@@ -220,12 +261,17 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
    * Records what an attempt found and where the delivery goes next.
    *
    * The attempt is appended in the database rather than merged from a list this layer read, so
-   * two writers cannot drop each other's attempt. The payload is cleared on a terminal outcome in
-   * the same statement: it is the largest column, it names a user, and the moment nothing will be
-   * sent again is the moment it stops being needed.
+   * two writers cannot drop each other's attempt.
+   *
+   * **The payload is cleared when a delivery is delivered, and kept while it is failed**, which is a
+   * correction to what this did first. Clearing it on either terminal outcome made a replay
+   * impossible — the one thing a replay must send is the body it was signed from, so a route
+   * offering one could only ever refuse. A delivery that was taken has no reason to keep a copy of
+   * somebody's data; one that failed is exactly what a developer retries after fixing their
+   * endpoint, and the window drops it in three days either way.
    */
   async recordAttempt(id: string, outcome: AttemptOutcome): Promise<WebhookDeliveryRow | null> {
-    const terminal = outcome.status === "delivered" || outcome.status === "failed";
+    const taken = outcome.status === "delivered";
     const rows = await this.tx
       .update(webhookDeliveries)
       .set({
@@ -233,8 +279,7 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
         attemptCount: sql`${webhookDeliveries.attemptCount} + 1`,
         attemptLog: sql`${webhookDeliveries.attemptLog} || ${JSON.stringify([outcome.attempt])}::jsonb`,
         nextAttemptAt: outcome.nextAttemptAt,
-        ...(outcome.status === "delivered" ? { deliveredAt: new Date(outcome.attempt.at) } : {}),
-        ...(terminal ? { payload: null } : {}),
+        ...(taken ? { deliveredAt: new Date(outcome.attempt.at), payload: null } : {}),
       })
       .where(and(this.tenantScope(), eq(webhookDeliveries.id, id)))
       .returning();
@@ -298,12 +343,14 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
   }
 
   /**
-   * Re-opens a terminal delivery for one more attempt, which is what the screen's Retry does.
+   * Re-opens a failed delivery for one more attempt, which is what the screen's Retry does.
    *
-   * Refused where the payload has gone, and that refusal is the honest half: a retry sends the
-   * same delivery id with the same body, and a body we have cleared cannot be reproduced —
-   * re-signing something assembled now would be a different delivery wearing an old id. Answering
-   * null lets the screen say so rather than sending something subtly different.
+   * Failed and not delivered: a delivery that was taken has nothing to send again, and its body is
+   * gone for that reason. The `payload is not null` is kept as a second condition rather than
+   * trusted from the status, because it is the thing that actually has to be true — a row whose body
+   * a retention pass has cleared must refuse even though its status still says failed.
+   *
+   * Answering null rather than throwing lets the caller say which of those it was.
    */
   async reopen(id: string, due: Date): Promise<WebhookDeliveryRow | null> {
     const rows = await this.tx
@@ -313,7 +360,7 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
         and(
           this.tenantScope(),
           eq(webhookDeliveries.id, id),
-          inArray(webhookDeliveries.status, ["delivered", "failed"]),
+          eq(webhookDeliveries.status, "failed"),
           sql`${webhookDeliveries.payload} is not null`,
         ),
       )

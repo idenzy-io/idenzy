@@ -8,14 +8,17 @@
  * each opening to its evidence and Retry; its signing settings, where rotation lives rather
  * than beside everyday editing; then the verifier and the guarantees, folded.
  *
- * Nothing delivers yet, and the page says so before anything else rather than drawing health
- * and attempts it cannot have (`WEBHOOK_DELIVERY`). Send test event and Retry delivery are
- * shown and unavailable, with the reason beside them, so the reader can see what is missing.
+ * Everything on it is live: events reach endpoints, the table holds real attempts, the figures come
+ * from the day counters rather than from the rows on screen, and both Send test event and Retry go
+ * down the same path a real event does — each writes a delivery the worker picks up, which is what
+ * makes pressing one worth anything.
  *
  * The selected endpoint lives in the query, replaced rather than pushed, so a link names it.
  */
+import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import type { RecordColumn, RecordTab } from "~/components/RecordTable.vue";
 import type { SegmentedOption } from "~/components/SegmentedControl.vue";
+import { isRefusal, managementMessage } from "~/utils/sign-in-errors";
 import { formatDateTime } from "~/utils/time";
 import {
   DELIVERY_HEADER,
@@ -199,15 +202,28 @@ function setPaused(endpoint: WebhookEndpoint, paused: boolean) {
 }
 
 /**
- * Unreachable while `testEvent` is false, which is every deployment today: the route that would
- * send one does not exist, and a control that queued a delivery nothing sends would be worse than
- * the one that says why it is off.
+ * Asks for a test event, which arrives in the table as a pending delivery.
+ *
+ * Pending and not delivered, because that is what 202 means: the worker sends it a moment later. The
+ * list it lands in is the one the reader is already looking at, so the next read of it — or the
+ * refresh they will press — shows what came of it.
  */
 function sendTest() {
   const target = selected.value;
   if (!target || !WEBHOOK_DELIVERY.testEvent) return;
-  void whileBusy(`test:${target.id}`, () => store.loadDeliveries(project.value, target.id, true));
+  void whileBusy(`test:${target.id}`, async () => {
+    testError.value = "";
+    try {
+      await store.sendTest(project.value, target.id);
+      outcome.value = "pending";
+    } catch {
+      testError.value = "The test event was not queued. Nothing was sent, so try again.";
+    }
+  });
 }
+
+/** Why a test event could not be queued, beside the control that asked for it. */
+const testError = ref("");
 
 /*
  * Adding and editing.
@@ -355,17 +371,24 @@ function openDetail(id: string) {
   detailOpen.value = true;
 }
 
+/**
+ * Sends this delivery again, with the same id.
+ *
+ * Refused by the API in two states, and the message says which: one still being attempted does not
+ * need replaying, and one whose body has been cleared cannot be — re-signing something assembled now
+ * would be a different delivery wearing an old id.
+ */
 async function retryDelivery() {
   const target = detail.value;
   if (!target || !WEBHOOK_DELIVERY.replay) return;
   retrying.value = true;
   detailError.value = "";
   try {
-    // Unreachable while `replay` is false. Re-reading is what follows the replay once the route
-    // exists, so the attempt it added is on screen.
-    await store.loadDeliveries(project.value, target.endpointId, true);
-  } catch {
-    detailError.value = "The retry was not sent. The delivery is as it was, so try again.";
+    await store.replay(project.value, target.endpointId, target.id);
+  } catch (cause: unknown) {
+    detailError.value = isRefusal(cause, ErrorCode.Conflict)
+      ? managementMessage(cause)
+      : "The retry was not queued. The delivery is as it was, so try again.";
   } finally {
     retrying.value = false;
   }
@@ -549,7 +572,7 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
                 Edit
               </v-btn>
               <v-btn
-                :disabled="!running"
+                :disabled="!WEBHOOK_DELIVERY.testEvent"
                 :loading="isBusy(`test:${selected.id}`)"
                 class="text-xs font-medium"
                 color="neutral"
@@ -562,6 +585,10 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
               </v-btn>
             </div>
           </div>
+
+          <p v-if="testError" class="m-0 text-xs leading-5 text-error" role="alert">
+            {{ testError }}
+          </p>
 
           <div class="flex flex-col gap-1.5">
             <span class="text-[11px] leading-4 text-ink/45">

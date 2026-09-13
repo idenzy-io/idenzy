@@ -48,9 +48,12 @@ Concretely:
    schedule, targeting an OIDC-authenticated dispatcher endpoint on the workers service. The
    dispatcher always answers 200 and schedules the next attempt itself, so the queue's own retry
    policy never competes with ours.
-5. **A delivery row exists while the delivery is open**, and carries its payload only then. On a
-   terminal outcome the payload is cleared, the row is summarised into the delivery window, and
-   counters move. The table is bounded by work in flight, not by traffic ever served.
+5. **A delivery row exists while the delivery is open**, and carries its payload while it might
+   still be sent. The payload is cleared when a delivery is **delivered**; a **failed** one keeps it
+   until the window drops the row, because a replay has to send the body it was signed from and
+   clearing it on either outcome made the replay route impossible to honour. The row is summarised
+   into the delivery window, and counters move. The table is bounded by work in flight plus the
+   failures of the last three days, not by traffic ever served.
 6. **The signing secret is encrypted, not hashed.** `FieldEncryptor` with the project's own data
    key and the project id as additional authenticated data, which is what `provider_credentials`
    and TOTP secrets already use (PROJECT.md 4.13.4). This revises PROJECT.md 12's `secret_hash`.
@@ -118,13 +121,15 @@ rolled up daily per endpoint, so the strip on the screen never scans the window 
 The crossover to state plainly: the Postgres window is right up to roughly 10M deliveries a day.
 Past that the window moves to the analytics store and Postgres keeps only the queue.
 
-### Clearing the payload on a terminal outcome is a compliance improvement, not a compromise
+### Clearing the payload once a delivery is taken is a compliance improvement, not a compromise
 
 An event payload names a user, their address, sometimes their device. It is classified `Pii` with
-`Retention.Days30` today because the sketch assumed a thirty-day log. Holding it only while a
-delivery is open is strictly less exposure for the same feature, and it removes a copy of user
-data from the erasure path: a data-subject deletion would otherwise have to reach into thirty
-days of webhook payloads to be complete (PROJECT.md 4.13.6).
+`Retention.Days30` today because the sketch assumed a thirty-day log. Holding it only until a
+delivery is taken — and for failures, only until the window drops them — is strictly less exposure
+for the same feature, and it removes a copy of user data from the erasure path: a data-subject
+deletion would otherwise have to reach into thirty days of webhook payloads to be complete
+(PROJECT.md 4.13.6). The successful case is the overwhelming majority, and it is the one that keeps
+nothing.
 
 What the window keeps is the evidence a developer needs and nothing they do not: the event type,
 the endpoint, the status code, the duration, the attempt number, and a response excerpt capped at

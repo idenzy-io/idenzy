@@ -1006,7 +1006,7 @@ Notes:
 Notes:
 
 - `attemptLog`: Carries a capped excerpt of the receiver's own response, which may contain anything.
-- `payload`: Held only while the delivery is open, then cleared. Never re-signed from storage.
+- `payload`: Cleared when a delivery is taken; a failed one keeps it for the window, so a replay can send it.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `webhook_endpoint_stats`

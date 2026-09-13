@@ -7,9 +7,10 @@
  * endpoints, the dispatcher signs and sends them, failures come back on the published schedule,
  * and twenty failed attempts in a row switch an endpoint off with a reason (ADR-0012).
  *
- * Two controls are still off and say why rather than pretending: asking for a test event, and
- * sending a delivery again. Both need routes that do not exist, which `WEBHOOK_DELIVERY` states
- * as its own flag each.
+ * Everything on it works now, test event and replay included. `WEBHOOK_DELIVERY` keeps a flag each
+ * rather than being deleted: a control that is off has to be able to say why, and the next thing on
+ * this screen to arrive before its backend — a delivery search, an endpoint-level pause schedule —
+ * will want the same sentence in the same place.
  *
  * The contract itself is read from `@idenzy/protocol` rather than restated here. The header names,
  * the tolerance, the schedule and the attempt ceiling are the same constants the signer and the
@@ -55,10 +56,9 @@ export interface DeliveryCapability {
  */
 export const WEBHOOK_DELIVERY: DeliveryCapability = {
   running: true,
-  testEvent: false,
-  replay: false,
-  reason:
-    "Asking for a test event and sending a delivery again are not built yet. Everything else is live: events reach your endpoints, failures are retried on the schedule below, and what happened is here.",
+  testEvent: true,
+  replay: true,
+  reason: "",
 };
 
 /*

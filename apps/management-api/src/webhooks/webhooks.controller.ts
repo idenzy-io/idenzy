@@ -3,6 +3,7 @@ import {
   type CreatedWebhook,
   type CreateWebhook,
   createWebhookSchema,
+  type QueuedWebhookDelivery,
   type RotatedWebhookSecret,
   type UpdateWebhook,
   updateWebhookSchema,
@@ -42,11 +43,13 @@ import { WebhooksService } from "./webhooks-service.js";
  * reading a list of URLs would be harmless on its own, but a capability described to customers as
  * stopping at developer has to actually stop there.
  *
- * Two things a reader might look for are deliberately absent. There is no route that answers with a
- * signing secret: the two that mint one return it, and nothing afterwards does. And there is no
- * test-event or retry route, because no worker consumes the webhook topic yet — either would write a
- * delivery that nothing sends, and the screen already says both are unavailable rather than
- * pretending. They arrive with the dispatcher.
+ * One thing a reader might look for is deliberately absent: there is no route that answers with a
+ * signing secret. The two that mint one return it, and nothing afterwards does.
+ *
+ * A test event and a replay write a delivery and answer 202 rather than sending anything themselves.
+ * This is the control plane: it holds no signing key and no transport, and it should not. The worker
+ * picks the delivery up on its next pass, so both go down the same path a real event does — which is
+ * what makes a test worth pressing.
  *
  * The project is in the path and is never trusted from it. `WebhooksService` resolves it through
  * `ProjectScope`, which refuses a project the caller's organisation does not own.
@@ -149,6 +152,50 @@ export class WebhooksController {
     @Param("webhookId") webhookId: string,
   ): Promise<RotatedWebhookSecret> {
     return await this.webhooks.rotateSecret(orgContextFrom(request), projectId, webhookId);
+  }
+
+  /**
+   * Sends a test event, which the pipeline delivers like any other.
+   *
+   * 202 because sending happens after the answer: the delivery is written and due, and the worker
+   * picks it up. A 200 would be claiming it had already arrived somewhere.
+   */
+  @Post(":webhookId/test")
+  @HttpCode(202)
+  @RequireRole(MemberRole.Developer)
+  async sendTest(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Param("webhookId") webhookId: string,
+  ): Promise<QueuedWebhookDelivery> {
+    return {
+      delivery: await this.webhooks.sendTest(orgContextFrom(request), projectId, webhookId),
+    };
+  }
+
+  /**
+   * Sends a finished delivery again, same id and same body.
+   *
+   * Under the endpoint rather than beside it, because a delivery belongs to one: addressing it any
+   * other way would mean a delivery id from one endpoint could be replayed through another's path.
+   */
+  @Post(":webhookId/deliveries/:deliveryId/replay")
+  @HttpCode(202)
+  @RequireRole(MemberRole.Developer)
+  async replay(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Param("webhookId") webhookId: string,
+    @Param("deliveryId") deliveryId: string,
+  ): Promise<QueuedWebhookDelivery> {
+    return {
+      delivery: await this.webhooks.replay(
+        orgContextFrom(request),
+        projectId,
+        webhookId,
+        deliveryId,
+      ),
+    };
   }
 
   @Delete(":webhookId")

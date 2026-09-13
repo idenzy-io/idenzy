@@ -252,7 +252,7 @@ describe("the webhook pipeline", () => {
     expect(delivery?.status).toBe("delivered");
     expect(delivery?.attempts).toHaveLength(1);
     expect(delivery?.attempts[0]?.status).toBe(200);
-    // The body is not kept once nothing will be sent again (ADR-0012).
+    // Taken, so the body is gone: there is nothing left to send it to (ADR-0012).
     expect(delivery?.payload).toBeNull();
   });
 

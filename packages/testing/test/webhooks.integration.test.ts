@@ -354,27 +354,41 @@ describe("WebhookDeliveryRepository", () => {
     expect(after?.payload).not.toBeNull();
   });
 
-  /* The cost decision, as a test: the largest column, which names a user, goes the moment nothing
-     will be sent again (ADR-0012). */
-  it("clears the payload on a terminal outcome and keeps the evidence", async () => {
+  /**
+   * The cost decision, as a test, and the correction wiring the replay route forced.
+   *
+   * A delivery that was taken keeps nothing: the largest column names a user and there is nothing
+   * left to send it to. A failed one keeps its body until the window drops the row, because that is
+   * the body a replay sends — clearing it on either outcome made the replay route impossible to
+   * honour, which is a thing you only notice when you write the route (ADR-0012).
+   */
+  it("clears the payload when a delivery is taken and keeps it when one fails", async () => {
     const webhookId = await endpointIn(PROJECT_A);
-    const id = await inTenant(PROJECT_A, async (repos) => {
-      const [row] = await repos.deliveries.fanOut(
-        [{ webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } }],
+    const [failedId, deliveredId] = await inTenant(PROJECT_A, async (repos) => {
+      const rows = await repos.deliveries.fanOut(
+        [
+          { webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } },
+          { webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 2 } },
+        ],
         new Date(),
       );
-      return row?.id ?? "";
+      return [rows[0]?.id ?? "", rows[1]?.id ?? ""];
     });
 
-    for (const status of ["delivered", "failed"] as const) {
-      const settled = await inTenant(PROJECT_A, (repos) =>
-        repos.deliveries.recordAttempt(id, outcome({ status })),
-      );
-      expect(settled?.status).toBe(status);
-      expect(settled?.payload).toBeNull();
-      expect(settled?.nextAttemptAt).toBeNull();
-      expect(settled?.attempts.at(-1)?.response).toBe("ok");
-    }
+    const failed = await inTenant(PROJECT_A, (repos) =>
+      repos.deliveries.recordAttempt(failedId, outcome({ status: "failed" })),
+    );
+    expect(failed?.status).toBe("failed");
+    expect(failed?.payload).not.toBeNull();
+    expect(failed?.nextAttemptAt).toBeNull();
+    expect(failed?.attempts.at(-1)?.response).toBe("ok");
+
+    const taken = await inTenant(PROJECT_A, (repos) =>
+      repos.deliveries.recordAttempt(deliveredId, outcome({ status: "delivered" })),
+    );
+    expect(taken?.status).toBe("delivered");
+    expect(taken?.payload).toBeNull();
+    expect(taken?.deliveredAt).not.toBeNull();
   });
 
   it("records when a delivery landed, from the attempt that landed it", async () => {
@@ -474,7 +488,8 @@ describe("WebhookDeliveryRepository", () => {
     expect(recovered.map((row) => row.id)).toContain(id);
   });
 
-  it("refuses to reopen a delivery whose body has gone", async () => {
+  /* What a replay is: the same delivery, due again, with the attempts it already made. */
+  it("reopens a failed delivery for one more attempt", async () => {
     const webhookId = await endpointIn(PROJECT_A);
     await inTenant(PROJECT_A, async (repos) => {
       const [row] = await repos.deliveries.fanOut(
@@ -482,13 +497,32 @@ describe("WebhookDeliveryRepository", () => {
         new Date(),
       );
       const id = row?.id ?? "";
-      // Terminal while still open: the retry has something to send.
       await repos.deliveries.recordAttempt(id, {
         attempt: attempt({ status: 500 }),
         status: "failed",
         nextAttemptAt: null,
       });
-      // The payload went with the terminal outcome, so there is nothing to send again.
+
+      const due = new Date();
+      const reopened = await repos.deliveries.reopen(id, due);
+      expect(reopened?.status).toBe("queued");
+      expect(reopened?.nextAttemptAt?.getTime()).toBe(due.getTime());
+      // The same delivery: its attempts are still there and the next one carries on from them.
+      expect(reopened?.attemptCount).toBe(1);
+      expect(reopened?.payload).toEqual({ a: 1 });
+    });
+  });
+
+  it("refuses to reopen a delivery that was taken, or one whose body has gone", async () => {
+    const webhookId = await endpointIn(PROJECT_A);
+    await inTenant(PROJECT_A, async (repos) => {
+      const [row] = await repos.deliveries.fanOut(
+        [{ webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } }],
+        new Date(),
+      );
+      const id = row?.id ?? "";
+      // Taken, so there is nothing to send again and the body is gone for that reason.
+      await repos.deliveries.recordAttempt(id, outcome({ status: "delivered" }));
       expect(await repos.deliveries.reopen(id, new Date())).toBeNull();
     });
   });

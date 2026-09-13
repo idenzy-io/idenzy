@@ -545,8 +545,19 @@ client have no server halves to talk to yet.
       deliveries is what says whether an endpoint answers first time. The verifier sample is now a
       call to `verifyWebhook` rather than thirty lines of hand-written HMAC, which is the screen's
       first P1 answered properly — a corrected copy would have been a second implementation to keep in
-      step with the signer. `GET .../webhooks/stats` is the one route this needed. What stays off, each
-      its own flag: asking for a test event, and sending a delivery again. Next: the event types
+      step with the signer. `GET .../webhooks/stats` is the one route this needed. Both remaining controls
+      work now: a test event and a replay each write a delivery and answer 202, because the control
+      plane holds no signing key and no transport — the worker picks it up, so both go down the same
+      path a real event does, which is what makes pressing one worth anything. Writing the replay
+      found a flaw in ADR-0012 as decided: clearing the payload on *any* terminal outcome made a
+      replay impossible to honour, since the one thing it must send is the body it was signed from.
+      A delivery that was taken keeps nothing; a failed one keeps its body until the window drops the
+      row, which is the case a replay is for. Verified live over ngrok against a real public https
+      host: a test event delivered and verified by the SDK, a real `session.created` from the outbox,
+      an endpoint that refused once and was retried ten seconds later as attempt 2 of the same
+      delivery id, a replay delivered as attempt 9 of the id it already had, a replay of a taken
+      delivery refused 409, and the day counters reading 1 delivered / 2 attempts for the endpoint
+      that needed a retry. Next: the event types
       nothing emits yet
       (`WEBHOOK_EVENTS_WITHOUT_EMITTER` lists them: account creation, deletion and suspension write
       no outbox row, and the three delivery events wait on the SES and SMS paths). Known gap, recorded rather than closed: a

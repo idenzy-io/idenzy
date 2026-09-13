@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 20 |
 | pseudonymous | 85 |
-| operational | 329 |
+| operational | 340 |
 
 ## `api_keys`
 
@@ -863,7 +863,9 @@ Notes:
 |---|---|---|---|---|---|---|
 | `day` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `emailsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `mau` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `mauHll` | pseudonymous | billing_and_metering | years_6 | no | not_applicable | no |
+| `mauToDate` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `smsCost` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `smsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
@@ -871,9 +873,31 @@ Notes:
 
 Notes:
 
+- `mau`: The day's own actives, frozen from the sketch at close. Null while the period is open, where it is read from the sketch instead.
 - `mauHll`: Sketch only. Cannot be reversed to a user list, nor asked whether one person was active.
+- `mauToDate`: The period's running actives through this day. The only one a bill reconciles with, because daily figures do not add up.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `smsVerified`: Codes actually entered. Sends far above this is the pumping signal (4.8).
+
+## `usage_periods`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `activeUsers` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `closedAt` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `emailsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `period` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `smsCost` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `smsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `smsVerified` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+
+Notes:
+
+- `closedAt`: When the period was shut and the sketches behind it dropped. A period is written once and never amended.
+- `period`: The first day of the calendar month, in UTC. A billing period is a month, not a rolling window.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 
 ## `users`
 

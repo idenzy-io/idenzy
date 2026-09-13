@@ -21,10 +21,27 @@ export interface DailyUsage {
    * impossible to get wrong by reading the wrong field.
    */
   readonly activeUsers: HyperLogLog;
+  /**
+   * The day's own actives, frozen when the period closed, and null while it is open.
+   *
+   * Non-null and an empty `activeUsers` are the same state seen twice: the period is shut and
+   * the sketch has been dropped, because 16 KiB a day for six years is not what a closed month
+   * is worth. Read this in preference to counting the sketch.
+   */
+  readonly mau: number | null;
+  /** The period's running actives through this day, frozen at the same moment as `mau`. */
+  readonly mauToDate: number | null;
   readonly emailsSent: number;
   readonly smsSent: number;
   readonly smsVerified: number;
   readonly smsCost: string;
+}
+
+/** What a day's figures freeze to when its period is closed. */
+export interface FrozenDay {
+  readonly day: string;
+  readonly mau: number;
+  readonly mauToDate: number;
 }
 
 /**
@@ -86,11 +103,36 @@ export class UsageRepository extends BaseRepository<typeof usageDaily> {
     return rows.map((row) => ({
       day: row.day,
       activeUsers: row.mauHll === null ? HyperLogLog.empty() : HyperLogLog.decode(row.mauHll),
+      mau: row.mau,
+      mauToDate: row.mauToDate,
       emailsSent: row.emailsSent,
       smsSent: row.smsSent,
       smsVerified: row.smsVerified,
       smsCost: row.smsCost,
     }));
+  }
+
+  /**
+   * Writes the two integers a closed day keeps, and drops the sketch that produced them.
+   *
+   * The second half is the point. A sketch is the largest thing in this table and it answers
+   * exactly one question — what is the union over the period — so once that union is recorded in
+   * `usage_periods` it is 16 KiB of a primary that also serves sign-in, kept for six years, to
+   * say nothing new. The chart still has what it needs, because the levels it draws are these
+   * two numbers.
+   *
+   * Must run in the same transaction as the period row, and that is not a nicety: dropping the
+   * sketches before the figure is durable would lose the only thing that can produce it.
+   */
+  async freezeDays(days: readonly FrozenDay[]): Promise<void> {
+    for (const frozen of days) {
+      await this.guard(() =>
+        this.tx
+          .update(usageDaily)
+          .set({ mau: frozen.mau, mauToDate: frozen.mauToDate, mauHll: null })
+          .where(and(this.tenantScope(), eq(usageDaily.day, frozen.day))),
+      );
+    }
   }
 
   async recordEmailSent(at: Date, count = 1): Promise<void> {

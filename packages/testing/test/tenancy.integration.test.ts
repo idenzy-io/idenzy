@@ -143,7 +143,7 @@ describe("tenant isolation holds at the database", () => {
    * and this is what notices when one did not: the table is unreadable by the app role,
    * which shows up as a permission error on a route nobody tested yet.
    */
-  it("grants the app role its four privileges on every table except the two append-only ones", async () => {
+  it("grants the app role its four privileges on every table except the append-only ones", async () => {
     const { rows } = await harness.owner.query<{ relname: string; missing: string }>(
       `SELECT c.relname,
               string_agg(p.priv, ',') FILTER (
@@ -153,7 +153,7 @@ describe("tenant isolation holds at the database", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
-         AND c.relname NOT IN ('audit_events', 'payment_provider_events')
+         AND c.relname NOT IN ('audit_events', 'payment_provider_events', 'usage_periods')
          AND c.relname NOT LIKE 'audit_events\\_%'
        GROUP BY c.relname
        HAVING count(*) FILTER (
@@ -177,6 +177,29 @@ describe("tenant isolation holds at the database", () => {
       { priv: "SELECT", granted: true },
       { priv: "INSERT", granted: true },
       { priv: "UPDATE", granted: true },
+      { priv: "DELETE", granted: false },
+    ]);
+  });
+
+  /**
+   * The same claim for `usage_periods`, which withholds both verbs rather than one (0046).
+   *
+   * A closed billing period is the figure an invoice is raised from, and it is written exactly
+   * once — when its month is over and the sketches behind it are dropped. Nothing on the request
+   * path has a reason to amend or remove one, and a record that can be rewritten afterwards is
+   * not a record of anything. Since 0030 the defaults would have left both absent anyway; this
+   * asserts the shape rather than the inheritance, because the defaults are invisible from the
+   * migration that creates a table.
+   */
+  it("withholds update and delete on usage_periods while granting the rest", async () => {
+    const { rows } = await harness.owner.query<{ priv: string; granted: boolean }>(
+      `SELECT p.priv, has_table_privilege('idenzy_app', 'usage_periods', p.priv) AS granted
+       FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)`,
+    );
+    expect(rows).toEqual([
+      { priv: "SELECT", granted: true },
+      { priv: "INSERT", granted: true },
+      { priv: "UPDATE", granted: false },
       { priv: "DELETE", granted: false },
     ]);
   });

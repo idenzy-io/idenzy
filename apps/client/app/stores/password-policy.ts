@@ -10,13 +10,11 @@
  * sending and keeps a refused value on screen with the reason rather than sending it.
  */
 
-import type { ProjectSettings } from "@idenzy/protocol/schemas/management";
 import {
   DEFAULT_PASSWORD_POLICY,
   type PasswordPolicy,
   type StoredCounts,
 } from "~/utils/password-policy";
-import { managementMessage } from "~/utils/sign-in-errors";
 
 export interface PasswordStats {
   /** Over the last thirty days, oldest day first. */
@@ -42,43 +40,7 @@ export interface PasswordStats {
 }
 
 export const usePasswordPolicyStore = defineStore("password-policy", () => {
-  const projects = useProjectStore();
-
-  const policies = ref<Record<string, PasswordPolicy>>({});
-  const loading = ref(false);
-  const refusal = ref<string | null>(null);
-  /** Non-reactive: mutating a ref inside a computed re-invalidates the computed. */
-  const requested = new Set<string>();
-
-  function basePath(projectId: string): string | null {
-    const org = projects.orgOf(projectId);
-    return org === null ? null : `/v1/orgs/${org.id}/projects/${projectId}/settings`;
-  }
-
-  async function load(projectId: string): Promise<void> {
-    const path = basePath(projectId);
-    if (path === null) return;
-    loading.value = true;
-    refusal.value = null;
-    try {
-      const { data, error } = await useManagementApi()(path).get().json<ProjectSettings>();
-      if (error.value !== null) throw error.value;
-      const password = data.value?.password;
-      if (password !== undefined) {
-        policies.value = { ...policies.value, [projectId]: password };
-      }
-    } catch (cause: unknown) {
-      refusal.value = managementMessage(cause);
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  function ensure(projectId: string): void {
-    if (requested.has(projectId)) return;
-    requested.add(projectId);
-    void load(projectId);
-  }
+  const section = useSettingsSection("password", () => ({ ...DEFAULT_PASSWORD_POLICY }));
 
   /**
    * The project's policy, or the defaults until the server has answered.
@@ -87,58 +49,40 @@ export const usePasswordPolicyStore = defineStore("password-policy", () => {
    * screen shows what an unconfigured project actually does rather than a blank form.
    */
   function policyFor(projectId: string): PasswordPolicy {
-    ensure(projectId);
-    return policies.value[projectId] ?? { ...DEFAULT_PASSWORD_POLICY };
+    return section.valueFor(projectId);
   }
-
-  /** When each project's policy was last written this session, for the screen to say. */
-  const lastSaved = ref<Record<string, string>>({});
 
   /**
    * Writes the fields given and leaves the rest.
    *
-   * The whole section goes up, because the API replaces sections rather than deep-merging
-   * — a deep merge cannot express "unset this field". The screen edits one field at a time,
-   * so the current policy is the base and the change is laid over it.
-   *
-   * What comes back is what is stored, and it is what the store keeps: a value the server
-   * clamped, or one another operator saved a moment ago, must not be overwritten on screen
-   * by the optimistic copy this call sent.
+   * The whole section goes up, because the API replaces sections rather than deep-merging;
+   * the screen edits one control at a time, so the current policy is the base and the
+   * change is laid over it.
    */
   async function patch(projectId: string, change: Partial<PasswordPolicy>): Promise<void> {
-    const path = basePath(projectId);
-    if (path === null) return;
-    const next = { ...policyFor(projectId), ...change };
-    try {
-      const { data, error } = await useManagementApi()(path)
-        .patch({ password: next })
-        .json<ProjectSettings>();
-      if (error.value !== null) throw error.value;
-      const stored = data.value?.password ?? next;
-      policies.value = { ...policies.value, [projectId]: stored };
-      lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
-    } catch (cause: unknown) {
-      refusal.value = managementMessage(cause);
-      throw cause;
-    }
-  }
-
-  function lastSavedAt(projectId: string): string | null {
-    return lastSaved.value[projectId] ?? null;
+    await section.save(projectId, { ...policyFor(projectId), ...change });
   }
 
   /**
    * The figures beside the policy, still generated.
    *
-   * They are counts over sign-ins, refusals and resets, which live in the analytics store
-   * (ADR-0013) and not in Postgres — so this waits on 3.2's panel wiring rather than on an
-   * endpoint that could exist today.
+   * Counts over sign-ins, refusals and resets live in the analytics store (ADR-0013) and
+   * wait on 3.2's panel wiring, not on an endpoint that could exist today.
    */
   function stats(projectId: string): PasswordStats {
     return projectId === "prj_acme" ? ACME_STATS : PERSONAL_STATS;
   }
 
-  return { policies, loading, refusal, load, policyFor, patch, lastSavedAt, stats };
+  return {
+    policies: section.byProject,
+    loading: section.loading,
+    refusal: section.refusal,
+    load: section.load,
+    policyFor,
+    patch,
+    lastSavedAt: section.lastSavedAt,
+    stats,
+  };
 });
 
 /*

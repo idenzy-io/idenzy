@@ -22,12 +22,27 @@ const hll = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => "bytea",
 });
 
+/**
+ * Three tiers, and which one a row is in is decided by how fine it is.
+ *
+ * An hourly row is twenty-four times a daily one and a daily one is thirty times a monthly one, so
+ * keeping all three for the same six years would be keeping the finest for a reason nobody has.
+ * What a reader explores at an hour's resolution is recent; what a bill rests on is the monthly
+ * record, which is a financial document and keeps the full term. `UsageRetentionSweeper` in
+ * `apps/workers` is what makes these three numbers true rather than a description.
+ */
 const billing = {
   class: DataClass.Operational,
   purpose: Purpose.BillingAndMetering,
   retention: Retention.Years6,
   erasure: Erasure.NotApplicable,
 } as const;
+
+/** The finest rollup, and the shortest tier: six months of hours. */
+const hourlyBilling = { ...billing, retention: Retention.Months6 } as const;
+
+/** Two years, which is a year-on-year comparison and not a financial record. */
+const dailyBilling = { ...billing, retention: Retention.Years2 } as const;
 
 /**
  * Daily usage rollups.
@@ -55,37 +70,93 @@ export const usageDaily = classifiedTable(
   "usage_daily",
   {
     projectId: projectIdColumn(),
-    day: classified(date("day").notNull(), { ...billing, loggable: true }),
+    day: classified(date("day").notNull(), { ...dailyBilling, loggable: true }),
     mauHll: classified(hll("mau_hll"), {
-      ...billing,
+      ...dailyBilling,
       class: DataClass.Pseudonymous,
       note: "Sketch only. Cannot be reversed to a user list, nor asked whether one person was active.",
     }),
     mau: classified(integer("mau"), {
-      ...billing,
+      ...dailyBilling,
       loggable: true,
       note: "The day's own actives, frozen from the sketch at close. Null while the period is open, where it is read from the sketch instead.",
     }),
     mauToDate: classified(integer("mau_to_date"), {
-      ...billing,
+      ...dailyBilling,
       loggable: true,
       note: "The period's running actives through this day. The only one a bill reconciles with, because daily figures do not add up.",
     }),
-    emailsSent: classified(bigint("emails_sent", { mode: "number" }).notNull().default(0), billing),
-    smsSent: classified(bigint("sms_sent", { mode: "number" }).notNull().default(0), billing),
+    emailsSent: classified(
+      bigint("emails_sent", { mode: "number" }).notNull().default(0),
+      dailyBilling,
+    ),
+    smsSent: classified(bigint("sms_sent", { mode: "number" }).notNull().default(0), dailyBilling),
     smsVerified: classified(bigint("sms_verified", { mode: "number" }).notNull().default(0), {
-      ...billing,
+      ...dailyBilling,
       note: "Codes actually entered. Sends far above this is the pumping signal (4.8).",
     }),
     smsCost: classified(
       numeric("sms_cost", { precision: 12, scale: 6 }).notNull().default("0"),
-      billing,
+      dailyBilling,
     ),
   },
   (t) => [
     primaryKey({ columns: [t.projectId, t.day] }),
     index("usage_daily_day_idx").on(t.day),
     tenantIsolationPolicy("usage_daily"),
+  ],
+).enableRLS();
+
+/**
+ * The finest rollup: one row per project per hour, and deliberately no sketch.
+ *
+ * This is where the obvious design would have gone wrong. An hourly HyperLogLog is 16 KiB every
+ * hour — seventy megabytes per project over six months, which is worse than the daily problem
+ * `usage_periods` exists to solve, and for a chart rather than for a bill. So an hour stores the
+ * *level* as a plain integer: month-to-date active users as they stood when the hour was rolled
+ * up. The union that produces it is taken from the day's sketches, which are still there while the
+ * month is open, and then thrown away.
+ *
+ * What that costs is the one thing an hour cannot be asked afterwards: how many people were active
+ * *within* it. Two hourly levels can be subtracted to get how many were new in the second, which is
+ * what a chart draws, but a distinct count of an hour on its own is not recoverable and never will
+ * be from this table. That is the right trade for a row kept by the thousand.
+ *
+ * The counters beside it are the hour's own — deltas, not levels — because they do add up.
+ */
+export const usageHourly = classifiedTable(
+  "usage_hourly",
+  {
+    projectId: projectIdColumn(),
+    hour: classified(timestamp("hour", { withTimezone: true }).notNull(), {
+      ...hourlyBilling,
+      loggable: true,
+      note: "The start of the UTC hour the figures belong to.",
+    }),
+    mauToDate: classified(integer("mau_to_date").notNull().default(0), {
+      ...hourlyBilling,
+      loggable: true,
+      note: "Month-to-date active users at the end of this hour. A level, so it is never summed.",
+    }),
+    emailsSent: classified(
+      bigint("emails_sent", { mode: "number" }).notNull().default(0),
+      hourlyBilling,
+    ),
+    smsSent: classified(bigint("sms_sent", { mode: "number" }).notNull().default(0), hourlyBilling),
+    smsVerified: classified(
+      bigint("sms_verified", { mode: "number" }).notNull().default(0),
+      hourlyBilling,
+    ),
+    smsCost: classified(numeric("sms_cost", { precision: 12, scale: 6 }).notNull().default("0"), {
+      ...hourlyBilling,
+      note: "This hour's share. Can be negative: a provider that came in under its quote settles the difference against the hour the correction lands in.",
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.hour] }),
+    index("usage_hourly_hour_idx").on(t.hour),
+    tenantIsolationPolicy("usage_hourly"),
   ],
 ).enableRLS();
 

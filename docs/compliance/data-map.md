@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 20 |
 | pseudonymous | 85 |
-| operational | 340 |
+| operational | 348 |
 
 ## `api_keys`
 
@@ -861,15 +861,15 @@ Notes:
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
-| `day` | operational | billing_and_metering | years_6 | no | not_applicable | no |
-| `emailsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
-| `mau` | operational | billing_and_metering | years_6 | no | not_applicable | no |
-| `mauHll` | pseudonymous | billing_and_metering | years_6 | no | not_applicable | no |
-| `mauToDate` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `day` | operational | billing_and_metering | years_2 | no | not_applicable | no |
+| `emailsSent` | operational | billing_and_metering | years_2 | no | not_applicable | no |
+| `mau` | operational | billing_and_metering | years_2 | no | not_applicable | no |
+| `mauHll` | pseudonymous | billing_and_metering | years_2 | no | not_applicable | no |
+| `mauToDate` | operational | billing_and_metering | years_2 | no | not_applicable | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
-| `smsCost` | operational | billing_and_metering | years_6 | no | not_applicable | no |
-| `smsSent` | operational | billing_and_metering | years_6 | no | not_applicable | no |
-| `smsVerified` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `smsCost` | operational | billing_and_metering | years_2 | no | not_applicable | no |
+| `smsSent` | operational | billing_and_metering | years_2 | no | not_applicable | no |
+| `smsVerified` | operational | billing_and_metering | years_2 | no | not_applicable | no |
 
 Notes:
 
@@ -878,6 +878,26 @@ Notes:
 - `mauToDate`: The period's running actives through this day. The only one a bill reconciles with, because daily figures do not add up.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `smsVerified`: Codes actually entered. Sends far above this is the pumping signal (4.8).
+
+## `usage_hourly`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `emailsSent` | operational | billing_and_metering | months_6 | no | not_applicable | no |
+| `hour` | operational | billing_and_metering | months_6 | no | not_applicable | no |
+| `mauToDate` | operational | billing_and_metering | months_6 | no | not_applicable | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `smsCost` | operational | billing_and_metering | months_6 | no | not_applicable | no |
+| `smsSent` | operational | billing_and_metering | months_6 | no | not_applicable | no |
+| `smsVerified` | operational | billing_and_metering | months_6 | no | not_applicable | no |
+
+Notes:
+
+- `hour`: The start of the UTC hour the figures belong to.
+- `mauToDate`: Month-to-date active users at the end of this hour. A level, so it is never summed.
+- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `smsCost`: This hour's share. Can be negative: a provider that came in under its quote settles the difference against the hour the correction lands in.
 
 ## `usage_periods`
 

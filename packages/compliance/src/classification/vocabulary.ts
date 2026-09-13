@@ -44,9 +44,19 @@ export const Retention = {
    */
   Hours72: "hours_72",
   Days30: "days_30",
+  /**
+   * Six months, which is how long the finest usage rollup is worth keeping.
+   *
+   * An hourly row is twenty-four times a daily one, so the tier is short by design rather than by
+   * oversight: what a reader explores at that resolution is recent, and what a bill rests on is
+   * the monthly record that outlives both.
+   */
+  Months6: "months_6",
   UntilAccountDeletion: "until_account_deletion",
   /** Standard audit retention. */
   Years1: "years_1",
+  /** Daily usage: long enough for a year-on-year comparison, short of a financial record. */
+  Years2: "years_2",
   /** HIPAA audit retention. */
   Years6: "years_6",
   /** Configuration that lives as long as the project does. */

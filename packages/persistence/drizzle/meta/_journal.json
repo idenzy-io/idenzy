@@ -337,6 +337,20 @@
       "when": 1789293977299,
       "tag": "0047_closable_usage_periods",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789295704718,
+      "tag": "0048_dizzy_amazoness",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789295711176,
+      "tag": "0049_usage_hourly_grants_and_retention",
+      "breakpoints": true
     }
   ]
 }

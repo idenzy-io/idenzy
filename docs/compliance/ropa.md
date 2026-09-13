@@ -86,7 +86,7 @@ certification; see PROJECT.md 4.13.10.
 ## billing_and_metering
 
 - **Lawful basis:** art_6_1_b_contract
-- **Retention:** project_lifetime, years_6
+- **Retention:** project_lifetime, years_2, years_6
 - **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_daily`
 - **Categories of personal data:**
 

@@ -25,8 +25,9 @@ import { SessionsController } from "./sessions.controller.js";
     SessionCookies,
     RevocationPublisher,
     // Ordered before SessionGuard on purpose: it decides how the session is carried, and
-    // the wiring test pins that order because a global guard's position is otherwise an
-    // implicit consequence of module import order.
+    // `test/guard-order.test.ts` pins the whole chain, because a global guard's position
+    // is otherwise an implicit consequence of module import order. That test did not
+    // exist when this comment first claimed it did.
     { provide: APP_GUARD, useClass: SessionTransportGuard },
     // Global, but opt-in: it only acts on routes marked @RequireSession, so adding an
     // authenticated endpoint is one decorator rather than a guard registration nobody

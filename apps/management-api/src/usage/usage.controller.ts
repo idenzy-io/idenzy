@@ -1,7 +1,10 @@
 import { MemberRole } from "@idenzy/protocol/enums/tenancy";
 import {
   type ProjectUsage,
+  type UsagePeriodList,
+  type UsagePeriodQuery,
   type UsageQuery,
+  usagePeriodQuerySchema,
   usageQuerySchema,
 } from "@idenzy/protocol/schemas/management";
 import { Controller, Get, Param, Query, Req } from "@nestjs/common";
@@ -27,6 +30,29 @@ import { UsageService } from "./usage-service.js";
 @Controller("v1/orgs/:orgId/projects/:projectId/usage")
 export class UsageController {
   constructor(private readonly usage: UsageService) {}
+
+  /**
+   * The period selector's list, and the authority for what a period cost.
+   *
+   * Before the bare `@Get()` below is irrelevant here — they are different paths — but the split
+   * is not cosmetic: a window of days cannot answer what a month cost once that month is closed
+   * and its sketches are gone, so the two questions are two routes rather than one response with
+   * a field that is only sometimes true.
+   */
+  @Get("periods")
+  @RequireRole(MemberRole.Viewer)
+  async periods(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Query(new ZodValidationPipe(usagePeriodQuerySchema)) query: UsagePeriodQuery,
+  ): Promise<UsagePeriodList> {
+    const periods = await this.usage.periods(
+      orgContextFrom(request),
+      projectId,
+      UsageService.periodCountOf(query.limit),
+    );
+    return { periods };
+  }
 
   @Get()
   @RequireRole(MemberRole.Viewer)

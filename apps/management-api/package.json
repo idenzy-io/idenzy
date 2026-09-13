@@ -9,7 +9,8 @@
     "dev": "node ../../tools/dev/src/serve.ts",
     "start": "node dist/main.js",
     "test": "tsc -p tsconfig.json && vitest run --passWithNoTests",
-    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "test:integration": "tsc -p tsconfig.json && vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@idenzy/compliance": "workspace:*",
@@ -32,6 +33,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@idenzy/testing": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "typescript": "catalog:",

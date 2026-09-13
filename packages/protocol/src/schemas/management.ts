@@ -592,6 +592,13 @@ export const usageDaySchema = z.object({
   /** The UTC day, `YYYY-MM-DD`. A meter has no locale. */
   day: z.string(),
   activeUsers: z.number().int().nonnegative(),
+  /**
+   * The running total within this day's *billing period*, never within the requested window.
+   *
+   * A customer looking at the last seven days wants to know what they owe, not what seven days
+   * would have cost in isolation, so the level on the 7th includes the 1st through the 6th. It
+   * resets at each month boundary, because that is where the free tier and the invoice reset.
+   */
   activeUsersToDate: z.number().int().nonnegative(),
   emailsSent: z.number().int().nonnegative(),
   smsSent: z.number().int().nonnegative(),
@@ -602,11 +609,13 @@ export const usageDaySchema = z.object({
 export type UsageDay = z.infer<typeof usageDaySchema>;
 
 /**
- * What a project used over a window, and what the bill for it is made of (PROJECT.md 5.1).
+ * A project's daily series over a window (PROJECT.md 5.1).
  *
- * `activeUsers` is the union over the whole window and not the last day's running total: the two
- * agree only when the window ends on a day that had activity, and a project quiet since Tuesday
- * still owes for everybody who signed in before it.
+ * Deliberately carries no window-level active-user total, because for an arbitrary span of dates
+ * there is not an honest one to give. A period's figure is the union of that period's sketches,
+ * and once a month is closed those are gone — so a window crossing a closed month could only be
+ * answered by adding numbers that double-count everybody who came back. `usagePeriodSchema` is the
+ * authority for what a period cost; this is what a chart draws.
  *
  * A day with no activity has no row, so `days` is sparse and a reader must not assume one entry
  * per date. Writing an empty row per project per day would be a write for every project that did
@@ -615,7 +624,6 @@ export type UsageDay = z.infer<typeof usageDaySchema>;
 export const projectUsageSchema = z.object({
   from: z.string(),
   to: z.string(),
-  activeUsers: z.number().int().nonnegative(),
   days: z.array(usageDaySchema),
 });
 export type ProjectUsage = z.infer<typeof projectUsageSchema>;
@@ -639,3 +647,45 @@ export const usageQuerySchema = z
     path: ["to"],
   });
 export type UsageQuery = z.infer<typeof usageQuerySchema>;
+
+/**
+ * One billing period's figures: the open month, or a closed one as its invoice was raised.
+ *
+ * `closed` is the difference between a record and a reading. A closed period was totalled once,
+ * when its month was over and every meter had flushed, and the sketches behind it were dropped in
+ * the same transaction — so it cannot change and nothing can recompute it. An open one is read
+ * live from the daily rows and will keep moving until it is shut. A month that has ended but is
+ * still inside the closer's grace reads as open, which is honest: nothing has been committed yet.
+ *
+ * `end` is the last day of the month and is inclusive, matching the window the days are read over.
+ */
+export const usagePeriodSchema = z.object({
+  /** `YYYY-MM`. What a period selector shows and what an invoice is titled. */
+  id: z.string(),
+  start: z.string(),
+  end: z.string(),
+  closed: z.boolean(),
+  activeUsers: z.number().int().nonnegative(),
+  emailsSent: z.number().int().nonnegative(),
+  smsSent: z.number().int().nonnegative(),
+  smsVerified: z.number().int().nonnegative(),
+  smsCost: z.string(),
+  /** When the period was shut, or null while it is still being metered. */
+  closedAt: z.iso.datetime().nullable(),
+});
+export type UsagePeriod = z.infer<typeof usagePeriodSchema>;
+
+/** Newest first: the month in progress, then the months behind it. */
+export const usagePeriodListSchema = z.object({ periods: z.array(usagePeriodSchema) });
+export type UsagePeriodList = z.infer<typeof usagePeriodListSchema>;
+
+/**
+ * How many periods to return, counting back from the month in progress.
+ *
+ * Capped at two years, which is well past what a screen shows and short of the six a closed
+ * period is retained for: anything older is a question for an invoice rather than a dashboard.
+ */
+export const usagePeriodQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(24).optional(),
+});
+export type UsagePeriodQuery = z.infer<typeof usagePeriodQuerySchema>;

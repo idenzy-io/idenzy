@@ -120,7 +120,10 @@ export function classifiedAnalyticsTable(
         `) ENGINE = MergeTree`,
         `PARTITION BY ${options.partitionBy}`,
         `ORDER BY (${options.orderBy.join(", ")})`,
-        `TTL ${options.ttlColumn} + ${ttl}`,
+        // `toDateTime` because ClickHouse refuses a `DateTime64` in a TTL expression outright —
+        // BAD_TTL_EXPRESSION, at creation. Losing the sub-second precision costs nothing here:
+        // the partition is a month and `ttl_only_drop_parts` drops whole ones.
+        `TTL toDateTime(${options.ttlColumn}) + ${ttl}`,
         // Dropping a whole part is what makes retention cheap. Without this ClickHouse rewrites
         // parts to remove expired rows, which is a mutation over the whole table on a schedule.
         `SETTINGS ttl_only_drop_parts = 1`,

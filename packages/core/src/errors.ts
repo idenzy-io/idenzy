@@ -427,6 +427,22 @@ export class DeliveryFailedError extends UpstreamError {
   }
 }
 
+/**
+ * The analytics store could not answer (ADR-0013).
+ *
+ * Its own code rather than `ProviderUnavailable`, because the two call for different behaviour on
+ * a screen. A provider being down means a sign-in or a message did not happen; this means a chart
+ * has no numbers while everything the customer is billed for carried on regardless — the figures a
+ * bill rests on are in Postgres. A panel that treated them alike would report an outage for a
+ * store nothing on the authentication path reads.
+ */
+export class AnalyticsUnavailableError extends UpstreamError {
+  override readonly code = ErrorCode.AnalyticsUnavailable;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "Analytics are temporarily unavailable.", options);
+  }
+}
+
 export class ProviderUnavailableError extends UpstreamError {
   override readonly code = ErrorCode.ProviderUnavailable;
   constructor(options: ErrorOptions = {}) {

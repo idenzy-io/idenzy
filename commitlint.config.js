@@ -12,6 +12,7 @@ export default {
         "crypto",
         "persistence",
         "compliance",
+        "analytics",
         "cache",
         "config",
         "observability",

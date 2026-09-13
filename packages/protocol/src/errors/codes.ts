@@ -83,6 +83,7 @@ export const ErrorCode = {
 
   // Ours, not theirs
   ProviderUnavailable: "provider_unavailable",
+  AnalyticsUnavailable: "analytics_unavailable",
   Internal: "internal_error",
 } as const;
 

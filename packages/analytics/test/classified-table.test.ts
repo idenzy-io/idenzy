@@ -57,7 +57,7 @@ describe("declaring an analytics table", () => {
     const ddl = table("probe_parts").createTable("idenzy");
     expect(ddl).toContain("CREATE TABLE IF NOT EXISTS idenzy.probe_parts");
     expect(ddl).toContain("PARTITION BY toYYYYMM(at)");
-    expect(ddl).toContain("TTL at + INTERVAL 30 DAY");
+    expect(ddl).toContain("TTL toDateTime(at) + INTERVAL 30 DAY");
     // Without this ClickHouse rewrites parts to remove expired rows, which is a mutation over the
     // whole table on a schedule rather than a drop.
     expect(ddl).toContain("ttl_only_drop_parts = 1");

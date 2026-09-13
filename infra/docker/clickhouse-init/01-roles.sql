@@ -19,4 +19,12 @@ CREATE USER IF NOT EXISTS idenzy_app IDENTIFIED WITH plaintext_password BY 'iden
 CREATE USER IF NOT EXISTS idenzy_owner IDENTIFIED WITH plaintext_password BY 'idenzy';
 
 GRANT SELECT, INSERT ON idenzy.* TO idenzy_app;
-GRANT ALL ON idenzy.* TO idenzy_owner;
+
+-- The owner runs DDL and nothing else, which is why this is a list rather than `ALL`: no ACCESS
+-- MANAGEMENT, so a migration cannot create a user or detach a row policy from one. `WITH GRANT
+-- OPTION` on the two read verbs is what lets the migrator hand the runtime user access to a
+-- database it has just created — the mirror of Postgres, where a new tenant table needs its own
+-- grant and forgetting it makes the table unreadable rather than loud.
+GRANT CREATE DATABASE, DROP DATABASE, CREATE TABLE, DROP TABLE, ALTER, OPTIMIZE ON *.* TO idenzy_owner;
+GRANT CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES ON *.* TO idenzy_owner;
+GRANT SELECT, INSERT ON *.* TO idenzy_owner WITH GRANT OPTION;

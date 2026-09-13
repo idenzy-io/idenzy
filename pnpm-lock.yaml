@@ -669,6 +669,9 @@ importers:
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
+      '@idenzy/testing':
+        specifier: workspace:*
+        version: link:../testing
       '@types/node':
         specifier: 'catalog:'
         version: 26.4.1

@@ -1,14 +1,9 @@
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
-import {
-  EmailProvider,
-  type SuppressionList,
-  type UsageMeter,
-} from "@idenzy/domain/ports/email-provider";
+import { EmailProvider } from "@idenzy/domain/ports/email-provider";
 import type { FraudGuard, SpendCap } from "@idenzy/domain/ports/sms-provider";
 import { SmsProvider } from "@idenzy/domain/ports/sms-provider";
-import { LoggingEmailProvider } from "@idenzy/providers-email/logging-email-provider";
 import { LoggingSmsProvider } from "@idenzy/providers-sms/logging-sms-provider";
 import { MetadataPhoneGeography } from "@idenzy/providers-sms/metadata-phone-geography";
 import { ProviderRouter } from "@idenzy/providers-sms/provider-router";
@@ -20,6 +15,7 @@ import { DatabaseSuppressionList } from "./database-suppression-list.js";
 import { DatabaseTemplateStore } from "./database-template-store.js";
 import { DatabaseUsageMeter } from "./database-usage-meter.js";
 import { ATTESTATION_VERIFIER, PHONE_GEOGRAPHY } from "./delivery-tokens.js";
+import { emailProviderFor } from "./email-transport.js";
 import { Mailer } from "./mailer.js";
 import { RedirectTargets } from "./redirect-targets.js";
 import { SmsFraudGuard } from "./sms-fraud-guard.js";
@@ -29,10 +25,12 @@ import { UnconfiguredAttestation } from "./unconfigured-attestation.js";
 /**
  * Outbound email and SMS (PROJECT.md 11).
  *
- * The one place that knows which transports are in use. Today both are development
- * loggers, and each refuses to construct outside development, so a deployed environment
- * fails at boot rather than silently swallowing every sign-in code. A real adapter is a
- * change to this file and nothing else.
+ * The one place that knows which transports are in use. Email has a real adapter now and
+ * SMS does not: `emailProviderFor` picks SES when it is configured and the development
+ * logger otherwise, and that logger refuses to construct outside development, so a
+ * deployment that forgot to configure a transport fails at boot rather than silently
+ * swallowing every sign-in code. The SMS half is still the logger alone, and a Twilio or
+ * AWS End User Messaging adapter is a change to this file and nothing else.
  *
  * The SMS half wires more than a transport, and that is the design rather than a
  * complication: the fraud guard and the spend cap are constructor arguments of
@@ -64,13 +62,8 @@ import { UnconfiguredAttestation } from "./unconfigured-attestation.js";
     },
     {
       provide: EmailProvider,
-      inject: [DatabaseSuppressionList, DatabaseUsageMeter, Logger, AppConfig],
-      useFactory: (
-        suppression: SuppressionList,
-        meter: UsageMeter,
-        logger: Logger,
-        config: AppConfig,
-      ) => new LoggingEmailProvider(suppression, meter, logger, config.get("IDENZY_ENV")),
+      inject: [DatabaseSuppressionList, DatabaseUsageMeter, Logger, AppConfig, Clock],
+      useFactory: emailProviderFor,
     },
     {
       provide: SmsProvider,

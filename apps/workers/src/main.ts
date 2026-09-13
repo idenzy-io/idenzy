@@ -12,6 +12,7 @@ import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
+import { UsageClosableReader } from "@idenzy/persistence/repository/usage-closable-reader";
 import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-reader";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -20,6 +21,7 @@ import { MetadataTokenSource } from "./google/access-token-source.js";
 import { GoogleOidcVerifier } from "./google/task-caller-verifier.js";
 import { InternalServer } from "./http/internal-server.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
+import { UsagePeriodCloser } from "./usage-period-closer.js";
 import { CloudTasksScheduler } from "./webhooks/cloud-tasks-scheduler.js";
 import { type DeliveryScheduler, SweepingScheduler } from "./webhooks/delivery-scheduler.js";
 import { WebhookDispatcher } from "./webhooks/webhook-dispatcher.js";
@@ -119,6 +121,15 @@ async function bootstrap(): Promise<void> {
   const uow = new UnitOfWork(db);
 
   /*
+   * Metering has one pass that is not on any request path: a month can only be totalled from the
+   * sketches that made it, so something has to take that union and then let 16 KiB a day go
+   * (PROJECT.md 5.1). It waits a grace period after the month ends, because a meter holds active
+   * users in memory and an instance throttled over the turn of the month still has the last of it
+   * to write.
+   */
+  const usageCloser = new UsagePeriodCloser(new UsageClosableReader(db), uow, clock, logger);
+
+  /*
    * Cloud Tasks if this deployment was given queues, and the sweeper if it was not. Both are correct:
    * the queue arms a retry to the second, the sweeper finds it on its interval, and only the second
    * of those is a delivery guarantee. A half-configured queue is the one case that fails here rather
@@ -190,6 +201,7 @@ async function bootstrap(): Promise<void> {
   await auditRelay.start();
   await webhookRelay.start();
   await webhookSweeper.start();
+  await usageCloser.start();
   await server.start();
   logger.info("workers started", config.toSafeSummary());
 }

@@ -37,6 +37,14 @@ export interface DailyUsage {
   readonly smsCost: string;
 }
 
+/** A window's counters. Everything here adds up, which is why active users are not in it. */
+export interface UsageTotals {
+  readonly emailsSent: number;
+  readonly smsSent: number;
+  readonly smsVerified: number;
+  readonly smsCost: string;
+}
+
 /** What a day's figures freeze to when its period is closed. */
 export interface FrozenDay {
   readonly day: string;
@@ -78,13 +86,19 @@ export class UsageRepository extends BaseRepository<typeof usageDaily> {
         .onConflictDoNothing({ target: [usageDaily.projectId, usageDaily.day] }),
     );
     const rows = await this.tx
-      .select({ mauHll: usageDaily.mauHll })
+      .select({ mauHll: usageDaily.mauHll, mauToDate: usageDaily.mauToDate })
       .from(usageDaily)
       .where(and(this.tenantScope(), eq(usageDaily.day, day)))
       .for("update");
-    const stored = rows[0]?.mauHll;
-    const merged = stored === undefined || stored === null ? sketch : HyperLogLog.decode(stored);
-    if (stored !== undefined && stored !== null && !merged.mergeFrom(sketch)) return;
+    // A frozen day belongs to a period that is closed, and a closed period is a financial record.
+    // A flush arriving after it — an instance that held its buffer past the grace the closer waits
+    // — is dropped rather than allowed to put a sketch back on a day whose figure is already
+    // published. Bounded by that grace, and in the direction that undercharges.
+    const row = rows[0];
+    if (row !== undefined && row.mauToDate !== null) return;
+    const stored = row?.mauHll ?? null;
+    const merged = stored === null ? sketch : HyperLogLog.decode(stored);
+    if (stored !== null && !merged.mergeFrom(sketch)) return;
     await this.guard(() =>
       this.tx
         .update(usageDaily)
@@ -110,6 +124,33 @@ export class UsageRepository extends BaseRepository<typeof usageDaily> {
       smsVerified: row.smsVerified,
       smsCost: row.smsCost,
     }));
+  }
+
+  /**
+   * The window's counters, summed by Postgres.
+   *
+   * `smsCost` is the reason this is not a fold over `dailyBetween`: it is `numeric(12, 6)` because
+   * a message can cost $0.0079, and summing thirty of those through a JavaScript float is how a
+   * ledger stops agreeing with an invoice in the sixth decimal place. The database has exact
+   * decimal arithmetic and we have a string.
+   */
+  async totalsBetween(from: string, to: string): Promise<UsageTotals> {
+    const rows = await this.tx
+      .select({
+        emailsSent: sql<string>`coalesce(sum(${usageDaily.emailsSent}), 0)`,
+        smsSent: sql<string>`coalesce(sum(${usageDaily.smsSent}), 0)`,
+        smsVerified: sql<string>`coalesce(sum(${usageDaily.smsVerified}), 0)`,
+        smsCost: sql<string>`coalesce(sum(${usageDaily.smsCost}), 0)::text`,
+      })
+      .from(usageDaily)
+      .where(and(this.tenantScope(), between(usageDaily.day, from, to)));
+    const row = rows[0];
+    return {
+      emailsSent: Number(row?.emailsSent ?? 0),
+      smsSent: Number(row?.smsSent ?? 0),
+      smsVerified: Number(row?.smsVerified ?? 0),
+      smsCost: row?.smsCost ?? "0",
+    };
   }
 
   /**

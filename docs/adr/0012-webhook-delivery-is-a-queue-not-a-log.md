@@ -45,9 +45,13 @@ Concretely:
    already in hand; handing it to a queue to hand back costs a task, a request and a scheduling
    round trip to arrive at the same HTTP call.
 4. **Retries are Cloud Tasks**, one task per attempt, `scheduleTime` set from our own published
-   schedule, targeting an OIDC-authenticated dispatcher endpoint on the workers service. The
-   dispatcher always answers 200 and schedules the next attempt itself, so the queue's own retry
-   policy never competes with ours.
+   schedule, targeting an OIDC-authenticated dispatcher endpoint on the workers service. The queue is
+   configured for a single attempt per task and the dispatcher schedules the next attempt itself, so
+   the queue's own retry policy never competes with ours — a queue retrying on top of a published
+   schedule would double a customer's traffic during an outage. What the dispatcher answers is
+   therefore a signal rather than a schedule: 200 for anything it handled, including a duplicate task
+   with nothing left to claim, and 503 only where the attempt could not be made at all. Either way the
+   row is what the sweeper finds.
 5. **A delivery row exists while the delivery is open**, and carries its payload while it might
    still be sent. The payload is cleared when a delivery is **delivered**; a **failed** one keeps it
    until the window drops the row, because a replay has to send the body it was signed from and

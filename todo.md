@@ -177,7 +177,11 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [x] Frozen lockfile enforcement and the dependency advisory scan
 - [x] Compliance artifact regeneration and staleness check
 - [x] CycloneDX SBOM per release
-- [x] Terraform skeleton for one region cell: Cloud Run, Cloud SQL, Valkey, KMS, LB, Armor
+- [x] Terraform skeleton for one region cell: Cloud Run, Cloud SQL, Valkey, KMS, LB, Armor.
+      `webhooks.tf` is the first part of it a service actually reads: eight Cloud Tasks queues
+      sharded by endpoint id, the service account a retry task is minted for, and the two IAM
+      bindings that make it work — all of it free at rest, which is why the retry lane exists here
+      while the rest of the cell's compute does not. Still applied to nothing
 - [ ] Distroless, non-root, read-only-filesystem runtime images
 - [ ] Binary Authorization and provenance
 - [x] `CLAUDE.md` recording repository conventions
@@ -525,10 +529,9 @@ client have no server halves to talk to yet.
       bounded pool, with one watermark per topic because `outbox.seq` is global and a shared bound
       would skip a slower topic's events. The dispatcher signs from what is stored, sends, writes
       down what happened and then decides, in that order, so a crash before the write leaves the
-      delivery due again rather than lost. The sweeper is the durable half and, until a queue exists,
-      the only timer: `SweepingScheduler` is where the Cloud Tasks adapter goes, which needs a queue,
-      a service account and an OIDC audience in Terraform first — until then a retry costs latency
-      rather than deliveries. The SSRF gap ADR-0012 recorded is closed: the transport resolves the
+      delivery due again rather than lost. The sweeper is the durable half and, in every environment
+      without a queue, the only timer — which is correct rather than a gap: Cloud Tasks makes a retry
+      punctual, the table is what makes it certain. The SSRF gap ADR-0012 recorded is closed: the transport resolves the
       hostname, refuses unless every address is public, and connects to the address it checked with
       SNI and `Host` set to the name, so TLS still has to be the customer's certificate and the
       rebinding window is gone. The breaker counts **attempts** and not dead deliveries, which the
@@ -557,7 +560,37 @@ client have no server halves to talk to yet.
       an endpoint that refused once and was retried ten seconds later as attempt 2 of the same
       delivery id, a replay delivered as attempt 9 of the id it already had, a replay of a taken
       delivery refused 409, and the day counters reading 1 delivered / 2 attempts for the endpoint
-      that needed a retry. Next: the event types
+      that needed a retry. **The retry lane is wired to Cloud Tasks**, which is the last piece ADR-0012
+      described and nothing implemented. `CloudTasksScheduler` creates one task per attempt with
+      `scheduleTime` set from our own schedule, sharded by endpoint id across eight queues so one
+      endpoint's retries are bounded by one queue's dispatch rate rather than the pool's. It is written
+      against the REST API with `fetch` and the metadata server rather than `@google-cloud/tasks`: the
+      client library brings gRPC and its tree into a service whose entire use of it is one POST with four
+      fields (PROJECT.md 7.6). The task carries an address and not the delivery — two ids in their public
+      form, no payload, no attempt number, no signature — because the row is the truth about all three by
+      the time it fires, and a task carrying its own copy could deliver a body the delivery has finished
+      with. Its entry point is the worker's first HTTP surface, which the comment at the top of `main.ts`
+      used to deny: health, because a Cloud Run service has to listen on `$PORT` to be considered up, and
+      one authenticated route, because a queue delivers a retry by calling a URL. `node:http` and not a
+      framework for two routes. The token on that route is verified in process against Google's own keys
+      — signature, audience, and the service account's email, because any Google identity can obtain a
+      token for a public audience — rather than trusting `roles/run.invoker` alone, which is a deployment
+      setting one flag away from a public endpoint that dispatches deliveries. The claim is what makes the
+      lane safe to call twice: `claimIfDue` is one statement with being-due in the predicate, so a
+      duplicate task, an early duplicate and a sweeper that got there first all lose the same way and
+      nobody's endpoint hears about one event twice. Five environment variables, all of them or none: four
+      of five is a boot failure rather than a silent fallback to the sweeper, because the symptom would be
+      retry latency nobody is watching. Terraform is in `infra/terraform/modules/cell/webhooks.tf` and is
+      only the free-at-rest half by choice — queues, an identity, IAM; no Cloud SQL, no Memorystore, no
+      load balancer — with the queues' own retry policy set to one attempt, since the schedule is ours and
+      published and a queue retrying on top of it would double a customer's traffic during an outage.
+      Tested as far as it can be without a Cloud project: the request we make is asserted against a local
+      stand-in for the API, the verifier is the real one against a key set the test serves, the claim and
+      the dispatch run against a real Postgres, and the route itself was exercised live — health open, a
+      missing token 401, a token Google did not sign refused with the contract's own code, and no dispatch
+      route at all in a deployment without a queue. **What has never happened is Google calling us back**,
+      which is recorded in the terraform README rather than implied: nothing here has been applied to a
+      real project. Next: the event types
       nothing emits yet
       (`WEBHOOK_EVENTS_WITHOUT_EMITTER` lists them: account creation, deletion and suspension write
       no outbox row, and the three delivery events wait on the SES and SMS paths). Known gap, recorded rather than closed: a

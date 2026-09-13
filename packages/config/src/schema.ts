@@ -23,6 +23,7 @@ export const configSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   AUTH_API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   MANAGEMENT_API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
+  WORKERS_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 
   DATABASE_URL: z.string().min(1),
@@ -59,6 +60,38 @@ export const configSchema = z.object({
   /** Region cell this process serves. Cross-cell requests are refused (4.13.5). */
   CELL_CODE: z.string().min(1),
   KMS_KEY_RING: z.string().min(1),
+
+  /**
+   * The retry queue for webhook deliveries, and the endpoint it calls back (ADR-0012).
+   *
+   * All five are optional together and required together. A deployment with none of them retries on
+   * the sweeper's interval, which is what every developer machine does and is correct — Cloud Tasks
+   * is a timer, not the delivery guarantee. A deployment with *some* of them is a mistake worth
+   * failing on: four out of five would silently fall back to the sweeper, and the symptom would be
+   * retry latency nobody is looking at rather than an error anybody sees. `CloudTasksScheduler`
+   * enforces the pairing at boot.
+   *
+   * `GCP_PROJECT_ID` is our own Cloud project and has nothing to do with a customer's `projectId`,
+   * which is why it is not called `PROJECT_ID`. The shard count has to match the number of queues
+   * Terraform made: too high and a share of retries are armed against a queue that does not exist,
+   * which costs them the sweeper's interval rather than losing them.
+   */
+  GCP_PROJECT_ID: z.string().min(1).optional(),
+  WEBHOOK_TASKS_LOCATION: z.string().min(1).optional(),
+  WEBHOOK_TASKS_QUEUE_PREFIX: z.string().min(1).optional(),
+  WEBHOOK_TASKS_QUEUE_SHARDS: z.coerce.number().int().min(1).max(64).default(8),
+  WEBHOOK_TASKS_SERVICE_ACCOUNT: z.email().optional(),
+
+  /**
+   * The absolute URL a task calls, and the audience the token it carries must name.
+   *
+   * The audience defaults to the URL, which is what Cloud Tasks itself does when a task omits one.
+   * It is separate because the two can differ legitimately — a load balancer in front of the service
+   * means the URL a task calls is not the identity the service was given — and because a token
+   * verified against the wrong audience is a token accepted from whoever else was issued one.
+   */
+  WEBHOOK_DISPATCH_URL: z.url().optional(),
+  WEBHOOK_DISPATCH_AUDIENCE: z.string().min(1).optional(),
 
   /**
    * The `iss` claim and the base of the discovery document. Required rather than

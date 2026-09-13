@@ -58,3 +58,38 @@ variable "min_instances" {
   type        = number
   default     = 2
 }
+
+variable "webhook_queue_shards" {
+  description = <<-EOT
+    Cloud Tasks queues for webhook retries, sharded by endpoint id (ADR-0012).
+
+    Eight is a pool, not a per-tenant resource: one endpoint's retries always land in the
+    same queue, so its dispatch ceiling is one queue's rate rather than the whole pool's.
+    Must match WEBHOOK_TASKS_QUEUE_SHARDS in the workers' environment.
+  EOT
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.webhook_queue_shards >= 1 && var.webhook_queue_shards <= 64
+    error_message = "webhook_queue_shards must be between 1 and 64."
+  }
+}
+
+variable "webhook_queue_dispatches_per_second" {
+  description = <<-EOT
+    Per-queue dispatch ceiling for retries.
+
+    Fifty a second across eight queues is four hundred, which is peak delivery rate at the
+    design volume — and retries are a few per cent of that, so the ceiling exists to bound
+    a recovering endpoint's backlog rather than to carry normal traffic.
+  EOT
+  type        = number
+  default     = 50
+}
+
+variable "webhook_queue_concurrent_dispatches" {
+  description = "Retries in flight per queue. Bounds how much of the worker's pool a queue can hold."
+  type        = number
+  default     = 100
+}

@@ -331,3 +331,43 @@ existed and no code had ever written a row. Five rules.
   to the Pub/Sub relay, and two consumers sharing one watermark means whichever runs first
   decides what the other never sees.
 
+
+## Working on webhook delivery
+
+The architecture and the numbers are in [ADR-0012](../adr/0012-webhook-delivery-is-a-queue-not-a-log.md);
+this is what the code will surprise you with.
+
+- **The delivery table is a queue, not a log.** An open delivery has a row and a payload; a
+  delivered one keeps neither, a failed one keeps its body until the window drops it three days
+  later. That asymmetry is not tidiness — it is what makes the replay route answerable, and
+  clearing the payload on both outcomes is the bug the route found.
+- **`claim`, `claimDue` and `claimIfDue` are three predicates, not three spellings.** `claim` takes
+  a delivery the caller has just created, `claimDue` is the sweeper's per-project batch, and
+  `claimIfDue` is one delivery that must also *be due* — because a queue is at-least-once and an
+  early duplicate must not become the next attempt an hour ahead of schedule. Claiming takes a
+  minute's lease rather than stamping `now`, since `delivering` is in the due predicate so a dead
+  dispatcher's delivery can be recovered.
+- **The sweeper is the guarantee and Cloud Tasks is only punctuality.** Every environment without a
+  queue is a correct deployment, so nothing may treat a scheduler failure as a delivery failure:
+  the dispatcher swallows it and logs, because the row already says when it is next due.
+- **The five queue variables travel together or not at all.** Four of five would fall back to the
+  sweeper silently, and the symptom is retry latency nobody is watching, so `CloudTasksScheduler`
+  refuses to build settings from a partial set and the process does not start.
+- **`apps/workers` listens on a port now,** which the top of its `main.ts` used to deny. Two routes:
+  health, because a Cloud Run service that listens on nothing is never up, and one authenticated
+  entry, because Cloud Tasks delivers a retry by calling a URL. Locally that needs `WORKERS_PORT` —
+  it falls back to `PORT`, which is 3000, which is the panel.
+- **The task's token is verified in process, not just by `roles/run.invoker`.** Signature against
+  Google's keys, audience, and the service account's `email`: any Google identity can obtain a token
+  for a public audience, so the email is the check that matters. IAM is a deployment setting and this
+  is a property of the code.
+- **A task carries two ids and nothing else.** No payload, no attempt number, no signature. The row
+  is the truth about all three by the time it fires, and a task carrying its own copy would be a
+  second opinion — the obvious failure being a duplicate that delivers a body the delivery has
+  finished with.
+- **Nothing re-signs a body it assembled itself.** The envelope is built from the row, so attempt
+  eight covers the same bytes as attempt one and a receiver deduping on `X-Idenzy-Delivery` sees one
+  delivery. Anything but a 2xx is a failure, redirects included.
+- **The breaker counts consecutive failed attempts, not dead deliveries.** A delivery dies after
+  eight attempts over a day, so twenty of those is a month of calling an endpoint that has never
+  answered.

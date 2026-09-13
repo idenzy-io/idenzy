@@ -298,7 +298,10 @@ export class WebhookDispatcher {
   /** Arming is best-effort: the row already says when it is due, so the sweeper is the guarantee. */
   private async arm(delivery: WebhookDeliveryRow, projectId: string, at: Date): Promise<void> {
     try {
-      await this.scheduler.schedule({ id: delivery.id, projectId }, at);
+      await this.scheduler.schedule(
+        { id: delivery.id, projectId, webhookId: delivery.webhookId },
+        at,
+      );
     } catch (error: unknown) {
       this.logger.warn("webhook retry could not be scheduled", {
         component: "webhook-dispatcher",

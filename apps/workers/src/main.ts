@@ -16,16 +16,21 @@ import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-rea
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { AuditRelay } from "./audit-relay.js";
+import { MetadataTokenSource } from "./google/access-token-source.js";
+import { GoogleOidcVerifier } from "./google/task-caller-verifier.js";
+import { InternalServer } from "./http/internal-server.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
-import { SweepingScheduler } from "./webhooks/delivery-scheduler.js";
+import { CloudTasksScheduler } from "./webhooks/cloud-tasks-scheduler.js";
+import { type DeliveryScheduler, SweepingScheduler } from "./webhooks/delivery-scheduler.js";
 import { WebhookDispatcher } from "./webhooks/webhook-dispatcher.js";
 import { WebhookRelay } from "./webhooks/webhook-relay.js";
 import { WebhookSweeper } from "./webhooks/webhook-sweeper.js";
+import { WebhookTaskEndpoint } from "./webhooks/webhook-task-endpoint.js";
 import { HttpsWebhookTransport } from "./webhooks/webhook-transport.js";
 
 /**
  * Standalone consumers: email, sms, webhook, audit, analytics, dsr and retention
- * (PROJECT.md 9.1). No HTTP server.
+ * (PROJECT.md 9.1).
  *
  * Two of them are here. The revocation reconciler sweeps the outbox on a timer and replays
  * what it finds into the cache, which is what makes the revocation set survive a Valkey
@@ -36,6 +41,11 @@ import { HttpsWebhookTransport } from "./webhooks/webhook-transport.js";
  * Neither is a queue consumer yet. Both read the outbox directly, each with its own
  * watermark, because `published_at` belongs to the Pub/Sub relay that will replace this
  * arrangement. The rest arrive with the flows that produce their messages.
+ *
+ * There is an HTTP surface now, which the comment above used to deny: two routes, health and the
+ * retry lane's entry, because Cloud Tasks delivers a retry by calling a URL and a Cloud Run service
+ * has to listen on `$PORT` to be considered up at all. It is not an API and does not grow into one —
+ * anything a customer or the panel can reach belongs to `auth-api` or `management-api`.
  */
 
 /**
@@ -107,6 +117,19 @@ async function bootstrap(): Promise<void> {
     });
   }
   const uow = new UnitOfWork(db);
+
+  /*
+   * Cloud Tasks if this deployment was given queues, and the sweeper if it was not. Both are correct:
+   * the queue arms a retry to the second, the sweeper finds it on its interval, and only the second
+   * of those is a delivery guarantee. A half-configured queue is the one case that fails here rather
+   * than quietly costing latency.
+   */
+  const tasks = CloudTasksScheduler.settingsFrom(config);
+  const scheduler: DeliveryScheduler =
+    tasks === null
+      ? new SweepingScheduler()
+      : new CloudTasksScheduler(new MetadataTokenSource(clock), tasks, logger);
+
   const dispatcher = new WebhookDispatcher(
     uow,
     new Sha256WebhookSigner(),
@@ -115,9 +138,7 @@ async function bootstrap(): Promise<void> {
     // running their own receiver on localhost has no other way to try this, and a production
     // deployment calling loopback would be calling itself.
     new HttpsWebhookTransport({ allowLoopbackHttp: !config.isProduction }),
-    // Cloud Tasks would go here. Until the queue exists, the sweeper is the timer, which costs
-    // latency rather than deliveries.
-    new SweepingScheduler(),
+    scheduler,
     clock,
     logger,
   );
@@ -137,6 +158,31 @@ async function bootstrap(): Promise<void> {
     logger,
   );
 
+  /*
+   * The retry lane's entry, and health. The path is taken from the URL the tasks themselves name, so
+   * the target and the route cannot drift apart; without a queue there is no route at all rather than
+   * an unauthenticated one, because an endpoint that dispatches deliveries is not something to leave
+   * listening on the chance it is wanted.
+   */
+  const server = new InternalServer(
+    {
+      port: config.get("WORKERS_PORT") ?? config.get("PORT"),
+      ...(tasks === null
+        ? {}
+        : {
+            dispatch: {
+              path: new URL(tasks.url).pathname,
+              verifier: new GoogleOidcVerifier({
+                audience: tasks.audience,
+                serviceAccount: tasks.serviceAccount,
+              }),
+              endpoint: new WebhookTaskEndpoint(uow, dispatcher, clock, logger),
+            },
+          }),
+    },
+    logger,
+  );
+
   // All awaited, so a worker that has just started has already done a pass before it
   // reports itself up. A restart is exactly when the cache is most likely to be empty, and
   // it is also when the audit trail is furthest behind.
@@ -144,6 +190,7 @@ async function bootstrap(): Promise<void> {
   await auditRelay.start();
   await webhookRelay.start();
   await webhookSweeper.start();
+  await server.start();
   logger.info("workers started", config.toSafeSummary());
 }
 

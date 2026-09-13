@@ -24,9 +24,11 @@
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "drizzle-orm": "catalog:",
+    "jose": "catalog:",
     "pg": "catalog:",
     "reflect-metadata": "catalog:",
-    "rxjs": "catalog:"
+    "rxjs": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@idenzy/node": "workspace:*",

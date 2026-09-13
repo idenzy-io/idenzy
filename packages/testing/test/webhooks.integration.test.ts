@@ -471,6 +471,45 @@ describe("WebhookDeliveryRepository", () => {
     expect(await inTenant(PROJECT_B, (repos) => repos.deliveries.claimDue(now))).toEqual([]);
   });
 
+  /**
+   * The single-id form of the sweep, which is what a Cloud Task calls.
+   *
+   * Being due is part of the predicate rather than something the caller checked a moment ago, because
+   * a queue is at-least-once: the duplicate of a task that armed attempt two must not become attempt
+   * three an hour early.
+   */
+  it("claims one delivery by id only while it is actually due", async () => {
+    const webhookId = await endpointIn(PROJECT_B);
+    const now = new Date();
+    const [row] = await inTenant(PROJECT_B, (repos) =>
+      repos.deliveries.fanOut(
+        [{ webhookId, event: "user.updated", sequence: nextSequence++, payload: { a: 1 } }],
+        new Date(now.getTime() + 3_600_000),
+      ),
+    );
+    const id = row?.id ?? "";
+
+    expect(await inTenant(PROJECT_B, (repos) => repos.deliveries.claimIfDue(id, now))).toBeNull();
+
+    // One that is due, taken exactly once however many copies of the task arrive.
+    const [due] = await inTenant(PROJECT_B, (repos) =>
+      repos.deliveries.fanOut(
+        [{ webhookId, event: "user.updated", sequence: nextSequence++, payload: { a: 2 } }],
+        new Date(now.getTime() - 1_000),
+      ),
+    );
+    const dueId = due?.id ?? "";
+    const claims = await Promise.all(
+      [1, 2, 3].map(() => inTenant(PROJECT_B, (repos) => repos.deliveries.claimIfDue(dueId, now))),
+    );
+    expect(claims.filter((claim) => claim !== null)).toHaveLength(1);
+
+    // And nothing is left to claim while the lease holds, so a late duplicate finds nothing.
+    expect(
+      await inTenant(PROJECT_B, (repos) => repos.deliveries.claimIfDue(dueId, now)),
+    ).toBeNull();
+  });
+
   it("makes a delivery whose dispatcher died claimable once the lease expires", async () => {
     const webhookId = await endpointIn(PROJECT_B);
     const now = new Date();

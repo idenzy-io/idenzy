@@ -41,7 +41,7 @@ pnpm compliance:generate           # after any schema change; CI fails if stale
 | If you are touching | Read |
 | --- | --- |
 | the toolchain, a migration, a column, an error code, a test | [docs/guide/repo.md](./docs/guide/repo.md) |
-| the auth API, a flow, MFA, passkeys, claims, SMS, revocation, the audit trail | [docs/guide/backend.md](./docs/guide/backend.md) |
+| the auth API, a flow, MFA, passkeys, claims, SMS, revocation, the audit trail, webhook delivery | [docs/guide/backend.md](./docs/guide/backend.md) |
 | `@idenzy/js`, a framework binding, an SSR helper, `@idenzy/node`, the CLI | [docs/guide/sdk.md](./docs/guide/sdk.md) |
 | `apps/client` generally — its stack, shared components, charts, code blocks | [docs/guide/panel.md](./docs/guide/panel.md) |
 | one screen of the panel | its `notes/` file, then [docs/guide/panel-screens.md](./docs/guide/panel-screens.md) |

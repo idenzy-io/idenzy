@@ -258,6 +258,38 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
   }
 
   /**
+   * `claimDue` for one delivery: takes it only if it is actually due now.
+   *
+   * This is what a Cloud Task calls, and the difference from `claim` above is the whole reason it
+   * exists. A queue is at-least-once, so the task that armed attempt two can arrive twice; the second
+   * copy must not become attempt three an hour early. Being due is therefore part of the predicate
+   * rather than something the caller read a moment ago, and a duplicate task finds nothing to do.
+   *
+   * `delivering` is claimable here for the same reason it is in the sweep: with the lease expired,
+   * that row is a dispatcher that died holding it.
+   */
+  async claimIfDue(
+    id: string,
+    now: Date,
+    leaseSeconds = CLAIM_LEASE_SECONDS,
+  ): Promise<WebhookDeliveryRow | null> {
+    const rows = await this.tx
+      .update(webhookDeliveries)
+      .set({ status: "delivering", nextAttemptAt: leaseUntil(now, leaseSeconds) })
+      .where(
+        and(
+          this.tenantScope(),
+          eq(webhookDeliveries.id, id),
+          inArray(webhookDeliveries.status, ["queued", "delivering"]),
+          lte(webhookDeliveries.nextAttemptAt, now),
+        ),
+      )
+      .returning();
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /**
    * Records what an attempt found and where the delivery goes next.
    *
    * The attempt is appended in the database rather than merged from a list this layer read, so

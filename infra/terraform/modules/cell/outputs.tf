@@ -17,3 +17,18 @@ output "jurisdiction" {
   description = "Residency jurisdiction, surfaced to customers choosing a cell."
   value       = var.jurisdiction
 }
+
+output "webhook_queue_prefix" {
+  description = "WEBHOOK_TASKS_QUEUE_PREFIX for the workers service; the shards are -0 to -N."
+  value       = "${local.name_prefix}-webhooks"
+}
+
+output "webhook_queue_shards" {
+  description = "WEBHOOK_TASKS_QUEUE_SHARDS. The worker hashes an endpoint id into this many queues."
+  value       = var.webhook_queue_shards
+}
+
+output "webhook_tasks_service_account" {
+  description = "WEBHOOK_TASKS_SERVICE_ACCOUNT: the identity a retry task carries, and the only one the dispatcher accepts."
+  value       = google_service_account.webhook_tasks.email
+}

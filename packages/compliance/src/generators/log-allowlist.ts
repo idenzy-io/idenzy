@@ -35,6 +35,15 @@ export function generateLogAllowlist(): ReadonlySet<string> {
     "status",
     "component",
     "droppedFields",
+    // Counters and the names of our own infrastructure. None of these can carry a value out
+    // of a row: `attempt`, `failures` and `count` are integers the process computed, and
+    // `queue` is a Cloud Tasks queue we named in Terraform. They are here because the lines
+    // that carry them are the webhook pipeline's only readable trace — "delivery attempted"
+    // without the attempt number is a line nobody can act on (ADR-0012).
+    "attempt",
+    "failures",
+    "count",
+    "queue",
     // The class of a fatal error, which is a type name and never data. Its *message* is
     // deliberately absent: that is the one field on an exception that can quote a value,
     // and a driver error naming the row it choked on is exactly what must not be logged.

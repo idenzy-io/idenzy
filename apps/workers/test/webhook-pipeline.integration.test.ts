@@ -17,10 +17,16 @@ import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { WEBHOOK_FAILURES_BEFORE_DISABLED } from "@idenzy/protocol/schemas/webhooks";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { SweepingScheduler } from "../src/webhooks/delivery-scheduler.js";
+import {
+  DeliveryScheduler,
+  type ScheduledDelivery,
+  SweepingScheduler,
+} from "../src/webhooks/delivery-scheduler.js";
 import { WebhookDispatcher } from "../src/webhooks/webhook-dispatcher.js";
 import { WebhookRelay } from "../src/webhooks/webhook-relay.js";
 import { WebhookSweeper } from "../src/webhooks/webhook-sweeper.js";
+import { WebhookTaskBody } from "../src/webhooks/webhook-task-body.js";
+import { WebhookTaskEndpoint } from "../src/webhooks/webhook-task-endpoint.js";
 import { HttpsWebhookTransport } from "../src/webhooks/webhook-transport.js";
 
 /**
@@ -45,6 +51,16 @@ class SilentLogger extends Logger {
   override error(): void {}
   override child(): Logger {
     return this;
+  }
+}
+
+/** Stands in for Cloud Tasks: what would have been armed, without a queue to arm it in. */
+class RecordingScheduler extends DeliveryScheduler {
+  readonly armed: { readonly delivery: ScheduledDelivery; readonly at: Date }[] = [];
+
+  override schedule(delivery: ScheduledDelivery, at: Date): Promise<void> {
+    this.armed.push({ delivery, at });
+    return Promise.resolve();
   }
 }
 
@@ -127,6 +143,7 @@ let relay: WebhookRelay;
 let sweeper: WebhookSweeper;
 let encryptor: FieldEncryptor;
 const receiver = new Receiver();
+const logger = new SilentLogger();
 let endpointUrl = "";
 
 const SECRET = "whsec_integration_secret";
@@ -192,7 +209,6 @@ beforeAll(async () => {
     [PROJECT, rows[0]?.id],
   );
 
-  const logger = new SilentLogger();
   dispatcher = new WebhookDispatcher(
     uow,
     new Sha256WebhookSigner(),
@@ -490,5 +506,115 @@ describe("the webhook pipeline", () => {
 
     // The receiver still holds only the old secret, and verifies: both are in the header.
     expect(receiver.received[0]?.verified, receiver.received[0]?.reason ?? "").toBe(true);
+  });
+});
+
+/**
+ * The retry lane's entry, which is what a Cloud Task actually calls (ADR-0012).
+ *
+ * The HTTP and token half is tested in `internal-server.test.ts` and `task-caller-verifier.test.ts`;
+ * what needs a database is the claim, and the claim is the whole of the correctness story here: a
+ * queue is at-least-once, so this endpoint has to be callable twice about one delivery.
+ */
+describe("a delivery dispatched by task", () => {
+  function taskEndpoint(scheduler?: DeliveryScheduler): WebhookTaskEndpoint {
+    if (scheduler === undefined) return new WebhookTaskEndpoint(uow, dispatcher, clock, logger);
+    return new WebhookTaskEndpoint(
+      uow,
+      new WebhookDispatcher(
+        uow,
+        new Sha256WebhookSigner(),
+        encryptor,
+        new HttpsWebhookTransport({ allowLoopbackHttp: true }),
+        scheduler,
+        clock,
+        logger,
+      ),
+      clock,
+      logger,
+    );
+  }
+
+  /** One failed attempt, due again now: the state a task fires in. */
+  async function dueForRetry(): Promise<{ id: string; body: unknown }> {
+    const endpoint = await endpointFor(["session.created"]);
+    receiver.answers(500);
+    await enqueue("session.created", { a: 1 });
+    await relay.sweep();
+
+    const [delivery] = await inTenant((repos) => repos.deliveries.listForEndpoint(endpoint.id));
+    const id = delivery?.id ?? "";
+    await harness.owner.query(
+      "UPDATE webhook_deliveries SET next_attempt_at = now() - interval '1 second' WHERE id = $1",
+      [id],
+    );
+    return { id, body: WebhookTaskBody.of(id, PROJECT).toJSON() };
+  }
+
+  it("sends the delivery a task names, as the next attempt of the same one", async () => {
+    const { body } = await dueForRetry();
+    receiver.answers(200);
+
+    expect(await taskEndpoint().run(body)).toBe("attempted");
+    expect(receiver.received).toHaveLength(2);
+    expect(receiver.received[1]?.attempt).toBe("2");
+    expect(receiver.received[1]?.deliveryId).toBe(receiver.received[0]?.deliveryId);
+    expect(receiver.received[1]?.verified, receiver.received[1]?.reason ?? "").toBe(true);
+  });
+
+  it("answers a duplicate task with nothing rather than sending twice", async () => {
+    const { body } = await dueForRetry();
+    receiver.answers(200);
+
+    expect(await taskEndpoint().run(body)).toBe("attempted");
+    // The same task again, which is what at-least-once means. The delivery is finished, so there is
+    // nothing to claim and nobody's endpoint hears about the event twice.
+    expect(await taskEndpoint().run(body)).toBe("skipped");
+    expect(receiver.received).toHaveLength(2);
+  });
+
+  it("does nothing for a delivery that is not due yet", async () => {
+    const { id, body } = await dueForRetry();
+    await harness.owner.query(
+      "UPDATE webhook_deliveries SET next_attempt_at = now() + interval '1 hour' WHERE id = $1",
+      [id],
+    );
+
+    // A task that arrives early — a duplicate of the one that armed this attempt — must not become
+    // the next attempt an hour ahead of its schedule.
+    expect(await taskEndpoint().run(body)).toBe("skipped");
+    expect(receiver.received).toHaveLength(1);
+  });
+
+  it("arms the attempt after it against the endpoint the delivery is for", async () => {
+    const { id, body } = await dueForRetry();
+    const scheduler = new RecordingScheduler();
+    const endpoints = await inTenant((repos) => repos.endpoints.list());
+
+    // The receiver is still refusing, so this attempt has to arm the next one.
+    expect(await taskEndpoint(scheduler).run(body)).toBe("attempted");
+    expect(scheduler.armed).toHaveLength(1);
+    expect(scheduler.armed[0]?.delivery).toEqual({
+      id,
+      projectId: PROJECT,
+      // The endpoint, because that is what the queue pool is sharded on: one endpoint's retries
+      // belong in one queue or its dispatch ceiling is multiplied by the number of shards.
+      webhookId: endpoints[0]?.id,
+    });
+    // Sixty seconds out, the second entry in the published schedule.
+    const delay = (scheduler.armed[0]?.at.getTime() ?? 0) - Date.now();
+    expect(delay).toBeGreaterThan(50_000);
+    expect(delay).toBeLessThan(70_000);
+  });
+
+  it("refuses a task body that names something that is not a delivery", async () => {
+    const { body } = await dueForRetry();
+    const swapped = { ...(body as Record<string, string>) };
+    swapped["delivery"] = swapped["project"] ?? "";
+
+    // The prefix is part of the identity: a project id where a delivery belongs fails to parse rather
+    // than addressing a row in another table.
+    await expect(taskEndpoint().run(swapped)).rejects.toThrow();
+    expect(receiver.received).toHaveLength(1);
   });
 });

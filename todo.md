@@ -380,6 +380,32 @@ client have no server halves to talk to yet.
       it puts a vendor's latency and its outage on the OTP path, and it contradicts 5.2's
       lever 6. The outbox and the relay pattern already exist in `apps/workers`; this is a
       consumer beside `AuditRelay`
+- [~] Sender authentication on the shared domain (§4.7). **Done and verified against real DNS**:
+      `mail.idenzy.io` is a verified SES identity in `us-east-1`, DKIM is RSA-2048 and reads
+      `SUCCESS`, and the custom MAIL FROM `bounce.mail.idenzy.io` reads `SUCCESS` too, which is
+      what makes SPF align with the visible sender rather than with an `amazonses.com` envelope.
+      DNS is at Squarespace, so the records are hand-kept and are not in `infra/`.
+      Two things are deliberately left:
+      **(1) DMARC is `p=none`, not `p=reject`.** §4.7 asks for `p=reject` and that is the end
+      state, but publishing it before a real message has shown `dkim=pass header.d=mail.idenzy.io`
+      turns any misalignment into every one-time code silently going nowhere, on the flow §4.7
+      itself makes the default way in. Tighten after the first verified send.
+      **(2) No `rua=` reporting address.** Not an omission: RFC 7489 §7.1 makes an external
+      reporting address require the *receiving* domain to publish
+      `mail.idenzy.io._report._dmarc.<their-domain>`, which we cannot add to `gmail.com`, so a
+      personal address there would collect nothing while looking configured. It waits on either a
+      mailbox on `idenzy.io` or a reporting service that owns both halves. Aggregate reports are
+      not how alignment is being checked here anyway — the `Authentication-Results` header of a
+      test send is
+- [ ] Get SES out of the sandbox. **First request was DENIED** (case 178931379400154), and the
+      reason is almost certainly ours: the request named `https://idenzy.io` as the website and
+      that host does not resolve at all — the apex carries NS delegation and our mail records and
+      no A record, because the Squarespace site is attached to `idenzy.dev` instead, where it
+      serves a "Coming Soon" page. A reviewer opens the URL, gets nothing, and denies. Not fatal
+      and not blocking development: the sandbox still sends 200 a day to verified recipients,
+      which is more than a developer machine needs. Before re-requesting, `idenzy.io` has to
+      resolve and say what the product is — which is the `landing` app, still one `<h1>`, so the
+      shortest path is a real page on Squarespace rather than waiting for that
 - [ ] Bounce and complaint webhook into the suppression list. The list and its repository
       exist and are enforced, and the adapter now sends through a configuration set so SES
       has somewhere to publish to; what is missing is the SNS receiver at our end

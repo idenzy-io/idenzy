@@ -642,7 +642,59 @@ client have no server halves to talk to yet.
       erasure path and a users screen that can ban somebody (nothing writes `banned_until` or
       `deleted_at` today), the three delivery events waiting on the SES and SMS event paths, and staff
       access waiting on the break-glass flow
-- [ ] Usage metering and the MAU HyperLogLog sketch
+- [~] Usage metering and the MAU HyperLogLog sketch. **The sketch exists and is written.**
+      `usage_daily.mau_hll` had been a column with no writer since the schema landed, and the
+      shape is forced by what it has to do: billing needs one number per project per month, and
+      a distinct-user list to produce it would be thousands of rows a day recording precisely
+      what nobody should later have to hand over or erase. `HyperLogLog` in `@idenzy/core` is
+      p=14, so the standard error is 0.81% — 400 users at the free-tier boundary where nothing
+      is charged either way, and $20 a month at 1M MAU, unbiased in both directions. The sparse
+      form is what makes six years of daily rows affordable: four bytes per touched register up
+      to 4096 of them, which is exactly where the dense 16 KiB becomes the smaller of the two,
+      and almost every project is under it on almost every day. Small counts read through linear
+      counting, because the raw estimator is biased below 2.5m. MurmurHash64A rather than a
+      convenient hash, since one that clusters does not lose precision symmetrically — it
+      undercounts, the same way, every month. **Union is a per-register maximum, and everything
+      above leans on it**: the same user added twice, the same day merged twice and a flush
+      replayed after a crash all leave the same sketch, so no part of the pipeline has to be
+      exactly-once to bill correctly. `mergeActiveUsers` is the one method on `usage_daily` that
+      cannot be an upsert, because a union is not an operation Postgres knows: the bytes come
+      back, merge in process and go down again under the row's lock, or two meters would each
+      write the sketch they read and the second would erase the first — silently, and in the
+      direction that undercharges. `dailyBetween` hands back the sketch and not a number, because
+      a month is the union of its days and never their sum, and an `activeUsers` integer per day
+      would make that mistake the natural reading of the type. **What counts as an MAU is
+      decided in one place**, `ActiveUserMeter`, and both of PROJECT.md 5.1's exclusions are
+      applied at the authentication because neither survives into what is stored: an account is
+      free on the day it was created, so an abandoned sign-up costs the customer nothing, and an
+      anonymous one counts only once upgraded. `AuthFlow` calls it, which is the point — eight
+      flows sign somebody in today and the ninth will be written by somebody who has not read
+      this, so a meter each of them had to remember is a revenue line that silently loses a
+      sign-in method. Refresh calls it too, after the commit like the revocation publish beside
+      it, because a refresh is an authentication for billing and is what keeps a long-lived
+      session counted in a month it did not start in; the user is already in hand on both paths,
+      so neither costs a read. **The write is buffered, and that is a cost decision with a stated
+      failure direction.** A write per authentication would put the busiest row in the system on
+      the sign-in path — the same trade ADR-0012 refused for logging deliveries — so
+      `BufferedActiveUserMeter` holds a sketch per project-day and flushes on an interval, driven
+      by the requests themselves *and* a timer, since a timer alone is unreliable where CPU is
+      throttled between requests and requests alone would strand a quiet project's last few until
+      the process ends. It costs a bounded undercount when an instance is killed between flushes,
+      which is chosen rather than accepted: the alternative is a meter that can overcharge. A
+      flush never rethrows, because a billing outage must not become an authentication outage.
+      `GET .../projects/:projectId/usage` is the endpoint the panel has been waiting on, and it
+      is a service rather than a query the panel could make itself for exactly one reason: every
+      row carries `activeUsersToDate` beside its own figure, a real running distinct count, which
+      is the level that reconciles with an invoice and the one notes/usage.md asked the chart to
+      draw. Its window defaults to the calendar month because the free tier and the invoice both
+      reset on the 1st, and the cap is enforced after the defaults rather than in the schema —
+      one end given and the other defaulted passes every check a single field can make and asks
+      for every daily row a project ever had. It is also management-api's first test, so it
+      brought a `tsconfig.test.json` with it. What is **not** done: the panel's usage store is
+      still the placeholder, nothing prices what the meters count so there is no money figure
+      anywhere yet, `assertWithinQuota` still allows everything because a plan ceiling needs a
+      plan, and emails and SMS are counted per send while the invoice wants segments, which
+      `usage_daily` does not store
 - [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script

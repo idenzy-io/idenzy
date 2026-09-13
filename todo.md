@@ -347,11 +347,42 @@ client have no server halves to talk to yet.
       refuses to construct outside development, because the field allowlist cannot protect
       a log *message*
 - [x] Suppression list and the daily usage counter, both enforced by the base class
-- [ ] SES adapter, shared sending domain, SPF, DKIM, DMARC. Deliberately not started:
-      nothing is deployed yet, and the base plus the conformance suite are what a new
-      adapter has to satisfy either way
+- [~] SES adapter, shared sending domain, SPF, DKIM, DMARC. **The adapter is written and
+      passes the conformance suite**; the domain and its DNS are not, and nothing has ever
+      sent a real message. `SesEmailProvider` is transport only, which is the whole point of
+      the base owning suppression, quota and metering — the suite's job is to catch the
+      adapter that overrides `send` to add a header and takes the suppression check out with
+      it. `@aws-sdk/client-sesv2` is deliberately not a dependency: our entire use of it is
+      one POST with a JSON body, which is exactly the shape 7.6's dependency budget exists
+      for and the same call `CloudTasksScheduler` was written by hand for. So SigV4 is ours,
+      in `packages/providers-email/src/aws/sigv4.ts`, over `node:crypto`. It was cross-checked
+      against an independent implementation of the AWS pseudocode written in Python and run
+      over the same inputs: the two agree byte for byte, signed-header list and session-token
+      header included, and that vector is pinned as a test — a signer tested only against
+      itself reproduces its own mistakes. The properties the tests assert are the ones a
+      hand-rolled signer gets wrong: `SignedHeaders` naming exactly the headers that are
+      sent, `host` among them so a signature cannot be replayed at another region's
+      endpoint, and the body signed so the message cannot be swapped after signing.
+      `SES_CONFIGURATION_SET` is required rather than optional, because bounces reach the
+      suppression list only through a configuration set — a message sent outside one is a
+      hard bounce we never hear about, on a domain every project shares. `emailProviderFor`
+      enforces all four variables or none and **names the missing one**: three of four would
+      otherwise fall through to the development logger, which refuses to construct outside
+      development, and the operator would get a crash about logging rather than about the
+      variable they missed. The access key is the part that does not match 4.11's zero static
+      credentials, and it is named rather than glossed — `AwsCredentialsProvider` is already
+      a function returning a promise so that federation through
+      `AssumeRoleWithWebIdentity` is a different provider and not a change to every caller.
+      What is left: the sending domain with SPF, DKIM and DMARC, and the send still happens
+      inline on the request path
+- [ ] Move the send off the request path. `Mailer` calls `provider.send()` inside the
+      request and so does `Texter`, which was free against a logger and is not against SES:
+      it puts a vendor's latency and its outage on the OTP path, and it contradicts 5.2's
+      lever 6. The outbox and the relay pattern already exist in `apps/workers`; this is a
+      consumer beside `AuditRelay`
 - [ ] Bounce and complaint webhook into the suppression list. The list and its repository
-      exist and are enforced; the webhook needs a provider to receive one from
+      exist and are enforced, and the adapter now sends through a configuration set so SES
+      has somewhere to publish to; what is missing is the SNS receiver at our end
 - [~] Template engine. The binding sandbox and the locale fallback chain are done, in
       `@idenzy/templating`. MJML compilation is not: it is CPU-bound work belonging on the
       worker pool with output cached by version (§9.6), and the built-in templates are
@@ -749,7 +780,50 @@ client have no server halves to talk to yet.
       the sending configuration behind two bill lines, which is now stated as the assumption it
       is. The remaining stores are placeholders, and each one waits on an endpoint rather than on
       the panel
-- [ ] Cloud Armor rules and application rate limits
+- [~] Cloud Armor rules and application rate limits. **The application half is in and the
+      edge half is not**, which is the right order: a WAF rate-limits an address against a
+      path, and the thing worth limiting here is an account being named by a thousand
+      addresses. Before this, `RateLimitStrategy` had been provided in `auth-api` since phase
+      0 with exactly one caller — `SmsFraudGuard` — so password sign-in, OTP start, magic
+      links, OAuth starts, the passkey ceremonies and anonymous sign-up had no throttle at
+      all, against 4.5 and 4.9. `@RateLimit` is opt-in like `@RequireSession`, and
+      `RateLimitGuard` sits between tenant resolution and the session guard on purpose: after
+      the project is known, so a bucket is scoped to the project it is spent against and two
+      customers behind one corporate NAT do not share one, and before the session lookup, so a
+      flood is refused at its cheapest point. Both dimensions fail **open** through `check`
+      rather than `checkStrictly`, the opposite of what `SmsFraudGuard` does with the same
+      strategy, because a sign-in we could not count is a sign-in and an SMS we could not
+      count is a bill. The subject key is hashed, since otherwise the key space is a list of
+      the addresses of everyone who has tried to sign in.
+      **Two findings worth keeping.** The address it all keys on was forgeable:
+      `trustProxy: true` makes `request.ip` the *leftmost* `X-Forwarded-For` entry, the one
+      the caller wrote, so any attacker had as many buckets as they cared to invent.
+      `ClientIpResolver` counts from the right instead and `TRUSTED_PROXY_HOPS` says how far,
+      defaulting to 0 — trust nothing, use the socket address. And the first set of ceilings
+      would have broken real customers: an address is not a person, a whole office arrives
+      behind one NAT, and email OTP is the *default* way in, so a per-address ceiling tight
+      enough to ration normal use takes a customer's staff offline at nine in the morning.
+      Address ceilings now catch what is plainly abnormal and nothing finer; the subject
+      ceiling is the strict one, and it is the one an attacker cannot spread out of. The
+      per-subject limit is a soft lockout and 4.5 refuses lockout — the distinction, written
+      down in `limits.ts` rather than assumed, is that these expire on their own in minutes,
+      need no unlock and touch no state on the account. `rate-limit-coverage.test.ts` reflects
+      over every controller and fails when an unauthenticated route carries no spec, which is
+      the test whose absence was the whole bug; its exemption list is empty and a stale entry
+      fails too. Refresh is deliberately **not** limited: it is 150 calls per MAU per month by
+      design, reuse detection already revokes a replayed family (ADR-0007), and a ceiling
+      guessed without traffic data would be a sign-in outage for the first large customer
+- [x] The discovery document advertised three endpoints that do not exist.
+      `authorization_endpoint`, `token_endpoint` and `userinfo_endpoint` pointed at
+      `/oauth/authorize`, `/oauth/token` and `/userinfo`, and none of the three is a route —
+      so a client that believed 4.2's "standards-compliant OIDC provider" was redirected into
+      a 404 after we had already sent a user through it. What we serve is the JWKS half, which
+      is what a verifier reads and what makes that claim true, so the authorization-server
+      half is omitted rather than filled in: the same client now fails at discovery, early
+      enough to read. The fields are optional in the schema rather than deleted, because we
+      would serve them if we ever became an authorization server. The test asserts the
+      property rather than the shape — every URL the document names resolves to something
+      that is not a 404 — since the old document parsed perfectly well
 
 ---
 
@@ -1123,4 +1197,6 @@ working, so the split below is by which question is being asked, not by which sc
       a repository root, which argues for splitting them out at Phase 2 (§16.9).
 - [ ] Table partitioning migrations are hand-authored, since `drizzle-kit` does not generate them
       (§9.4). Keep them in the numbered sequence and review them as SQL.
-- [ ] Open decisions 1 to 10 in §16, to be closed before Phase 0 ends.
+- [ ] Open decisions 1 to 9 in §16, to be closed before Phase 0 ends. Number 2, the launch
+      region, is closed: `us-central1`, and `infra/terraform/environments/dev` is the `us-1`
+      cell accordingly.

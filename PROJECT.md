@@ -1207,19 +1207,19 @@ Resolved since the first draft:
 - ~~Query layer: hand-written SQL versus a typed query builder versus an ORM~~ **Resolved: Drizzle** (§9.4, ADR-0001).
 - ~~Whether to ship hosted pages and embeddable components~~ **Resolved: no, and never** (§1.1, ADR-0002).
 - ~~Lint and format toolchain~~ **Resolved: Biome**, with GritQL plugins for the project-specific bans, plus husky, lint-staged and commitlint (§7.5).
+- ~~Launch region~~ **Resolved: `us-central1`.** The largest market and the cheapest region; `europe-west4` was the alternative and remains the obvious second cell. The first cell is therefore `us-1` with a `US` jurisdiction, because `projects.cell_id` is immutable once set (§4.13.5) and a cell labelled EU that runs in Iowa would make every residency claim resting on that column false.
 
 Still open, to resolve before Phase 0 ends:
 
 1. Default access-token TTL: 5 min (proposed) versus 60 s (Clerk parity, higher cost).
-2. Launch region: `europe-west4` (cheaper, near TR and EU customers) versus `us-central1` (largest market).
-3. Valkey from day one versus Postgres-only rate limiting for the first months.
-4. Whether to open-source the auth server (a Supabase-style trust signal) while keeping the managed cloud as the business. Headless makes this easier, because there is no UI licensing question.
-5. Billing granularity for email: per-send versus monthly bundles.
-6. Panel hosting for `client` and `admin`: GCS plus CDN static (proposed) versus Firebase Hosting for simpler preview channels.
-7. Whether `management-api` stays a separate deployment at launch or ships as a second module inside `auth-api` until traffic justifies the split (separation is preferred; cost is about $25/mo).
-8. Whether magic links ship in Phase 1 at all, or wait until Phase 2 given that OTP covers the same need without a redirect (§4.7).
-9. Whether native SDKs (Swift, Kotlin, Dart) live in this repo or in separate repositories wired in as git submodules. SPM, Maven and pub.dev all expect a repository root, which argues for splitting them out at Phase 2.
-10. Node version policy: pin to the active LTS line, or track Current for the performance work. Related: TypeScript 7 is released, but the NestJS toolchain still targets TypeScript 6, so we are pinned to 6.0.x until that lands.
+2. Valkey from day one versus Postgres-only rate limiting for the first months.
+3. Whether to open-source the auth server (a Supabase-style trust signal) while keeping the managed cloud as the business. Headless makes this easier, because there is no UI licensing question.
+4. Billing granularity for email: per-send versus monthly bundles.
+5. Panel hosting for `client` and `admin`: GCS plus CDN static (proposed) versus Firebase Hosting for simpler preview channels.
+6. Whether `management-api` stays a separate deployment at launch or ships as a second module inside `auth-api` until traffic justifies the split (separation is preferred; cost is about $25/mo).
+7. Whether magic links ship in Phase 1 at all, or wait until Phase 2 given that OTP covers the same need without a redirect (§4.7).
+8. Whether native SDKs (Swift, Kotlin, Dart) live in this repo or in separate repositories wired in as git submodules. SPM, Maven and pub.dev all expect a repository root, which argues for splitting them out at Phase 2.
+9. Node version policy: pin to the active LTS line, or track Current for the performance work. Related: TypeScript 7 is released, but the NestJS toolchain still targets TypeScript 6, so we are pinned to 6.0.x until that lands.
 
 ---
 

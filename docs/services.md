@@ -12,7 +12,8 @@ the register.
 
 **Status** is the state of the code, not of a contract. Nothing here is contracted, and
 the only two that have ever made a real network call from this repository are Have I Been
-Pwned and the container registry.
+Pwned and the container registry. That is still true with the SES adapter written: it has
+never been given credentials.
 
 - **Built** — an adapter exists and is wired into the composition root.
 - **Port only** — the abstract base and its conformance suite exist; no vendor adapter.
@@ -31,7 +32,7 @@ and running two clouds would double the residency story for no customer benefit
 | Memorystore for Valkey | Rate-limit counters, the revocation set, OTP state | Built (`@idenzy/cache`, `docker compose` locally) |
 | Cloud KMS | Per-project ES256 signing keys and the envelope KEK | Not started. `TokenIssuer` and `FieldEncryptor` both refuse to boot outside development rather than sign or encrypt under a key we control in process |
 | Global external LB, Cloud Armor, Cloud CDN, Certificate Manager | One anycast IP for every customer CNAME, WAF and edge rate limits, managed certs | Not started |
-| Pub/Sub, Cloud Tasks | Outbox relay, webhook delivery with backoff | Not started. The outbox table and its writers exist; nothing drains them |
+| Pub/Sub, Cloud Tasks | Outbox relay, webhook delivery with backoff | Cloud Tasks is built (`CloudTasksScheduler`, ADR-0012) and has never been called back by a real queue. The outbox is drained by pollers in `apps/workers`, not by Pub/Sub, which remains unused |
 | BigQuery | MAU and usage analytics, streamed from `auth_event` | Not started |
 | Cloud Logging, Monitoring, Trace | Observability, with OpenTelemetry from the Node SDK | Not started. `@idenzy/observability` writes structured logs through the field allowlist |
 | Artifact Registry, Cloud Build, Cloud Deploy, Binary Authorization | Build and release, signed images only | Not started |
@@ -45,7 +46,7 @@ and must pass `EmailProviderConformanceSuite` before it can be registered
 
 | Service | Role | Status |
 |---|---|---|
-| AWS SES | Primary. Shared sending domain, per-customer domains as separate identities, SNS event feed into the suppression list | Port only |
+| AWS SES | Primary. Shared sending domain, per-customer domains as separate identities, SNS event feed into the suppression list | **Built** (`SesEmailProvider`, SES v2 REST with our own SigV4 over `node:crypto` rather than `@aws-sdk/*`, per PROJECT.md 7.6). Not wired to an account: no sending domain, no DKIM, and the SNS receiver does not exist, so nothing has ever been sent |
 | Resend, Postmark, SendGrid, Mailgun | Secondary and bring-your-own | Not started |
 | Generic SMTP | Bring-your-own, for customers who will not use a vendor | Not started |
 | `LoggingEmailProvider` | The development transport. Prints the whole message and refuses to construct outside development | Built |

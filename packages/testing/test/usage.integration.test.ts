@@ -36,6 +36,19 @@ function users(from: number, to: number): readonly string[] {
   return Array.from({ length: to - from }, (_, n) => `usr_${String(from + n).padStart(32, "0")}`);
 }
 
+/**
+ * What a stored sketch must agree with: the same sketch, built here.
+ *
+ * Deliberately not the true cardinality. An estimator is allowed to answer 2006 for two
+ * thousand people and an assertion against 2000 would be testing the published error bound,
+ * which is the unit tests' job and is not what a round trip through `bytea` can get wrong.
+ * What this file is asking is whether the database ended up holding the union we expect, and
+ * the sketch is deterministic, so the two counts are equal or something lost a register.
+ */
+function expectSameAs(stored: HyperLogLog | undefined, expected: readonly string[]): void {
+  expect(stored?.count).toBe(sketchOf(expected).count);
+}
+
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
@@ -73,7 +86,7 @@ describe("the day's active-user sketch", () => {
       usage.dailyBetween("2026-03-01", "2026-03-01"),
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.activeUsers.count).toBe(400);
+    expectSameAs(rows[0]?.activeUsers, users(0, 400));
   });
 
   it("accumulates flush after flush rather than replacing what is there", async () => {
@@ -84,7 +97,7 @@ describe("the day's active-user sketch", () => {
     const rows = await inTenant(PROJECT_A, (usage) =>
       usage.dailyBetween("2026-03-02", "2026-03-02"),
     );
-    expect(rows[0]?.activeUsers.count).toBe(500);
+    expectSameAs(rows[0]?.activeUsers, users(0, 500));
   });
 
   it("is unchanged by a flush replayed after a crash", async () => {
@@ -96,7 +109,7 @@ describe("the day's active-user sketch", () => {
     const rows = await inTenant(PROJECT_A, (usage) =>
       usage.dailyBetween("2026-03-03", "2026-03-03"),
     );
-    expect(rows[0]?.activeUsers.count).toBe(250);
+    expectSameAs(rows[0]?.activeUsers, users(0, 250));
   });
 
   it("loses neither half when two meters flush the same day at once", async () => {
@@ -109,7 +122,7 @@ describe("the day's active-user sketch", () => {
     const rows = await inTenant(PROJECT_A, (usage) =>
       usage.dailyBetween("2026-03-04", "2026-03-04"),
     );
-    expect(rows[0]?.activeUsers.count).toBe(2_000);
+    expectSameAs(rows[0]?.activeUsers, users(0, 2_000));
   });
 
   it("counts a month as the union of its days and never their sum", async () => {
@@ -124,8 +137,9 @@ describe("the day's active-user sketch", () => {
       usage.dailyBetween("2026-04-01", "2026-04-30"),
     );
     expect(rows).toHaveLength(3);
-    expect(rows.reduce((total, row) => total + row.activeUsers.count, 0)).toBe(300);
-    expect(HyperLogLog.union(rows.map((row) => row.activeUsers)).count).toBe(100);
+    const union = HyperLogLog.union(rows.map((row) => row.activeUsers));
+    expect(rows.reduce((total, row) => total + row.activeUsers.count, 0)).toBe(union.count * 3);
+    expectSameAs(union, returning);
   });
 
   it("writes nothing for a day on which nobody was billable", async () => {
@@ -144,6 +158,6 @@ describe("the day's active-user sketch", () => {
 
     const b = await inTenant(PROJECT_B, (usage) => usage.dailyBetween("2026-06-01", "2026-06-01"));
     expect(b).toHaveLength(1);
-    expect(b[0]?.activeUsers.count).toBe(40);
+    expectSameAs(b[0]?.activeUsers, users(0, 40));
   });
 });

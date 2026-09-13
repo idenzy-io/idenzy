@@ -1072,7 +1072,21 @@ template pipeline of its own rather than a branch in the OTP flow.
       names and a render is the first thing that sees a value. A fifth rule the plan did not
       name: the claimable user fields are an allowlist and it is exactly `publicUserSchema`,
       so a column added tomorrow is not publishable until somebody adds it there. What is
-      left is the dashboard screen, which is the `client` panel
+      left was the dashboard screen, and it is wired now: `GET/PUT
+      .../claim-template` on the management API, developer to read and admin to write,
+      because a claim is what a customer's own authorisation code branches on. A PUT and
+      not a PATCH — a template is an ordered list and the screen edits the whole of it, so
+      a patch over one would need a language for naming positions. The four rules are
+      restated in the management service rather than shared with the auth API's, because
+      the two do not share a process; keeping them in step matters more than the repetition,
+      since a template the dashboard accepts and the issuer refuses is a project whose
+      tokens stop being minted, discovered at somebody's next sign-in.
+      Three bugs, all found by calling the route rather than reading it. Two refusals came
+      back as 500s because the helper threw a raw `ZodError`, which is the exact trap the
+      auth API's own service documents — they are `ValidationFailedError` now and say which
+      claim was wrong. And the acknowledgement was echoed from the request rather than
+      derived from what was stored, so removing the last private-metadata claim left the
+      screen showing a consent the record did not hold
 - [ ] The project-config cache PROJECT.md 4.2 assumes. Applying a template is one
       primary-key read per token today, which is honest but is not nothing on the refresh
       path. Nothing else wants a cache yet, so it waits until something does

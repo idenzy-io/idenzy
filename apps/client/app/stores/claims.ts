@@ -17,51 +17,82 @@ import {
   type SavedClaimTemplate,
 } from "~/utils/claims";
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 900;
+const _PLACEHOLDER_LATENCY = 700;
+const _SAVE_LATENCY = 900;
 
 export const useClaimsStore = defineStore("claims", () => {
-  const templates = ref<Record<string, SavedClaimTemplate>>({});
-  const loading = ref(true);
+  const projects = useProjectStore();
 
-  setTimeout(() => {
-    templates.value = {
-      prj_personal: { ...EMPTY_TEMPLATE },
-      prj_acme: {
-        claims: [
-          { name: "email", source: "user", path: "email", required: true },
-          { name: "email_verified", source: "user", path: "emailVerified", required: false },
-          { name: "plan", source: "metadata_public", path: "plan", required: false },
-          { name: "org", source: "metadata_private", path: "orgId", required: true },
-        ],
-        acknowledgePrivateMetadata: true,
-        updatedAt: "2026-09-02T10:14:00.000Z",
-      },
-    };
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
+  const templates = ref<Record<string, SavedClaimTemplate>>({});
+  const loading = ref(false);
+  const refusal = ref<string | null>(null);
+  /** Non-reactive: mutating a ref inside a computed re-invalidates the computed. */
+  const requested = new Set<string>();
+
+  function path(projectId: string): string | null {
+    const org = projects.orgOf(projectId);
+    return org === null ? null : `/v1/orgs/${org.id}/projects/${projectId}/claim-template`;
+  }
+
+  async function load(projectId: string): Promise<void> {
+    const url = path(projectId);
+    if (url === null) return;
+    loading.value = true;
+    refusal.value = null;
+    try {
+      const { data, error } = await useManagementApi()(url).get().json<SavedClaimTemplate>();
+      if (error.value !== null) throw error.value;
+      if (data.value !== null) templates.value = { ...templates.value, [projectId]: data.value };
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    } finally {
+      loading.value = false;
+    }
+  }
 
   function templateFor(projectId: string): SavedClaimTemplate {
+    if (!requested.has(projectId)) {
+      requested.add(projectId);
+      void load(projectId);
+    }
+    // A project that has never saved one has an empty template, which is what the server
+    // answers with too — so the screen opens on the same thing either way.
     return templates.value[projectId] ?? { ...EMPTY_TEMPLATE };
   }
 
   /**
-   * Replaces the whole template; resolves once the server has it. The acknowledgement is
-   * kept only while the template still reads private metadata, as the server keeps it.
+   * Replaces the whole template and keeps what the server stored.
+   *
+   * A PUT, because a template is an ordered list and the screen edits the whole of it. The
+   * server drops the acknowledgement when no claim reads private metadata any more, so the
+   * answer is kept rather than the copy sent: a screen still showing a tick for a source it
+   * no longer reads would be describing a consent that is not recorded.
    */
   async function save(projectId: string, template: ClaimTemplate): Promise<SavedClaimTemplate> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+    const url = path(projectId);
+    if (url === null) {
+      throw new InternalError({ detail: { reason: "the project's organisation is not loaded" } });
+    }
     const clean = normaliseTemplate(template);
-    const saved: SavedClaimTemplate = {
-      claims: clean.claims,
-      acknowledgePrivateMetadata: readsPrivateMetadata(clean.claims)
-        ? clean.acknowledgePrivateMetadata
-        : false,
-      updatedAt: new Date().toISOString(),
-    };
+    const { data, error } = await useManagementApi()(url)
+      .put({
+        claims: clean.claims,
+        acknowledgePrivateMetadata: readsPrivateMetadata(clean.claims)
+          ? clean.acknowledgePrivateMetadata
+          : false,
+      })
+      .json<SavedClaimTemplate>();
+    if (error.value !== null) {
+      refusal.value = managementMessage(error.value);
+      throw error.value;
+    }
+    const saved = data.value;
+    if (saved === null) {
+      throw new InternalError({ detail: { reason: "the server returned no template" } });
+    }
     templates.value = { ...templates.value, [projectId]: saved };
     return saved;
   }
 
-  return { templates, loading, templateFor, save };
+  return { templates, loading, refusal, load, templateFor, save };
 });

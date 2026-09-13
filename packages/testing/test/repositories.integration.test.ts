@@ -138,6 +138,48 @@ describe("UserRepository", () => {
     expect(other.email).toBe("shared@x.test");
   });
 
+  /**
+   * The event is the repository's, not the flow's.
+   *
+   * Six paths create a user and a seventh will be written by somebody who never reads this: an event
+   * each of them has to remember is one a new sign-in method ships without. Here it cannot be missed,
+   * and it is in the transaction that made the user, so a rollback takes the announcement with it.
+   */
+  it("announces a created user in the same transaction", async () => {
+    const created = await inTenant(PROJECT_A, (repos) =>
+      repos.users.create(newUser("event@a.test")),
+    );
+
+    const { rows } = await harness.owner.query<{ topic: string; payload: Record<string, unknown> }>(
+      "SELECT topic, payload FROM outbox WHERE project_id = $1 AND topic = 'user.created'",
+      [PROJECT_A],
+    );
+    const written = rows.filter((row) => row.payload["userId"] === created.id);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.payload["email"]).toBe("event@a.test");
+    expect(written[0]?.payload["emailVerified"]).toBe(false);
+  });
+
+  it("announces nothing when the transaction that created the user rolls back", async () => {
+    const { rows: before } = await harness.owner.query<{ count: string }>(
+      "SELECT count(*) FROM outbox WHERE topic = 'user.created'",
+    );
+
+    // The second insert conflicts on the unique address, which takes the whole transaction — the user
+    // and its event — with it. An enqueue after the commit could not have that property.
+    await expect(
+      inTenant(PROJECT_A, async (repos) => {
+        await repos.users.create(newUser("rolled-back@a.test"));
+        await repos.users.create(newUser("rolled-back@a.test"));
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const { rows: after } = await harness.owner.query<{ count: string }>(
+      "SELECT count(*) FROM outbox WHERE topic = 'user.created'",
+    );
+    expect(after[0]?.count).toBe(before[0]?.count);
+  });
+
   it("upgrades an anonymous account in place, keeping the id", async () => {
     const { id, upgraded } = await inTenant(PROJECT_A, async (repos) => {
       const anon = await repos.users.create({

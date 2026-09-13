@@ -337,6 +337,17 @@ existed and no code had ever written a row. Five rules.
 The architecture and the numbers are in [ADR-0012](../adr/0012-webhook-delivery-is-a-queue-not-a-log.md);
 this is what the code will surprise you with.
 
+- **`user.created` is emitted by `UserRepository.create`, not by a flow.** Six paths create a
+  user and a seventh will be written by somebody who has not read this, so an event each of them
+  has to remember is one the next sign-in method ships without (PROJECT.md 7.3). It also has to be
+  in the transaction that made the user, or a crash loses the event and a rollback invents one,
+  which is why the `AuthFlow` base — which owns the rest of a sign-in's ordering — is the wrong
+  place. What it says is "an account exists" and no more: the method belongs to the `session.created`
+  that follows a moment later.
+- **An outbox payload is internal, and raw uuids are the convention.** The revocation reconciler
+  parses `userId` and `sessionIds` out of one and encodes them to `usr_`/`ses_` itself. Anything
+  that hands a payload to a customer owes that conversion; the webhook relay does not do it yet,
+  which is recorded in todo.md rather than papered over.
 - **The delivery table is a queue, not a log.** An open delivery has a row and a payload; a
   delivered one keeps neither, a failed one keeps its body until the window drops it three days
   later. That asymmetry is not tidiness — it is what makes the replay route answerable, and

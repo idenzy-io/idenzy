@@ -125,6 +125,28 @@ describe("signing up", () => {
     expect(issued.accessToken.split(".")).toHaveLength(3);
   });
 
+  /**
+   * The event a customer actually builds on, asserted where the flow runs rather than only where the
+   * row is written: a sign-up announces an account once, and signing in again announces nothing.
+   */
+  it("announces the account once, and not again on the next sign-in", async () => {
+    const email = "announced@a.test";
+    sessionOf(await signUp.authenticate(context, { email, password: "a-long-enough-password" }));
+
+    const created = async () => {
+      const { rows } = await harness.owner.query<{ count: string }>(
+        "SELECT count(*) FROM outbox WHERE topic = 'user.created' AND payload->>'email' = $1",
+        [email],
+      );
+      return rows[0]?.count;
+    };
+    expect(await created()).toBe("1");
+
+    sessionOf(await signIn.authenticate(context, { email, password: "a-long-enough-password" }));
+    // A sign-in is `session.created`, which is its own event. An account is created once.
+    expect(await created()).toBe("1");
+  });
+
   it("stores an Argon2id hash and never the password", async () => {
     sessionOf(
       await signUp.authenticate(context, {

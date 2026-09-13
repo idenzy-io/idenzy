@@ -48,7 +48,13 @@ and RoPA from the schema, and CI fails if the committed copies are stale.
 - [x] `docker-compose.yml` with Postgres 17 and Valkey
 - [~] `pnpm dev` boots containers, migrates, and starts every app through Turbo. The apps
       now read `.env` through `--env-file-if-exists` and `.env.example` lists what they
-      need; `pnpm bootstrap` still does the container and migration half separately
+      need; `pnpm bootstrap` still does the container and migration half separately. The
+      three Node services start for the first time: `node --watch src/main.ts` could never
+      have worked, because a `.js` specifier does not resolve to the sibling `.ts` and
+      strip-only mode refuses the constructor parameter properties every class here uses, so
+      `tools/dev/src/serve.ts` pairs `tsc --watch` with `node --watch dist/main.js` and kills
+      what it started — two commands joined by `&` in a shell orphan both, measured rather
+      than assumed
 
 ### 0.2 Architecture decision records
 
@@ -590,12 +596,29 @@ client have no server halves to talk to yet.
       missing token 401, a token Google did not sign refused with the contract's own code, and no dispatch
       route at all in a deployment without a queue. **What has never happened is Google calling us back**,
       which is recorded in the terraform README rather than implied: nothing here has been applied to a
-      real project. Next: the event types
-      nothing emits yet
-      (`WEBHOOK_EVENTS_WITHOUT_EMITTER` lists them: account creation, deletion and suspension write
-      no outbox row, and the three delivery events wait on the SES and SMS paths). Known gap, recorded rather than closed: a
-      hostname that *resolves* to a private address is not caught by parsing, so the dispatcher
-      owes a resolve-and-refuse check at delivery time (ADR-0012)
+      real project. **`user.created` has an emitter now**, which is the event every customer builds on
+      and the largest of the catalogue's gaps. It is written by `UserRepository.create` rather than by
+      a flow, for two reasons that both had to hold: six paths create a user — password sign-up, magic
+      link, two OTP channels, an OAuth first link, an anonymous session — so an event each of them has
+      to remember is one the seventh ships without (PROJECT.md 7.3), and it has to be in the
+      transaction that made the user, or a crash loses the event and a rollback invents one, which
+      rules out the `AuthFlow` base that owns the rest of a sign-in's ordering. A test proves the
+      rollback case rather than assuming it. The event says "an account exists" and nothing else: how
+      the account was created belongs to the `session.created` a moment later, and a bulk import will
+      want a path that does not claim six hundred thousand people just signed up. Writing this also
+      found the list of gaps wrong — `security.staff_access_granted` was in neither the topic map nor
+      the without-emitter list, so a customer could subscribe to an event nobody had noticed nothing
+      sends. `webhook-events.test.ts` now asserts the two lists cover the catalogue exactly, because a
+      list of known gaps that is itself out of date is worse than none. Next: the outbox payload
+      reaches a customer verbatim as the envelope's `data`, which is two surfaces in one column — the
+      reconciler parses raw uuids out of the same payloads, so an event carries `userId` as a bare
+      uuid while every other answer the product gives says `usr_…`; and the panel's own sample body
+      documents fields (`occurred_at`, `data.object`) the envelope does not have. Both want the same
+      fix: the relay projecting a payload into what a customer sees, once, before the delivery row is
+      written. Then the events still without an emitter: deletion and suspension, which need the
+      erasure path and a users screen that can ban somebody (nothing writes `banned_until` or
+      `deleted_at` today), the three delivery events waiting on the SES and SMS event paths, and staff
+      access waiting on the break-glass flow
 - [ ] Usage metering and the MAU HyperLogLog sketch
 - [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own

@@ -6,6 +6,7 @@ import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 import { asRecord } from "./jsonb.js";
+import { OutboxRepository } from "./outbox-repository.js";
 
 type UserRow = typeof users.$inferSelect;
 
@@ -72,6 +73,22 @@ export class UserRepository extends BaseRepository<typeof users> {
     return this.toEntity(rows[0]);
   }
 
+  /**
+   * Writes a user, and announces it in the same statement's transaction.
+   *
+   * **The `user.created` event is emitted here rather than by the flows**, which is the only place it
+   * can be both unforgettable and correct. Six paths create a user — password sign-up, magic link,
+   * two OTP channels, an OAuth first link and an anonymous session — and a seventh will be added by
+   * somebody who has not read this file; an event each of them has to remember to enqueue is the
+   * design PROJECT.md 7.3 rules out. It also has to be in *this* transaction, because an outbox row
+   * written after the commit is an event a crash loses and an event a rollback invents (PROJECT.md
+   * 9.4), which rules out the `AuthFlow` base that owns the rest of a sign-in's ordering.
+   *
+   * What the event says is "an account exists" and no more. Not how it was created: the method
+   * belongs to the sign-in that follows, which is its own event a moment later, and a bulk import
+   * will want a path that creates accounts without claiming six hundred thousand people just signed
+   * up.
+   */
   async create(input: NewUser): Promise<User> {
     const rows = await this.guard(() =>
       this.tx
@@ -90,7 +107,20 @@ export class UserRepository extends BaseRepository<typeof users> {
         })
         .returning(),
     );
-    return this.required(rows[0]);
+    const row = rows[0];
+    if (row === undefined) throw new ResourceNotFoundError({ detail: { entity: "user" } });
+
+    await new OutboxRepository(this.tx, this.context).enqueue("user.created", {
+      userId: row.id,
+      email: row.email,
+      phone: row.phone,
+      emailVerified: row.emailVerified,
+      phoneVerified: row.phoneVerified,
+      // The row's own instant rather than a clock this class does not have: the event happened when
+      // the insert did.
+      at: row.createdAt.toISOString(),
+    });
+    return this.required(row);
   }
 
   /** Used both by reset and by a transparent rehash after a successful sign-in. */

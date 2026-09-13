@@ -281,6 +281,22 @@ describe("the webhook pipeline", () => {
     expect(receiver.received[0]?.verified).toBe(true);
   });
 
+  it("delivers a created account, which is the event every customer subscribes to", async () => {
+    await endpointFor(["user.created"]);
+    // The shape `UserRepository.create` writes, which is the only writer of this topic.
+    await enqueue("user.created", {
+      userId: "9f1c6b0e-0000-4000-8000-000000000001",
+      email: "new@customer.test",
+      emailVerified: false,
+      at: new Date().toISOString(),
+    });
+
+    await relay.sweep();
+    expect(receiver.received[0]?.event).toBe("user.created");
+    expect(receiver.received[0]?.verified, receiver.received[0]?.reason ?? "").toBe(true);
+    expect(JSON.parse(receiver.received[0]?.body ?? "{}").data.email).toBe("new@customer.test");
+  });
+
   it("sends nothing for a topic nobody subscribed to", async () => {
     await endpointFor(["user.updated"]);
     await enqueue("session.created", { sessionId: "ses_1" });

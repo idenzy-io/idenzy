@@ -871,7 +871,7 @@ Notes:
 
 Notes:
 
-- `mauHll`: Sketch only. Cannot be reversed to a user list.
+- `mauHll`: Sketch only. Cannot be reversed to a user list, nor asked whether one person was active.
 - `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
 - `smsVerified`: Codes actually entered. Sends far above this is the pumping signal (4.8).
 

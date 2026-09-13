@@ -26,6 +26,13 @@ const billing = {
  * MAU is a HyperLogLog sketch rather than a distinct-user list. That is a billing
  * optimisation and a privacy property at once: we can bill accurately without keeping a
  * per-day record of which users were active.
+ *
+ * What goes into the sketch is MAU as PROJECT.md 5.1 defines it and not everyone who made a
+ * request: an account is left out on its own first day and an anonymous one until it is
+ * upgraded. Both rules are applied where the write happens, because neither can be recovered
+ * from a sketch afterwards — it holds no dates and no identities to filter on. A day's row is
+ * therefore what that day added to the bill, and a project's first day of sign-ups reads zero
+ * on purpose.
  */
 export const usageDaily = classifiedTable(
   "usage_daily",
@@ -35,7 +42,7 @@ export const usageDaily = classifiedTable(
     mauHll: classified(hll("mau_hll"), {
       ...billing,
       class: DataClass.Pseudonymous,
-      note: "Sketch only. Cannot be reversed to a user list.",
+      note: "Sketch only. Cannot be reversed to a user list, nor asked whether one person was active.",
     }),
     emailsSent: classified(bigint("emails_sent", { mode: "number" }).notNull().default(0), billing),
     smsSent: classified(bigint("sms_sent", { mode: "number" }).notNull().default(0), billing),

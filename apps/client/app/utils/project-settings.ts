@@ -71,6 +71,20 @@ export const TIER_LABELS: Record<ProjectTier, string> = {
   hipaa: "HIPAA",
 };
 
+/**
+ * The tier as one of the two this panel knows how to describe.
+ *
+ * Total on purpose. `projects.compliance_tier` is a text column and every label, note and
+ * retention figure on the settings screen is a lookup keyed on it, so a value this build has
+ * not heard of would be `undefined` inside a render rather than a row that reads oddly — the
+ * same way an unknown sign-in method once emptied the users table. Standard is the safe
+ * reading: it is what a project is created as, and it describes fewer promises rather than
+ * more.
+ */
+export function projectTierOf(value: string | undefined): ProjectTier {
+  return PROJECT_TIERS.includes(value as ProjectTier) ? (value as ProjectTier) : "standard";
+}
+
 /** Years of audit trail the tier buys. Partitions are dropped on this schedule. */
 export const TIER_AUDIT_YEARS: Record<ProjectTier, number> = { standard: 1, hipaa: 6 };
 

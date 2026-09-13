@@ -4,48 +4,68 @@
  * The name is deliberately not here: it lives in the project store, because the drawer, the
  * breadcrumb and the switcher all read it and a second copy would be a second thing to keep
  * in step. What this holds is everything else on the row, which is mostly facts a customer
- * cannot change, plus the retention ages, which are the only settings on the page.
+ * cannot change, plus the retention ages.
  *
- * Placeholder until the management API answers, seeded off the project id so a cell and a
- * creation date hold still between visits and two projects differ.
+ * The facts come from the bootstrap rather than from a read of their own, and that is the
+ * decision rather than a shortcut. `GET /v1/me` already answers with each project's region,
+ * plan, compliance tier and creation date — the same four columns
+ * `GET /v1/orgs/:orgId/projects/:projectId` reads — so a request here would fetch bytes the
+ * panel is already holding, which is the bug `useSettingsDocumentStore` was written to fix
+ * one screen over. The endpoint exists and is what a rename answers with; this screen simply
+ * has no reason to ask it a second time.
+ *
+ * What has gone is the generator. `cellCode`, `tier`, `plan` and `createdAt` used to be
+ * seeded off a hash of the project id, so a project running in `us-east-1` could describe
+ * itself as Europe and a free one as enterprise — a residency claim invented by a PRNG,
+ * which is the first row of notes/priorities.md rather than a rough edge.
+ *
+ * **Retention is still local and says so.** `retention_policies` has no repository, no
+ * endpoint and no worker reading it, so an age saved here is a number this page remembers
+ * until it is reloaded. PROJECT.md 4.13.6 is why that has to be stated rather than glossed:
+ * retention that is not enforced by a job is not retention, and this is the one screen where
+ * pretending otherwise would be a compliance claim.
  */
 
 import {
   auditRetentionFor,
   type ProjectFacts,
   type ProjectTier,
-  REGION_CELLS,
+  projectTierOf,
   RETENTION_DEFAULTS,
   RETENTION_SUBJECTS,
   type RetentionSubject,
 } from "~/utils/project-settings";
-import { DURATIONS } from "~/utils/time";
 
 const SAVE_LATENCY = 600;
 
 export const useProjectSettingsStore = defineStore("project-settings", () => {
+  const bootstrap = useBootstrapStore();
+
   const overrides = ref<Record<string, Partial<Record<RetentionSubject, string>>>>({});
   const lastSaved = ref<Record<string, string>>({});
 
-  const loading = ref(true);
-  const ready = new Promise<void>((resolve) => setTimeout(resolve, 350));
-  void ready.then(() => {
-    loading.value = false;
-  });
+  const loading = computed(() => bootstrap.status === "loading" || bootstrap.status === "idle");
 
+  /**
+   * What the project is, as its row says.
+   *
+   * The name is passed in rather than read here, because the project store owns it and a
+   * rename has to reach the breadcrumb and this page as one change.
+   *
+   * The fallbacks are for the tick before the bootstrap answers and for nothing else — the
+   * route guard holds every screen in the panel behind a loaded one — so they are empty
+   * rather than plausible. A blank region reads as "Not recorded" on the screen, which is
+   * true for that tick; an invented one would not be.
+   */
   function factsFor(projectId: string, name: string): ProjectFacts {
-    const random = seeded(seedOf(projectId));
-    const cell = REGION_CELLS[random() < 0.6 ? 0 : 1] ?? REGION_CELLS[0];
-    const tier: ProjectTier = random() < 0.25 ? "hipaa" : "standard";
+    const summary = bootstrap.projects.find((project) => project.id === projectId);
     return {
       id: projectId,
       name,
-      cellCode: cell?.code ?? "eu-west-1",
-      tier,
-      plan: tier === "hipaa" ? "enterprise" : random() < 0.5 ? "free" : "pro",
-      createdAt: new Date(
-        Date.now() - (120 + Math.floor(random() * 600)) * DURATIONS.DAY,
-      ).toISOString(),
+      cellCode: summary?.region ?? "",
+      tier: projectTierOf(summary?.complianceTier),
+      plan: summary?.plan ?? "",
+      createdAt: summary?.createdAt ?? new Date(0).toISOString(),
     };
   }
 
@@ -66,6 +86,7 @@ export const useProjectSettingsStore = defineStore("project-settings", () => {
     return out;
   }
 
+  /** Local, and only local. There is no endpoint and no worker behind this yet. */
   async function setRetention(
     projectId: string,
     subject: RetentionSubject,
@@ -74,7 +95,7 @@ export const useProjectSettingsStore = defineStore("project-settings", () => {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const held = overrides.value[projectId] ?? {};
     overrides.value = { ...overrides.value, [projectId]: { ...held, [subject]: maxAge } };
-    lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
+    stamp(projectId);
   }
 
   function stamp(projectId: string) {
@@ -87,23 +108,3 @@ export const useProjectSettingsStore = defineStore("project-settings", () => {
 
   return { loading, factsFor, retentionFor, setRetention, stamp, lastSavedAt };
 });
-
-function seeded(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function seedOf(id: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < id.length; index += 1) {
-    hash ^= id.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}

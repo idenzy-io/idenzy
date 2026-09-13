@@ -36,6 +36,21 @@ export function principalOf(request: FastifyRequest): DashboardPrincipal {
 }
 
 /**
+ * The membership this request is acting as, for the columns that record a member.
+ *
+ * `org_invitations.invited_by` and `org_security_settings.updated_by` hold an
+ * `org_members.id`, not a `users.id`, and the two are different uuids for the same person —
+ * which is how an invitation came to be listed as sent by "Unknown" on the members screen.
+ * Read from the place `orgContextFrom` reads, so a handler cannot record one actor while
+ * acting as another.
+ */
+export function actorMemberId(request: FastifyRequest): string {
+  const principal = principalOf(request);
+  if (principal.membership === null) throw new MissingCredentialsError();
+  return principal.membership.memberId;
+}
+
+/**
  * The organisation scope for this request, for `UnitOfWork.runForOrg` (ADR-0011).
  *
  * Throws rather than returning null on a request with no membership resolved. A caller

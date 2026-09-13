@@ -7,6 +7,8 @@ import { z } from "zod";
 export const IdPrefix = {
   Org: "org",
   Member: "mem",
+  /** An open invitation. Its token is separate and is never this. */
+  Invitation: "inv",
   Project: "prj",
   ApiKey: "key",
   Domain: "dom",

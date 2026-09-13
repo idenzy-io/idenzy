@@ -16,11 +16,16 @@
  * pays for it, and two stores would be two answers to "which organisation am I in" the
  * first time a switch left one of them behind.
  *
- * The writes below are still placeholders. Renaming and deleting a project are management
- * API calls that do not exist yet, so they change the local list and say so here rather
- * than pretending to have persisted anything.
+ * Renaming and deleting are real writes now, against `PATCH` and `DELETE` on
+ * `/v1/orgs/:orgId/projects/:projectId`, and each keeps the server's answer rather than its
+ * own: the name is trimmed on the way in, and a delete that the service refuses — the last
+ * project in an organisation — must leave the switcher showing what is actually there.
+ * Renaming an organisation is still local, because there is no route for it and nothing in
+ * the panel calls it.
  */
+import type { ProjectDetail } from "@idenzy/protocol/schemas/management";
 import type { Org } from "~/utils/organisation";
+import { managementMessage } from "~/utils/sign-in-errors";
 
 export interface Project {
   id: string;
@@ -81,6 +86,9 @@ export const useProjectStore = defineStore("project", () => {
    */
   const selected = ref<string | null>(null);
 
+  /** What the last rename or delete was refused with, for the screen that asked for it. */
+  const refusal = ref<string | null>(null);
+
   const current = computed<Project>(() => {
     const list = projects.value;
     const chosen = list.find((project) => project.id === selected.value);
@@ -123,16 +131,31 @@ export const useProjectStore = defineStore("project", () => {
    * page while the corner still said the old name would look like a write that failed.
    */
   async function rename(id: string, name: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    // Writes into the bootstrap, which is where the list lives now. Local only: there is
-    // no management API route for a rename yet, so this is the screen keeping up with
-    // itself rather than anything that survives a reload.
-    bootstrap.projects = bootstrap.projects.map((project) =>
-      project.id === id ? { ...project, name } : project,
-    );
+    const org = orgOf(id);
+    if (org === null) return;
+    refusal.value = null;
+    try {
+      const { data, error } = await useManagementApi()(`/v1/orgs/${org.id}/projects/${id}`)
+        .patch({ name })
+        .json<ProjectDetail>();
+      if (error.value !== null) throw error.value;
+      // The server's name and not the typed one: it trims, so a name with a trailing space
+      // would otherwise differ in the drawer from the one stored a moment ago.
+      const saved = data.value?.name ?? name;
+      bootstrap.projects = bootstrap.projects.map((project) =>
+        project.id === id ? { ...project, name: saved } : project,
+      );
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    }
   }
 
-  /** Renames the organisation, which the settings and billing screens both name. */
+  /**
+   * Renames the organisation, which the settings and billing screens both name.
+   *
+   * Local, because there is no route: `v1/orgs` reads and does not write. Nothing in the
+   * panel calls this today, and the first screen that wants it wants the endpoint first.
+   */
   async function renameOrg(id: string, name: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     bootstrap.organisations = bootstrap.organisations.map((org) =>
@@ -149,10 +172,25 @@ export const useProjectStore = defineStore("project", () => {
    */
   const canDelete = computed(() => projectsOf(current.value.orgId).length > 1);
 
-  /** Removes one and moves to whatever is left, because the panel needs a project. */
-  async function remove(id: string): Promise<void> {
-    if (!canDelete.value) return;
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
+  /**
+   * Removes one and moves to whatever is left, because the panel needs a project.
+   *
+   * Answers whether it went, so the screen navigates away from a project that is gone rather
+   * than from one the service refused to delete. The refusal is real and not hypothetical:
+   * the last project in an organisation is kept, and `canDelete` is this panel agreeing with
+   * the server rather than deciding for it.
+   */
+  async function remove(id: string): Promise<boolean> {
+    const org = orgOf(id);
+    if (org === null) return false;
+    refusal.value = null;
+    try {
+      const { error } = await useManagementApi()(`/v1/orgs/${org.id}/projects/${id}`).delete();
+      if (error.value !== null) throw error.value;
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+      return false;
+    }
     const wasCurrent = current.value.id === id;
     bootstrap.projects = bootstrap.projects.filter((project) => project.id !== id);
     // Move before the list is read again, or `current` falls back to the first project of
@@ -161,6 +199,7 @@ export const useProjectStore = defineStore("project", () => {
       const next = projects.value.find((project) => project.orgId === currentOrg.value.id);
       selected.value = next?.id ?? projects.value[0]?.id ?? null;
     }
+    return true;
   }
 
   return {
@@ -169,6 +208,7 @@ export const useProjectStore = defineStore("project", () => {
     current,
     currentOrg,
     canDelete,
+    refusal,
     select,
     orgById,
     orgOf,

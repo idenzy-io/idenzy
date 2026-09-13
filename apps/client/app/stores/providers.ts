@@ -11,6 +11,11 @@
  * is told that one is stored and when, never what it is.
  */
 
+import type {
+  OauthProviderConfig,
+  OauthProviderList,
+  RedirectUriList,
+} from "@idenzy/protocol/schemas/management";
 import {
   DEFAULT_PROVIDER_CONFIG,
   normaliseInstance,

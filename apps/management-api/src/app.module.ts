@@ -6,6 +6,7 @@ import { DomainsModule } from "./domains/domains.module.js";
 import { HealthController } from "./health.controller.js";
 import { HttpModule } from "./http/http.module.js";
 import { MeModule } from "./me/me.module.js";
+import { MembersModule } from "./members/members.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 import { OnboardingModule } from "./onboarding/onboarding.module.js";
 import { OrgsModule } from "./orgs/orgs.module.js";
@@ -46,6 +47,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module.js";
     DomainsModule,
     OriginsModule,
     ClaimsModule,
+    MembersModule,
     ProvidersModule,
     SessionsModule,
     SettingsModule,

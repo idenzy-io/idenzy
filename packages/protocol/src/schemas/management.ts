@@ -1182,3 +1182,98 @@ export type RedirectUriList = z.infer<typeof redirectUriListSchema>;
 
 export const addRedirectUriSchema = z.object({ uri: z.url().max(2000) });
 export type AddRedirectUri = z.infer<typeof addRedirectUriSchema>;
+
+// ── Organisation members and invitations ─────────────────────────────────────────────
+
+/**
+ * A member of the organisation, as the Members screen shows them.
+ *
+ * The name and address are not on `org_members`: a member is a `user_id` there, and the
+ * person behind it is a row in the dashboard project's own `users` table. Joining the two
+ * is the management API's job rather than the screen's, so this carries what a reader needs
+ * and the panel never has to know that the team lives in two planes.
+ */
+export const orgMemberSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: z.enum([MemberRole.Owner, MemberRole.Admin, MemberRole.Developer, MemberRole.Viewer]),
+  /** Whether they hold a second factor for the dashboard itself. */
+  mfaEnrolled: z.boolean(),
+  joinedAt: isoDateTimeSchema,
+  /** Null for somebody who has never signed in since being added. */
+  lastActiveAt: isoDateTimeSchema.nullable(),
+});
+export type OrgMember = z.infer<typeof orgMemberSchema>;
+
+export const orgMemberListSchema = z.object({ members: z.array(orgMemberSchema) });
+export type OrgMemberList = z.infer<typeof orgMemberListSchema>;
+
+export const orgInvitationSchema = z.object({
+  id: z.string(),
+  email: emailSchema,
+  role: z.enum([MemberRole.Admin, MemberRole.Developer, MemberRole.Viewer]),
+  /** Who sent it, by name where we have one. Ownership never arrives by invitation. */
+  invitedBy: z.string(),
+  invitedAt: isoDateTimeSchema,
+  expiresAt: isoDateTimeSchema,
+});
+export type OrgInvitation = z.infer<typeof orgInvitationSchema>;
+
+export const orgInvitationListSchema = z.object({ invitations: z.array(orgInvitationSchema) });
+export type OrgInvitationList = z.infer<typeof orgInvitationListSchema>;
+
+/**
+ * Owner is absent on purpose.
+ *
+ * Ownership moves by transfer and never by assignment: a role change that could grant it
+ * would leave the organisation with two owners or none, which a partial unique index
+ * already refuses at the database. Leaving it out of the enum means the API refuses it
+ * before the database has to.
+ */
+export const assignableRoleSchema = z.enum([
+  MemberRole.Admin,
+  MemberRole.Developer,
+  MemberRole.Viewer,
+]);
+export type AssignableRole = z.infer<typeof assignableRoleSchema>;
+
+export const inviteMemberSchema = z.object({
+  email: emailSchema,
+  role: assignableRoleSchema,
+});
+export type InviteMember = z.infer<typeof inviteMemberSchema>;
+
+export const setMemberRoleSchema = z.object({ role: assignableRoleSchema });
+export type SetMemberRole = z.infer<typeof setMemberRoleSchema>;
+
+/** Ownership moves to an existing member, never to an address that has not joined. */
+export const transferOwnershipSchema = z.object({ memberId: z.string() });
+export type TransferOwnership = z.infer<typeof transferOwnershipSchema>;
+
+export const orgSecuritySchema = z.object({ requireMfa: z.boolean() });
+export type OrgSecurity = z.infer<typeof orgSecuritySchema>;
+
+// ── Project detail and renames ───────────────────────────────────────────────────────
+
+/**
+ * What the General settings screen states about a project.
+ *
+ * `cellCode` and `createdAt` are immutable and say so by being read-only here: a project is
+ * pinned to its cell at creation (PROJECT.md 4.13.5) and moving one is an audited migration
+ * rather than an `UPDATE`.
+ */
+export const projectDetailSchema = z.object({
+  id: projectIdSchema,
+  orgId: z.string(),
+  name: z.string(),
+  cellCode: z.string(),
+  tier: z.string(),
+  plan: z.string(),
+  createdAt: isoDateTimeSchema,
+});
+export type ProjectDetail = z.infer<typeof projectDetailSchema>;
+
+/** A name, for a project or an organisation. The one field either of them may change. */
+export const renameSchema = z.object({ name: z.string().trim().min(1).max(80) });
+export type Rename = z.infer<typeof renameSchema>;

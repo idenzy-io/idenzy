@@ -1,4 +1,8 @@
-import { ValidationFailedError } from "@idenzy/core/errors";
+import {
+  ResourceConflictError,
+  ResourceNotFoundError,
+  ValidationFailedError,
+} from "@idenzy/core/errors";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import {
   OrgProjectRepository,
@@ -9,7 +13,11 @@ import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { ComplianceTier } from "@idenzy/protocol/enums/tenancy";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
-import type { CreateProject, ProjectSummary } from "@idenzy/protocol/schemas/management";
+import type {
+  CreateProject,
+  ProjectDetail,
+  ProjectSummary,
+} from "@idenzy/protocol/schemas/management";
 import { Injectable } from "@nestjs/common";
 
 /**
@@ -35,6 +43,69 @@ export class ProjectsService {
     );
     const orgId = PublicId.encode(IdPrefix.Org, context.orgId).value;
     return rows.map((row) => present(row, codes.get(row.cellId) ?? row.cellId, orgId));
+  }
+
+  /**
+   * One project in full, for the General settings screen.
+   *
+   * The cell code rather than its id, because the screen states where a project's data
+   * lives and a uuid states nothing. Both it and `createdAt` are read-only facts: a project
+   * is pinned to its cell at creation and moving one is an audited migration rather than an
+   * `UPDATE` (PROJECT.md 4.13.5).
+   */
+  async detail(context: OrgContext, publicProjectId: string): Promise<ProjectDetail> {
+    const id = PublicId.parse(IdPrefix.Project, publicProjectId).uuid;
+    const row = await this.uow.runForOrg(context, (tx) =>
+      new OrgProjectRepository(tx, context).findById(id),
+    );
+    if (row === null) throw new ResourceNotFoundError({ detail: { projectId: publicProjectId } });
+    const cells = await this.regions.active();
+    const code = cells.find((cell) => cell.id === row.cellId)?.code ?? row.cellId;
+    return {
+      id: PublicId.encode(IdPrefix.Project, row.id).toString(),
+      orgId: PublicId.encode(IdPrefix.Org, context.orgId).toString(),
+      name: row.name,
+      cellCode: code,
+      tier: row.complianceTier,
+      plan: row.plan,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  async rename(context: OrgContext, publicProjectId: string, name: string): Promise<ProjectDetail> {
+    const id = PublicId.parse(IdPrefix.Project, publicProjectId).uuid;
+    const row = await this.uow.runForOrg(context, (tx) =>
+      new OrgProjectRepository(tx, context).rename(id, name),
+    );
+    if (row === null) throw new ResourceNotFoundError({ detail: { projectId: publicProjectId } });
+    return await this.detail(context, publicProjectId);
+  }
+
+  /**
+   * Deletes a project, and refuses to delete the last one.
+   *
+   * The refusal is here rather than only on the screen because it is a rule about the data
+   * rather than about the UI: an organisation with no project has nothing for its members to
+   * sign in to and no screen in the panel that means anything, so the state has no way out.
+   * Everything keyed on the project goes with it by foreign key — users, sessions, keys, the
+   * audit partitions — which is why this is the one delete in the API that says so out loud.
+   */
+  async remove(context: OrgContext, publicProjectId: string): Promise<void> {
+    const id = PublicId.parse(IdPrefix.Project, publicProjectId).uuid;
+    await this.uow.runForOrg(context, async (tx) => {
+      const repository = new OrgProjectRepository(tx, context);
+      const all = await repository.list();
+      if (all.length <= 1) {
+        throw new ResourceConflictError({
+          message: "An organisation needs at least one project.",
+          detail: { projectId: publicProjectId },
+        });
+      }
+      const removed = await repository.remove(id);
+      if (!removed) {
+        throw new ResourceNotFoundError({ detail: { projectId: publicProjectId } });
+      }
+    });
   }
 
   /**

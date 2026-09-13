@@ -84,6 +84,7 @@ function settle(): Promise<void> {
 export const useDataRequestsStore = defineStore("data-requests", () => {
   const users = useUsersStore();
   const members = useMembersStore();
+  const projects = useProjectStore();
 
   const requests = ref<Record<string, DataSubjectRequest[]>>({});
   const seeded = ref(false);
@@ -117,9 +118,18 @@ export const useDataRequestsStore = defineStore("data-requests", () => {
     };
   }
 
-  /** Who a write is recorded against: the member reading the page. */
+  /**
+   * Who a write is recorded against: the member reading the page.
+   *
+   * By way of the organisation, because a membership belongs to one and not to a project.
+   * This used to hand the project id straight to the members store, which answered with the
+   * owner by luck rather than by rule — and now that the store asks the API, it would be a
+   * request for the team of an organisation that does not exist.
+   */
   function actor(projectId: string): string {
-    return members.currentMember(projectId)?.name ?? "You";
+    const org = projects.orgOf(projectId);
+    const me = org === null ? null : members.currentMember(org.id);
+    return me?.name ?? "You";
   }
 
   /**

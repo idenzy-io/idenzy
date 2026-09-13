@@ -317,7 +317,11 @@ const deleteOpen = ref(false);
 
 function confirmDelete() {
   void whileBusy("delete", async () => {
-    await projects.remove(projects.current.id);
+    // Only on a deletion that happened. The service keeps the last project in an
+    // organisation, and navigating away from one that is still there would read as a
+    // delete that worked and a switcher that had not caught up.
+    if (!(await projects.remove(projects.current.id))) return;
+    deleteOpen.value = false;
     await navigateTo("/");
   });
 }
@@ -374,6 +378,15 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
     <!-- Three across rather than six: the settings rail takes 228px off the content, and
          six tracks put an endpoint and a region label into an ellipsis each. -->
     <FactGrid :columns="3" :facts="identity" label="Project facts" />
+
+    <!-- A rename or a delete the API refused. The only writes on this page that reach it,
+         so this is the only place one can be reported. -->
+    <InfoNote
+      v-if="projects.refusal !== null"
+      :text="projects.refusal"
+      icon="material-symbols:error-outline"
+      tone="warning"
+    />
 
     <!-- The one thing on this page with teeth, and so the one region on it with a frame
          and a save. `divided` off because the fact band above is already a boundary. -->

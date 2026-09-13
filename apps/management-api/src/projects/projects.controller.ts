@@ -2,10 +2,13 @@ import { MemberRole } from "@idenzy/protocol/enums/tenancy";
 import {
   type CreateProject,
   createProjectSchema,
+  type ProjectDetail,
   type ProjectList,
   type ProjectSummary,
+  type Rename,
+  renameSchema,
 } from "@idenzy/protocol/schemas/management";
-import { Body, Controller, Get, HttpCode, Post, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { orgContextFrom } from "../tenancy/dashboard-principal.js";
@@ -37,5 +40,44 @@ export class ProjectsController {
     @Body(new ZodValidationPipe(createProjectSchema)) body: CreateProject,
   ): Promise<ProjectSummary> {
     return await this.projects.create(orgContextFrom(request), body);
+  }
+  /** One project in full, for the General settings screen. */
+  @Get(":projectId")
+  @RequireRole(MemberRole.Viewer)
+  async detail(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+  ): Promise<ProjectDetail> {
+    return await this.projects.detail(orgContextFrom(request), projectId);
+  }
+
+  /** The name is the only field a project has that a customer may change. */
+  @Patch(":projectId")
+  @HttpCode(200)
+  @RequireRole(MemberRole.Admin)
+  async rename(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Body(new ZodValidationPipe(renameSchema)) body: Rename,
+  ): Promise<ProjectDetail> {
+    return await this.projects.rename(orgContextFrom(request), projectId, body.name);
+  }
+
+  /**
+   * Owner only, and the only destructive route in this API.
+   *
+   * Everything keyed on the project goes with it by foreign key — users, sessions, keys,
+   * the audit partitions — so this is not a role an admin should hold: an admin can be
+   * invited, and being able to delete a customer's entire tenancy should not arrive with an
+   * invitation.
+   */
+  @Delete(":projectId")
+  @HttpCode(204)
+  @RequireRole(MemberRole.Owner)
+  async remove(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+  ): Promise<void> {
+    await this.projects.remove(orgContextFrom(request), projectId);
   }
 }

@@ -114,6 +114,14 @@ function confirm() {
           </div>
         </div>
 
+        <!-- The row and its hashed token are real; no transport is wired to that path yet,
+             and an invitation nobody receives looks exactly like one that was ignored. -->
+        <InfoNote
+          icon="material-symbols:outgoing-mail"
+          text="Nothing sends the email yet. The invitation is recorded and stands for a week, but the link has to reach them another way until email delivery is wired to this path."
+          tone="warning"
+        />
+
         <footer class="flex items-center justify-end gap-2">
           <v-btn
             class="text-xs font-medium"

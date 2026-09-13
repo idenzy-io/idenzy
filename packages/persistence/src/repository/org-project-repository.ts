@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ResourceConflictError } from "@idenzy/core/errors";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { projects } from "../schema/projects.js";
 import type { OrgContext } from "../tenancy/org-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -63,6 +63,34 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
    * context the request was authorised against, so there is no field a caller could set
    * to put a project somewhere else. The policy's WITH CHECK refuses it besides.
    */
+  /** The one field a project has that a customer may change. */
+  async rename(id: string, name: string): Promise<OrgProjectRow | null> {
+    const rows = await this.tx
+      .update(projects)
+      .set({ name })
+      .where(and(this.orgScope(), eq(projects.id, id)))
+      .returning();
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /**
+   * Removes a project and everything keyed on it.
+   *
+   * The cascade is the schema's, not this method's: every tenant table carries
+   * `project_id` with a foreign key, so a deleted project takes its users, sessions, keys
+   * and audit partitions with it. That is deliberate and is why the panel refuses to
+   * delete the last project in an organisation — an organisation with none has nothing for
+   * its members to sign in to.
+   */
+  async remove(id: string): Promise<boolean> {
+    const rows = await this.tx
+      .delete(projects)
+      .where(and(this.orgScope(), eq(projects.id, id)))
+      .returning({ id: projects.id });
+    return rows.length > 0;
+  }
+
   async create(project: NewOrgProject): Promise<OrgProjectRow> {
     const id = randomUUID();
     const rows = await this.guard(() =>

@@ -945,8 +945,34 @@ client have no server halves to talk to yet.
       cost that screen three things a placeholder could show and the meters cannot: the hourly
       chart, which a daily rollup cannot support; a segment count, which nothing measures; and
       the sending configuration behind two bill lines, which is now stated as the assumption it
-      is. The remaining stores are placeholders, and each one waits on an endpoint rather than on
-      the panel
+      is. **Settings is the last of the org-shaped screens.** General and Members are on the
+      API now: `GET/PATCH/DELETE /v1/orgs/:orgId/projects/:projectId` at viewer, admin and
+      **owner**, and `/v1/orgs/:orgId/members` with its invitations, its security setting and
+      its transfer. The two rules that keep an organisation usable are the service's rather
+      than the screen's — the owner cannot be demoted or removed, and the last project in an
+      organisation cannot be deleted — and each is a conflict with a sentence instead of a
+      unique-index violation. `remove` answers whether it went, because the screen navigates
+      away afterwards and doing that on a refusal reads as a delete that worked.
+      Three things the wiring cost, each named on the screen rather than dropped. The General
+      page's facts were seeded off a hash of the project id, so a project in `us-east-1` could
+      describe itself as Europe and a free one as enterprise — a residency claim invented by a
+      PRNG; they come from `/v1/me`, which already carries the same four columns, so the page
+      gained no request of its own. Retention is still local and says so: `retention_policies`
+      has no repository, no endpoint and no worker, and 4.13.6 is blunt that retention nothing
+      enforces is not retention. And the invite dialog now says that nothing sends the email,
+      because an invitation nobody receives looks exactly like one that was ignored.
+      **Two bugs found by wiring it.** `invited_by` and `updated_by` are `org_members.id`
+      columns and the controller was passing a `users.id`, so every invitation listed itself
+      as sent by "Unknown" — the two ids belong to the same person and are different uuids,
+      which is the kind of mistake a join hides until it is read back. And the panel's
+      members store answered "who am I" with a constant, then with the owner as a fallback,
+      so every rule on the screen was measured against a guess; it is the caller's own
+      `memberId` from `/v1/me` now. `org_members.last_active_at` is still written by nothing,
+      so the column reads "Never signed in" for the person reading the page
+- [ ] Record `org_members.last_active_at`. The column exists, the members screen has a
+      column for it, and nothing ever writes it — so a dormant seat and an active one look
+      identical. Wants a bounded write (at most once a day per membership) on the management
+      API's membership check rather than a write per request
 - [~] Cloud Armor rules and application rate limits. **The application half is in and the
       edge half is not**, which is the right order: a WAF rate-limits an address against a
       path, and the thing worth limiting here is an account being named by a thousand
@@ -1280,11 +1306,19 @@ working, so the split below is by which question is being asked, not by which sc
 - [~] Organizations, memberships, roles and permissions. `org_members` and
       `org_security_settings` are in, with the four roles in `@idenzy/protocol` and the
       one-owner rule held by a partial unique index rather than by application code. The
-      permission matrix itself is still the panel's, and the management API that would
-      enforce it is not built
+      permission matrix itself is still the panel's, but the management API enforces the
+      ladder now: `/v1/orgs/:orgId/members` reads at viewer, writes at admin and transfers
+      ownership at owner, with the owner protected from demotion and removal in the service
+      rather than at the index. What is not enforced is the dashboard's own MFA requirement:
+      `org_security_settings.require_mfa` is stored and read back, and nothing on our sign-in
+      path consults it, which the screen states
 - [~] Invitations. `org_invitations` and its repository are in, including the
       `resolve_open_invitation` function a link has to go through because the person
-      following it is not in the organisation yet. Nothing sends the email
+      following it is not in the organisation yet. Creating, resending and revoking one are
+      management API calls now, and the token is hashed before it reaches the database so a
+      backup is not a set of live invitations. **Nothing sends the email**, and both the
+      controller and the invite dialog say so. Accepting one has no route either: the person
+      following the link is not a member yet, so it cannot sit under `/v1/orgs/:orgId`
 - [ ] SAML and enterprise OIDC SSO
 - [ ] SCIM provisioning
 - [ ] SSO for our own dashboard

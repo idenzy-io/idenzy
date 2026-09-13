@@ -385,6 +385,15 @@ const matrixColumns = computed<ColumnState>({
 
     <FactGrid :columns="4" :facts="facts" label="Team facts" />
 
+    <!-- What the API refused, said rather than swallowed. Every rule on this page is one the
+         service enforces too, so a refusal here is usually the rule and not a fault. -->
+    <InfoNote
+      v-if="store.refusal !== null"
+      :text="store.refusal"
+      icon="material-symbols:error-outline"
+      tone="warning"
+    />
+
     <!-- The same object as the users list: a heading that states what is in the list, then
          one card holding the toolbar and the table. -->
     <section class="flex flex-col gap-3">

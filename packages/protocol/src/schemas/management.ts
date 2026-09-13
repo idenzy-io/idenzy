@@ -904,3 +904,80 @@ export const revokeSessionsSchema = z.object({
   sessionIds: z.array(z.string()).min(1).max(200),
 });
 export type RevokeSessionsRequest = z.infer<typeof revokeSessionsSchema>;
+
+// ── Project settings ─────────────────────────────────────────────────────────────────
+//
+// Per-project authentication configuration, stored in `projects.settings` and read by the
+// auth API on the paths it governs.
+//
+// One document rather than a column per knob, and one endpoint rather than one per screen.
+// The screens are many and the shape moves while the product is young, so a jsonb document
+// with a schema in front of it costs a migration per change less than a column does — and
+// the schema is what keeps it from becoming an untyped bag, which is what the column was
+// before anything read it. When a setting earns an index or a constraint it graduates to a
+// column of its own; none has yet.
+//
+// Every section is optional and every field within it has a default, so a project created
+// before a setting existed reads as the default rather than as a hole. That is what lets a
+// new knob ship without a backfill.
+
+/**
+ * How long a password-reset link stays usable, in minutes.
+ *
+ * A closed set rather than a range, and the set the screen offers. PROJECT.md 4.5 fixes
+ * this at fifteen minutes; a free integer would let a customer set a day and turn a mailbox
+ * that leaks once into a standing key, so the longest on offer is an hour.
+ */
+export const resetLifetimeSchema = z.union([
+  z.literal(10),
+  z.literal(15),
+  z.literal(30),
+  z.literal(60),
+]);
+
+/**
+ * The password policy, as the Passwords screen edits it and the flows enforce it.
+ *
+ * `minLength` floors at 8 and caps at 64 rather than at the protocol's 256: NIST 800-63B
+ * asks for a minimum of 8 and forbids composition rules, and a customer who sets 64 has
+ * built a system nobody can sign up to. The ceiling is on what may be *demanded*, not on
+ * what may be used — `passwordSchema` still accepts 256.
+ *
+ * `lockout` defaults off and stays off unless asked for, because lockout is a denial of
+ * service aimed at the victim (PROJECT.md 4.5). It is offered because some compliance
+ * regimes require it, not because it is a good idea.
+ */
+export const passwordPolicySchema = z.object({
+  enabled: z.boolean().default(true),
+  allowSignUp: z.boolean().default(true),
+  minLength: z.number().int().min(8).max(64).default(8),
+  breachCheck: z.boolean().default(true),
+  lockout: z.boolean().default(false),
+  lockoutAttempts: z.number().int().min(3).max(100).default(10),
+  resetLifetime: resetLifetimeSchema.default(15),
+  signOutOnReset: z.boolean().default(true),
+  notifyOnChange: z.boolean().default(true),
+});
+export type PasswordPolicy = z.infer<typeof passwordPolicySchema>;
+
+export const projectSettingsSchema = z.object({
+  password: passwordPolicySchema.default(passwordPolicySchema.parse({})),
+});
+export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
+
+/**
+ * A patch, section by section.
+ *
+ * Sections are replaced whole rather than deep-merged, and the screens send whole sections
+ * because each one is a form. A deep merge would make "unset this field" impossible to
+ * express, which is the usual way a settings API acquires a `null` that means three things.
+ */
+export const patchProjectSettingsSchema = z
+  .object({ password: passwordPolicySchema.optional() })
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "a patch must name at least one section",
+  });
+export type PatchProjectSettings = z.infer<typeof patchProjectSettingsSchema>;
+
+/** The defaults, resolved once, for callers that need them without a database. */
+export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({});

@@ -386,6 +386,50 @@ export class CountryNotAllowedError extends ForbiddenError {
   }
 }
 
+/**
+ * The project has switched this way in off.
+ *
+ * Forbidden rather than not-found: the endpoint exists and the request was well formed, and
+ * a customer debugging their integration needs to be told the difference between "you are
+ * calling the wrong thing" and "your own configuration refuses this".
+ */
+export class SignInMethodDisabledError extends ForbiddenError {
+  override readonly code = ErrorCode.SignInMethodDisabled;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This project does not allow that way of signing in.", options);
+  }
+}
+
+/** Signing in with this method is allowed; creating an account with it is not. */
+export class SignUpDisabledError extends ForbiddenError {
+  override readonly code = ErrorCode.SignUpDisabled;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This project is not accepting new accounts here.", options);
+  }
+}
+
+/**
+ * Shorter than the project's own minimum.
+ *
+ * Distinct from the protocol's own floor, which `passwordSchema` enforces before anything
+ * here runs: that one is what the product will ever accept, this one is what a customer has
+ * chosen to demand.
+ *
+ * The number is in the *message*, which is the half of an error that reaches a client —
+ * `detail` never does, deliberately, and a form that cannot say the minimum makes the user
+ * guess at it. So this is one of the few places where the message carries a fact rather
+ * than only a sentence, and `detail` repeats it for our own logs.
+ */
+export class PasswordTooShortError extends BadRequestError {
+  override readonly code = ErrorCode.PasswordTooShort;
+  constructor(minLength: number, options: ErrorOptions = {}) {
+    super(options.message ?? `That password is shorter than ${String(minLength)} characters.`, {
+      ...options,
+      detail: { ...(options.detail ?? {}), minLength },
+    });
+  }
+}
+
 export class SpendCapReachedError extends ForbiddenError {
   override readonly code = ErrorCode.SpendCapReached;
   constructor(options: ErrorOptions = {}) {

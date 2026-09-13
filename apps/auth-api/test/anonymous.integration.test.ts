@@ -13,6 +13,7 @@ import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AnonymousFlow } from "../dist/anonymous/anonymous.flow.js";
 import { AnonymousUpgradeFlow } from "../dist/anonymous/anonymous-upgrade.flow.js";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
@@ -95,8 +96,19 @@ beforeAll(async () => {
     uow,
     hasher,
     new NoBreaches(),
+    new ProjectSettingsReader(uow),
   );
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, actives, uow, hasher, clock);
+  signIn = new PasswordSignInFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    clock,
+    new ProjectSettingsReader(uow),
+  );
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)

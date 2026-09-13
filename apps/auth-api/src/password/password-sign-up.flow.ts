@@ -1,4 +1,9 @@
-import { PasswordBreachedError } from "@idenzy/core/errors";
+import {
+  PasswordBreachedError,
+  PasswordTooShortError,
+  SignInMethodDisabledError,
+  SignUpDisabledError,
+} from "@idenzy/core/errors";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
 import {
@@ -16,6 +21,7 @@ import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { signUpWithPasswordSchema } from "@idenzy/protocol/schemas/auth";
 import { Inject, Injectable } from "@nestjs/common";
 import { parseOrThrow } from "../common/parse.js";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
@@ -45,6 +51,7 @@ export class PasswordSignUpFlow extends AuthFlow {
     private readonly uow: UnitOfWork,
     private readonly hasher: PasswordHasher,
     private readonly breached: BreachedPasswordChecker,
+    private readonly settings: ProjectSettingsReader,
   ) {
     super(sessions, hooks, audit, mfa, actives);
   }
@@ -54,10 +61,21 @@ export class PasswordSignUpFlow extends AuthFlow {
     credentials: unknown,
   ): Promise<AuthenticatedSubject> {
     const input = parseOrThrow(signUpWithPasswordSchema, credentials);
+    const policy = (await this.settings.for(context)).password;
+
+    // The project's own rules, before any work is done. Refusing here rather than after
+    // the Argon2 run is what stops a disabled method being a free way to spend our CPU.
+    if (!policy.enabled) throw new SignInMethodDisabledError({ detail: { method: "password" } });
+    if (!policy.allowSignUp) throw new SignUpDisabledError({ detail: { method: "password" } });
+    // The customer's minimum, which may exceed the protocol's floor and never goes below
+    // it: `passwordSchema` has already refused anything under eight.
+    if (input.password.length < policy.minLength) {
+      throw new PasswordTooShortError(policy.minLength);
+    }
 
     // Before hashing, so a breached password costs an HTTP round trip rather than an
     // Argon2 run, and so the check cannot be skipped by a later refactor of the insert.
-    if (await this.breached.isBreached(input.password)) {
+    if (policy.breachCheck && (await this.breached.isBreached(input.password))) {
       throw new PasswordBreachedError();
     }
 

@@ -63,6 +63,12 @@ export const ErrorCode = {
   RateLimited: "rate_limited",
   AttestationRequired: "attestation_required",
   CountryNotAllowed: "country_not_allowed",
+  /** The project has turned this way in off, so no account can use it (PROJECT.md 3.2). */
+  SignInMethodDisabled: "sign_in_method_disabled",
+  /** The method is on, but the project does not accept new accounts through it. */
+  SignUpDisabled: "sign_up_disabled",
+  /** The password is shorter than the project's own minimum, which may exceed ours. */
+  PasswordTooShort: "password_too_short",
   SpendCapReached: "spend_cap_reached",
   QuotaExceeded: "quota_exceeded",
 

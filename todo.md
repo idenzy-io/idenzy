@@ -845,6 +845,33 @@ client have no server halves to talk to yet.
       with its own FORCE RLS and grant migration, upload handling, a parser per source
       (Firebase, Supabase, Auth0, Clerk, Cognito), hash import for bcrypt/scrypt/argon2 against
       `passwordAlgoVersion`, a worker, and progress polling. That is a feature, not a store swap
+      **Per-project settings exist now, and the auth API obeys them.** `projects.settings`
+      was a jsonb column nothing read except one OAuth flag, so every configuration screen
+      edited values the server neither stored nor honoured — the same class of problem as a
+      fixture, and a worse one, because the customer believes the door is shut.
+      `projectSettingsSchema` is the typed document, `GET/PATCH .../settings` reads and
+      writes it (viewer to read, admin to write, because turning password sign-in off
+      changes how every one of a customer's own customers gets in), and
+      `ProjectSettingsReader` in `auth-api` is what makes it real: `PasswordSignUpFlow` now
+      refuses on `enabled`, `allowSignUp` and `minLength` before it hashes anything, and
+      honours `breachCheck`; `PasswordSignInFlow` refuses on `enabled` alone. That split is
+      deliberate and tested — closing sign-up must not lock out the people already inside.
+      The merge is `jsonb_strip_nulls(settings || patch)` in one statement rather than a
+      read-modify-write, so two operators saving two screens at once cannot erase each
+      other's section, and stripping is what keeps "absent" the only way to say not-set.
+      Both the API and the reader parse the stored document rather than trusting it, and a
+      document that will not parse resolves to defaults rather than throwing: every default
+      is what an unconfigured project already does, so a bad settings blob must not be able
+      to take authentication down. Verified live — minLength 20 refused a sixteen-character
+      sign-up and accepted a twenty, `allowSignUp: false` refused a new account while an
+      existing one still reached the password check, and `enabled: false` refused everybody.
+      One knob is deliberately stored and not yet enforced: `lockout` and `lockoutAttempts`
+      need a counter on the sign-in path, which is the rate limiter's shape and not the
+      policy's. `resetLifetime`, `signOutOnReset` and `notifyOnChange` are stored and read
+      by nothing yet either — the reset path is next.
+      The panel's password-policy store is off its fixture; the stats beside it are not,
+      because those are counts over sign-ins and refusals that live in ClickHouse (ADR-0013)
+      and wait on 3.2's panel wiring rather than on an endpoint that could exist today
       `add` and `remove` refuse with a reason instead of pretending: creating an account
       needs a `PasswordHasher` the management API does not have, and erasure is the DSR path
       (4.13.6), whose worker does not exist. The remaining stores are placeholders, and each

@@ -1,6 +1,7 @@
 import { AppConfig } from "@idenzy/config/app-config";
 import { Clock, SystemClock } from "@idenzy/core/time/clock";
 import { Global, Module } from "@nestjs/common";
+import { ProjectSettingsReader } from "./project-settings-reader.js";
 
 /**
  * Configuration and time (PROJECT.md 9.2).
@@ -14,7 +15,10 @@ import { Global, Module } from "@nestjs/common";
   providers: [
     { provide: AppConfig, useFactory: () => AppConfig.fromEnvironment() },
     { provide: Clock, useClass: SystemClock },
+    // Per-project configuration, which is a read rather than a boot-time parse: it changes
+    // while the process runs, because a customer changes it on the dashboard.
+    ProjectSettingsReader,
   ],
-  exports: [AppConfig, Clock],
+  exports: [AppConfig, Clock, ProjectSettingsReader],
 })
 export class ConfigModule {}

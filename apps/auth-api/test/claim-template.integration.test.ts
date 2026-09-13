@@ -11,6 +11,7 @@ import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ClaimTemplateService } from "../dist/claims/claim-template-service.js";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
@@ -111,6 +112,7 @@ beforeAll(async () => {
     uow,
     new Argon2idHasher(),
     new NoBreaches(),
+    new ProjectSettingsReader(uow),
   );
   signIn = new PasswordSignInFlow(
     sessions,
@@ -121,6 +123,7 @@ beforeAll(async () => {
     uow,
     new Argon2idHasher(),
     clock,
+    new ProjectSettingsReader(uow),
   );
 
   await harness.owner.query(

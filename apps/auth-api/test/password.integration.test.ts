@@ -10,7 +10,8 @@ import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import argon2 from "argon2";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordSignInFlow } from "../dist/password/password-sign-in.flow.js";
@@ -95,8 +96,19 @@ beforeAll(async () => {
     uow,
     hasher,
     new StubChecker(),
+    new ProjectSettingsReader(uow),
   );
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, actives, uow, hasher, clock);
+  signIn = new PasswordSignInFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    clock,
+    new ProjectSettingsReader(uow),
+  );
   signUpRefusing = new PasswordSignUpFlow(
     sessions,
     hooks,
@@ -106,6 +118,7 @@ beforeAll(async () => {
     uow,
     hasher,
     new AlwaysBreachedChecker(),
+    new ProjectSettingsReader(uow),
   );
 
   await harness.owner.query(
@@ -324,5 +337,98 @@ describe("signing in", () => {
     );
     expect(user?.passwordHash).not.toBe(legacy);
     expect(hasher.needsRehash(user?.passwordHash ?? "")).toBe(false);
+  });
+});
+
+/**
+ * The project's own password policy, enforced where it has to be.
+ *
+ * These are the cases that decide whether the Passwords screen is a control or a
+ * decoration: a setting the panel can save and the flow ignores is worse than no setting,
+ * because the customer believes the door is shut.
+ *
+ * The settings are written straight into `projects.settings` rather than through the
+ * management API, so this tests the enforcement and not the plumbing that sets it — those
+ * are different failures and the management API has its own suite.
+ */
+describe("the project's password policy", () => {
+  async function setPolicy(policy: Readonly<Record<string, unknown>>): Promise<void> {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+    await harness.owner.query(
+      `UPDATE projects SET settings = jsonb_build_object('password', $2::jsonb) WHERE id = $1`,
+      [PROJECT, JSON.stringify(policy)],
+    );
+  }
+
+  afterEach(async () => {
+    await setPolicy({});
+  });
+
+  it("refuses a password shorter than the project's own minimum", async () => {
+    await setPolicy({ minLength: 20 });
+    await expect(
+      signUp.authenticate(context, { email: "short@a.test", password: "nineteen-chars-xx" }),
+    ).rejects.toMatchObject({ code: "password_too_short" });
+
+    // And accepts one that meets it, so the test is about the number and not about refusing.
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "longenough@a.test",
+        password: "twenty-characters-ok",
+      }),
+    );
+    expect(issued.user.email).toBe("longenough@a.test");
+  });
+
+  it("turns new accounts away while letting existing ones still sign in", async () => {
+    const email = "grandfathered@a.test";
+    sessionOf(await signUp.authenticate(context, { email, password: "a-long-enough-password" }));
+
+    await setPolicy({ allowSignUp: false });
+
+    await expect(
+      signUp.authenticate(context, {
+        email: "newcomer@a.test",
+        password: "a-long-enough-password",
+      }),
+    ).rejects.toMatchObject({ code: "sign_up_disabled" });
+
+    // The distinction the flows are careful about: closing sign-up must not lock out the
+    // people already inside.
+    const issued = sessionOf(
+      await signIn.authenticate(context, { email, password: "a-long-enough-password" }),
+    );
+    expect(issued.user.email).toBe(email);
+  });
+
+  it("refuses everybody once password sign-in is switched off", async () => {
+    const email = "shutout@a.test";
+    sessionOf(await signUp.authenticate(context, { email, password: "a-long-enough-password" }));
+
+    await setPolicy({ enabled: false });
+
+    await expect(
+      signIn.authenticate(context, { email, password: "a-long-enough-password" }),
+    ).rejects.toMatchObject({ code: "sign_in_method_disabled" });
+    await expect(
+      signUp.authenticate(context, { email: "another@a.test", password: "a-long-enough-password" }),
+    ).rejects.toMatchObject({ code: "sign_in_method_disabled" });
+  });
+
+  /** A stored document we cannot read must not take sign-in down. Defaults are the answer. */
+  it("falls back to the defaults when the stored settings do not parse", async () => {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+    await harness.owner.query(
+      `UPDATE projects SET settings = '{"password": "not an object"}'::jsonb WHERE id = $1`,
+      [PROJECT],
+    );
+
+    const issued = sessionOf(
+      await signUp.authenticate(context, {
+        email: "defaulted@a.test",
+        password: "a-long-enough-password",
+      }),
+    );
+    expect(issued.user.email).toBe("defaulted@a.test");
   });
 });

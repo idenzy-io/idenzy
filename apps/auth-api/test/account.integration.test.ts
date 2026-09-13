@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EmailChangeService } from "../dist/account/email-change-service.js";
 import { EmailVerificationService } from "../dist/account/email-verification-service.js";
 import { ProfileService } from "../dist/account/profile-service.js";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { RedirectKind, RedirectTargets } from "../dist/delivery/redirect-targets.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
@@ -122,8 +123,19 @@ beforeAll(async () => {
     uow,
     hasher,
     new NoBreaches(),
+    new ProjectSettingsReader(uow),
   );
-  signIn = new PasswordSignInFlow(sessions, hooks, audit, gate, actives, uow, hasher, clock);
+  signIn = new PasswordSignInFlow(
+    sessions,
+    hooks,
+    audit,
+    gate,
+    actives,
+    uow,
+    hasher,
+    clock,
+    new ProjectSettingsReader(uow),
+  );
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)

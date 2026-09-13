@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { InvalidCredentialsError } from "@idenzy/core/errors";
+import { InvalidCredentialsError, SignInMethodDisabledError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PasswordHasher } from "@idenzy/crypto/hashing/password-hasher";
 import type { User } from "@idenzy/domain/entities/user";
@@ -18,6 +18,7 @@ import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { signInWithPasswordSchema } from "@idenzy/protocol/schemas/auth";
 import { Inject, Injectable } from "@nestjs/common";
 import { parseOrThrow } from "../common/parse.js";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { FLOW_AUDIT, FLOW_HOOKS, MFA_GATE } from "../flows/flow-tokens.js";
 import { SessionService } from "../session/session-service.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
@@ -46,20 +47,29 @@ export class PasswordSignInFlow extends AuthFlow {
     private readonly uow: UnitOfWork,
     private readonly hasher: PasswordHasher,
     private readonly clock: Clock,
+    private readonly settings: ProjectSettingsReader,
   ) {
     super(sessions, hooks, audit, mfa, actives);
   }
 
-  protected override verify(
+  protected override async verify(
     context: FlowContext,
     credentials: unknown,
   ): Promise<AuthenticatedSubject> {
     // Parsed rather than asserted, even though the controller already validated: the
     // base hands every flow `unknown`, and a cast here would be a type without a check.
     const { email, password } = parseOrThrow(signInWithPasswordSchema, credentials);
+
+    // A project that has turned password sign-in off refuses everybody, accounts that
+    // already have a password included. `allowSignUp` is not read here: closing the door
+    // to new accounts is not the same as locking out the people already inside, and
+    // conflating them is how a customer tightening sign-up locks out their whole user base.
+    const policy = (await this.settings.for(context)).password;
+    if (!policy.enabled) throw new SignInMethodDisabledError({ detail: { method: "password" } });
+
     const tenant = tenantContextFrom(context);
 
-    return this.uow.run(tenant, async (tx) => {
+    return await this.uow.run(tenant, async (tx) => {
       const users = new UserRepository(tx, tenant);
       const user = await users.findByEmail(email);
       const hash = user?.passwordHash ?? (await this.decoy());

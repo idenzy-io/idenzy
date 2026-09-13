@@ -24,6 +24,7 @@ import {
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { TestAuthenticator } from "@idenzy/testing/webauthn-authenticator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { MfaFactorRegistry } from "../dist/mfa/factor-registry.js";
@@ -171,6 +172,7 @@ beforeAll(async () => {
     uow,
     new Argon2idHasher(),
     new NoBreaches(),
+    new ProjectSettingsReader(uow),
   );
   signIn = new PasswordSignInFlow(
     sessions,
@@ -181,6 +183,7 @@ beforeAll(async () => {
     uow,
     new Argon2idHasher(),
     clock,
+    new ProjectSettingsReader(uow),
   );
   enrolment = new MfaEnrolmentService(uow, clock, encryptor, config);
   totpFactor = new TotpFactor(uow, encryptor, clock);

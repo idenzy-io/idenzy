@@ -11,6 +11,7 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@idenzy/analytics": "workspace:*",
     "@idenzy/compliance": "workspace:*",
     "@idenzy/persistence": "workspace:*"
   },

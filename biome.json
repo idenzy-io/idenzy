@@ -148,6 +148,7 @@
     },
     {
       "includes": [
+        "packages/analytics/**",
         "packages/crypto/**",
         "packages/persistence/**",
         "packages/cache/**",
@@ -271,7 +272,7 @@
       }
     },
     {
-      "includes": ["packages/persistence/src/schema/**"],
+      "includes": ["packages/persistence/src/schema/**", "packages/analytics/src/schema/index.ts"],
       "linter": {
         "rules": {
           "performance": {

@@ -3,7 +3,8 @@
 # Data map
 
 Every column Idenzy stores, with its classification, purpose and retention.
-Derived from the Drizzle schema, which is the source of truth (PROJECT.md 4.13.2).
+Derived from the schemas, which are the source of truth (PROJECT.md 4.13.2): the Drizzle
+tables in Postgres, and the `analytics.` ones in ClickHouse (ADR-0013).
 
 Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately not done.
 
@@ -11,11 +12,31 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 32 |
+| pii | 34 |
 | phi | 0 |
 | secret | 20 |
-| pseudonymous | 85 |
-| operational | 348 |
+| pseudonymous | 87 |
+| operational | 354 |
+
+## `analytics.auth_events`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `at` | operational | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `country` | operational | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `event` | operational | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `ip` | pii | security_and_abuse_prevention | years_1 | no | row_deleted | no |
+| `method` | operational | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `outcome` | operational | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `project_id` | operational | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `session_id` | pseudonymous | security_and_abuse_prevention | years_1 | no | not_applicable | no |
+| `user_agent` | pii | security_and_abuse_prevention | years_1 | no | row_deleted | no |
+| `user_id` | pseudonymous | security_and_abuse_prevention | years_1 | no | row_deleted | no |
+
+Notes:
+
+- `ip`: Personal data under GDPR. Kept one year for abuse investigation, matching sessions.ip.
+- `user_id`: An erasure removes the rows rather than nulling the column, because a row keyed on a user with the user removed is not anonymous — the timing alone re-identifies.
 
 ## `api_keys`
 

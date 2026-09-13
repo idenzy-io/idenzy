@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { generateDataMap } from "@idenzy/compliance/generators/data-map";
 import { generateRopa } from "@idenzy/compliance/generators/ropa";
 
-// Importing the schema is what populates the classification registry.
+// Importing the schemas is what populates the classification registry. Both stores, because a
+// column outside it escapes the RoPA, the data map, the log allowlist and the DSR field lists at
+// once (PROJECT.md 4.13.2) — and ClickHouse is not Drizzle, so nothing here would have found it.
+import "@idenzy/analytics/schema/index";
 import "@idenzy/persistence/schema/index";
 
 const here = dirname(fileURLToPath(import.meta.url));

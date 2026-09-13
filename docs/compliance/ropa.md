@@ -150,13 +150,16 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_f_legitimate_interest
 - **Retention:** years_1
-- **Tables:** `sessions`
+- **Tables:** `analytics.auth_events`, `sessions`
 - **Categories of personal data:**
 
   - pii: deviceId
   - pii: deviceName
   - pii: ip
   - pii: userAgent
+  - pii: user_agent
+  - pseudonymous: session_id
+  - pseudonymous: user_id
 
 ## service_configuration
 

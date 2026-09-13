@@ -657,6 +657,28 @@ importers:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
 
+  packages/analytics:
+    dependencies:
+      '@idenzy/compliance':
+        specifier: workspace:*
+        version: link:../compliance
+      '@idenzy/core':
+        specifier: workspace:*
+        version: link:../core
+      '@idenzy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.4.1
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/cache:
     dependencies:
       '@idenzy/core':
@@ -1319,6 +1341,9 @@ importers:
 
   tools/compliance-cli:
     dependencies:
+      '@idenzy/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@idenzy/compliance':
         specifier: workspace:*
         version: link:../../packages/compliance

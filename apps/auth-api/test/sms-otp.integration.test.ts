@@ -16,6 +16,7 @@ import { NoStoredSmsTemplates, SmsRenderer } from "@idenzy/templating/sms-render
 import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { Texter } from "../dist/delivery/texter.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
@@ -101,6 +102,7 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
 
   transcript = new CapturingLogger();
@@ -112,7 +114,15 @@ beforeAll(async () => {
     clock,
   );
   const texter = new Texter(uow, new SmsRenderer(new NoStoredSmsTemplates()), router, geography);
-  service = new SmsOtpService(uow, clock, hasher, encryptor, texter, config);
+  service = new SmsOtpService(
+    uow,
+    clock,
+    hasher,
+    encryptor,
+    texter,
+    config,
+    new ProjectSettingsReader(uow),
+  );
 
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
@@ -300,6 +310,7 @@ async function sessionsFor(): Promise<SessionService> {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
 }
 

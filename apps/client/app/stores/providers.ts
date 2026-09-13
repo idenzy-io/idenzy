@@ -52,26 +52,131 @@ export interface ProviderStats {
 /** A project's providers, by name. Absent means never configured. */
 export type ProviderConfigs = Partial<Record<ProviderName, ProviderConfig>>;
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 600;
+const _PLACEHOLDER_LATENCY = 700;
+const _SAVE_LATENCY = 600;
 /** How long the placeholder pretends a setup check takes. */
 const TEST_LATENCY = 900;
 
 export const useProvidersStore = defineStore("providers", () => {
+  const projects = useProjectStore();
+  /** Account linking is a settings section, not a provider row. */
+  const linkingSection = useSettingsSection("linking", () => ({ ...DEFAULT_LINKING }));
+
   const configs = ref<Record<string, ProviderConfigs>>({});
   const returnUris = ref<Record<string, string[]>>({});
-  const linking = ref<Record<string, LinkingSettings>>({});
-  const loading = ref(true);
+  const loading = ref(false);
+  const refusal = ref<string | null>(null);
   const lastSaved = ref<Record<string, string>>({});
+  /** Non-reactive: mutating a ref inside a computed re-invalidates the computed. */
+  const requested = new Set<string>();
 
-  setTimeout(() => {
-    configs.value = { prj_personal: PERSONAL_PROVIDERS, prj_acme: {} };
-    returnUris.value = { prj_personal: [...PERSONAL_RETURN_URIS], prj_acme: [] };
-    linking.value = { prj_personal: { autoLink: true }, prj_acme: { autoLink: true } };
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
+  function basePath(projectId: string): string | null {
+    const org = projects.orgOf(projectId);
+    return org === null ? null : `/v1/orgs/${org.id}/projects/${projectId}/oauth-providers`;
+  }
+
+  /** The wire shape into the screen's, which keeps two fields the API does not carry. */
+  function present(row: OauthProviderConfig, current: ProviderConfig | null): ProviderConfig {
+    return {
+      enabled: row.enabled,
+      mode: row.mode as ProviderMode,
+      clientId: row.clientId ?? "",
+      secretSet: row.secretSet,
+      // Neither is a column. When the secret was last written needs one on
+      // `oauth_providers`, and a setup check is this session's memory — a row that claimed
+      // either would be asserting something nothing recorded.
+      secretUpdatedAt: current?.secretUpdatedAt ?? null,
+      scopes: [...row.scopes],
+      settings: { ...row.settings },
+      storeTokens: row.storeTokens,
+      testedAt: current?.testedAt ?? null,
+    };
+  }
+
+  async function load(projectId: string): Promise<void> {
+    const url = basePath(projectId);
+    if (url === null) return;
+    loading.value = true;
+    refusal.value = null;
+    try {
+      const { data, error } = await useManagementApi()(url).get().json<OauthProviderList>();
+      if (error.value !== null) throw error.value;
+      const held = configs.value[projectId] ?? {};
+      const next: ProviderConfigs = {};
+      for (const row of data.value?.providers ?? []) {
+        const id = row.provider as ProviderName;
+        next[id] = present(row, held[id] ?? null);
+      }
+      configs.value = { ...configs.value, [projectId]: next };
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadReturnUris(projectId: string): Promise<void> {
+    const url = basePath(projectId);
+    if (url === null) return;
+    const { data, error } = await useManagementApi()(`${url}/return-uris`)
+      .get()
+      .json<RedirectUriList>();
+    if (error.value !== null) {
+      refusal.value = managementMessage(error.value);
+      return;
+    }
+    returnUris.value = { ...returnUris.value, [projectId]: [...(data.value?.uris ?? [])] };
+  }
+
+  function ensure(projectId: string): void {
+    if (requested.has(projectId)) return;
+    requested.add(projectId);
+    void load(projectId);
+    void loadReturnUris(projectId);
+  }
+
+  /**
+   * Sends the whole configuration for one provider.
+   *
+   * `secret` is the three-state field the route takes: `undefined` leaves the stored one
+   * alone, a string replaces it, `null` clears it. Absent has to mean "leave it" because
+   * the panel has never been allowed to read a secret back, so it has nothing to resend.
+   */
+  async function put(
+    projectId: string,
+    id: ProviderName,
+    config: ProviderConfig,
+    secret?: string | null,
+  ): Promise<void> {
+    const url = basePath(projectId);
+    if (url === null) return;
+    const { data, error } = await useManagementApi()(`${url}/${id}`)
+      .put({
+        enabled: config.enabled,
+        mode: config.mode,
+        clientId: config.clientId === "" ? null : config.clientId,
+        ...(secret === undefined ? {} : { clientSecret: secret }),
+        scopes: [...config.scopes],
+        settings: { ...config.settings },
+        storeTokens: config.storeTokens,
+      })
+      .json<OauthProviderConfig>();
+    if (error.value !== null) {
+      refusal.value = managementMessage(error.value);
+      throw error.value;
+    }
+    const saved = data.value;
+    if (saved !== null) {
+      configs.value = {
+        ...configs.value,
+        [projectId]: { ...forProject(projectId), [id]: present(saved, config) },
+      };
+    }
+    stamp(projectId);
+  }
 
   function forProject(projectId: string): ProviderConfigs {
+    ensure(projectId);
     return configs.value[projectId] ?? {};
   }
 
@@ -101,14 +206,14 @@ export const useProvidersStore = defineStore("providers", () => {
   }
 
   function linkingFor(projectId: string): LinkingSettings {
-    return linking.value[projectId] ?? { ...DEFAULT_LINKING };
+    return linkingSection.valueFor(projectId);
   }
 
   function stamp(projectId: string) {
     lastSaved.value = { ...lastSaved.value, [projectId]: new Date().toISOString() };
   }
 
-  function write(projectId: string, id: ProviderName, config: ProviderConfig) {
+  function _write(projectId: string, id: ProviderName, config: ProviderConfig) {
     configs.value = {
       ...configs.value,
       [projectId]: { ...forProject(projectId), [id]: config },
@@ -116,15 +221,20 @@ export const useProvidersStore = defineStore("providers", () => {
     stamp(projectId);
   }
 
-  /** Writes the fields given and leaves the rest; resolves once the server has them. */
+  /**
+   * Writes the fields given and leaves the rest.
+   *
+   * The whole configuration goes up because the route is a PUT, and `clientSecret` is left
+   * out entirely: absent means "keep the stored one", which is the only thing the panel can
+   * honestly say about a secret it has never been allowed to read.
+   */
   async function patch(
     projectId: string,
     id: ProviderName,
     change: Partial<ProviderConfig>,
   ): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const current = configFor(projectId, id) ?? { ...DEFAULT_PROVIDER_CONFIG };
-    write(projectId, id, { ...current, ...change });
+    await put(projectId, id, { ...current, ...change });
   }
 
   /**
@@ -136,24 +246,28 @@ export const useProvidersStore = defineStore("providers", () => {
    * what removing the provider is for.
    */
   async function save(projectId: string, id: ProviderName, draft: ProviderDraft): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
     const current = configFor(projectId, id) ?? { ...DEFAULT_PROVIDER_CONFIG };
     const secretGiven = draft.clientSecret.trim() !== "";
     const instant = draft.mode === "instant";
 
-    write(projectId, id, {
-      ...current,
-      enabled: true,
-      mode: draft.mode,
-      clientId: instant ? "" : draft.clientId.trim(),
-      secretSet: instant ? false : secretGiven || current.secretSet,
-      secretUpdatedAt: secretGiven ? new Date().toISOString() : current.secretUpdatedAt,
-      scopes: draft.customScopes ? parseScopes(draft.scopes) : [],
-      settings: settingsOf(draft),
-      storeTokens: draft.storeTokens,
-      /* A credential change is a new thing to check, so the stamp goes with the old one. */
-      testedAt: null,
-    });
+    await put(
+      projectId,
+      id,
+      {
+        ...current,
+        enabled: true,
+        mode: draft.mode,
+        clientId: instant ? "" : draft.clientId.trim(),
+        scopes: draft.customScopes ? parseScopes(draft.scopes) : [],
+        settings: settingsOf(draft),
+        storeTokens: draft.storeTokens,
+        /* A credential change is a new thing to check, so the stamp goes with the old one. */
+        testedAt: null,
+      },
+      // Only sent when the operator actually typed one. Instant mode uses our shared app
+      // and has no customer credential to hold, so it clears whatever was there.
+      instant ? null : secretGiven ? draft.clientSecret.trim() : undefined,
+    );
   }
 
   /**
@@ -176,19 +290,32 @@ export const useProvidersStore = defineStore("providers", () => {
 
   /** Adding one already registered is a no-op rather than a second row. */
   async function addReturnUri(projectId: string, uri: string): Promise<void> {
-    const held = returnUrisFor(projectId);
-    if (held.includes(uri)) return;
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    returnUris.value = { ...returnUris.value, [projectId]: [...held, uri] };
+    if (returnUrisFor(projectId).includes(uri)) return;
+    const url = basePath(projectId);
+    if (url === null) return;
+    const { error } = await useManagementApi()(`${url}/return-uris`).post({ uri }).json();
+    if (error.value !== null) {
+      refusal.value = managementMessage(error.value);
+      throw error.value;
+    }
+    await loadReturnUris(projectId);
     stamp(projectId);
   }
 
   async function removeReturnUri(projectId: string, uri: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    returnUris.value = {
-      ...returnUris.value,
-      [projectId]: returnUrisFor(projectId).filter((entry) => entry !== uri),
-    };
+    const url = basePath(projectId);
+    if (url === null) return;
+    // The URI travels as a query parameter, not a path segment: percent-encoding a URL into
+    // a path is legal and is also how a proxy normalises a slash back out and deletes
+    // something adjacent.
+    const { error } = await useManagementApi()(`${url}/return-uris?uri=${encodeURIComponent(uri)}`)
+      .delete()
+      .json();
+    if (error.value !== null) {
+      refusal.value = managementMessage(error.value);
+      throw error.value;
+    }
+    await loadReturnUris(projectId);
     stamp(projectId);
   }
 
@@ -197,19 +324,20 @@ export const useProvidersStore = defineStore("providers", () => {
    * links come back if it is set up again. What goes is the credentials.
    */
   async function remove(projectId: string, id: ProviderName): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    const project = { ...forProject(projectId) };
-    delete project[id];
-    configs.value = { ...configs.value, [projectId]: project };
+    const url = basePath(projectId);
+    if (url === null) return;
+    const { error } = await useManagementApi()(`${url}/${id}`).delete().json();
+    if (error.value !== null) {
+      refusal.value = managementMessage(error.value);
+      throw error.value;
+    }
+    await load(projectId);
     stamp(projectId);
   }
 
+  /** The account-linking rule is a section of the settings document, not a provider row. */
   async function setLinking(projectId: string, change: Partial<LinkingSettings>): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    linking.value = {
-      ...linking.value,
-      [projectId]: { ...linkingFor(projectId), ...change },
-    };
+    await linkingSection.save(projectId, { ...linkingFor(projectId), ...change });
     stamp(projectId);
   }
 
@@ -231,8 +359,10 @@ export const useProvidersStore = defineStore("providers", () => {
   return {
     configs,
     returnUris,
-    linking,
+    linking: linkingSection.byProject,
     loading,
+    refusal,
+    load,
     forProject,
     returnUrisFor,
     configFor,
@@ -270,7 +400,7 @@ function settingsOf(draft: ProviderDraft): Record<string, string> {
  * be in: Google ready and checked, GitHub complete and never checked, Apple missing its
  * signing key, Discord on our shared app because somebody is trying it locally.
  */
-const PERSONAL_PROVIDERS: ProviderConfigs = {
+const _PERSONAL_PROVIDERS: ProviderConfigs = {
   google: {
     enabled: true,
     mode: "custom",
@@ -318,7 +448,7 @@ const PERSONAL_PROVIDERS: ProviderConfigs = {
 };
 
 /** The routes the placeholder project's own application receives a sign-in on. */
-const PERSONAL_RETURN_URIS: readonly string[] = [
+const _PERSONAL_RETURN_URIS: readonly string[] = [
   "https://app.example.com/auth/callback",
   "http://localhost:3000/auth/callback",
 ];

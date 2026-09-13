@@ -39,6 +39,15 @@ export class RedirectUriRepository extends BaseRepository<typeof redirectUris> {
     );
   }
 
+  /** Removes one exactly. Matching is exact here as it is at the callback (PROJECT.md 4.6). */
+  async remove(kind: string, uri: string): Promise<boolean> {
+    const rows = await this.tx
+      .delete(redirectUris)
+      .where(and(this.tenantScope(), eq(redirectUris.kind, kind), eq(redirectUris.uri, uri)))
+      .returning({ id: redirectUris.id });
+    return rows.length > 0;
+  }
+
   async list(kind: string): Promise<readonly string[]> {
     const rows = await this.tx
       .select({ uri: redirectUris.uri })

@@ -15,6 +15,7 @@ import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { CapturingEmailProvider } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
@@ -80,11 +81,19 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
 
   mail = new CapturingEmailProvider();
   const mailer = new Mailer(uow, new TemplateRenderer(new NoStoredTemplates()), mail, config);
-  service = new MagicLinkService(uow, clock, encryptor, mailer, config);
+  service = new MagicLinkService(
+    uow,
+    clock,
+    encryptor,
+    mailer,
+    config,
+    new ProjectSettingsReader(uow),
+  );
   flow = new MagicLinkFlow(
     sessions,
     new NullFlowHooks(),

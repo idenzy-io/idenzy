@@ -92,6 +92,7 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
 
   mail = new CapturingEmailProvider();

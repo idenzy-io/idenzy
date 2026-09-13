@@ -100,6 +100,7 @@ beforeAll(async () => {
     revocations.publisher,
     templates,
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
   const gate = testMfaGate(uow, clock, config);
   const audit = new OutboxFlowAudit(uow, clock);

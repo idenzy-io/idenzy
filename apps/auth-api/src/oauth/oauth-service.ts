@@ -15,6 +15,7 @@ import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { Injectable } from "@nestjs/common";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { RedirectKind } from "../delivery/redirect-targets.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 import { DatabaseOAuthFlowStore } from "./database-oauth-flow-store.js";
@@ -46,6 +47,14 @@ function withParam(uri: string, name: string, value: string): string {
  * back to the customer's route as `?error=<code>`, because by then the destination is
  * proven and a user stranded on an API error page is a dead end.
  */
+/**
+ * For the one decision that does not depend on the project's rule.
+ *
+ * `assertLinkable` refuses an identity that is already another account's, which is a fact
+ * about the rows rather than a policy choice; `autoLink` never reaches it.
+ */
+const LINK_THEFT_CHECK = new AccountLinkingPolicy(true);
+
 @Injectable()
 export class OAuthService {
   constructor(
@@ -55,7 +64,7 @@ export class OAuthService {
     private readonly registry: ProviderRegistry,
     private readonly flows: DatabaseOAuthFlowStore,
     private readonly encryptor: FieldEncryptor,
-    private readonly policy: AccountLinkingPolicy,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   async start(
@@ -144,7 +153,7 @@ export class OAuthService {
 
       const userId =
         completed.flow.linkUserId === null
-          ? await this.resolveSignIn(users, existing?.userId ?? null, profile)
+          ? await this.resolveSignIn(context, users, existing?.userId ?? null, profile)
           : this.resolveLink(existing?.userId ?? null, completed.flow.linkUserId);
 
       // Only when the customer asked for it. A provider refresh token is a standing
@@ -207,6 +216,7 @@ export class OAuthService {
    * email OTP, which is what the error code tells the customer's UI to do.
    */
   private async resolveSignIn(
+    context: FlowContext,
     users: UserRepository,
     linkedUserId: string | null,
     profile: ProviderProfile,
@@ -216,7 +226,11 @@ export class OAuthService {
         ? null
         : await users.findByEmail(profile.email);
 
-    const outcome = this.policy.decide({
+    // Built per decision from the project's own rule rather than injected once. The
+    // policy is a value object over one boolean, so a policy per project would be a cache
+    // keyed on a tenant holding objects that differ by a flag.
+    const { autoLink } = (await this.settings.for(context)).linking;
+    const outcome = new AccountLinkingPolicy(autoLink).decide({
       linkedUserId,
       userIdWithSameEmail: sameEmail?.id ?? null,
       providerAssertsVerifiedEmail: profile.emailVerified,
@@ -243,9 +257,15 @@ export class OAuthService {
     return created.id;
   }
 
-  /** Attaching a provider to a session that already exists. The only failure is theft. */
+  /**
+   * Attaching a provider to a session that already exists. The only failure is theft.
+   *
+   * `assertLinkable` asks whether this identity already belongs to somebody else, which is
+   * true or false regardless of what the project decided about auto-linking — so it uses a
+   * fixed instance rather than reading a setting that cannot change the answer.
+   */
   private resolveLink(linkedUserId: string | null, actingUserId: string): string {
-    this.policy.assertLinkable(linkedUserId, actingUserId);
+    LINK_THEFT_CHECK.assertLinkable(linkedUserId, actingUserId);
     return actingUserId;
   }
 

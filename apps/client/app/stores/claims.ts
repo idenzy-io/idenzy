@@ -9,6 +9,7 @@
  * reason about. The screen holds a draft and hands the whole thing over.
  */
 
+import { InternalError } from "@idenzy/core/errors";
 import {
   type ClaimTemplate,
   EMPTY_TEMPLATE,
@@ -16,6 +17,7 @@ import {
   readsPrivateMetadata,
   type SavedClaimTemplate,
 } from "~/utils/claims";
+import { managementMessage } from "~/utils/sign-in-errors";
 
 const _PLACEHOLDER_LATENCY = 700;
 const _SAVE_LATENCY = 900;

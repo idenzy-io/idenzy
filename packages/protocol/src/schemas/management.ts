@@ -1073,6 +1073,24 @@ export const lifetimeSettingsSchema = z
   });
 export type LifetimeSettings = z.infer<typeof lifetimeSettingsSchema>;
 
+/**
+ * Account linking, which is one rule and the most consequential one here (PROJECT.md 4.6).
+ *
+ * `autoLink` decides whether a social sign-in whose provider asserts a verified address may
+ * take over an existing account with that address. On is safe only because the flow demands
+ * `email_verified` from the provider first — eight of the eighteen do not assert it and
+ * report unverified rather than assume, so those never auto-link whatever this says.
+ *
+ * Off means a matching address is refused with `linking_requires_verification` and the user
+ * proves the address by email code instead. That is the stricter setting and it is not the
+ * default, because the common case is a customer whose users genuinely are the same person
+ * and who would otherwise be asked to prove an address their provider already proved.
+ */
+export const linkingSettingsSchema = z.object({
+  autoLink: z.boolean().default(true),
+});
+export type LinkingSettings = z.infer<typeof linkingSettingsSchema>;
+
 export const projectSettingsSchema = z.object({
   password: passwordPolicySchema.default(passwordPolicySchema.parse({})),
   otp: otpSettingsSchema.default(otpSettingsSchema.parse({})),
@@ -1080,6 +1098,7 @@ export const projectSettingsSchema = z.object({
   mfa: mfaSettingsSchema.default(mfaSettingsSchema.parse({})),
   recovery: recoverySettingsSchema.default(recoverySettingsSchema.parse({})),
   lifetimes: lifetimeSettingsSchema.default(lifetimeSettingsSchema.parse({})),
+  linking: linkingSettingsSchema.default(linkingSettingsSchema.parse({})),
 });
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 
@@ -1098,6 +1117,7 @@ export const patchProjectSettingsSchema = z
     mfa: mfaSettingsSchema.optional(),
     recovery: recoverySettingsSchema.optional(),
     lifetimes: lifetimeSettingsSchema.optional(),
+    linking: linkingSettingsSchema.optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "a patch must name at least one section",
@@ -1106,3 +1126,59 @@ export type PatchProjectSettings = z.infer<typeof patchProjectSettingsSchema>;
 
 /** The defaults, resolved once, for callers that need them without a database. */
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({});
+
+// ── OAuth providers ──────────────────────────────────────────────────────────────────
+
+export const providerModeSchema = z.enum(["instant", "custom"]);
+export type ProviderMode = z.infer<typeof providerModeSchema>;
+
+/**
+ * A provider's configuration as the panel sees it.
+ *
+ * The secret is never here. `secretSet` says whether one is stored and that is the whole
+ * of what a reader gets — a "show it again" field would rebuild, in a response body, the
+ * retrievable-secret design the schema went out of its way to avoid by encrypting it under
+ * the project's own data key.
+ */
+export const oauthProviderConfigSchema = z.object({
+  provider: z.string().min(1).max(40),
+  enabled: z.boolean(),
+  mode: providerModeSchema,
+  clientId: z.string().nullable(),
+  secretSet: z.boolean(),
+  scopes: z.array(z.string().max(120)).max(40),
+  settings: z.record(z.string(), z.string()),
+  storeTokens: z.boolean(),
+});
+export type OauthProviderConfig = z.infer<typeof oauthProviderConfigSchema>;
+
+export const oauthProviderListSchema = z.object({
+  providers: z.array(oauthProviderConfigSchema),
+});
+export type OauthProviderList = z.infer<typeof oauthProviderListSchema>;
+
+/**
+ * What a save may set.
+ *
+ * `clientSecret` absent leaves the stored one alone; a string replaces it; null clears it.
+ * The three are distinguishable on purpose, because the panel never reads a secret back —
+ * so a save that treated absent as "clear" would blank the credential every time somebody
+ * toggled the enabled switch.
+ */
+export const saveOauthProviderSchema = z.object({
+  enabled: z.boolean(),
+  mode: providerModeSchema,
+  clientId: z.string().max(400).nullable(),
+  clientSecret: z.string().min(1).max(500).nullable().optional(),
+  scopes: z.array(z.string().max(120)).max(40).default([]),
+  settings: z.record(z.string(), z.string()).default({}),
+  storeTokens: z.boolean().default(false),
+});
+export type SaveOauthProvider = z.infer<typeof saveOauthProviderSchema>;
+
+/** Where a completed OAuth or magic-link flow may return the browser (PROJECT.md 4.6). */
+export const redirectUriListSchema = z.object({ uris: z.array(z.url()) });
+export type RedirectUriList = z.infer<typeof redirectUriListSchema>;
+
+export const addRedirectUriSchema = z.object({ uri: z.url().max(2000) });
+export type AddRedirectUri = z.infer<typeof addRedirectUriSchema>;

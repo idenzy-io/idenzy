@@ -894,6 +894,28 @@ client have no server halves to talk to yet.
       set belongs to a user and `mfa_recovery_codes` has no route, and nothing records when
       a verifier last polled the revocation snapshot — so that timestamp is null rather than
       invented.
+      **Social providers are wired too**, which is the last of the settings-shaped screens:
+      `GET/PUT/DELETE .../oauth-providers/:provider` plus the return-URI allowlist, all at
+      admin — a client secret is a credential the customer obtained from Google and handed
+      us, and the return URIs are the exact-match list standing between a callback and an
+      open redirect (4.6), so neither belongs at the level that reads configuration to
+      integrate against it. `clientSecret` is three states rather than two: absent leaves the
+      stored one alone, a string replaces it, null clears it. Absent *has* to mean leave it,
+      because the panel has never been allowed to read a secret back and so has nothing to
+      resend — treating absent as "clear" would blank a customer's credential every time
+      somebody flipped the enabled switch, discovered at their users' next sign-in. Verified
+      live: the plaintext never appears in a response, a save without the field kept it, and
+      null cleared it.
+      Account linking moved with it and is now `settings.linking.autoLink` rather than
+      `new AccountLinkingPolicy(true)` bound once at boot — 4.6's rule, which decides whether
+      a social sign-in may take over an existing account, was a hardcoded constant.
+      **The bug worth recording is how it was found.** `ProvidersService` is the first thing
+      in `management-api` to write an encrypted column, and `CryptoModule` exported
+      `FieldEncryptor` while nothing had ever imported it — so the binding was dead and the
+      service could not resolve. Every unit test passed and every integration test passed,
+      because they construct services directly; it failed only when the process tried to
+      start. `auth-api` has had a composition-root test since phase 0 and this service did
+      not, so it has one now, and `@nestjs/testing` is a dependency of it for the first time.
       One knob is deliberately stored and not yet enforced: `lockout` and `lockoutAttempts`
       need a counter on the sign-in path, which is the rate limiter's shape and not the
       policy's. `resetLifetime`, `signOutOnReset` and `notifyOnChange` are stored and read

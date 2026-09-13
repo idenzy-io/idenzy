@@ -10,6 +10,7 @@ import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { TestAuthenticator } from "@idenzy/testing/webauthn-authenticator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasskeyFlow } from "../dist/passkey/passkey.flow.js";
@@ -90,10 +91,18 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
   const ceremony = new PasskeyCeremony();
   resolver = new RelyingPartyResolver(uow);
-  service = new PasskeyService(uow, clock, config, ceremony, resolver);
+  service = new PasskeyService(
+    uow,
+    clock,
+    config,
+    ceremony,
+    resolver,
+    new ProjectSettingsReader(uow),
+  );
   flow = new PasskeyFlow(
     sessions,
     new NullFlowHooks(),

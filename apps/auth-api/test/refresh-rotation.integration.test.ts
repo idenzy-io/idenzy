@@ -11,6 +11,7 @@ import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { RefreshService } from "../dist/session/refresh-service.js";
 import { SessionService } from "../dist/session/session-service.js";
 import {
@@ -56,6 +57,7 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
   refresh = new RefreshService(
     uow,

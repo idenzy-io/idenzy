@@ -1,5 +1,4 @@
 import { Clock } from "@idenzy/core/time/clock";
-import { AccountLinkingPolicy } from "@idenzy/domain/policies/account-linking-policy";
 import type { OAuthProvider } from "@idenzy/domain/ports/oauth-provider";
 import { ProviderId } from "@idenzy/protocol/enums/providers";
 import { FetchHttpClient } from "@idenzy/providers-oauth/fetch-http-client";
@@ -81,7 +80,6 @@ import { ProviderRegistry } from "./provider-registry.js";
     ProviderRegistry,
     OAuthService,
     OAuthCodeFlow,
-    { provide: AccountLinkingPolicy, useFactory: () => new AccountLinkingPolicy(true) },
   ],
 })
 export class OAuthModule {}

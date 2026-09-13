@@ -161,6 +161,7 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
   _sessionService = sessions;
   signUp = new PasswordSignUpFlow(
@@ -189,7 +190,14 @@ beforeAll(async () => {
   totpFactor = new TotpFactor(uow, encryptor, clock);
   recoveryFactor = new RecoveryCodeFactor(uow, clock);
   resolver = new RelyingPartyResolver(uow);
-  passkeys = new PasskeyService(uow, clock, config, new PasskeyCeremony(), resolver);
+  passkeys = new PasskeyService(
+    uow,
+    clock,
+    config,
+    new PasskeyCeremony(),
+    resolver,
+    new ProjectSettingsReader(uow),
+  );
   passkeyFactor = new PasskeyFactor(uow, clock, config, new PasskeyCeremony(), resolver);
   const registry = new MfaFactorRegistry(passkeyFactor, totpFactor, recoveryFactor);
   const challenges = new MfaChallengeVerifier(uow, clock);

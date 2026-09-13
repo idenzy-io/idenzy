@@ -72,6 +72,7 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
   const hooks = new NullFlowHooks();
   const audit = new OutboxFlowAudit(uow, clock);
@@ -272,6 +273,7 @@ describe("upgrading one", () => {
         revocations.publisher,
         claimTemplates(uow, clock),
         new NullAnalyticsRecorder(),
+        new ProjectSettingsReader(uow),
       ),
       new NullFlowHooks(),
       new OutboxFlowAudit(uow, clock),

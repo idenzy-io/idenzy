@@ -3,7 +3,6 @@ import { SystemClock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { LocalEs256Issuer } from "@idenzy/crypto/tokens/local-es256-issuer";
-import { AccountLinkingPolicy } from "@idenzy/domain/policies/account-linking-policy";
 import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import {
@@ -27,6 +26,7 @@ import { startOauthSchema } from "@idenzy/protocol/schemas/auth";
 import { sessionOf } from "@idenzy/testing/auth-outcome";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { RedirectKind } from "../dist/delivery/redirect-targets.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
@@ -156,6 +156,7 @@ beforeAll(async () => {
     revocations.publisher,
     claimTemplates(uow, clock),
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
 
   const flows = new DatabaseOAuthFlowStore(uow, encryptor);
@@ -169,7 +170,7 @@ beforeAll(async () => {
     registry,
     flows,
     encryptor,
-    new AccountLinkingPolicy(true),
+    new ProjectSettingsReader(uow),
   );
   flow = new OAuthCodeFlow(
     sessions,

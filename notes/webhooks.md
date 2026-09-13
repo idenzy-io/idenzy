@@ -82,6 +82,17 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
   customer has. `webhook_endpoint_stats` is a row per endpoint per day and the strip reads it, which
   is also why `Waiting to retry` gave its tile to `Attempts`: a count of deliveries between attempts
   is a live number rather than a day's total, and it is already the pending tab below.
+- **An event nothing sends says so, and six of the thirteen are in that state.** The dialog offered
+  every event as an equal, so a subscription to `user.deleted` saved and then never delivered —
+  indistinguishable, from the outside, from a receiver that is broken. The events are still
+  choosable, because each starts working the day its emitter lands, and the count is on the line
+  under Events as well as on each row: somebody who picks "every event" never opens the groups.
+  `WEBHOOK_EVENTS_WITHOUT_EMITTER` moved to `@idenzy/protocol` so the screen reads the platform's own
+  list rather than keeping a second one.
+- **Three of the event notes described payloads that never existed.** `user.updated` promised "what
+  it was and what it is now", `session.revoked` promised a reason, and `session.created` promised
+  the device name. What the projected data actually carries is named instead: `data.changed`,
+  `data.scope`, and the address with the user agent.
 - **The sample body is built by the envelope builder, which is the same finding twice.** It was a
   hand-written object and it documented `occurred_at` and a `data.object` that no delivery has ever
   carried, while the real envelope has `sequence`, `createdAt` and `project` — a customer writing a

@@ -9,8 +9,13 @@ import { WebhookEventType } from "@idenzy/protocol/schemas/webhooks";
  * than a rename somewhere in the auth API.
  *
  * The three `user.*` topics all become `user.updated`, because that is what happened from outside: a
- * profile field changed. What changed is on the payload, and a customer who cares which reads it
- * there rather than subscribing to three near-identical events.
+ * profile field changed. Which of the three it was travels as `changed` on the payload, so a customer
+ * who cares reads it there rather than subscribing to three near-identical events.
+ *
+ * The other half of this map is `WEBHOOK_EVENTS_WITHOUT_EMITTER`, which is in `@idenzy/protocol`
+ * rather than here: it was here first, where only this worker could read it, and the panel went on
+ * offering every event as though all of them sent something. `webhook-events.test.ts` asserts the two
+ * cover the catalogue exactly.
  */
 export const WEBHOOK_EVENT_BY_TOPIC: Readonly<Record<string, WebhookEventType>> = {
   "user.created": WebhookEventType.UserCreated,
@@ -26,27 +31,3 @@ export const WEBHOOK_EVENT_BY_TOPIC: Readonly<Record<string, WebhookEventType>> 
 
 /** Every topic the relay reads, which is what its per-topic watermarks are keyed on. */
 export const WEBHOOK_TOPICS: readonly string[] = Object.keys(WEBHOOK_EVENT_BY_TOPIC);
-
-/**
- * Catalogue entries nothing emits yet, listed so the gap is visible in code rather than discovered
- * by a customer who subscribed and heard nothing.
- *
- * Each one is waiting on the thing that would enqueue it: deletion needs the erasure path and
- * suspension a users screen that can ban somebody — neither state is written anywhere today, however
- * long `banned_until` and `deleted_at` have been in the schema — the three delivery events need the
- * SES and SMS event paths (todo.md 1.4), and staff access needs the break-glass flow itself. A
- * subscription to one of these saves and stays silent, which is why the panel's event list is not the
- * same statement as this map.
- *
- * `webhook-events.test.ts` asserts this list and the map above cover the catalogue exactly, because a
- * list of known gaps that is itself out of date is worse than no list: `security.staff_access_granted`
- * was missing from it until that test was written.
- */
-export const WEBHOOK_EVENTS_WITHOUT_EMITTER: readonly WebhookEventType[] = [
-  WebhookEventType.UserDeleted,
-  WebhookEventType.UserSuspended,
-  WebhookEventType.EmailBounced,
-  WebhookEventType.EmailComplained,
-  WebhookEventType.SmsBlocked,
-  WebhookEventType.StaffAccessGranted,
-];

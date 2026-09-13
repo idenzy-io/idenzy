@@ -20,6 +20,7 @@
 
 import {
   buildWebhookEnvelope,
+  isWebhookEventEmitted,
   isWebhookEventType,
   isWebhookTimestampStale,
   WEBHOOK_DELIVERY_HEADER,
@@ -103,7 +104,7 @@ export const WEBHOOK_EVENTS: readonly WebhookEvent[] = [
   {
     id: "user.updated",
     group: "accounts",
-    note: "A profile field, an address or a phone number changed. The payload carries what it was and what it is now.",
+    note: "An address was verified, an address changed, or a password changed. `data.changed` says which.",
   },
   {
     id: "user.deleted",
@@ -118,12 +119,12 @@ export const WEBHOOK_EVENTS: readonly WebhookEvent[] = [
   {
     id: "session.created",
     group: "sessions",
-    note: "A sign-in completed. The payload names the method and the device the client gave.",
+    note: "A sign-in completed. The payload names the method, the address it came from and the user agent.",
   },
   {
     id: "session.revoked",
     group: "sessions",
-    note: "A session ended by somebody acting rather than by a clock. The reason is on the payload.",
+    note: "A session ended by somebody acting rather than by a clock. `data.scope` says whether it was one or all of them.",
   },
   {
     id: "email.bounced",
@@ -164,6 +165,22 @@ export const WEBHOOK_EVENTS: readonly WebhookEvent[] = [
 
 /** Sent by Send test event and never subscribed to, so a receiver can recognise a test. */
 export const TEST_EVENT = "webhook.test";
+
+/**
+ * Whether subscribing to an event delivers anything today.
+ *
+ * Read from `@idenzy/protocol` rather than marked on the list above, because it is a fact about what
+ * the platform emits and not about this screen: six of the thirteen have no emitter, and a screen that
+ * offered all thirteen as equals was letting somebody subscribe and wait. Subscribing is still
+ * allowed — it starts working the day the emitter lands — so the honest treatment is to say so rather
+ * than to hide the choice.
+ */
+export function eventIsSent(id: string): boolean {
+  return isWebhookEventEmitted(id);
+}
+
+/** How many of the catalogue are silent, for the line above the groups. */
+export const EVENTS_NOT_SENT = WEBHOOK_EVENTS.filter((event) => !eventIsSent(event.id)).length;
 
 const EVENT_BY_ID = new Map(WEBHOOK_EVENTS.map((event) => [event.id, event]));
 

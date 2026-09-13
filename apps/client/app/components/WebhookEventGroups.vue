@@ -8,12 +8,18 @@
  * The group's own checkbox takes or leaves the whole group, and reads as mixed while only
  * some of it is chosen. The fold is a grid row going from one fraction to none, the way
  * `LayerCard` folds, so nothing is measured.
+ *
+ * An event nothing emits yet says so beside its name. Six of the thirteen are in that state, and
+ * before this the dialog offered all of them as equals: a subscription that saves and then never
+ * delivers is indistinguishable from a receiver that is broken, and the customer has no way to tell
+ * which. It stays choosable, because it starts working the day the emitter lands.
  */
 import {
   EVENT_GROUP_LABELS,
   EVENT_GROUP_NOTES,
   EVENT_GROUPS,
   type EventGroup,
+  eventIsSent,
   eventsIn,
   groupSelection,
   toggleEvent,
@@ -96,7 +102,10 @@ function flip(group: EventGroup) {
                   @update:model-value="chosen = toggleEvent(event.id, chosen)"
                 />
                 <span class="flex min-w-0 flex-col gap-0.5 pt-px">
-                  <span class="font-mono text-[11px] text-ink">{{ event.id }}</span>
+                  <span class="flex flex-wrap items-center gap-1.5">
+                    <span class="font-mono text-[11px] text-ink">{{ event.id }}</span>
+                    <Tag v-if="!eventIsSent(event.id)" label="Not sent yet" tone="warning" />
+                  </span>
                   <span class="text-[11px] leading-4 text-ink/55">{{ event.note }}</span>
                 </span>
               </label>

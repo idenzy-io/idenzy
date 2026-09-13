@@ -1,4 +1,6 @@
 import {
+  WEBHOOK_EVENT_TYPES,
+  WEBHOOK_EVENTS_WITHOUT_EMITTER,
   WebhookEventType,
   webhookDataSample,
   webhookEnvelopeSchema,
@@ -13,8 +15,10 @@ import {
   ENDPOINT_ISSUE_LABELS,
   EVENT_GROUP_NOTES,
   EVENT_GROUPS,
+  EVENTS_NOT_SENT,
   endpointState,
   eventInfo,
+  eventIsSent,
   eventsIn,
   groupSelection,
   healthOf,
@@ -31,6 +35,7 @@ import {
   retryWindowSeconds,
   samplePayload,
   subscriptionLabel,
+  TEST_EVENT,
   TIMESTAMP_TOLERANCE_SECONDS,
   toggleEvent,
   toggleGroup,
@@ -184,6 +189,44 @@ describe("the verifier customers copy", () => {
   it("agrees with the staleness rule the screen states", () => {
     expect(isStale(STAMP - TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(false);
     expect(isStale(STAMP + TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(true);
+  });
+});
+
+describe("which events actually send anything", () => {
+  /**
+   * The screen offered thirteen subscriptions as equals while six of them had no emitter.
+   *
+   * A subscription that saves and then never delivers looks exactly like a broken receiver, and the
+   * customer cannot tell which. The list is the platform's, read from the protocol, so the screen
+   * cannot drift from what the worker actually sends.
+   */
+  it("lists exactly the catalogue, and nothing of its own", () => {
+    expect(WEBHOOK_EVENTS.map((event) => event.id).sort()).toEqual([...WEBHOOK_EVENT_TYPES].sort());
+  });
+
+  it("marks an event nothing emits, and only those", () => {
+    const silent = WEBHOOK_EVENTS.filter((event) => !eventIsSent(event.id)).map(
+      (event) => event.id,
+    );
+    expect(silent.sort()).toEqual([...WEBHOOK_EVENTS_WITHOUT_EMITTER].sort());
+    expect(EVENTS_NOT_SENT).toBe(WEBHOOK_EVENTS_WITHOUT_EMITTER.length);
+  });
+
+  it("counts the account event that does send as sent", () => {
+    expect(eventIsSent("user.created")).toBe(true);
+    expect(eventIsSent("user.deleted")).toBe(false);
+    // Not an event at all: a test delivery is not something to subscribe to.
+    expect(eventIsSent(TEST_EVENT)).toBe(false);
+  });
+
+  it("does not promise payload fields the event does not carry", () => {
+    // Each of these notes described a payload that never existed: what a field was and now is, the
+    // device name, the revocation reason. What the data does carry is named instead.
+    const note = (id: string) => WEBHOOK_EVENTS.find((event) => event.id === id)?.note ?? "";
+    expect(note("user.updated")).toContain("data.changed");
+    expect(note("session.revoked")).toContain("data.scope");
+    expect(note("session.created")).toContain("user agent");
+    expect(note("session.created")).not.toContain("device");
   });
 });
 

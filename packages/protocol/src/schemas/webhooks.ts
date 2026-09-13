@@ -91,6 +91,36 @@ export const WEBHOOK_EVENT_GROUP_OF: Record<WebhookEventType, WebhookEventGroup>
 
 export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = Object.values(WebhookEventType);
 
+/**
+ * Events nothing emits yet, which is a fact about the platform and therefore belongs here.
+ *
+ * It lived in the worker, where only the worker could read it — so the panel went on offering
+ * thirteen subscriptions as though all thirteen sent something, and six of them save and stay silent.
+ * A customer cannot be expected to discover that by waiting.
+ *
+ * Each is waiting on the thing that would enqueue it: deletion needs the erasure path and suspension
+ * a users screen that can ban somebody, and nothing writes `banned_until` or `deleted_at` today; the
+ * three delivery events need the SES and SMS event paths; staff access needs the break-glass flow.
+ * `webhook-events.test.ts` in the worker holds this list and the topic map together, because a list of
+ * known gaps that is itself out of date is worse than no list.
+ */
+export const WEBHOOK_EVENTS_WITHOUT_EMITTER: readonly WebhookEventType[] = [
+  WebhookEventType.UserDeleted,
+  WebhookEventType.UserSuspended,
+  WebhookEventType.EmailBounced,
+  WebhookEventType.EmailComplained,
+  WebhookEventType.SmsBlocked,
+  WebhookEventType.StaffAccessGranted,
+];
+
+/** Whether subscribing to this event will actually deliver anything today. */
+export function isWebhookEventEmitted(type: string): boolean {
+  return (
+    isWebhookEventType(type) &&
+    !(WEBHOOK_EVENTS_WITHOUT_EMITTER as readonly string[]).includes(type)
+  );
+}
+
 /** Whether a string is an event a subscription may name. The test event is not one. */
 export function isWebhookEventType(value: string): value is WebhookEventType {
   return (WEBHOOK_EVENT_TYPES as readonly string[]).includes(value);

@@ -630,9 +630,15 @@ client have no server halves to talk to yet.
       hand-written: it had drifted into documenting `occurred_at` and a `data.object` no delivery has
       ever carried, and a test parses it with the envelope's own schema. `pnpm db:migrate` and
       `db:seed` got `--env-file-if-exists` on the way past, because the README's own getting-started
-      line could not find `DATABASE_URL`. Next: the panel still offers thirteen subscriptions while six
-      of them are silent, so `WEBHOOK_EVENTS_WITHOUT_EMITTER` wants to move to the protocol and the
-      event list wants to say which. Then the events still without an emitter: deletion and suspension, which need the
+      line could not find `DATABASE_URL`. **The screen says which events are silent**, which it could not
+      before: `WEBHOOK_EVENTS_WITHOUT_EMITTER` lived in the worker where only the worker could read it,
+      so the dialog offered all thirteen subscriptions as equals while six of them save and never
+      deliver — from the outside that is indistinguishable from a broken receiver. It is in the protocol
+      now, each event carries a `Not sent yet` tag, and the line under Events names the count for the
+      reader who picks "every event" and never opens the groups. Three of the notes beside those events
+      also described payloads that never existed — `user.updated` promised "what it was and what it is
+      now", `session.revoked` a reason, `session.created` the device name — and now name what the
+      projected data carries. The events still without an emitter: deletion and suspension, which need the
       erasure path and a users screen that can ban somebody (nothing writes `banned_until` or
       `deleted_at` today), the three delivery events waiting on the SES and SMS event paths, and staff
       access waiting on the break-glass flow

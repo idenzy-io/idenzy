@@ -1,10 +1,10 @@
-import { WEBHOOK_EVENT_TYPES, WebhookEventType } from "@idenzy/protocol/schemas/webhooks";
-import { describe, expect, it } from "vitest";
 import {
-  WEBHOOK_EVENT_BY_TOPIC,
+  WEBHOOK_EVENT_TYPES,
   WEBHOOK_EVENTS_WITHOUT_EMITTER,
-  WEBHOOK_TOPICS,
-} from "../src/webhooks/webhook-events.js";
+  WebhookEventType,
+} from "@idenzy/protocol/schemas/webhooks";
+import { describe, expect, it } from "vitest";
+import { WEBHOOK_EVENT_BY_TOPIC, WEBHOOK_TOPICS } from "../src/webhooks/webhook-events.js";
 
 /**
  * The catalogue against what actually emits, which is a statement the panel makes to customers.

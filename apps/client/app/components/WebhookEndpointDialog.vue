@@ -16,6 +16,7 @@
  */
 import {
   ENDPOINT_ISSUE_LABELS,
+  EVENTS_NOT_SENT,
   normaliseEndpointUrl,
   samplePayload,
   validateEndpointUrl,
@@ -79,6 +80,18 @@ const submitted = ref(false);
 const eventsError = computed(() => noEvents.value && submitted.value);
 
 const ready = computed(() => url.value.trim() !== "" && urlIssue.value === "" && !noEvents.value);
+
+/**
+ * The line under Events, which says how many of them are silent.
+ *
+ * Here rather than only on each row, because the count is the part that changes a decision: somebody
+ * choosing "every event" never opens the groups and would otherwise never learn that six of the
+ * thirteen have no sender yet.
+ */
+const EVENTS_NOTE =
+  EVENTS_NOT_SENT === 0
+    ? "What this endpoint is called about."
+    : `What this endpoint is called about. ${EVENTS_NOT_SENT} of them are not sent yet.`;
 
 /** What a delivery of the first chosen event looks like, so the reader sees a real shape. */
 const example = computed(() =>
@@ -171,7 +184,7 @@ function confirm() {
             <div class="flex flex-col gap-0.5">
               <span class="text-xs font-medium text-ink">Events</span>
               <p :class="eventsError ? 'text-error' : 'text-ink/50'" class="m-0 text-[11px] leading-4">
-                {{ eventsError ? ENDPOINT_ISSUE_LABELS.events_empty : "What this endpoint is called about." }}
+                {{ eventsError ? ENDPOINT_ISSUE_LABELS.events_empty : EVENTS_NOTE }}
               </p>
             </div>
 

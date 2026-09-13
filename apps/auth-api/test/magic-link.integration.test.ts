@@ -114,8 +114,13 @@ beforeAll(async () => {
   );
   await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
-    `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
-     VALUES ($1, $2, 'Acme', (SELECT id FROM region_cells LIMIT 1), 'k')`,
+    // Magic links are off in `DEFAULT_PROJECT_SETTINGS`, and the service reads that before
+    // anything else, so a project seeded with bare defaults refuses every test in this file.
+    // The allowlist stays where it is: `redirect_uris` is the table the exchange checks, and
+    // the settings copy of it is a different list for a different purpose.
+    `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name, settings)
+     VALUES ($1, $2, 'Acme', (SELECT id FROM region_cells LIMIT 1), 'k',
+             '{"otp":{"magicLink":{"enabled":true,"allowSignUp":true}}}'::jsonb)`,
     [PROJECT, rows[0]?.id],
   );
   await uow.run(tenant, (tx) =>

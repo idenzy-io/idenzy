@@ -957,9 +957,13 @@ client have no server halves to talk to yet.
       page's facts were seeded off a hash of the project id, so a project in `us-east-1` could
       describe itself as Europe and a free one as enterprise — a residency claim invented by a
       PRNG; they come from `/v1/me`, which already carries the same four columns, so the page
-      gained no request of its own. Retention is still local and says so: `retention_policies`
-      has no repository, no endpoint and no worker, and 4.13.6 is blunt that retention nothing
-      enforces is not retention. And the invite dialog now says that nothing sends the email,
+      gained no request of its own. **Retention is a server answer with a job behind it**:
+      `GET/PUT .../retention` at viewer and admin, `retention_policies` written through an
+      upsert, and the hourly sweeper below actually deleting. Every subject comes back whether
+      or not the project stored an age, because "kept 90 days because nobody chose" and "not
+      swept at all" are different facts — `source` says which, and the row shows a Default
+      marker for the first. The vocabulary moved to `@idenzy/protocol`, so the menu offers
+      exactly what the API accepts and the default on screen is the one the delete uses. And the invite dialog now says that nothing sends the email,
       because an invitation nobody receives looks exactly like one that was ignored.
       **Two bugs found by wiring it.** `invited_by` and `updated_by` are `org_members.id`
       columns and the controller was passing a `users.id`, so every invitation listed itself
@@ -1349,7 +1353,21 @@ working, so the split below is by which question is being asked, not by which sc
       removed one; what is missing is the job that runs it without being asked. The value of
       a hash chain is entirely in somebody checking it
 - [ ] DSR due-date alerting, so an overdue request pages someone
-- [ ] Retention jobs actually enforcing `retention_policies`
+- [x] Retention jobs actually enforcing `retention_policies`. `RetentionSweeper` runs hourly in
+      `apps/workers` over four subjects — ended sessions, one-time code challenges, OAuth flows
+      and deleted accounts — through the SECURITY DEFINER functions in 0052. A sweeper serves
+      every project and binds no `app.project_id`, so under FORCE RLS a direct delete matches
+      nothing: no error, no rows, and tables that grow forever while the job reports success.
+      **The age is resolved per project inside the statement**, which is the decision that
+      matters: `retention_policies` holds an override and nothing else, so a project that has
+      never opened the settings screen — most of them — is swept at the default rather than
+      skipped. A sweeper that read the policy table and looped would have missed exactly those.
+      Deleted accounts are stripped rather than removed, because the audit trail points at the
+      id and an erasure that broke the chain would read as tampering; the column list in that
+      SQL is asserted against `classified()`'s own erasure map by a test, so a column added to
+      `users` next year fails the build instead of being quietly left in every tombstone.
+      Audit is not in it: `audit_events` ages out by dropping a monthly partition, which is a
+      different mechanism and is the tier's promise rather than an operator's preference
 - [ ] Subprocessor register kept current
 - [ ] Revisit certification timing at the end of Phase 2
 

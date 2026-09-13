@@ -1,3 +1,11 @@
+import {
+  RETENTION_CHOICES as PROTOCOL_RETENTION_CHOICES,
+  RETENTION_DEFAULTS as PROTOCOL_RETENTION_DEFAULTS,
+  type RetentionAction as ProtocolRetentionAction,
+  type RetentionSubject as ProtocolRetentionSubject,
+  RetentionSubject as RetentionSubjectValues,
+} from "@idenzy/protocol/enums/compliance";
+
 /**
  * What a project *is*, as the `projects` row and the cell registry define it, and the very
  * short list of it a customer gets to change (PROJECT.md 4.13).
@@ -165,23 +173,24 @@ export const NAME_NOTE =
  * What is swept away, and when.
  */
 
-export type RetentionSubject =
-  | "sessions"
-  | "otp_challenges"
-  | "oauth_flows"
-  | "users"
-  | "audit_events";
+/*
+ * The vocabulary is the protocol's rather than this file's, because the sweeper runs on it.
+ * A second copy here is how a menu comes to offer an age the API refuses, or a screen comes
+ * to say ninety days about a delete running at thirty — the same reason the origins dialog
+ * took `browserOriginSchema` instead of keeping its own rule.
+ */
+export type RetentionSubject = ProtocolRetentionSubject;
 
 export const RETENTION_SUBJECTS: readonly RetentionSubject[] = [
-  "sessions",
-  "otp_challenges",
-  "oauth_flows",
-  "users",
-  "audit_events",
+  RetentionSubjectValues.Sessions,
+  RetentionSubjectValues.OtpChallenges,
+  RetentionSubjectValues.OauthFlows,
+  RetentionSubjectValues.Users,
+  RetentionSubjectValues.AuditEvents,
 ];
 
 /** `retention_policies.action`. What the purge worker does when the age is reached. */
-export type RetentionAction = "purge" | "tombstone" | "drop_partition";
+export type RetentionAction = ProtocolRetentionAction;
 
 export const RETENTION_ACTION_LABELS: Record<RetentionAction, string> = {
   purge: "Deleted",
@@ -244,29 +253,15 @@ export const RETENTION_INFO: Record<RetentionSubject, RetentionSubjectInfo> = {
 };
 
 /**
- * The ages a project may choose, per subject, as ISO 8601 durations.
+ * The ages a project may choose, per subject, and what it is swept at until it chooses.
  *
- * Bounded on both sides and per subject rather than one list for everything. A month of
- * ended sessions is generous and a month of OAuth flows is a month of rows nothing will
- * ever read, and offering the same menu for both would invite the wrong answer for one of
- * them.
+ * Re-exported from the protocol rather than declared, so the menu offers exactly what the
+ * API accepts and the default shown is the one the sweeper resolves. Both lists are read by
+ * the SQL that does the deleting, which is what makes them worth having once.
  */
-export const RETENTION_CHOICES: Record<RetentionSubject, readonly string[]> = {
-  sessions: ["P7D", "P30D", "P90D", "P180D"],
-  otp_challenges: ["P1D", "P7D", "P30D"],
-  oauth_flows: ["P1D", "P7D", "P30D"],
-  users: ["P7D", "P30D", "P90D", "P365D"],
-  audit_events: ["P1Y", "P6Y"],
-};
+export const RETENTION_CHOICES = PROTOCOL_RETENTION_CHOICES;
 
-/** What a fresh project is given, which is what the purge worker runs until told otherwise. */
-export const RETENTION_DEFAULTS: Record<RetentionSubject, string> = {
-  sessions: "P90D",
-  otp_challenges: "P1D",
-  oauth_flows: "P1D",
-  users: "P30D",
-  audit_events: "P1Y",
-};
+export const RETENTION_DEFAULTS = PROTOCOL_RETENTION_DEFAULTS;
 
 /**
  * An ISO 8601 duration in words. Only the shapes the menus above can produce.

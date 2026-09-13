@@ -5,7 +5,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 /** Everything the panel sends us, plus the two standard ones. */
 const ALLOWED_HEADERS = [...IDENZY_HEADERS, "content-type", "authorization"].join(", ");
-const ALLOWED_METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
+/**
+ * Every verb a controller in this service answers, and `PUT` is on the list because three of
+ * them use it — the claim template, a social provider, and a retention age.
+ *
+ * It was missing, and the failure it caused is the reason this list is worth reading against
+ * the routes rather than assumed. A preflight answered 204 and said PUT was not allowed, so
+ * the browser refused to send the request at all: no server log, no status code the panel
+ * could report, and a save that looked like a network fault. Those three screens had been
+ * verified over HTTP, where CORS does not apply, which is exactly the gap that hid it.
+ */
+const ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 
 /** Ten minutes, matching auth-api: long enough to matter, short enough to re-read. */
 const PREFLIGHT_MAX_AGE = "600";

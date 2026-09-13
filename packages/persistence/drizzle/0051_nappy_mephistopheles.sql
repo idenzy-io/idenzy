@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "retention_policies_project_subject_key" ON "retention_policies" USING btree ("project_id","subject");

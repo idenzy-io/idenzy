@@ -298,8 +298,11 @@ function saveRetention() {
   const pending = changed.value;
   if (pending.length === 0) return;
   void whileBusy("retention", async () => {
+    // One call per age, and it stops at the first refusal. Carrying on would leave the
+    // screen claiming four saves when the second was rejected, and the ages it did write
+    // are written — so the draft keeps whatever is still unsaved rather than being reset.
     for (const subject of pending) {
-      await store.setRetention(projects.current.id, subject, draft.value[subject]);
+      if (!(await store.setRetention(projects.current.id, subject, draft.value[subject]))) return;
     }
   });
 }
@@ -379,11 +382,10 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
          six tracks put an endpoint and a region label into an ellipsis each. -->
     <FactGrid :columns="3" :facts="identity" label="Project facts" />
 
-    <!-- A rename or a delete the API refused. The only writes on this page that reach it,
-         so this is the only place one can be reported. -->
+    <!-- A rename, a delete or a retention age the API refused. -->
     <InfoNote
-      v-if="projects.refusal !== null"
-      :text="projects.refusal"
+      v-if="(projects.refusal ?? store.refusal) !== null"
+      :text="projects.refusal ?? store.refusal ?? ''"
       icon="material-symbols:error-outline"
       tone="warning"
     />
@@ -466,6 +468,15 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
                     size="small"
                     variant="text"
                   >
+                    <!-- An age nobody has chosen is still an age the sweeper runs at, and the
+                         two are not the same fact. Only on a row with no unsaved change,
+                         because a draft is a choice being made. -->
+                    <span
+                      v-if="store.isDefault(projects.current.id, subject) && draft[subject] === saved[subject]"
+                      class="mr-1.5 rounded-full border border-line px-1.5 text-[10px] leading-4 font-medium text-ink/45"
+                    >
+                      Default
+                    </span>
                     <span class="font-mono">{{ retentionLabel(draft[subject]) }}</span>
                     <Icon
                       aria-hidden="true"

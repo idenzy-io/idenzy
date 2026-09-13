@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RetentionAction, RetentionSubject } from "../enums/compliance.js";
 import {
   ApiKeyKind,
   MemberRole,
@@ -1277,3 +1278,39 @@ export type ProjectDetail = z.infer<typeof projectDetailSchema>;
 /** A name, for a project or an organisation. The one field either of them may change. */
 export const renameSchema = z.object({ name: z.string().trim().min(1).max(80) });
 export type Rename = z.infer<typeof renameSchema>;
+
+// ── Retention ────────────────────────────────────────────────────────────────────────
+
+/**
+ * How long one subject is kept, and what happens when it is not.
+ *
+ * `action` is on the wire and not settable: it is a property of the data rather than a
+ * choice, and a screen that offered it would be offering to purge the accounts an audit
+ * trail points at. `source` says whether the age is this project's or the one it is swept
+ * at until somebody picks — a project with no row is swept exactly like one with the
+ * default saved, and a screen that could not tell them apart would have no way to say so.
+ */
+export const retentionPolicySchema = z.object({
+  subject: z.enum(RetentionSubject),
+  maxAge: z.string(),
+  action: z.enum(RetentionAction),
+  source: z.enum(["project", "default", "tier"]),
+});
+export type RetentionPolicy = z.infer<typeof retentionPolicySchema>;
+
+export const retentionPolicyListSchema = z.object({ policies: z.array(retentionPolicySchema) });
+export type RetentionPolicyList = z.infer<typeof retentionPolicyListSchema>;
+
+/**
+ * One age, for one subject.
+ *
+ * Both fields are checked against `RETENTION_CHOICES` in the service rather than by a
+ * refinement here, because the refusal has to name which of the two was wrong: an unknown
+ * subject and an age outside a subject's menu are different mistakes with different fixes,
+ * and a single `invalid_union` tells a caller neither.
+ */
+export const setRetentionPolicySchema = z.object({
+  subject: z.enum(RetentionSubject),
+  maxAge: z.string().min(2).max(16),
+});
+export type SetRetentionPolicy = z.infer<typeof setRetentionPolicySchema>;

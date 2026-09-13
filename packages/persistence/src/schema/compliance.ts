@@ -170,6 +170,10 @@ export const retentionPolicies = classifiedTable(
   },
   (t) => [
     index("retention_policies_project_idx").on(t.projectId),
+    // One age per subject per project. The settings screen writes with an upsert and needs a
+    // conflict target, and without this a save could leave two rows for one subject with the
+    // sweeper picking whichever its subquery reached first.
+    uniqueIndex("retention_policies_project_subject_key").on(t.projectId, t.subject),
     tenantIsolationPolicy("retention_policies"),
   ],
 ).enableRLS();

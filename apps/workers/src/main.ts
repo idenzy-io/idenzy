@@ -15,6 +15,7 @@ import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
+import { RetentionPruner } from "@idenzy/persistence/repository/retention-pruner";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
 import { UsageActiveProjectsReader } from "@idenzy/persistence/repository/usage-active-projects-reader";
 import { UsageClosableReader } from "@idenzy/persistence/repository/usage-closable-reader";
@@ -28,6 +29,7 @@ import { MetadataTokenSource } from "./google/access-token-source.js";
 import { GoogleOidcVerifier } from "./google/task-caller-verifier.js";
 import { HourlyUsageRoller } from "./hourly-usage-roller.js";
 import { InternalServer } from "./http/internal-server.js";
+import { RetentionSweeper } from "./retention-sweeper.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
 import { UsagePeriodCloser } from "./usage-period-closer.js";
 import { UsageRetentionSweeper } from "./usage-retention-sweeper.js";
@@ -175,6 +177,15 @@ async function bootstrap(): Promise<void> {
   const usageRetention = new UsageRetentionSweeper(new UsageRetentionPruner(db), clock, logger);
 
   /*
+   * The customer's own retention, which is a different thing from the usage tiers above: those
+   * are ours and fixed, these are each project's and chosen. Until this existed the settings
+   * screen offered five ages and nothing deleted a row on account of any of them, so every
+   * table's real retention was "forever" while `classified()` published ninety days — and a
+   * data map is what a customer is shown (4.13.6).
+   */
+  const retention = new RetentionSweeper(new RetentionPruner(db), logger);
+
+  /*
    * Cloud Tasks if this deployment was given queues, and the sweeper if it was not. Both are correct:
    * the queue arms a retry to the second, the sweeper finds it on its interval, and only the second
    * of those is a delivery guarantee. A half-configured queue is the one case that fails here rather
@@ -249,6 +260,7 @@ async function bootstrap(): Promise<void> {
   await usageCloser.start();
   await usageRoller.start();
   await usageRetention.start();
+  await retention.start();
   if (analytics !== null && ingest !== null) {
     await migrateAnalytics(
       new ClickHouseClient({

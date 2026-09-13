@@ -142,9 +142,14 @@ beforeAll(async () => {
      VALUES (gen_random_uuid(), 'Acme', (SELECT id FROM region_cells LIMIT 1)) RETURNING id`,
   );
   await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+  // SMS OTP is off in `DEFAULT_PROJECT_SETTINGS`, and deliberately: it costs money per
+  // message and is the channel fraud reaches for first, so a project has to ask for it. The
+  // service reads that setting before anything else, so a project seeded with bare defaults
+  // refuses every test in this file — which is what it did until this line existed.
   await harness.owner.query(
-    `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
-     VALUES ($1, $2, 'Acme', (SELECT id FROM region_cells LIMIT 1), 'k')`,
+    `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name, settings)
+     VALUES ($1, $2, 'Acme', (SELECT id FROM region_cells LIMIT 1), 'k',
+             '{"otp":{"sms":{"enabled":true,"allowSignUp":true}}}'::jsonb)`,
     [PROJECT, rows[0]?.id],
   );
 }, 180_000);

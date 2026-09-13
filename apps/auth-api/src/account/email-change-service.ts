@@ -115,6 +115,7 @@ export class EmailChangeService {
       await users.setEmail(state.userId, state.newEmail, true);
       await new OutboxRepository(tx, tenant).enqueue("user.email_changed", {
         userId: state.userId,
+        changed: "email",
         at: now.toISOString(),
       });
       return true;

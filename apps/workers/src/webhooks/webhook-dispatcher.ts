@@ -173,7 +173,9 @@ export class WebhookDispatcher {
       deliveryId: PublicId.encode(IdPrefix.Delivery, delivery.id).value,
       type: delivery.event,
       sequence: delivery.sequence,
-      createdAt: delivery.createdAt,
+      // When the event happened, not when this row was written: the envelope promises the former, and
+      // a relay behind on a backlog would otherwise report old events as new ones.
+      createdAt: delivery.occurredAt,
       projectId: PublicId.encode(IdPrefix.Project, projectId).value,
       data: delivery.payload ?? {},
     });

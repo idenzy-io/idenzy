@@ -327,6 +327,18 @@ export const webhookDeliveries = classifiedTable(
       erasure: Erasure.RowDeleted,
       note: "Carries a capped excerpt of the receiver's own response, which may contain anything.",
     }),
+    /**
+     * When the event happened, which is not when this row was written.
+     *
+     * The envelope promises a receiver the instant of the event, and the row is the only thing the
+     * dispatcher reads — so without this column that promise was quietly the relay's own schedule:
+     * seconds out normally, minutes or hours out after a cold start or a backlog. It comes from the
+     * outbox row and never moves, so a retry a day later carries the instant the first attempt did.
+     */
+    occurredAt: classified(
+      timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+      delivery,
+    ),
     /** When the next attempt is due. Null once the delivery is terminal. */
     nextAttemptAt: classified(timestamp("next_attempt_at", { withTimezone: true }), delivery),
     deliveredAt: classified(timestamp("delivered_at", { withTimezone: true }), delivery),

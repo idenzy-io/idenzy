@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Logger } from "@idenzy/core/logging/logger";
 import { SystemClock } from "@idenzy/core/time/clock";
+import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { Sha256WebhookSigner } from "@idenzy/crypto/webhooks/webhook-signer";
@@ -14,6 +15,7 @@ import { WebhookRepository } from "@idenzy/persistence/repository/webhook-reposi
 import { WebhookStatsRepository } from "@idenzy/persistence/repository/webhook-stats-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { WEBHOOK_FAILURES_BEFORE_DISABLED } from "@idenzy/protocol/schemas/webhooks";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -168,10 +170,14 @@ interface Repos {
   readonly stats: WebhookStatsRepository;
 }
 
-async function enqueue(topic: string, payload: Record<string, unknown> = {}): Promise<void> {
+async function enqueue(
+  topic: string,
+  payload: Record<string, unknown> = {},
+  at: Date = new Date(),
+): Promise<void> {
   await harness.owner.query(
-    `INSERT INTO outbox (project_id, topic, payload) VALUES ($1, $2, $3::jsonb)`,
-    [PROJECT, topic, JSON.stringify(payload)],
+    `INSERT INTO outbox (project_id, topic, payload, created_at) VALUES ($1, $2, $3::jsonb, $4)`,
+    [PROJECT, topic, JSON.stringify(payload), at],
   );
 }
 
@@ -250,7 +256,9 @@ afterEach(async () => {
 describe("the webhook pipeline", () => {
   it("delivers an event, and the receiver verifies it with the published SDK", async () => {
     const endpoint = await endpointFor(["session.created"]);
-    await enqueue("session.created", { sessionId: "ses_1", userId: "usr_1" });
+    const sessionId = "1f0b1e6c-8a7d-4e2f-9b3c-5d8a7e6f4b21";
+    const userId = "8f14e45f-ceea-167a-5a36-dedd4bea2543";
+    await enqueue("session.created", { sessionId, userId, amr: ["password"], ip: "203.0.113.11" });
 
     const created = await relay.sweep();
     expect(created).toBe(1);
@@ -260,8 +268,14 @@ describe("the webhook pipeline", () => {
     expect(call?.verified, call?.reason ?? "verified").toBe(true);
     expect(call?.event).toBe("session.created");
     expect(call?.attempt).toBe("1");
-    // The envelope carries the event's own data, and the delivery id a receiver dedupes on.
-    expect(JSON.parse(call?.body ?? "{}").data).toEqual({ sessionId: "ses_1", userId: "usr_1" });
+    // The declared shape rather than the outbox row's own: the ids in the form the rest of the product
+    // prints them, and the delivery id a receiver dedupes on.
+    expect(JSON.parse(call?.body ?? "{}").data).toEqual({
+      session: PublicId.encode(IdPrefix.Session, sessionId).value,
+      user: PublicId.encode(IdPrefix.User, userId).value,
+      amr: ["password"],
+      ip: "203.0.113.11",
+    });
     expect(call?.deliveryId.startsWith("dlv_")).toBe(true);
 
     const [delivery] = await inTenant((repos) => repos.deliveries.listForEndpoint(endpoint.id));
@@ -283,9 +297,10 @@ describe("the webhook pipeline", () => {
 
   it("delivers a created account, which is the event every customer subscribes to", async () => {
     await endpointFor(["user.created"]);
+    const userId = "9f1c6b0e-0000-4000-8000-000000000001";
     // The shape `UserRepository.create` writes, which is the only writer of this topic.
     await enqueue("user.created", {
-      userId: "9f1c6b0e-0000-4000-8000-000000000001",
+      userId,
       email: "new@customer.test",
       emailVerified: false,
       at: new Date().toISOString(),
@@ -294,7 +309,32 @@ describe("the webhook pipeline", () => {
     await relay.sweep();
     expect(receiver.received[0]?.event).toBe("user.created");
     expect(receiver.received[0]?.verified, receiver.received[0]?.reason ?? "").toBe(true);
-    expect(JSON.parse(receiver.received[0]?.body ?? "{}").data.email).toBe("new@customer.test");
+
+    // What a receiver actually parses: the declared shape, with the id in the form every other
+    // answer from this product uses rather than the raw uuid the outbox row carries.
+    const envelope = JSON.parse(receiver.received[0]?.body ?? "{}");
+    expect(envelope.data).toEqual({
+      user: PublicId.encode(IdPrefix.User, userId).value,
+      email: "new@customer.test",
+      emailVerified: false,
+    });
+  });
+
+  it("carries the instant the event happened, not the instant the relay got to it", async () => {
+    await endpointFor(["user.created"]);
+    const happened = new Date(Date.now() - 60 * 60 * 1000);
+    await enqueue(
+      "user.created",
+      { userId: "9f1c6b0e-0000-4000-8000-000000000002", email: "backlog@customer.test" },
+      happened,
+    );
+
+    await relay.sweep();
+    // A relay an hour behind — a cold start, a backlog, an outage — must not report an hour-old
+    // sign-up as having just happened. The row keeps the outbox row's instant, so a retry tomorrow
+    // still says this.
+    const envelope = JSON.parse(receiver.received[0]?.body ?? "{}");
+    expect(Date.parse(envelope.createdAt)).toBe(happened.getTime());
   });
 
   it("sends nothing for a topic nobody subscribed to", async () => {

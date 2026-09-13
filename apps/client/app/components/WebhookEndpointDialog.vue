@@ -84,7 +84,7 @@ const ready = computed(() => url.value.trim() !== "" && urlIssue.value === "" &&
 const example = computed(() =>
   samplePayload(
     everything.value ? "user.created" : (chosen.value[0] ?? "user.created"),
-    "dlv_9c1f4a7b20e5",
+    "dlv_9c1f4a7b20e57d3f8a2b4c6e1d09f85a",
     "2026-09-09T18:42:11.203Z",
   ),
 );

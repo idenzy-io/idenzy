@@ -19,6 +19,8 @@
  */
 
 import {
+  buildWebhookEnvelope,
+  isWebhookEventType,
   isWebhookTimestampStale,
   WEBHOOK_DELIVERY_HEADER,
   WEBHOOK_FAILURES_BEFORE_DISABLED,
@@ -28,6 +30,7 @@ import {
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
   WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS,
+  webhookDataSample,
   webhookRetryDelaySeconds,
   webhookSignatureHeader,
   webhookSignedPayload,
@@ -749,17 +752,33 @@ export function requestHeaders(
  * A sample of what arrives.
  */
 
-/** A body of the shape a receiver gets, for the endpoint dialog and the reference. */
+/** A place in the outbox's order, for the sample. Any number: what matters is that there is one. */
+const SAMPLE_SEQUENCE = 48_211;
+/** A project, for the sample. A reader with one endpoint for two projects needs this field to exist. */
+const SAMPLE_PROJECT = "prj_4d1a9c7e3b8f0a2d6e5c1b7a9f3d8e02";
+
+/**
+ * A body of the shape a receiver gets, for the endpoint dialog and the reference.
+ *
+ * Built by `buildWebhookEnvelope` with `webhookDataSample`, which is the point: this used to be a
+ * hand-written object and it had drifted into documenting a body no delivery has ever carried —
+ * `occurred_at` and a `data.object` that nothing sends, while the real envelope has `sequence`,
+ * `createdAt` and `project`. A customer writing a parser against the screen would have written it
+ * against fiction. It is the same mistake the verifier snippet made, and the same fix: call the thing
+ * rather than describe it.
+ *
+ * An event nothing emits yet documents an empty `data`, which is the truthful sample.
+ */
 export function samplePayload(event: string, deliveryId: string, at: string): string {
   return JSON.stringify(
-    {
-      id: deliveryId,
+    buildWebhookEnvelope({
+      deliveryId,
       type: event,
-      /* The instant the thing happened, not the instant we called: order is not guaranteed,
-         so a receiver that needs one reads it off the payload. */
-      occurred_at: at,
-      data: { object: event.split(".")[0] ?? "object", id: "usr_2f9c41e0b7d84a63" },
-    },
+      sequence: SAMPLE_SEQUENCE,
+      createdAt: new Date(at),
+      projectId: SAMPLE_PROJECT,
+      data: isWebhookEventType(event) ? webhookDataSample(event) : {},
+    }),
     null,
     2,
   );

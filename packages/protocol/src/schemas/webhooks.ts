@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IdPrefix } from "./common.js";
 
 /**
  * The webhook wire contract: what we send, how it is signed, and when we send it again
@@ -151,6 +152,158 @@ export function buildWebhookEnvelope(parts: {
     project: parts.projectId,
     data: { ...parts.data },
   };
+}
+
+/*
+ * What an event says.
+ */
+
+/**
+ * One field of an event's `data`, as a customer sees it.
+ *
+ * A declaration rather than a derivation, and an allowlist rather than a filter, for the same reason
+ * the log allowlist is one: what leaves for somebody else's server has to be a decision. An outbox
+ * payload is an internal message — the revocation reconciler parses raw uuids out of the same rows —
+ * so passing one through verbatim publishes whatever the next person adds to it. It already did:
+ * reuse detection carries a refresh-token family id no customer can look up and a `likelyCause`
+ * string that is our own guess, and both would have been part of the contract.
+ *
+ * `from` is the key in the payload, `as` the name a customer reads it under, `id` the kind of
+ * identifier when the value is one of ours and has to be published in its public form, and `sample`
+ * the value the panel documents. One table, so the wire and the documentation cannot disagree.
+ */
+export interface WebhookDataField {
+  readonly from: string;
+  readonly as?: string;
+  readonly id?: IdPrefix;
+  /** A list of ids rather than one. */
+  readonly many?: boolean;
+  readonly sample: unknown;
+}
+
+/**
+ * What each event carries, for the events something actually emits.
+ *
+ * Partial on purpose: an event nothing sends has no shape to declare, and inventing one would
+ * document a body no receiver will ever see. `WEBHOOK_EVENTS_WITHOUT_EMITTER` is the other half of
+ * that statement, and a test holds the two together.
+ *
+ * No timestamp in `data`. The envelope's `createdAt` is the instant the event happened, and two
+ * fields for one fact is how they come to disagree.
+ */
+export const WEBHOOK_DATA_FIELDS: Partial<Record<WebhookEventType, readonly WebhookDataField[]>> = {
+  [WebhookEventType.UserCreated]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    { from: "email", sample: "ada@example.com" },
+    { from: "phone", sample: null },
+    { from: "emailVerified", sample: false },
+    { from: "phoneVerified", sample: false },
+  ],
+  [WebhookEventType.UserUpdated]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    // Which of the three things happened, because three internal topics become this one event and a
+    // receiver that cannot tell a verified address from a changed password has to guess.
+    { from: "changed", sample: "email_verified" },
+  ],
+  [WebhookEventType.SessionCreated]: [
+    {
+      from: "sessionId",
+      as: "session",
+      id: IdPrefix.Session,
+      sample: "ses_1f0b1e6c8a7d4e2f9b3c5d8a7e6f4b21",
+    },
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    // The same `amr` a customer already reads off our access tokens, so one vocabulary covers both.
+    { from: "amr", sample: ["password"] },
+    { from: "ip", sample: "203.0.113.11" },
+    { from: "userAgent", sample: "Mozilla/5.0" },
+  ],
+  [WebhookEventType.SessionRevoked]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    {
+      from: "sessionIds",
+      as: "sessions",
+      id: IdPrefix.Session,
+      many: true,
+      sample: ["ses_1f0b1e6c8a7d4e2f9b3c5d8a7e6f4b21"],
+    },
+    { from: "scope", sample: "all" },
+  ],
+  [WebhookEventType.MfaEnrolled]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    { from: "type", as: "factorType", sample: "totp" },
+  ],
+  [WebhookEventType.MfaRemoved]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    {
+      from: "factorId",
+      as: "factor",
+      id: IdPrefix.Factor,
+      sample: "mfa_6b1e0c9f2a4d8e3b7c5a9d4f2e8b1c63",
+    },
+  ],
+  [WebhookEventType.RefreshTokenReused]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
+    {
+      from: "sessionId",
+      as: "session",
+      id: IdPrefix.Session,
+      sample: "ses_1f0b1e6c8a7d4e2f9b3c5d8a7e6f4b21",
+    },
+    // How many refresh tokens went with the family, which is the part a customer's incident response
+    // acts on. The family's own id is ours and is not published: there is nothing they can do with it.
+    { from: "revokedTokens", sample: 2 },
+    { from: "ip", sample: "203.0.113.11" },
+    { from: "userAgent", sample: "Mozilla/5.0" },
+  ],
+};
+
+/**
+ * The `data` the panel documents for an event, from the same declaration the wire uses.
+ *
+ * An empty object for an event nothing emits yet, which is the truthful sample: there is no body to
+ * show because there is no sender.
+ */
+export function webhookDataSample(type: WebhookEventType): Record<string, unknown> {
+  const fields = WEBHOOK_DATA_FIELDS[type] ?? [];
+  const sample: Record<string, unknown> = {};
+  for (const field of fields) sample[field.as ?? field.from] = field.sample;
+  return sample;
 }
 
 /**

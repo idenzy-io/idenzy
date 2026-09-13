@@ -82,6 +82,13 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
   customer has. `webhook_endpoint_stats` is a row per endpoint per day and the strip reads it, which
   is also why `Waiting to retry` gave its tile to `Attempts`: a count of deliveries between attempts
   is a live number rather than a day's total, and it is already the pending tab below.
+- **The sample body is built by the envelope builder, which is the same finding twice.** It was a
+  hand-written object and it documented `occurred_at` and a `data.object` that no delivery has ever
+  carried, while the real envelope has `sequence`, `createdAt` and `project` — a customer writing a
+  parser off this screen would have written it against fiction. It is now
+  `buildWebhookEnvelope` plus `webhookDataSample` from `@idenzy/protocol`, and a test parses it with
+  the envelope's own schema. An event nothing emits documents an empty `data`, which is the truthful
+  sample rather than a plausible one.
 - **The verifier sample is a call, which is the first finding answered properly.** It was thirty lines
   of hand-written HMAC that disagreed with the header it documented; correcting it would have left a
   second implementation to keep in step with the signer. It is now `verifyWebhook` from

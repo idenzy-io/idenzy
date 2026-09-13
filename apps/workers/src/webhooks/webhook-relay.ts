@@ -12,6 +12,7 @@ import {
 import { WebhookRepository } from "@idenzy/persistence/repository/webhook-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { projectWebhookData } from "./webhook-data.js";
 import type { WebhookDispatcher } from "./webhook-dispatcher.js";
 import { WEBHOOK_EVENT_BY_TOPIC, WEBHOOK_TOPICS } from "./webhook-events.js";
 
@@ -153,14 +154,19 @@ export class WebhookRelay {
     return await this.uow.run(tenant, async (tx) => {
       const endpoints = await new WebhookRepository(tx, tenant).enabledFor(type);
       if (endpoints.length === 0) return [];
+      // Projected once, here, rather than at send time: the row holds what a customer will see, so
+      // every attempt signs the same bytes, and what leaves is a declared shape rather than whatever
+      // the internal payload happens to carry.
+      const data = projectWebhookData(type, event.payload);
       return await new WebhookDeliveryRepository(tx, tenant).fanOut(
         endpoints.map((endpoint) => ({
           webhookId: endpoint.id,
           event: type,
           sequence: event.seq,
-          // The event's own payload, which becomes the envelope's `data` at send time. The
-          // envelope is assembled rather than stored, so a retry is byte-identical.
-          payload: event.payload,
+          payload: data,
+          // The outbox row's instant, not this pass's. A relay an hour behind must not report an
+          // hour-old sign-in as having just happened.
+          occurredAt: event.createdAt,
         })),
         this.clock.now(),
       );

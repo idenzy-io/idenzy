@@ -609,13 +609,30 @@ client have no server halves to talk to yet.
       found the list of gaps wrong — `security.staff_access_granted` was in neither the topic map nor
       the without-emitter list, so a customer could subscribe to an event nobody had noticed nothing
       sends. `webhook-events.test.ts` now asserts the two lists cover the catalogue exactly, because a
-      list of known gaps that is itself out of date is worse than none. Next: the outbox payload
-      reaches a customer verbatim as the envelope's `data`, which is two surfaces in one column — the
-      reconciler parses raw uuids out of the same payloads, so an event carries `userId` as a bare
-      uuid while every other answer the product gives says `usr_…`; and the panel's own sample body
-      documents fields (`occurred_at`, `data.object`) the envelope does not have. Both want the same
-      fix: the relay projecting a payload into what a customer sees, once, before the delivery row is
-      written. Then the events still without an emitter: deletion and suspension, which need the
+      list of known gaps that is itself out of date is worse than none. **What a delivery says is now a
+      declaration rather than a side effect.** The outbox payload used to reach a customer verbatim as
+      the envelope's `data`, which made one column two surfaces: the reconciler parses raw uuids out of
+      those same payloads, so an event carried `userId` as a bare uuid while every other answer this
+      product gives says `usr_…`, and reuse detection was publishing a refresh-token family id nobody
+      can look up plus `likelyCause`, which is our own guess. `WEBHOOK_DATA_FIELDS` in the protocol now
+      names each event's fields, the public form of each id and the sample the panel documents, and the
+      relay projects at fan-out — before the delivery row is written, so every retry still signs the
+      same bytes. An allowlist for the same reason the log allowlist is one: passing a payload through
+      publishes whatever the next person adds to it. Three internal topics collapse into
+      `user.updated`, so each now carries `changed` — without it a receiver cannot tell a verified
+      address from a changed password, which the single event type had quietly made impossible. The
+      reuse event carries the user it belonged to, read before the revoke: "a token for one of your
+      sessions was replayed" is only actionable with an account attached. Migration 0044 adds
+      `occurred_at`, because the envelope promises the instant the event happened and the dispatcher
+      reads only the row — so that promise was the relay's own schedule, seconds out normally and hours
+      out after a cold start, and a test now proves an hour-old event arrives saying so. The panel's
+      sample body is built by `buildWebhookEnvelope` with `webhookDataSample` instead of being
+      hand-written: it had drifted into documenting `occurred_at` and a `data.object` no delivery has
+      ever carried, and a test parses it with the envelope's own schema. `pnpm db:migrate` and
+      `db:seed` got `--env-file-if-exists` on the way past, because the README's own getting-started
+      line could not find `DATABASE_URL`. Next: the panel still offers thirteen subscriptions while six
+      of them are silent, so `WEBHOOK_EVENTS_WITHOUT_EMITTER` wants to move to the protocol and the
+      event list wants to say which. Then the events still without an emitter: deletion and suspension, which need the
       erasure path and a users screen that can ban somebody (nothing writes `banned_until` or
       `deleted_at` today), the three delivery events waiting on the SES and SMS event paths, and staff
       access waiting on the break-glass flow

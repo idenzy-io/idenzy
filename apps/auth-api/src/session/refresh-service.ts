@@ -179,10 +179,15 @@ export class RefreshService {
     rotatedAt: Date | null,
   ): Promise<Rotation> {
     const now = this.clock.now();
+    // Read before the revoke, because the event is worth nothing to a customer without it: "a token
+    // for one of your sessions was replayed" is an incident they can only act on if they know whose
+    // account it was. One extra select on the rarest path there is.
+    const session = await repos.sessions.findById(sessionId);
     const revoked = await repos.refresh.revokeFamily(familyId, now);
     await repos.sessions.revoke(sessionId, SessionRevokeReason.RefreshTokenReuse, now);
     const sinceRotation = rotatedAt === null ? null : now.getTime() - rotatedAt.getTime();
     await repos.outbox.enqueue("security.refresh_token_reused", {
+      userId: session?.userId ?? null,
       sessionId,
       familyId,
       revokedTokens: revoked,

@@ -243,6 +243,7 @@ describe("WebhookRepository", () => {
             webhookId: created.id,
             event: "session.created",
             sequence: nextSequence++,
+            occurredAt: new Date(),
             payload: { id: "whd" },
           },
         ],
@@ -269,6 +270,7 @@ describe("WebhookDeliveryRepository", () => {
           webhookId,
           event: "session.created",
           sequence: nextSequence++,
+          occurredAt: new Date(),
           payload: { sessionId: "ses_1" },
         })),
         new Date(),
@@ -284,7 +286,13 @@ describe("WebhookDeliveryRepository", () => {
   it("is replayable: the same event fanned out twice sends once", async () => {
     const webhookId = await endpointIn(PROJECT_A);
     const sequence = nextSequence++;
-    const delivery = { webhookId, event: "user.created", sequence, payload: { userId: "usr_1" } };
+    const delivery = {
+      webhookId,
+      event: "user.created",
+      sequence,
+      payload: { userId: "usr_1" },
+      occurredAt: new Date(),
+    };
 
     const first = await inTenant(PROJECT_A, (r) => r.deliveries.fanOut([delivery], new Date()));
     const again = await inTenant(PROJECT_A, (r) => r.deliveries.fanOut([delivery], new Date()));
@@ -306,6 +314,7 @@ describe("WebhookDeliveryRepository", () => {
             webhookId,
             event: "session.created",
             sequence: nextSequence++,
+            occurredAt: new Date(),
             payload: { a: 1 },
           },
         ],
@@ -324,7 +333,15 @@ describe("WebhookDeliveryRepository", () => {
     const webhookId = await endpointIn(PROJECT_A);
     const id = await inTenant(PROJECT_A, async (repos) => {
       const [row] = await repos.deliveries.fanOut(
-        [{ webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } }],
+        [
+          {
+            webhookId,
+            event: "session.created",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(),
       );
       return row?.id ?? "";
@@ -367,8 +384,20 @@ describe("WebhookDeliveryRepository", () => {
     const [failedId, deliveredId] = await inTenant(PROJECT_A, async (repos) => {
       const rows = await repos.deliveries.fanOut(
         [
-          { webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } },
-          { webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 2 } },
+          {
+            webhookId,
+            event: "session.created",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+          {
+            webhookId,
+            event: "session.created",
+            sequence: nextSequence++,
+            payload: { a: 2 },
+            occurredAt: new Date(),
+          },
         ],
         new Date(),
       );
@@ -396,7 +425,15 @@ describe("WebhookDeliveryRepository", () => {
     const at = new Date("2026-09-13T10:00:00.000Z");
     const landed = await inTenant(PROJECT_A, async (repos) => {
       const [row] = await repos.deliveries.fanOut(
-        [{ webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } }],
+        [
+          {
+            webhookId,
+            event: "session.created",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(),
       );
       return await repos.deliveries.recordAttempt(row?.id ?? "", {
@@ -416,15 +453,35 @@ describe("WebhookDeliveryRepository", () => {
     await inTenant(PROJECT_B, (repos) =>
       repos.deliveries.fanOut(
         [
-          { webhookId, event: "user.created", sequence: nextSequence++, payload: { a: 1 } },
-          { webhookId, event: "user.created", sequence: nextSequence++, payload: { a: 2 } },
+          {
+            webhookId,
+            event: "user.created",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+          {
+            webhookId,
+            event: "user.created",
+            sequence: nextSequence++,
+            payload: { a: 2 },
+            occurredAt: new Date(),
+          },
         ],
         new Date(now.getTime() - 1_000),
       ),
     );
     const later = await inTenant(PROJECT_B, (repos) =>
       repos.deliveries.fanOut(
-        [{ webhookId, event: "user.created", sequence: nextSequence++, payload: { a: 3 } }],
+        [
+          {
+            webhookId,
+            event: "user.created",
+            sequence: nextSequence++,
+            payload: { a: 3 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(now.getTime() + 3_600_000),
       ),
     );
@@ -453,6 +510,7 @@ describe("WebhookDeliveryRepository", () => {
           webhookId,
           event: "session.revoked",
           sequence: nextSequence++,
+          occurredAt: new Date(),
           payload: { a: 1 },
         })),
         new Date(now.getTime() - 1_000),
@@ -483,7 +541,15 @@ describe("WebhookDeliveryRepository", () => {
     const now = new Date();
     const [row] = await inTenant(PROJECT_B, (repos) =>
       repos.deliveries.fanOut(
-        [{ webhookId, event: "user.updated", sequence: nextSequence++, payload: { a: 1 } }],
+        [
+          {
+            webhookId,
+            event: "user.updated",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(now.getTime() + 3_600_000),
       ),
     );
@@ -494,7 +560,15 @@ describe("WebhookDeliveryRepository", () => {
     // One that is due, taken exactly once however many copies of the task arrive.
     const [due] = await inTenant(PROJECT_B, (repos) =>
       repos.deliveries.fanOut(
-        [{ webhookId, event: "user.updated", sequence: nextSequence++, payload: { a: 2 } }],
+        [
+          {
+            webhookId,
+            event: "user.updated",
+            sequence: nextSequence++,
+            payload: { a: 2 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(now.getTime() - 1_000),
       ),
     );
@@ -515,7 +589,15 @@ describe("WebhookDeliveryRepository", () => {
     const now = new Date();
     const id = await inTenant(PROJECT_B, async (repos) => {
       const [row] = await repos.deliveries.fanOut(
-        [{ webhookId, event: "sms.blocked", sequence: nextSequence++, payload: { a: 1 } }],
+        [
+          {
+            webhookId,
+            event: "sms.blocked",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(now.getTime() - 1_000),
       );
       // Claimed with a lease that has already run out, which is what a crash leaves behind.
@@ -532,7 +614,15 @@ describe("WebhookDeliveryRepository", () => {
     const webhookId = await endpointIn(PROJECT_A);
     await inTenant(PROJECT_A, async (repos) => {
       const [row] = await repos.deliveries.fanOut(
-        [{ webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } }],
+        [
+          {
+            webhookId,
+            event: "session.created",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(),
       );
       const id = row?.id ?? "";
@@ -556,7 +646,15 @@ describe("WebhookDeliveryRepository", () => {
     const webhookId = await endpointIn(PROJECT_A);
     await inTenant(PROJECT_A, async (repos) => {
       const [row] = await repos.deliveries.fanOut(
-        [{ webhookId, event: "session.created", sequence: nextSequence++, payload: { a: 1 } }],
+        [
+          {
+            webhookId,
+            event: "session.created",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+        ],
         new Date(),
       );
       const id = row?.id ?? "";
@@ -572,8 +670,20 @@ describe("WebhookDeliveryRepository", () => {
     const ids = await inTenant(PROJECT_B, async (repos) => {
       const rows = await repos.deliveries.fanOut(
         [
-          { webhookId, event: "mfa.removed", sequence: nextSequence++, payload: { a: 1 } },
-          { webhookId, event: "mfa.removed", sequence: nextSequence++, payload: { a: 2 } },
+          {
+            webhookId,
+            event: "mfa.removed",
+            sequence: nextSequence++,
+            payload: { a: 1 },
+            occurredAt: new Date(),
+          },
+          {
+            webhookId,
+            event: "mfa.removed",
+            sequence: nextSequence++,
+            payload: { a: 2 },
+            occurredAt: new Date(),
+          },
         ],
         new Date(),
       );

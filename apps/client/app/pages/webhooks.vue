@@ -411,7 +411,7 @@ const reference = reactive({ verify: false, expect: false });
 
 const SAMPLE_AT = "2026-09-09T18:42:11.203Z";
 const SAMPLE_TIMESTAMP = Math.floor(Date.parse(SAMPLE_AT) / 1000);
-const SAMPLE_DELIVERY = "dlv_9c1f4a7b20e5";
+const SAMPLE_DELIVERY = "dlv_9c1f4a7b20e57d3f8a2b4c6e1d09f85a";
 const sampleBody = samplePayload("user.created", SAMPLE_DELIVERY, SAMPLE_AT);
 const sampleSigned = signedPayload(SAMPLE_TIMESTAMP, "<the raw body, byte for byte>");
 const retryHours = Math.round(retryWindowSeconds() / 3600);

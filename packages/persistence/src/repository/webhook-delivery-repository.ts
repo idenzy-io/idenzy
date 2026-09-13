@@ -41,6 +41,8 @@ export interface WebhookDeliveryRow {
   readonly nextAttemptAt: Date | null;
   readonly deliveredAt: Date | null;
   readonly test: boolean;
+  /** When the event happened. What the envelope carries, and it never moves across attempts. */
+  readonly occurredAt: Date;
   readonly createdAt: Date;
 }
 
@@ -49,6 +51,8 @@ export interface NewWebhookDelivery {
   readonly event: string;
   readonly sequence: number;
   readonly payload: Readonly<Record<string, unknown>>;
+  /** The outbox row's own instant, not the relay's: a backlog must not rewrite history. */
+  readonly occurredAt: Date;
   readonly test?: boolean;
 }
 
@@ -87,6 +91,7 @@ function toRow(row: typeof webhookDeliveries.$inferSelect): WebhookDeliveryRow {
     nextAttemptAt: row.nextAttemptAt,
     deliveredAt: row.deliveredAt,
     test: row.test,
+    occurredAt: row.occurredAt,
     createdAt: row.createdAt,
   };
 }
@@ -164,6 +169,7 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
             payload: delivery.payload,
             status: "queued" as const,
             nextAttemptAt: due,
+            occurredAt: delivery.occurredAt,
             test: delivery.test ?? false,
           })),
         )
@@ -204,6 +210,8 @@ export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeli
           payload,
           status: "queued",
           nextAttemptAt: due,
+          // A test happens when somebody presses the button, so the instant is the caller's `due`.
+          occurredAt: due,
           test: true,
         })
         .returning(),

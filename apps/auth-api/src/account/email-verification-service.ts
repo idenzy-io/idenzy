@@ -94,6 +94,7 @@ export class EmailVerificationService {
       await new UserRepository(tx, tenant).setEmailVerified(found.userId, true);
       await new OutboxRepository(tx, tenant).enqueue("user.email_verified", {
         userId: found.userId,
+        changed: "email_verified",
         at: this.clock.now().toISOString(),
       });
     });

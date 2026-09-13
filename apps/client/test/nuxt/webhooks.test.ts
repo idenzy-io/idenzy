@@ -1,3 +1,8 @@
+import {
+  WebhookEventType,
+  webhookDataSample,
+  webhookEnvelopeSchema,
+} from "@idenzy/protocol/schemas/webhooks";
 import { describe, expect, it } from "vitest";
 import {
   ALL_EVENTS,
@@ -24,6 +29,7 @@ import {
   redactPayload,
   responseExcerpt,
   retryWindowSeconds,
+  samplePayload,
   subscriptionLabel,
   TIMESTAMP_TOLERANCE_SECONDS,
   toggleEvent,
@@ -178,6 +184,50 @@ describe("the verifier customers copy", () => {
   it("agrees with the staleness rule the screen states", () => {
     expect(isStale(STAMP - TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(false);
     expect(isStale(STAMP + TIMESTAMP_TOLERANCE_SECONDS + 10, NOW)).toBe(true);
+  });
+});
+
+describe("the sample body the screen documents", () => {
+  const body = () =>
+    JSON.parse(
+      samplePayload(
+        "user.created",
+        "dlv_9c1f4a7b20e57d3f8a2b4c6e1d09f85a",
+        "2026-09-09T18:42:11.203Z",
+      ),
+    );
+
+  /**
+   * The test the old sample would have failed.
+   *
+   * It was hand-written and had drifted into documenting `occurred_at` and a `data.object` that no
+   * delivery has ever carried. Parsing it with the envelope's own schema is what makes the screen and
+   * the wire the same statement — a customer writes their parser from this.
+   */
+  it("parses as a webhook envelope", () => {
+    expect(() => webhookEnvelopeSchema.parse(body())).not.toThrow();
+  });
+
+  it("shows the fields a receiver actually branches on", () => {
+    const envelope = body();
+    expect(envelope.type).toBe("user.created");
+    expect(envelope.id.startsWith("dlv_")).toBe(true);
+    expect(typeof envelope.sequence).toBe("number");
+    expect(envelope.project.startsWith("prj_")).toBe(true);
+    // And no invented ones.
+    expect(envelope.occurred_at).toBeUndefined();
+  });
+
+  it("shows the data that event really carries", () => {
+    expect(body().data).toEqual(webhookDataSample(WebhookEventType.UserCreated));
+    expect(body().data.user.startsWith("usr_")).toBe(true);
+  });
+
+  it("shows an empty body for an event nothing sends yet", () => {
+    // Truthful rather than plausible: there is no sender, so there is no body to show.
+    expect(
+      JSON.parse(samplePayload("user.deleted", "dlv_1", "2026-09-09T18:42:11.203Z")).data,
+    ).toEqual({});
   });
 });
 

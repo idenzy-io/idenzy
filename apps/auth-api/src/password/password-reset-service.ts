@@ -128,6 +128,8 @@ export class PasswordResetService {
 
       await new OutboxRepository(tx, tenant).enqueue("user.password_changed", {
         userId: token.userId,
+        // Three topics become one `user.updated` event, so each says which of them it was.
+        changed: "password",
         via: "reset",
         signedOutOtherSessions: input.signOutOtherSessions,
         at: now.toISOString(),

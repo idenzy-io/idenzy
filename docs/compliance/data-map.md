@@ -15,7 +15,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 20 |
 | pseudonymous | 85 |
-| operational | 328 |
+| operational | 329 |
 
 ## `api_keys`
 
@@ -996,6 +996,7 @@ Notes:
 | `event` | operational | message_delivery | project_lifetime | no | not_applicable | no |
 | `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `nextAttemptAt` | operational | message_delivery | project_lifetime | no | not_applicable | no |
+| `occurredAt` | operational | message_delivery | project_lifetime | no | not_applicable | no |
 | `payload` | pii | message_delivery | hours_72 | no | row_deleted | no |
 | `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
 | `sequence` | operational | message_delivery | project_lifetime | no | not_applicable | no |

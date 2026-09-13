@@ -346,8 +346,24 @@ this is what the code will surprise you with.
   that follows a moment later.
 - **An outbox payload is internal, and raw uuids are the convention.** The revocation reconciler
   parses `userId` and `sessionIds` out of one and encodes them to `usr_`/`ses_` itself. Anything
-  that hands a payload to a customer owes that conversion; the webhook relay does not do it yet,
-  which is recorded in todo.md rather than papered over.
+  that hands a payload to a customer owes that conversion.
+- **What a webhook says is declared, not passed through.** `WEBHOOK_DATA_FIELDS` in
+  `@idenzy/protocol` names each event's fields, the public form of each id, and the sample the panel
+  documents; `projectWebhookData` in the relay performs it, at fan-out, so the delivery row holds
+  what the customer will see and every retry signs the same bytes. It is an allowlist for the same
+  reason the log allowlist is one: passing a payload through publishes whatever the next person adds
+  to it, and reuse detection was already carrying a refresh-token family id and our own
+  `likelyCause` guess. Adding a field to an event means adding it there, in one place, and the panel
+  documents it without being told.
+- **Three topics become `user.updated`, so each one says which.** `user.email_verified`,
+  `user.email_changed` and `user.password_changed` all map to that event, and the payloads carry
+  `changed` for that reason — without it a receiver cannot tell a verified address from a changed
+  password.
+- **`webhook_deliveries.occurred_at` is the event's instant and `created_at` is the row's.** The
+  envelope promises the former, and the dispatcher reads only the row, so before that column existed
+  the promise was quietly the relay's own schedule: seconds out normally, hours out after a cold
+  start. It comes from the outbox row and never moves, which is what makes a retry a day later carry
+  the instant the first attempt did.
 - **The delivery table is a queue, not a log.** An open delivery has a row and a payload; a
   delivered one keeps neither, a failed one keeps its body until the window drops it three days
   later. That asymmetry is not tidiness — it is what makes the replay route answerable, and

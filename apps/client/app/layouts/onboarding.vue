@@ -12,7 +12,22 @@
  * invitation instead, is otherwise stuck on a page with no exit — and a flow with no exit
  * is how a person ends up creating an organisation they did not want.
  */
-const account = useAccountStore();
+const user = useUser();
+const idenzy = useIdenzy();
+
+/** The real signed-in address. A placeholder here named somebody who was not signed in. */
+const email = computed(() => user.value?.email ?? "—");
+
+/** Actually ends the session. This used to be a link to the sign-in page, which left the
+    session alive — so "log out" returned somebody to a screen they were still signed in
+    behind, and the way out of a flow with no other exit did not work. */
+async function signOut() {
+  try {
+    await idenzy.signOut();
+  } finally {
+    await navigateTo("/auth/login");
+  }
+}
 </script>
 
 <template>
@@ -26,8 +41,8 @@ const account = useAccountStore();
       <v-spacer />
 
       <div class="flex items-center gap-1 pr-2">
-        <span class="hidden text-xs opacity-60 sm:inline">{{ account.profile.email }}</span>
-        <v-btn class="text-xs font-medium" to="/auth/login" variant="text">Log out</v-btn>
+        <span class="hidden text-xs opacity-60 sm:inline">{{ email }}</span>
+        <v-btn class="text-xs font-medium" variant="text" @click="signOut">Log out</v-btn>
       </div>
     </v-app-bar>
 

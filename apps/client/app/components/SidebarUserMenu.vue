@@ -5,9 +5,9 @@
  *
  * At the foot of the drawer rather than the head, because the project is what the
  * screens depend on and the person is not: they change project a dozen times a day and
- * themselves never. The address is a placeholder until the panel holds a session, at
- * which point it is the user on `Session` from `@idenzy/js` and the way out is the
- * client's `signOut`.
+ * themselves never. The address is the user on `Session` from `@idenzy/js` and the way
+ * out is the client's own `signOut` — both were placeholders until the panel held a
+ * session, and it does now.
  *
  * The mark is initials from the address, because the panel has no picture to show and a
  * fetched one would be a third-party origin, which PROJECT.md 10.3 rules out here.
@@ -17,7 +17,18 @@ defineProps<{
   rail: boolean;
 }>();
 
-const email = "hasan@example.com";
+const user = useUser();
+const idenzy = useIdenzy();
+
+/**
+ * The signed-in address, or a dash.
+ *
+ * Null has two causes and the tile cannot tell them apart: the session is still loading,
+ * or the account has no address because it signed in some other way. Neither is worth
+ * inventing a name for, and the placeholder that used to sit here read as a real person
+ * — which is worse than reading as nothing.
+ */
+const email = computed(() => user.value?.email ?? "—");
 
 /**
  * Two letters from the part before the `@`: the first of each of its first two words
@@ -40,8 +51,20 @@ function openAccount() {
   void navigateTo("/settings/account");
 }
 
-function signOut() {
-  // `signOut()` on the panel's client, then the sign-in screen.
+/**
+ * End the session, then the sign-in screen.
+ *
+ * The navigation happens whatever the call did. A refusal here means the server did not
+ * hear us, but the client has already dropped its tokens, so staying on a dashboard that
+ * can no longer load anything would be the worse answer — and the one thing a person who
+ * pressed this must not see is the application still behaving as though they had not.
+ */
+async function signOut() {
+  try {
+    await idenzy.signOut();
+  } finally {
+    await navigateTo("/auth/login");
+  }
 }
 </script>
 

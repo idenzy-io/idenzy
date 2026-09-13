@@ -690,17 +690,36 @@ client have no server halves to talk to yet.
       reset on the 1st, and the cap is enforced after the defaults rather than in the schema —
       one end given and the other defaulted passes every check a single field can make and asks
       for every daily row a project ever had. It is also management-api's first test, so it
-      brought a `tsconfig.test.json` with it. What is **not** done: the panel's usage store is
-      still the placeholder, nothing prices what the meters count so there is no money figure
-      anywhere yet, `assertWithinQuota` still allows everything because a plan ceiling needs a
-      plan, and emails and SMS are counted per send while the invoice wants segments, which
-      `usage_daily` does not store
+      brought a `tsconfig.test.json` with it. **The sketch does not outlive the month it bills**,
+      which answers the only real objection to keeping any of this in Postgres: 16 KiB a day for
+      six years is 35 MB per busy project on a primary that is also serving sign-in, and in every
+      backup of it. `usage_periods` is one immutable row per project per month — SELECT and INSERT
+      only, because a period that could be amended after its invoice was raised is not a record of
+      anything — and the closer in `apps/workers` takes the union, freezes the two integers the
+      chart needs, and drops the sketches, all in one transaction because either half alone loses
+      something. It waits six hours past the month end for the meters to flush, and the other side
+      of that window is closed too: a flush landing on a frozen day is dropped rather than putting
+      a sketch back on one whose figure is published. `usage_closable_periods` is the cross-tenant
+      read it needs, narrowed to a project id and a month like the two SECURITY DEFINER functions
+      before it. **The screen reads it**, and the wiring cost it three things worth naming. The
+      24-hour range is gone: `usage_daily` is a daily rollup by design, the placeholder drew hours
+      from a plausible curve, and an hourly reading is a question for the analytics store (3.2).
+      SMS is counted in messages rather than segments, because nothing counts segments — the money
+      is still right, since what a send cost was priced by segment where it was reserved, but the
+      quantity column was reporting a number nobody measures. And the sending configuration is
+      stated as an assumption: which domain carried an email and whose account carried an SMS are
+      not metered, so those two bill lines say they assume our shared domain and our routing rather
+      than looking like readings. What is **still** not done: nothing prices MAU or email against a
+      plan, so the money on that screen is the panel's own published list rather than a figure any
+      system would bill; `assertWithinQuota` still allows everything because a ceiling needs a
+      plan; and the analytics half of 3.2 has not started, so the daily series is served from
+      Postgres
 - [~] `client` panel v1: users, sessions, providers, templates, keys, usage. Every screen is
       built. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
       can read (ADR-0008), and a global middleware decides who sees which half of the panel.
-      Six stores are off fixtures now: the organisation and project lists, API keys, auth
-      domains, the CORS allowlist and webhooks — claiming a hostname, the DNS check and removing one are
+      Seven stores are off fixtures now: the organisation and project lists, API keys, auth
+      domains, the CORS allowlist, webhooks and usage — claiming a hostname, the DNS check and removing one are
       management API calls, and the panel no longer mints a record value or decides that a
       domain is verified. The origins screen writes the real list too, and what an origin *is*
       now comes from `browserOriginSchema` rather than from a second copy of the rule in the
@@ -711,8 +730,12 @@ client have no server halves to talk to yet.
       contract's own code into the panel (`refusalIn`), which is what lets a dialog say "that
       hostname is already claimed" rather than "something went wrong" — every screen built on
       `managementMessage` was answering with the fallback before it, because a failed fetch
-      hands its caller a status line and a status line has no code. The remaining stores are
-      placeholders, and each one waits on an endpoint rather than on the panel
+      hands its caller a status line and a status line has no code. Usage is the latest, and it
+      cost that screen three things a placeholder could show and the meters cannot: the hourly
+      chart, which a daily rollup cannot support; a segment count, which nothing measures; and
+      the sending configuration behind two bill lines, which is now stated as the assumption it
+      is. The remaining stores are placeholders, and each one waits on an endpoint rather than on
+      the panel
 - [ ] Cloud Armor rules and application rate limits
 
 ---
@@ -898,11 +921,20 @@ daily rollup per project with a HyperLogLog sketch for MAU, and the overview, us
 activity screens read placeholder stores on top of it. Those screens are what has to keep
 working, so the split below is by which question is being asked, not by which screen asks.
 
-- [ ] Decide what stays in `usage_daily` and what moves. The billing rollup is a strong
-      candidate to stay: an invoice is a financial record, it has to agree with the ledger
-      in the same transaction that writes it, and it is one row per project per day rather
-      than an analytical volume. What moves is everything the reader explores rather than
-      is billed for.
+- [x] Decide what stays in `usage_daily` and what moves. **Decided, and the billing half is
+      built.** The rollup stays, for the reason above and one the sizing made sharper: it is
+      the bytes rather than the rows that do not fit. A project past about four thousand daily
+      actives pins its sketch dense at 16 KiB a day, which is 35 MB over the six years
+      `Retention.Years6` asks for, on a primary that is also serving sign-in and in every
+      backup of it. So the sketch now lives exactly as long as the period it bills:
+      `usage_periods` records the month, `mau` and `mau_to_date` freeze what the chart needs as
+      two integers, and the closer in `apps/workers` drops the sketches in the same transaction.
+      Seventy-two rows of integers per project instead of two thousand rows of sketches, and
+      what an invoice rests on stays beside the ledger it must agree with. What moves is what
+      the reader explores: the daily and hourly series, the breakdowns, the trends. The usage
+      screen already lost its hour-by-hour chart to that split rather than having it
+      reimplemented over a daily table — an hourly rollup is twenty-four times the rows of a
+      table kept for six years, and is a question for the store shaped for it.
 - [ ] Ingestion, on the Pub/Sub fan-out the logging product already needs (§3.1) rather
       than a second path. One pipeline carrying both, with the destination table differing,
       not two ways for an event to reach the analytics store.

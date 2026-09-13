@@ -332,6 +332,49 @@ existed and no code had ever written a row. Five rules.
   decides what the other never sees.
 
 
+## Working on metering
+
+What the product is billed on (PROJECT.md 5.1). Small surface, and almost every rule on it exists
+because a HyperLogLog cannot be asked the obvious question.
+
+- **A month is the union of its days and never their sum.** Two days of a hundred may be a hundred
+  people or two hundred, and no arithmetic over the daily numbers recovers which — not a sum, not a
+  maximum. `dailyBetween` therefore hands back the sketch rather than a number, so reading the wrong
+  field is a type error instead of a plausible figure, and the management API computes
+  `activeUsersToDate` server-side because the panel receives numbers and could not do it.
+- **`ActiveUserMeter` is where MAU is defined, and both exclusions are applied at the write.** An
+  account is free on the day it was created and an anonymous one counts only once upgraded. Neither
+  rule survives into what is stored — the sketch holds no dates and no identities to filter on — so
+  there is no later pass that could apply them. A project's first day of sign-ups reads zero on
+  purpose.
+- **`AuthFlow` calls the meter, not the flows.** Eight flows sign somebody in and the ninth will be
+  written by whoever has not read this (PROJECT.md 7.3). Refresh calls it too, because a refresh is
+  an authentication for billing and is what keeps a long-lived session counted in a month it did not
+  start in. Both already hold the `User`, so neither costs a read.
+- **The write is buffered, and that is a cost decision.** A write per authentication would put the
+  busiest row in the system on the sign-in path: a union is a read-modify-write under the row's lock
+  and would leave a 16 KiB dead tuple behind each time. What makes buffering safe rather than merely
+  cheap is that a union is a per-register maximum — every part of the pipeline is idempotent, so a
+  flush writes the instance's whole view of a day and a replayed one changes nothing.
+- **A flush never fails a sign-in.** Metering that could throw would turn a billing outage into an
+  authentication outage. The sketch is kept on failure, so the next flush carries what this one
+  could not, and the cost is a bounded undercount rather than a bounded overcharge.
+- **The sketch is working set and `usage_periods` is the record.** 16 KiB a day for six years is
+  35 MB per busy project on a primary that also serves sign-in. The closer in `apps/workers` takes
+  the union, writes the month, freezes `mau` and `mau_to_date` for the chart and drops the sketches
+  — all in one transaction, because either half alone loses something. It waits six hours past the
+  month end for the meters, and `mergeActiveUsers` drops a flush landing on a frozen day rather than
+  putting a sketch back on one whose figure is published.
+- **`usage_periods` holds SELECT and INSERT and nothing else** (migration 0046). It is a financial
+  record; a period that could be amended after its invoice was raised is not a record of anything.
+  The absence is asserted in `tenancy.integration.test.ts`, because the grants test can only see
+  privileges that are present.
+- **Metrics move to ClickHouse and the billing rollup does not** (todo.md 3.2). What the reader
+  explores goes to the analytics store; what an invoice rests on stays in Postgres, with the ledger
+  it has to agree with in the same transaction. That split is why the hourly chart the panel used to
+  draw is gone rather than reimplemented: an hourly rollup is twenty-four times the rows of a table
+  kept for six years, and is a question for the store that is shaped for it.
+
 ## Working on webhook delivery
 
 The architecture and the numbers are in [ADR-0012](../adr/0012-webhook-delivery-is-a-queue-not-a-log.md);

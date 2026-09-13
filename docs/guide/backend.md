@@ -369,11 +369,26 @@ because a HyperLogLog cannot be asked the obvious question.
   record; a period that could be amended after its invoice was raised is not a record of anything.
   The absence is asserted in `tenancy.integration.test.ts`, because the grants test can only see
   privileges that are present.
+- **There are three tiers, and how fine a row is decides how long it is kept.** Six months of
+  hours, two years of days, six years of closed periods. `usage_hourly` stores a *level* and never a
+  sketch — an hourly HyperLogLog is seventy megabytes per project over its own term — so it can say
+  how a month's count was climbing and can never say how many distinct people were active inside an
+  hour. That is the trade, and it is why the API serves hours on their own route rather than behind
+  a `granularity` flag: the two answers do not have the same fields.
+- **An hour is observed, not reconstructed.** The roller writes one when it first sees it complete,
+  from a level taken at that moment and counters that are the day's cumulative totals less what
+  earlier hours already carry. Neither can be recomputed later, so an hour is written once
+  (`onConflictDoNothing` is the semantic, not a safeguard) and a worker that was down leaves a gap.
+  Nothing is lost: the arithmetic is against the day's total, so that traffic lands in the first
+  hour recorded afterwards.
+- **The retention sweeper is what makes the tiers true.** Before it, `classified()` published a data
+  map saying how long each rollup was kept while nothing ever removed a row — so the real answer was
+  "forever" and the printed one was not. It prunes through SECURITY DEFINER functions both because a
+  sweeper has no tenant to be scoped to and because `usage_periods` deliberately withholds DELETE
+  from the app role.
 - **Metrics move to ClickHouse and the billing rollup does not** (todo.md 3.2). What the reader
   explores goes to the analytics store; what an invoice rests on stays in Postgres, with the ledger
-  it has to agree with in the same transaction. That split is why the hourly chart the panel used to
-  draw is gone rather than reimplemented: an hourly rollup is twenty-four times the rows of a table
-  kept for six years, and is a question for the store that is shaped for it.
+  it has to agree with in the same transaction.
 
 ## Working on webhook delivery
 

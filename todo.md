@@ -701,15 +701,28 @@ client have no server halves to talk to yet.
       of that window is closed too: a flush landing on a frozen day is dropped rather than putting
       a sketch back on one whose figure is published. `usage_closable_periods` is the cross-tenant
       read it needs, narrowed to a project id and a month like the two SECURITY DEFINER functions
-      before it. **The screen reads it**, and the wiring cost it three things worth naming. The
-      24-hour range is gone: `usage_daily` is a daily rollup by design, the placeholder drew hours
-      from a plausible curve, and an hourly reading is a question for the analytics store (3.2).
-      SMS is counted in messages rather than segments, because nothing counts segments — the money
+      before it. **Usage is kept at three resolutions and each has its own term**: six months of
+      hours, two years of days, six years of closed periods. `usage_hourly` is the finest and it
+      stores a *level* rather than a sketch — an hourly HyperLogLog would be seventy megabytes per
+      project over its own term, which is worse than the daily problem and for a chart rather than a
+      bill. So an hour says how the month's count was climbing and can never say how many distinct
+      people were active inside it. It is written once, when the roller first sees it complete,
+      because its level and its share of the day's counters are only true at the moment they are
+      taken; a worker that was down leaves a gap rather than a fabricated curve, and the traffic
+      lands in the first hour recorded afterwards. **A tier nothing enforces is a sentence in a data
+      map**, so `UsageRetentionSweeper` came with them: before it, `classified()` published a
+      retention answer while nothing ever removed a row, so the real answer was "forever" and the
+      printed one was not. It prunes through SECURITY DEFINER functions both because a sweeper has
+      no tenant to be scoped to and because `usage_periods` deliberately withholds DELETE from the
+      app role — a test asserts the application still cannot remove a closed billing period and that
+      the sweeper can. **The screen reads all of it**, and the wiring cost it two things worth
+      naming. SMS is counted in messages rather than segments, because nothing counts segments — the money
       is still right, since what a send cost was priced by segment where it was reserved, but the
       quantity column was reporting a number nobody measures. And the sending configuration is
       stated as an assumption: which domain carried an email and whose account carried an SMS are
       not metered, so those two bill lines say they assume our shared domain and our routing rather
-      than looking like readings. What is **still** not done: nothing prices MAU or email against a
+      than looking like readings. The 1d range survived after all, on `usage_hourly` rather than on
+      a curve, and an hour nothing recorded is drawn as a gap. What is **still** not done: nothing prices MAU or email against a
       plan, so the money on that screen is the panel's own published list rather than a figure any
       system would bill; `assertWithinQuota` still allows everything because a ceiling needs a
       plan; and the analytics half of 3.2 has not started, so the daily series is served from
@@ -930,11 +943,15 @@ working, so the split below is by which question is being asked, not by which sc
       `usage_periods` records the month, `mau` and `mau_to_date` freeze what the chart needs as
       two integers, and the closer in `apps/workers` drops the sketches in the same transaction.
       Seventy-two rows of integers per project instead of two thousand rows of sketches, and
-      what an invoice rests on stays beside the ledger it must agree with. What moves is what
-      the reader explores: the daily and hourly series, the breakdowns, the trends. The usage
-      screen already lost its hour-by-hour chart to that split rather than having it
-      reimplemented over a daily table — an hourly rollup is twenty-four times the rows of a
-      table kept for six years, and is a question for the store shaped for it.
+      what an invoice rests on stays beside the ledger it must agree with. Three tiers now, each
+      with its own term and a sweeper that enforces it: six months of hours, two years of days,
+      six years of periods. `usage_hourly` is the finest and stores a level rather than a sketch,
+      which is what makes an hourly view affordable on Postgres at all — so the screen's 1d range
+      is served from here and not deferred. **What still moves is everything the reader explores
+      beyond those windows**: the breakdowns, the trends, the year-on-year questions, anything that
+      wants a dimension `usage_*` does not carry, and anything whose answer is a scan rather than a
+      lookup. The rule is the same as it was — what is billed stays, what is explored moves — and
+      what changed is that the billed half now bounds itself instead of growing forever.
 - [ ] Ingestion, on the Pub/Sub fan-out the logging product already needs (§3.1) rather
       than a second path. One pipeline carrying both, with the destination table differing,
       not two ways for an event to reach the analytics store.

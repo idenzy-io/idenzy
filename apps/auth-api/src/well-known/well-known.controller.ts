@@ -20,6 +20,20 @@ export class WellKnownController {
     private readonly tokens: TokenIssuer,
   ) {}
 
+  /**
+   * What we publish, and what we deliberately do not.
+   *
+   * Everything here is true of a token we sign, which is the only thing a reader of this
+   * document can do something with. The authorization-server half is omitted: this
+   * advertised `authorization_endpoint`, `token_endpoint` and `userinfo_endpoint` at
+   * `/oauth/authorize`, `/oauth/token` and `/userinfo`, and none of the three is a route
+   * on this service. A client following them was redirected into a 404 after we had
+   * already sent a user somewhere, where the same client now fails at discovery instead.
+   *
+   * Our OAuth endpoints under `/v1/auth/oauth` are not these. They make us the *client*
+   * of somebody else's provider, so publishing them here would invite a caller to treat
+   * us as an authorization server we are not.
+   */
   @Get("openid-configuration")
   @NoTenant()
   @Header("cache-control", "public, max-age=3600")
@@ -28,15 +42,8 @@ export class WellKnownController {
     return {
       issuer,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
-      authorization_endpoint: `${issuer}/oauth/authorize`,
-      token_endpoint: `${issuer}/oauth/token`,
-      userinfo_endpoint: `${issuer}/userinfo`,
-      response_types_supported: ["code"],
       subject_types_supported: ["public"],
       id_token_signing_alg_values_supported: ["ES256"],
-      // S256 only. `plain` is in the spec and is not a PKCE implementation worth having.
-      code_challenge_methods_supported: ["S256"],
-      grant_types_supported: ["authorization_code", "refresh_token"],
     };
   }
 

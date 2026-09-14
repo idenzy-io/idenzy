@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { RetentionAction, RetentionSubject } from "../enums/compliance.js";
+import {
+  AUDIT_ACTOR_TYPES,
+  AUDIT_CATEGORIES,
+  type AuditActorType,
+  type AuditCategory,
+  RetentionAction,
+  RetentionSubject,
+} from "../enums/compliance.js";
 import {
   ApiKeyKind,
   MemberRole,
@@ -905,6 +912,94 @@ export const revokeSessionsSchema = z.object({
   sessionIds: z.array(z.string()).min(1).max(200),
 });
 export type RevokeSessionsRequest = z.infer<typeof revokeSessionsSchema>;
+
+// ── The audit trail ──────────────────────────────────────────────────────────────────
+//
+// What one project's chain says, read by the people the trail is about (PROJECT.md
+// 4.13.3). Read-only on the wire as well as in the database: the runtime role holds no
+// UPDATE or DELETE on `audit_events`, and there is no request here that would want one.
+
+/**
+ * One entry, as the screen reads it.
+ *
+ * `actorName` and `targetName` are not columns. The trail stores ids because a name is a
+ * thing that changes and an entry must keep saying what it said at the time; the screen
+ * needs something to print, so the service resolves the ids it can and the row keeps both.
+ * A name that cannot be resolved comes back null rather than as the id again — an account
+ * that has since been erased is exactly the case this happens in, and pretending the id is
+ * a name would put a uuid where a reader expects a person.
+ *
+ * `prevHash` and `entryHash` are here because the screen shows the chain, not because a
+ * reader compares digests by eye: two adjacent rows linking is what makes a gap visible.
+ */
+export const projectAuditEventSchema = z.object({
+  id: z.string(),
+  /** The total order the chain is built in. Never `createdAt`: that ties at ms precision. */
+  seq: z.number().int(),
+  createdAt: isoDateTimeSchema,
+  actorType: z.enum(AUDIT_ACTOR_TYPES as [AuditActorType, ...AuditActorType[]]),
+  actorId: z.string().nullable(),
+  actorName: z.string().nullable(),
+  action: z.string(),
+  category: z.enum(AUDIT_CATEGORIES as [AuditCategory, ...AuditCategory[]]),
+  target: z.string().nullable(),
+  targetName: z.string().nullable(),
+  ip: z.string().nullable(),
+  ua: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+  prevHash: z.string(),
+  entryHash: z.string(),
+});
+export type ProjectAuditEvent = z.infer<typeof projectAuditEventSchema>;
+
+export const projectAuditListSchema = z.object({
+  events: z.array(projectAuditEventSchema),
+  nextCursor: z.string().nullable(),
+});
+export type ProjectAuditList = z.infer<typeof projectAuditListSchema>;
+
+/**
+ * What the screen's filters narrow by.
+ *
+ * Every one of them is applied by the API and none by the screen, which is forced by
+ * paging rather than chosen: a page of fifty cannot be filtered client-side and still have
+ * a pager that means anything. That is also why the actor and category vocabularies live
+ * in `@idenzy/protocol` — the menu offers exactly what the API accepts.
+ *
+ * A project's own end users generate most of the entries and are not what somebody opens
+ * this screen to read, so the default is the team. It is a default and not a rule: an
+ * investigation into one account is the case where they are the whole point, which is what
+ * `actorId` is for.
+ */
+export const projectAuditQuerySchema = z.object({
+  actorTypes: z
+    .union([
+      z.array(z.enum(AUDIT_ACTOR_TYPES as [AuditActorType, ...AuditActorType[]])),
+      z
+        .string()
+        .transform((value) => value.split(",").filter((part) => part.length > 0))
+        .pipe(z.array(z.enum(AUDIT_ACTOR_TYPES as [AuditActorType, ...AuditActorType[]]))),
+    ])
+    .optional(),
+  categories: z
+    .union([
+      z.array(z.enum(AUDIT_CATEGORIES as [AuditCategory, ...AuditCategory[]])),
+      z
+        .string()
+        .transform((value) => value.split(",").filter((part) => part.length > 0))
+        .pipe(z.array(z.enum(AUDIT_CATEGORIES as [AuditCategory, ...AuditCategory[]]))),
+    ])
+    .optional(),
+  /** Narrows to one actor. The screen uses it when arriving from a user's page. */
+  actorId: z.string().max(320).optional(),
+  /** Matches the action, the target or the actor's id. Trimmed, case-insensitive. */
+  search: z.string().trim().max(320).optional(),
+  from: isoDateTimeSchema.optional(),
+  to: isoDateTimeSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().optional(),
+});
+export type ProjectAuditQuery = z.infer<typeof projectAuditQuerySchema>;
 
 // ── Project settings ─────────────────────────────────────────────────────────────────
 //

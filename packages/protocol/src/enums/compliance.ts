@@ -109,3 +109,75 @@ export const RETENTION_DEFAULTS: Readonly<Record<RetentionSubject, string>> = {
   [RetentionSubject.Users]: "P30D",
   [RetentionSubject.AuditEvents]: "P1Y",
 };
+
+/**
+ * Who did the thing an audit entry records, as the trail stores it.
+ *
+ * These are the values already in `audit_events.actor_type`, written by whatever set the
+ * `TenantContext`: `user` for a project's own end user, `customer_staff` for somebody on
+ * the customer's team, `idenzy_staff` for one of ours under a staff access grant,
+ * `api_key` for a secret key acting on its own, and `system` for a background job with
+ * nobody behind it.
+ *
+ * The panel had a second vocabulary of its own — `end_user`, `member`, `staff` — invented
+ * before anything wrote a row, and three of the five names disagreed. This is the one that
+ * exists in the database, so it is the one that wins; the screen keeps its labels and they
+ * are labels rather than a parallel set of ids.
+ */
+export const AuditActorType = {
+  EndUser: "user",
+  Member: "customer_staff",
+  Staff: "idenzy_staff",
+  ApiKey: "api_key",
+  System: "system",
+} as const;
+export type AuditActorType = (typeof AuditActorType)[keyof typeof AuditActorType];
+
+export const AUDIT_ACTOR_TYPES: readonly AuditActorType[] = Object.values(AuditActorType);
+
+/**
+ * The actors an organisation's audit log is actually about.
+ *
+ * A project's own users generate the overwhelming majority of entries and are not what
+ * somebody opening this screen came to read, which is why the screen sets them aside by
+ * default rather than mixing them in.
+ */
+export const AUDIT_TEAM_ACTORS: readonly AuditActorType[] = [
+  AuditActorType.Member,
+  AuditActorType.ApiKey,
+  AuditActorType.Staff,
+  AuditActorType.System,
+];
+
+/** How the screen groups actions. Derived from the action's prefix, never stored. */
+export const AuditCategory = {
+  Team: "team",
+  Keys: "keys",
+  Settings: "settings",
+  Accounts: "accounts",
+  Data: "data",
+  Sessions: "sessions",
+} as const;
+export type AuditCategory = (typeof AuditCategory)[keyof typeof AuditCategory];
+
+export const AUDIT_CATEGORIES: readonly AuditCategory[] = Object.values(AuditCategory);
+
+/**
+ * The prefix of an action decides its category, and this is the whole mapping.
+ *
+ * It lives here rather than in the panel because the server pages the trail: a screen
+ * holding one page of fifty cannot filter a category client-side and have the pager mean
+ * anything. The API filters on `action like 'prefix.%'`, so the menu offers exactly what
+ * the API accepts — the same reason the retention vocabulary moved here.
+ */
+export const AUDIT_CATEGORY_PREFIXES: Readonly<Record<AuditCategory, readonly string[]>> = {
+  [AuditCategory.Team]: ["member", "staff"],
+  [AuditCategory.Keys]: ["key"],
+  [AuditCategory.Settings]: ["project"],
+  [AuditCategory.Accounts]: ["user"],
+  [AuditCategory.Data]: ["data"],
+  [AuditCategory.Sessions]: ["session"],
+};
+
+/** An action whose prefix names no category is a setting, which is where new ones land. */
+export const AUDIT_DEFAULT_CATEGORY: AuditCategory = AuditCategory.Settings;

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ApiKeysModule } from "./api-keys/api-keys.module.js";
+import { AuditModule } from "./audit/audit.module.js";
 import { ClaimsModule } from "./claims/claims.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { DomainsModule } from "./domains/domains.module.js";
@@ -45,6 +46,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module.js";
     OrgsModule,
     ProjectsModule,
     ApiKeysModule,
+    AuditModule,
     DomainsModule,
     OriginsModule,
     ClaimsModule,

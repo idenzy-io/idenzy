@@ -1325,6 +1325,19 @@ template pipeline of its own rather than a branch in the OTP flow.
       Email and SMS rates are declared in the price list and marked as placeholders: 5.1
       quotes them and neither has been checked against a vendor bill. Only MAU is charged
       today
+- [ ] Close what `risks.md` lists as open, in the order it gives. **Email has no ceiling of
+      any kind** — `assertWithinQuota` allows everything and says so — which is a shared
+      sending-domain reputation problem before it is a cost one: one project's blast puts
+      every other free-tier customer's verification mail in spam. **Authentication is to
+      become stoppable**, reversing `ZERO_KEEPS_WORKING`, because an organisation at 500k
+      MAU that never pays costs roughly $400 a month in infrastructure alone on top of the
+      unbilled revenue, for as long as it likes. It must not ship before the three
+      safeguards in section 7 exist, and none does: nothing notifies a customer before
+      anything stops (`spend_alert` has settings, a threshold, an idempotency column and no
+      caller), there is no manual hold a person can set without a deploy, and there is no
+      suspension state to set in the first place. Also open: nothing reconciles a Stripe
+      webhook that never arrived, so a `top_ups` row can sit pending forever with the
+      customer's card already charged
 - [ ] `admin` panel v1: tenancy administration, abuse response, spend caps
 - [ ] Status page and public incident communication
 - [ ] External penetration test

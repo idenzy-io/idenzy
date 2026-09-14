@@ -149,5 +149,13 @@ Repricing the month means a **rate change applies to the whole of the month it l
 just to usage after it. That is the cost of the property that makes banding correct, it is the
 right default for a price cut, and it is a reason to make rate changes at a month boundary.
 
+**The consequence this ADR gets wrong on its own is the ladder.** It says authentication
+never stops, quoting `ZERO_KEEPS_WORKING`, and that has since been revised: it stops, at a
+much higher tolerance than the metered channels, because the alternative is serving a
+non-payer without bound. Email gains a ceiling that exists whether or not anybody owes
+money, because the risk there is a shared sending domain's reputation before it is a bill.
+Both are recorded in [risks.md](../../risks.md) with what has to exist first — and in the
+authentication case, three things do, none of which is built.
+
 Invoices remain unbuilt and `invoices` remains empty. Enterprise customers wanting terms is a
 second model — postpaid, against the same meters — and the table is already shaped for it.

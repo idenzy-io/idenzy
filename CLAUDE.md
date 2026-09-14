@@ -60,6 +60,15 @@ client that cannot exist without a tenant stand in for it), 0014 (usage is drawn
 prepaid wallet by repricing the month, which is what makes it idempotent and makes
 volume bands correct).
 
+## What can cost us money or take a customer down
+
+[risks.md](./risks.md) is the register: the exposure ladder, what each control actually
+bounds, and — more usefully — what is still open. Two entries matter before touching
+billing. Email has no ceiling of any kind, which is a shared-sending-domain reputation
+problem before it is a cost one. And authentication is going to become stoppable, which
+reverses what `ZERO_KEEPS_WORKING` promises on the wallet screen and must not ship before
+the three safeguards in its section 7 exist.
+
 ## Compliance claims
 
 The architecture is built for SOC 2, ISO 27001, GDPR and HIPAA. **No certification is

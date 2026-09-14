@@ -21,6 +21,7 @@ import { RedirectTargets } from "./redirect-targets.js";
 import { SmsFraudGuard } from "./sms-fraud-guard.js";
 import { Texter } from "./texter.js";
 import { UnconfiguredAttestation } from "./unconfigured-attestation.js";
+import { WalletSolvency } from "./wallet-solvency.js";
 
 /**
  * Outbound email and SMS (PROJECT.md 11).
@@ -45,6 +46,7 @@ import { UnconfiguredAttestation } from "./unconfigured-attestation.js";
     DatabaseSuppressionList,
     DatabaseUsageMeter,
     DatabaseSpendCap,
+    WalletSolvency,
     SmsFraudGuard,
     { provide: PHONE_GEOGRAPHY, useClass: MetadataPhoneGeography },
     { provide: ATTESTATION_VERIFIER, useClass: UnconfiguredAttestation },

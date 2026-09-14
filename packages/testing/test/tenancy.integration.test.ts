@@ -153,7 +153,13 @@ describe("tenant isolation holds at the database", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
-         AND c.relname NOT IN ('audit_events', 'payment_provider_events', 'usage_periods')
+         AND c.relname NOT IN (
+           'audit_events', 'payment_provider_events', 'usage_periods',
+           -- The drawdown's three (migration 0055, ADR-0014). Two are financial state that
+           -- nothing on the request path may delete, and the third is the ledger beneath
+           -- them and is append-only. Each is asserted on its own below.
+           'usage_billing_state', 'org_debts', 'usage_charges'
+         )
          AND c.relname NOT LIKE 'audit_events\\_%'
        GROUP BY c.relname
        HAVING count(*) FILTER (
@@ -161,6 +167,41 @@ describe("tenant isolation holds at the database", () => {
        ) > 0`,
     );
     expect(rows).toEqual([]);
+  });
+
+  /**
+   * The drawdown's tables, for the same reason: an exclusion above is a claim and a claim
+   * is asserted. `usage_charges` is what `org_debts.debt_cents` can be rebuilt from when a
+   * customer disputes a figure, so a ledger somebody could amend afterwards is not evidence
+   * of anything — SELECT and INSERT only. The two state tables need UPDATE, which is the
+   * watermark's whole mechanism, and neither gets DELETE (migration 0055, ADR-0014).
+   */
+  it("shapes the drawdown's privileges: state updatable, ledger append-only", async () => {
+    const { rows } = await harness.owner.query<{
+      relname: string;
+      sel: boolean;
+      ins: boolean;
+      upd: boolean;
+      del: boolean;
+    }>(
+      `SELECT c.relname,
+              has_table_privilege('idenzy_app', c.oid, 'SELECT') AS sel,
+              has_table_privilege('idenzy_app', c.oid, 'INSERT') AS ins,
+              has_table_privilege('idenzy_app', c.oid, 'UPDATE') AS upd,
+              has_table_privilege('idenzy_app', c.oid, 'DELETE') AS del
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public'
+         AND c.relname IN ('usage_billing_state', 'org_debts', 'usage_charges')
+       ORDER BY c.relname`,
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.sel, row.relname).toBe(true);
+      expect(row.ins, row.relname).toBe(true);
+      expect(row.del, row.relname).toBe(false);
+      expect(row.upd, row.relname).toBe(row.relname !== "usage_charges");
+    }
   });
 
   /**

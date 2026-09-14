@@ -491,8 +491,11 @@ The architecture is in place. The programme is not started. Nothing in this docu
 
 | Item | Price |
 |---|---|
-| MAU 0 to 50,000 | Free (every project, forever) |
-| MAU above 50,000 | **$0.0025 / MAU** |
+| MAU 0 to 50,000 | Free (every **organisation**, forever) |
+| MAU 50,000 to 250,000 | **$0.003 / MAU** |
+| MAU 250,000 to 1,000,000 | **$0.0025 / MAU** |
+| MAU above 1,000,000 | **$0.002 / MAU** |
+| How the bands apply | **Marginal**, like tax brackets: an organisation at 1M pays nothing on its first 50,000, $0.003 on the next 200,000 and $0.0025 on the 750,000 after that — $2,475. Not a single rate chosen by total volume. The allowance and the bands are the organisation's rather than each project's, because the wallet is and because a free tier per project is bought by splitting one project into ten (ADR-0014). |
 | MAU definition | A user who authenticated (sign-in, token refresh, or session exchange) at least once in the calendar month. **First-day-free**: a user created and never seen again after day 1 is not billed (Clerk's MRU idea). Anonymous users count only when upgraded. |
 | Transactional email (verification, reset, magic link, OTP, security notices) | **$0.50 per 1,000** on our shared domain; custom sending domain: $5/mo/domain plus $0.40 per 1,000. BYO SES/SMTP: free. (Our cost: SES $0.10/1,000.) |
 | SMS OTP | Regional wholesale cost plus **25% margin**, rounded (e.g. US around $0.012; TR, IN and DE per the provider table). Displayed transparently per country in the dashboard. BYO Twilio/Vonage: free. |

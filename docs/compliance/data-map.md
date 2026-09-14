@@ -15,8 +15,8 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | pii | 34 |
 | phi | 0 |
 | secret | 20 |
-| pseudonymous | 87 |
-| operational | 354 |
+| pseudonymous | 99 |
+| operational | 359 |
 
 ## `analytics.auth_events`
 
@@ -469,6 +469,19 @@ Notes:
 - `submittedBy`: The org_members row that answered. Who said it is part of what makes it useful.
 - `useCase`: Free text: what they are building. Optional, and skipping it is a normal answer.
 
+## `org_debts`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `debtCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+
+Notes:
+
+- `debtCents`: Owed beyond the credit held, in cents. Never negative: credit is the other side.
+- `orgId`: The organisation. Primary key: there is one debt, not a history of them.
+
 ## `org_invitations`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -877,6 +890,45 @@ Notes:
 - `settledAt`: When the provider stopped changing its mind, whichever way it went.
 - `state`: TopUpState. `requires_action` is where 3-D Secure hands the customer to their bank.
 - `trigger`: TopUpTrigger: whether a person asked or the automatic rule fired.
+
+## `usage_billing_state`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `billedCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `billedMau` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `period` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+
+Notes:
+
+- `billedCents`: What has been charged for this month so far, in cents.
+- `billedMau`: The count the last charge was priced from. Never decreases.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `period`: First day of the calendar month this state covers.
+
+## `usage_charges`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `chargedCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `fromCreditCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `item` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `period` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `quantity` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `toDebtCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `fromCreditCents`: How much of it came out of grants.
+- `item`: BillingLineItem. Which meter this charge was raised against.
+- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `quantity`: The count the charge was priced from, at the moment it was raised.
+- `toDebtCents`: How much of it the credit could not cover. The two sum to charged_cents.
 
 ## `usage_daily`
 

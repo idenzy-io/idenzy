@@ -480,3 +480,131 @@ export const paymentProviderEvents = classifiedTable(
       .where(sql`processed_at is null`),
   ],
 );
+
+/**
+ * What a drawdown has already charged an organisation for a month (ADR-0014).
+ *
+ * The watermark, and the whole reason the drawdown is safe to run twice or in parallel.
+ * A pass prices the month as it now stands and charges the difference from `billed_cents`,
+ * then advances both columns by compare-and-swap on the `billed_mau` it read. A pass that
+ * lost the race matches no row and retries against fresh numbers; a pass that runs again
+ * computes a difference of zero.
+ *
+ * `billed_mau` only ever moves forward, because MAU within a month is a distinct count
+ * over a union and a union only grows. The check constraint says so rather than trusting
+ * it: a sketch that somehow went backwards would otherwise have the job trying to take
+ * money back, and refusing the write is the safer failure.
+ *
+ * Keyed on the organisation and not the project, because the allowance and the bands are
+ * the organisation's (ADR-0014). A project's own MAU is still readable from `usage_daily`;
+ * it just is not what anybody is charged for.
+ */
+export const usageBillingState = classifiedTable(
+  "usage_billing_state",
+  {
+    orgId: orgIdColumn(),
+    period: classified(date("period").notNull(), {
+      ...financialRecord,
+      loggable: true,
+      note: "First day of the calendar month this state covers.",
+    }),
+    billedMau: classified(bigint("billed_mau", { mode: "number" }).notNull().default(0), {
+      ...financialRecord,
+      note: "The count the last charge was priced from. Never decreases.",
+    }),
+    billedCents: classified(bigint("billed_cents", { mode: "number" }).notNull().default(0), {
+      ...financialRecord,
+      note: "What has been charged for this month so far, in cents.",
+    }),
+    updatedAt: updatedAtColumn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.period] }),
+    check("usage_billing_state_not_negative", sql`billed_mau >= 0 and billed_cents >= 0`),
+    orgIsolationPolicy("usage_billing_state"),
+  ],
+).enableRLS();
+
+/**
+ * What an organisation owes beyond the credit it holds (ADR-0014).
+ *
+ * Separate from `credit_grants` because a grant cannot go negative and should not: a grant
+ * is something that was bought, and a bought thing is not worth less than nothing. What a
+ * drawdown could not cover lands here instead, and a top-up settles it before becoming
+ * spendable — an organisation $400 down that adds $500 has $100 to spend.
+ *
+ * One row per organisation, created on first need. The balance a screen shows is spendable
+ * credit less this.
+ */
+export const orgDebts = classifiedTable(
+  "org_debts",
+  {
+    orgId: classified(uuid("org_id").primaryKey(), {
+      ...financialRecord,
+      loggable: true,
+      note: "The organisation. Primary key: there is one debt, not a history of them.",
+    }),
+    debtCents: classified(bigint("debt_cents", { mode: "number" }).notNull().default(0), {
+      ...financialRecord,
+      note: "Owed beyond the credit held, in cents. Never negative: credit is the other side.",
+    }),
+    updatedAt: updatedAtColumn(),
+  },
+  () => [check("org_debts_not_negative", sql`debt_cents >= 0`), orgIsolationPolicy("org_debts")],
+).enableRLS();
+
+/**
+ * Every charge a drawdown raised, and how it was paid (ADR-0014).
+ *
+ * The record beneath the two tables above. `org_debts.debt_cents` is the fast answer and
+ * this is what it can be rebuilt from, which is what a customer disputing a figure needs —
+ * a materialised total that nothing can reconstruct is a number nobody can defend.
+ *
+ * It is also what the tolerance is computed from: a share of what was charged over the last
+ * thirty days, rather than of what was paid in them, so the rope tracks how much an
+ * organisation uses rather than when it happened to top up.
+ *
+ * Append-only, and the grant migration withholds UPDATE and DELETE for the reason
+ * `payment_provider_events` withholds DELETE: a charge somebody could amend afterwards is
+ * not evidence of anything.
+ */
+export const usageCharges = classifiedTable(
+  "usage_charges",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
+    orgId: orgIdColumn(),
+    period: classified(date("period").notNull(), { ...financialRecord, loggable: true }),
+    item: classified(text("item").notNull(), {
+      ...financialRecord,
+      loggable: true,
+      note: "BillingLineItem. Which meter this charge was raised against.",
+    }),
+    quantity: classified(bigint("quantity", { mode: "number" }).notNull(), {
+      ...financialRecord,
+      note: "The count the charge was priced from, at the moment it was raised.",
+    }),
+    chargedCents: classified(
+      bigint("charged_cents", { mode: "number" }).notNull(),
+      financialRecord,
+    ),
+    fromCreditCents: classified(
+      bigint("from_credit_cents", { mode: "number" }).notNull().default(0),
+      { ...financialRecord, note: "How much of it came out of grants." },
+    ),
+    toDebtCents: classified(bigint("to_debt_cents", { mode: "number" }).notNull().default(0), {
+      ...financialRecord,
+      note: "How much of it the credit could not cover. The two sum to charged_cents.",
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    index("usage_charges_org_period_idx").on(t.orgId, t.period),
+    // The tolerance reads a thirty-day window per organisation, so that is the index.
+    index("usage_charges_org_recent_idx").on(t.orgId, t.createdAt),
+    check(
+      "usage_charges_covered",
+      sql`from_credit_cents + to_debt_cents = charged_cents and charged_cents >= 0`,
+    ),
+    orgIsolationPolicy("usage_charges"),
+  ],
+).enableRLS();

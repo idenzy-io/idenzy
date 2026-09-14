@@ -14,6 +14,7 @@ import { Sha256WebhookSigner } from "@idenzy/crypto/webhooks/webhook-signer";
 import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
+import { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
 import { RetentionPruner } from "@idenzy/persistence/repository/retention-pruner";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
@@ -31,6 +32,7 @@ import { HourlyUsageRoller } from "./hourly-usage-roller.js";
 import { InternalServer } from "./http/internal-server.js";
 import { RetentionSweeper } from "./retention-sweeper.js";
 import { RevocationReconciler } from "./revocation-reconciler.js";
+import { UsageDrawdown } from "./usage-drawdown.js";
 import { UsagePeriodCloser } from "./usage-period-closer.js";
 import { UsageRetentionSweeper } from "./usage-retention-sweeper.js";
 import { CloudTasksScheduler } from "./webhooks/cloud-tasks-scheduler.js";
@@ -150,6 +152,16 @@ async function bootstrap(): Promise<void> {
   const usageRoller = new HourlyUsageRoller(new UsageActiveProjectsReader(db), uow, clock, logger);
 
   /*
+   * What usage costs, taken out of the wallet (ADR-0014).
+   *
+   * The half that makes a balance a balance rather than a counter. It reprices each
+   * organisation's month and charges the difference from what it has already charged, which
+   * is what makes it safe to run twice, safe to run beside itself, and correct across every
+   * band boundary without knowing where they are.
+   */
+  const drawdown = new UsageDrawdown(uow, new OrgUsageActivityReader(db), clock, logger);
+
+  /*
    * Analytics ingestion (ADR-0013). A cell with no ClickHouse configured runs without it rather
    * than failing, because nothing on the authentication path reads that store — but a cell with
    * *half* of it configured fails at boot, because the symptom would otherwise be an empty chart
@@ -259,6 +271,7 @@ async function bootstrap(): Promise<void> {
   await webhookSweeper.start();
   await usageCloser.start();
   await usageRoller.start();
+  drawdown.start();
   await usageRetention.start();
   await retention.start();
   if (analytics !== null && ingest !== null) {

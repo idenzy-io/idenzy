@@ -56,7 +56,9 @@ Architecture decisions are in `docs/adr/`. The ones cited most often: 0002 (no a
 0008 (the browser SDK stores no refresh token), 0009 (the revocation set is a published
 snapshot), 0010 (an authentication answers with a session or a challenge), 0011 (the
 control plane has its own tenant key), 0013 (ClickHouse has no RLS, so a row policy and a
-client that cannot exist without a tenant stand in for it).
+client that cannot exist without a tenant stand in for it), 0014 (usage is drawn from a
+prepaid wallet by repricing the month, which is what makes it idempotent and makes
+volume bands correct).
 
 ## Compliance claims
 

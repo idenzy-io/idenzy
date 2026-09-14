@@ -10,6 +10,17 @@ export abstract class UnauthorizedError extends IdenzyError {
   override readonly status = 401;
 }
 
+/**
+ * 402. The action is permitted and there is no money to do it with.
+ *
+ * Distinct from 403 on purpose: the caller's remedy is to top up rather than to ask
+ * somebody for access, and a customer's own error handling should be able to tell the two
+ * apart without reading a string.
+ */
+export abstract class PaymentRequiredError extends IdenzyError {
+  override readonly status = 402;
+}
+
 /** 403. Identity is established; the action is not permitted. */
 export abstract class ForbiddenError extends IdenzyError {
   override readonly status = 403;

@@ -1274,10 +1274,57 @@ template pipeline of its own rather than a branch in the OTP flow.
       webhook answering 500 to a signature that verified perfectly. And a forged signature
       was a 500 rather than a 400, which would have had Stripe redelivering for days over a
       body that will never verify.
-      What is left is money *out*: the job that closes a month, prices `usage_periods`
-      against the 5.1 price list, raises an invoice with per-project lines and draws down
-      `credit_grants`. Until it exists the invoices list is empty rather than invented, and
-      the automatic rule has settings and no sweep to fire it
+      **Money out is done too, and it is a drawdown rather than an invoice run.** The model
+      is prepaid: an organisation buys credit and spends it, so there is no month-end bill
+      and `invoices` stays empty until an enterprise customer wants terms — the table is
+      already shaped for that and nothing about it changes.
+      `UsageDrawdown` in `apps/workers` reprices each organisation's month every five
+      minutes and charges the difference from what it has already charged (ADR-0014). Never
+      the price of a delta: the bands are marginal, so pricing 40,000 users on their own has
+      to guess which band they fall in and gets it wrong at every boundary — and the
+      boundary is where customers actually are. Repricing the total means every band is
+      settled inside one pure function and none of it is in the job, which is also what
+      makes changing the table later a data change.
+      That one property gives three others for free. MAU within a month only grows, so the
+      watermark only moves forward and the difference is never negative; a pass that runs
+      twice computes zero; and two passes at once are settled by a compare-and-swap on the
+      watermark rather than a lock, the same shape the SMS spend cap already uses. Taking
+      the credit, moving the debt, writing the record and advancing the watermark are one
+      transaction — any split is a way to charge twice or to charge and forget.
+      **The free tier and the bands are the organisation's now, not each project's**, which
+      revises 5.1: "free on every project" was bought by splitting one project into ten.
+      Organisation MAU is the sum of its projects' months, and that sum is exact because
+      users are project-scoped and two projects' sets are disjoint — the opposite of summing
+      a project's own days, where the same person recurs and only a union is honest.
+      **Credit and debt are separate**, because `credit_grants.remaining_cents` is
+      non-negative and should stay so: a grant is something that was bought. What a
+      drawdown cannot cover lands on `org_debts`, a top-up settles it before becoming
+      spendable, and `usage_charges` is the append-only record beneath both — SELECT and
+      INSERT only, because a ledger somebody could amend is not evidence of anything.
+      **Running out is not a cliff.** An organisation may owe up to a tolerance — 20% of
+      what it was charged in the last thirty days, floored at $50 — before the metered
+      channels refuse. Charges and not top-ups: tolerance keyed on payments moves when a
+      customer happens to pay, so one that prepays in January would have rope until the 31st
+      and none on the 1st having done nothing differently. `WalletSolvency` is the gate and
+      it sits on the SMS path only, in front of the spend cap. Authentication, the
+      dashboard, the API and mail on the shared domain never stop, whatever is owed.
+      **No queue, deliberately.** The meter flushes on `USAGE_FLUSH_INTERVAL_SECONDS`, so
+      repricing more often than the flush reads the same numbers again; the watermark makes
+      replays free, which is the one property at-least-once delivery would have bought; and
+      what is left is a handful of indexed reads per organisation per pass. Same cost
+      argument ADR-0012 made against putting every webhook delivery through Cloud Tasks.
+      Two bugs worth keeping. `orgScope()` names the repository's own table, so reaching for
+      it while selecting from `usage_charges` emitted `"usage_billing_state"."org_id"`
+      against a table not in the query — the same mistake the project users read model made
+      with `tenantScope()`, and the reason the second line of defence has to name what it
+      filters. And the first concurrency test passed with the compare-and-swap deleted:
+      two passes through `Promise.all` are serialised by the pool, so the second read a
+      watermark the first had already moved and charged nothing for the ordinary reason
+      rather than the interesting one. It interleaves two transactions by hand now, and it
+      fails when the `setWhere` goes.
+      Email and SMS rates are declared in the price list and marked as placeholders: 5.1
+      quotes them and neither has been checked against a vendor bill. Only MAU is charged
+      today
 - [ ] `admin` panel v1: tenancy administration, abuse response, spend caps
 - [ ] Status page and public incident communication
 - [ ] External penetration test

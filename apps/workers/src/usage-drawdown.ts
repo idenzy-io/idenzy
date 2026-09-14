@@ -1,0 +1,207 @@
+import type { Logger } from "@idenzy/core/logging/logger";
+import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
+import type { Clock } from "@idenzy/core/time/clock";
+import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
+import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
+import type { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
+import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
+import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
+import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
+import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
+import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { mauCents } from "@idenzy/protocol/billing/price-list";
+import { BillingLineItem } from "@idenzy/protocol/enums/billing";
+
+export interface UsageDrawdownOptions {
+  readonly intervalMs?: number;
+  /** Organisations per pass. A pass is a pass; the next one is minutes away. */
+  readonly orgsPerPass?: number;
+}
+
+/**
+ * Five minutes.
+ *
+ * Not less, because the meter buffers in memory and flushes on
+ * `USAGE_FLUSH_INTERVAL_SECONDS` — repricing more often than the flush reads the same
+ * numbers again. Not more, because the wallet a customer is looking at should not be an
+ * hour behind what they have spent.
+ */
+const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_ORGS = 200;
+
+/** The first day of the month `at` falls in, `YYYY-MM-DD` in UTC. */
+function monthStart(at: Date): string {
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
+/** The last day of the month beginning at `period`. */
+function monthEnd(period: string): string {
+  const start = new Date(`${period}T00:00:00.000Z`);
+  return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0))
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * Takes what usage costs out of the wallet (ADR-0014).
+ *
+ * **It reprices the month and charges the difference.** Never the price of a delta: the
+ * bands are marginal, so pricing 40,000 users on their own has to guess which band they
+ * fall in and gets it wrong at every boundary. `mauCents` prices the month as it now
+ * stands, the watermark says what has already been charged, and the difference is what is
+ * taken. Every band boundary is settled inside a pure function and none of it is here.
+ *
+ * **That is also the whole of the idempotency.** MAU within a month only grows, so the
+ * watermark only moves forward and the difference is never negative. A pass that runs twice
+ * computes zero the second time. Two passes at once both compute the same figure, and the
+ * compare-and-swap inside `advance` lets exactly one of them commit — the other finds the
+ * watermark moved and leaves it, because its charge has already been made by somebody else.
+ *
+ * **Taking the credit, moving the debt, writing the record and advancing the watermark are
+ * one transaction.** Any split is a way to charge twice or to charge and forget.
+ *
+ * SMS is deliberately not here. It is the one meter where money leaves before the work is
+ * done, so it is reserved in the request against the spend cap, where it already is;
+ * batching it would mean reconciling money that has already gone.
+ */
+export class UsageDrawdown {
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private readonly uow: UnitOfWork,
+    private readonly activity: OrgUsageActivityReader,
+    private readonly clock: Clock,
+    private readonly logger: Logger,
+    private readonly options: UsageDrawdownOptions = {},
+  ) {}
+
+  start(): void {
+    const every = this.options.intervalMs ?? DEFAULT_INTERVAL_MS;
+    this.timer = setInterval(() => {
+      void this.runOnce();
+    }, every);
+    this.timer.unref();
+  }
+
+  stop(): void {
+    if (this.timer !== null) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /** One pass. Returns how many organisations were charged something. */
+  async runOnce(): Promise<number> {
+    const now = this.clock.now();
+    const period = monthStart(now);
+    const orgs = await this.activity.withActivity(period, this.options.orgsPerPass ?? DEFAULT_ORGS);
+
+    let charged = 0;
+    for (const orgId of orgs) {
+      try {
+        if (await this.chargeOne(orgId, period, now)) charged += 1;
+      } catch (cause: unknown) {
+        // One organisation's failure is not the pass's. The watermark did not move, so the
+        // next pass computes the same difference and nothing is lost.
+        this.logger.error("usage drawdown failed", {
+          orgId,
+          component: "billing",
+          outcome: "deferred",
+          errorName: cause instanceof Error ? cause.name : "unknown",
+        });
+      }
+    }
+    return charged;
+  }
+
+  private async chargeOne(orgId: string, period: string, now: Date): Promise<boolean> {
+    const context = new OrgContext(orgId, "usage-drawdown", "system");
+    const mau = await this.organisationMau(context, period);
+    const priced = mauCents(mau);
+
+    return await this.uow.runForOrg(context, async (tx) => {
+      const drawdown = new UsageDrawdownRepository(tx, context);
+      const state = await drawdown.stateFor(period);
+      const owed = priced - state.billedCents;
+      // Nothing new to charge. The common case by a distance: a month is repriced every
+      // five minutes and only moves when somebody new signs in.
+      if (owed <= 0) return false;
+
+      // Credit first, and only what is actually there. `draw` is itself a conditional
+      // statement per grant, so a grant being spent by something else cannot be
+      // over-drawn — what comes back is what was really taken.
+      const grants = new CreditGrantRepository(tx, context);
+      let remaining = owed;
+      for (const grant of await grants.spendable(now)) {
+        if (remaining <= 0) break;
+        remaining -= await grants.draw(grant.id, Math.min(remaining, grant.remainingCents));
+      }
+
+      const fromCredit = owed - remaining;
+      if (remaining > 0) await drawdown.adjustDebt(remaining);
+      await drawdown.record({
+        period,
+        item: BillingLineItem.Mau,
+        quantity: mau,
+        chargedCents: owed,
+        fromCreditCents: fromCredit,
+        toDebtCents: remaining,
+      });
+
+      // Last, and inside the same transaction. If this loses the race the whole thing
+      // rolls back — including the credit that was drawn — which is what makes two passes
+      // at once safe rather than merely unlikely.
+      const advanced = await drawdown.advance(period, state.billedMau, mau, priced);
+      if (!advanced) {
+        throw new ConcurrentDrawdown(`another pass charged ${orgId} for ${period} first`);
+      }
+      return true;
+    });
+  }
+
+  /**
+   * A month's active users for one organisation, summed across its projects.
+   *
+   * The sum across projects is exact and the union within one is not optional, which is the
+   * pair worth keeping straight. Users are project-scoped, so two projects' sets are
+   * disjoint and nobody is counted twice by adding them. A project's own days are the
+   * opposite case — the same person comes back on Tuesday — so those are unioned from the
+   * sketches, which is the only honest way to count them.
+   *
+   * Read per project under its own tenant, exactly as the period closer does it. There is
+   * no SQL that could do this: `mau_hll` is a `bytea` holding a sketch this codebase
+   * serialises itself, not a Postgres `hll` type.
+   */
+  private async organisationMau(context: OrgContext, period: string): Promise<number> {
+    const projects = await this.uow.runForOrg(context, (tx) =>
+      new OrgProjectRepository(tx, context).list(),
+    );
+
+    let total = 0;
+    for (const project of projects) {
+      const tenant = new TenantContext(project.id, "usage-drawdown", "system");
+      const days = await this.uow.run(tenant, (tx) =>
+        new UsageRepository(tx, tenant).dailyBetween(period, monthEnd(period)),
+      );
+      const running = HyperLogLog.empty();
+      let frozen: number | null = null;
+      for (const day of days) {
+        running.mergeFrom(day.activeUsers);
+        // A closed month has no sketches left and `mauToDate` stands in for them, which is
+        // the figure the period was actually billed on.
+        if (day.mauToDate !== null) frozen = day.mauToDate;
+      }
+      total += frozen ?? running.count;
+    }
+    return total;
+  }
+}
+
+/**
+ * Another pass charged this organisation first.
+ *
+ * Thrown to roll the transaction back rather than returned, because by this point credit
+ * has been drawn and a record written, and both have to go with it. It is not an error
+ * anybody needs to act on: the other pass made exactly this charge.
+ */
+class ConcurrentDrawdown extends Error {
+  override readonly name = "ConcurrentDrawdown";
+}

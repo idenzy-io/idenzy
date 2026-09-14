@@ -5,6 +5,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  PaymentRequiredError,
   ServerError,
   TooManyRequestsError,
   UnauthorizedError,
@@ -393,6 +394,21 @@ export class CountryNotAllowedError extends ForbiddenError {
  * a customer debugging their integration needs to be told the difference between "you are
  * calling the wrong thing" and "your own configuration refuses this".
  */
+/**
+ * Out of credit, and past the tolerance that would have carried it.
+ *
+ * A 402 and not a 403: this is about money rather than about permission, and the caller's
+ * remedy is to top up rather than to ask somebody for access. The detail names the channel
+ * because only some of them stop — authentication, the dashboard, the API and mail on the
+ * shared domain keep working whatever is owed (ADR-0014).
+ */
+export class WalletEmptyError extends PaymentRequiredError {
+  override readonly code = ErrorCode.WalletEmpty;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This organisation has no credit left for that.", options);
+  }
+}
+
 /**
  * This installation takes no payments, so there is nothing to charge.
  *

@@ -14,6 +14,7 @@ import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DatabaseSpendCap } from "../dist/delivery/database-spend-cap.js";
 import { SmsFraudGuard } from "../dist/delivery/sms-fraud-guard.js";
+import { WalletSolvency } from "../dist/delivery/wallet-solvency.js";
 
 const harness = new PostgresHarness();
 const clock = new SystemClock();
@@ -361,7 +362,10 @@ describe("velocity and sweeps", () => {
 });
 
 describe("the daily spend cap", () => {
-  const cap = () => new DatabaseSpendCap(uow, clock);
+  /* The solvency gate is real rather than stubbed: these projects have no debt, so it
+     answers yes, and the cap is what the block below is actually about. Its own refusal is
+     tested where it belongs, in `wallet-solvency.integration.test.ts`. */
+  const cap = () => new DatabaseSpendCap(uow, clock, new WalletSolvency(uow, clock));
 
   it("allows a send that fits inside the cap", async () => {
     await seedPolicy(PROJECT, { daily_spend_cap: "1.000000" });

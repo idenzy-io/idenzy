@@ -1,4 +1,4 @@
-import { InternalError, SpendCapReachedError } from "@idenzy/core/errors";
+import { InternalError, SpendCapReachedError, WalletEmptyError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import type { Money, SpendCap } from "@idenzy/domain/ports/sms-provider";
 import { SmsPolicyRepository } from "@idenzy/persistence/repository/sms-policy-repository";
@@ -6,6 +6,7 @@ import { UsageRepository } from "@idenzy/persistence/repository/usage-repository
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { Injectable } from "@nestjs/common";
+import { WalletSolvency } from "./wallet-solvency.js";
 
 const MICROS_PER_UNIT = 1_000_000;
 
@@ -26,9 +27,19 @@ export class DatabaseSpendCap implements SpendCap {
   constructor(
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
+    private readonly solvency: WalletSolvency,
   ) {}
 
   async reserve(projectId: string, cost: Money): Promise<void> {
+    // Before the daily cap and before anything is reserved. The two limits answer different
+    // questions and both have to hold: the cap is the project's own ceiling on a day, and
+    // this is whether the organisation behind it has anything left to spend at all
+    // (ADR-0014). Checked first because it is the cheaper refusal and the more final one —
+    // a project at its daily cap can send tomorrow, an organisation past its tolerance
+    // cannot until somebody tops up.
+    if (!(await this.solvency.canSpend(projectId))) {
+      throw new WalletEmptyError({ detail: { projectId, channel: "sms" } });
+    }
     const tenant = tenantFor(projectId);
     const allowed = await this.uow.run(tenant, async (tx) => {
       const policy = await new SmsPolicyRepository(tx, tenant).current();

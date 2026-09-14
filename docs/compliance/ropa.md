@@ -87,19 +87,24 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** project_lifetime, years_2, years_6
-- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_daily`
+- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
 - **Categories of personal data:**
 
   - pii: name
   - pseudonymous: amountCents
+  - pseudonymous: billedCents
+  - pseudonymous: billedMau
   - pseudonymous: billingCustomerId
   - pseudonymous: cardBrand
   - pseudonymous: cardLast4
+  - pseudonymous: chargedCents
   - pseudonymous: currency
+  - pseudonymous: debtCents
   - pseudonymous: dueAt
   - pseudonymous: expiresAt
   - pseudonymous: failureCode
   - pseudonymous: failureReason
+  - pseudonymous: fromCreditCents
   - pseudonymous: grantedAt
   - pseudonymous: id
   - pseudonymous: invoiceId
@@ -109,10 +114,12 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: mauHll
   - pseudonymous: note
   - pseudonymous: number
+  - pseudonymous: orgId
   - pseudonymous: paidAt
   - pseudonymous: payload
   - pseudonymous: paymentMethodId
   - pseudonymous: pdfUri
+  - pseudonymous: period
   - pseudonymous: periodEnd
   - pseudonymous: periodStart
   - pseudonymous: processedAt
@@ -128,6 +135,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: settledAt
   - pseudonymous: state
   - pseudonymous: status
+  - pseudonymous: toDebtCents
   - pseudonymous: topUpId
   - pseudonymous: totalCents
   - pseudonymous: trigger

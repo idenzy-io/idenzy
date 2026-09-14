@@ -7,6 +7,15 @@ import { asRecord } from "./jsonb.js";
 
 export interface ProjectRow {
   readonly id: string;
+  /**
+   * The organisation that pays for it.
+   *
+   * Read here because a project is where a send happens and an organisation is where the
+   * money is: the wallet, the credit and the debt all hang off `org_id` (ADR-0011), so
+   * anything on the request path asking "may this spend" has to cross from one to the
+   * other, and this is the only row that knows.
+   */
+  readonly orgId: string;
   readonly name: string;
   readonly plan: string;
   readonly complianceTier: string;
@@ -38,6 +47,7 @@ export class ProjectRepository extends BaseRepository<typeof projects> {
     if (row === undefined) return null;
     return {
       id: row.id,
+      orgId: row.orgId,
       name: row.name,
       plan: row.plan,
       complianceTier: row.complianceTier,
@@ -70,6 +80,7 @@ export class ProjectRepository extends BaseRepository<typeof projects> {
     if (row === undefined) return null;
     return {
       id: row.id,
+      orgId: row.orgId,
       name: row.name,
       plan: row.plan,
       complianceTier: row.complianceTier,

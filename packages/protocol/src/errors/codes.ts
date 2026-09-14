@@ -90,6 +90,11 @@ export const ErrorCode = {
   // retry, and a 5xx has a provider redelivering for days over a body that never will.
   WebhookSignatureInvalid: "webhook_signature_invalid",
 
+  // The organisation has spent its credit and used up its tolerance, so the channels that
+  // cost money the moment they leave refuse (ADR-0014). Never authentication: signing
+  // somebody in is not a lever we have over an unpaid balance.
+  WalletEmpty: "wallet_empty",
+
   // Billing. A deployment with no payment provider is a correct one, so asking it to take
   // money is a refusal about this installation rather than about the request: the wallet
   // has already said `provider: null` and the screen is built to show that.

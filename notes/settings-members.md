@@ -91,6 +91,14 @@ counts while shut, and keeps the sentence about API keys directly under it: that
 where the dashboard's roles stop being a security boundary, and it must not become a
 tooltip.
 
+**"Last active" is a real column now.** It had a header and a formatter and nothing that
+ever wrote it, so every row read "Never signed in" — including the row belonging to whoever
+was reading the page, which is the version of this bug that is impossible to miss and was
+missed anyway. `MembershipGuard` stamps it on the membership check every dashboard request
+already makes, at most once a day per member: the value comes back from the check itself,
+so a member who was here an hour ago costs no extra read and no write. It is stamped after
+the role check rather than before, so a refused request does not report a seat as in use.
+
 ## Implementation references
 
 - [FactGrid.vue](../apps/client/app/components/FactGrid.vue)

@@ -343,11 +343,18 @@ describe("organisation isolation holds at the database", () => {
     const userId = seeded[0]?.user_id;
     expect(userId).toBeDefined();
 
-    const mine = await harness.db.execute<{ role: string }>(
+    const mine = await harness.db.execute<{ role: string; last_active_at: Date | null }>(
       sql`select * from resolve_org_membership(${userId ?? ""}::uuid, ${ORG_A}::uuid)`,
     );
     expect(mine.rows).toHaveLength(1);
     expect(mine.rows[0]?.role).toBe("owner");
+    // The column the membership guard bounds its activity stamp on. It comes back from
+    // this lookup because the guard has nowhere else to get it: `org_members` is behind a
+    // policy keyed on the value this call exists to work out. Reaching it at all is also
+    // what proves 0053's GRANT survived the drop that widened this return type — without
+    // it `idenzy_app` loses its only membership lookup and every dashboard request reads
+    // as though the caller belonged to nothing.
+    expect(mine.rows[0]).toHaveProperty("last_active_at");
 
     // The same person against an organisation they are not in. Not an error and not a
     // different shape of answer: simply no row, so a caller cannot tell "not a member"

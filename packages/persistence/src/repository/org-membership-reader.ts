@@ -5,11 +5,30 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 export interface Membership {
   readonly memberId: string;
   readonly role: MemberRole;
+  /**
+   * When this member was last seen, or null for one who has never been.
+   *
+   * Returned by the check rather than read separately because the caller's only use for
+   * it is deciding whether to write it again, and the read that would answer that
+   * question runs under the policy this lookup exists to get in front of.
+   */
+  readonly lastActiveAt: Date | null;
 }
 
-export interface OrgSummaryRow extends Membership {
+/**
+ * One row of the organisation switcher.
+ *
+ * It names the two fields it shares with {@link Membership} rather than extending it. The
+ * two answer different questions — this one is "which of these am I in, and as what", the
+ * other is "may this request proceed, and when was this person last here" — and
+ * `last_active_at` is on the second for a reason the switcher has no use for. Inheriting
+ * it would mean `orgs_for_user` returning a column nothing reads.
+ */
+export interface OrgSummaryRow {
   readonly orgId: string;
   readonly name: string;
+  readonly memberId: string;
+  readonly role: MemberRole;
   readonly joinedAt: Date;
 }
 
@@ -35,13 +54,19 @@ export class OrgMembershipReader {
 
   /** The membership, or null where the person is not on this organisation's team. */
   async membership(userId: string, orgId: string): Promise<Membership | null> {
-    const rows = await this.db.execute<{ member_id: string; role: string }>(
-      sql`select * from resolve_org_membership(${userId}::uuid, ${orgId}::uuid)`,
-    );
+    const rows = await this.db.execute<{
+      member_id: string;
+      role: string;
+      last_active_at: Date | null;
+    }>(sql`select * from resolve_org_membership(${userId}::uuid, ${orgId}::uuid)`);
     const row = rows.rows[0];
     if (row === undefined) return null;
     // Safe: the column is written only from MemberRole.
-    return { memberId: row.member_id, role: row.role as MemberRole };
+    return {
+      memberId: row.member_id,
+      role: row.role as MemberRole,
+      lastActiveAt: row.last_active_at === null ? null : new Date(row.last_active_at),
+    };
   }
 
   /** Everything the person belongs to, oldest membership first. The switcher's list. */

@@ -1009,10 +1009,39 @@ client have no server halves to talk to yet.
       issuance, so a customer who shortens their idle window gets it applied when a session
       is created and ignored every time it slides. Found while deleting the reset path's
       equivalent variable. `refresh-service.ts` is the one caller
-- [ ] Record `org_members.last_active_at`. The column exists, the members screen has a
-      column for it, and nothing ever writes it — so a dormant seat and an active one look
-      identical. Wants a bounded write (at most once a day per membership) on the management
-      API's membership check rather than a write per request
+- [x] Record `org_members.last_active_at`. The column had existed since 0025 with a column
+      on the members screen and nothing that ever wrote it, so a dormant seat and an active
+      one read the same — including for the person reading the page, who saw "Never signed
+      in" about themselves. `MembershipGuard` writes it now, which is the one thing every
+      dashboard request under `/v1/orgs/:orgId` already does.
+      **The bound is the whole design.** A write per request would put an UPDATE on the
+      busiest row in the control plane to maintain a column the screen reads once a month,
+      so the stamp is at most once a day per membership. Deciding that needs the current
+      value, and the guard has nowhere else to get it: the check runs *before* `app.org_id`
+      is bound, so a repository read would be refused by the policy it is deciding.
+      Migration 0053 returns `last_active_at` from `resolve_org_membership` instead — the
+      same row on the same index seek, so the common path costs nothing and a member who
+      was here an hour ago is decided in memory. The write itself goes through
+      `OrgMemberRepository.touch`, which had been sitting there with no callers since the
+      members screen was wired, under a bound org context like every other org-scoped write.
+      A return type cannot be changed by `CREATE OR REPLACE`, so 0053 drops and recreates —
+      and privileges do not survive a drop, which is the trap `repo.md` records: forget the
+      REVOKE and GRANT and the function looks healthy while `idenzy_app` loses its only
+      membership lookup, so every dashboard request answers as though the caller were in no
+      organisation at all. `tenancy.integration.test.ts` reaches the function as the app
+      role, which is what proves the grant came back.
+      Two decisions worth keeping. The stamp is written **after** the role check, never
+      before: a request about to be refused has not shown the seat to be in use, and
+      stamping it would make a caller who may do nothing here look, on the one screen that
+      reports exactly this, like one who did something. And the window is a rolling
+      twenty-four hours rather than a calendar day, because a calendar boundary makes the
+      write rate depend on a timezone nobody chose — a member working either side of local
+      midnight would be stamped twice within an hour. A failed stamp is swallowed and
+      logged: this is bookkeeping about a request rather than part of answering it, and a
+      control-plane write that could turn a readable dashboard into a 500 is the wrong
+      trade for a relative timestamp. `OrgSummaryRow` stopped extending `Membership` in the
+      same change, because the switcher has no use for the column and inheriting it would
+      have meant `orgs_for_user` returning one nothing reads
 - [~] Cloud Armor rules and application rate limits. **The application half is in and the
       edge half is not**, which is the right order: a WAF rate-limits an address against a
       path, and the thing worth limiting here is an account being named by a thousand

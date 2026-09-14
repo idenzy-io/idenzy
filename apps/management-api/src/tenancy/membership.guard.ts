@@ -1,7 +1,11 @@
 import { InsufficientScopeError, MissingCredentialsError } from "@idenzy/core/errors";
+import { Logger } from "@idenzy/core/logging/logger";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { AccessTokenVerifier } from "@idenzy/node";
+import { OrgMemberRepository } from "@idenzy/persistence/repository/org-member-repository";
 import { OrgMembershipReader } from "@idenzy/persistence/repository/org-membership-reader";
+import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
+import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { MemberRole } from "@idenzy/protocol/enums/tenancy";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { type CanActivate, type ExecutionContext, Injectable, SetMetadata } from "@nestjs/common";
@@ -57,6 +61,8 @@ export class MembershipGuard implements CanActivate {
     private readonly verifier: AccessTokenVerifier,
     private readonly orgs: OrgMembershipReader,
     private readonly reflector: Reflector,
+    private readonly uow: UnitOfWork,
+    private readonly logger: Logger,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -105,8 +111,60 @@ export class MembershipGuard implements CanActivate {
     if (RANK[membership.role] < RANK[required]) {
       throw new InsufficientScopeError({ detail: { required, held: membership.role } });
     }
-    return { orgId, memberId: membership.memberId, role: membership.role };
+
+    // After the role check, never before it: a request that is about to be refused has
+    // not shown the seat to be in use, and stamping it would make a rejected caller look
+    // like a working one on the screen that reports exactly that.
+    const scope = { orgId, memberId: membership.memberId, role: membership.role };
+    if (isStale(membership.lastActiveAt, Date.now())) await this.touch(request, scope);
+    return scope;
   }
+
+  /**
+   * Records that this member was here, at most once a day and never at the caller's cost.
+   *
+   * The bound is the point. Every dashboard request under `/v1/orgs/:orgId` passes through
+   * here, so a write per request would put an UPDATE on the busiest row in the control
+   * plane to maintain a column the members screen reads once a month. `last_active_at`
+   * comes back from the membership check itself, so the common path costs no read either:
+   * a member who was here an hour ago is decided in memory.
+   *
+   * A failure is swallowed. This is bookkeeping about a request, not part of answering it,
+   * and a control-plane write that could turn a readable dashboard into a 500 is the wrong
+   * trade for a relative timestamp. `RevocationPublisher` makes the same one for the same
+   * reason.
+   */
+  private async touch(request: FastifyRequest, scope: DashboardMembership): Promise<void> {
+    const context = new OrgContext(
+      scope.orgId,
+      String(request.id),
+      "customer_staff",
+      scope.memberId,
+    );
+    try {
+      await this.uow.runForOrg(context, (tx) =>
+        new OrgMemberRepository(tx, context).touch(scope.memberId),
+      );
+    } catch (error) {
+      this.logger.warn("member activity not recorded", {
+        ...context.toLogFields(),
+        component: "tenancy",
+        outcome: "dropped",
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+    }
+  }
+}
+
+/**
+ * A day since the last stamp, or none at all.
+ *
+ * Compared against a rolling twenty-four hours rather than a calendar day, because a
+ * calendar boundary makes the write rate depend on a timezone nobody chose: a member
+ * working either side of local midnight would be stamped twice in an hour.
+ */
+export function isStale(lastActiveAt: Date | null, now: number): boolean {
+  return lastActiveAt === null || now - lastActiveAt.getTime() >= 24 * 60 * 60 * 1000;
 }
 
 interface DashboardMembership {

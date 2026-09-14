@@ -28,14 +28,29 @@ export interface TopUpRow {
   readonly settledAt: Date | null;
 }
 
+/** What paid a charge, learned when it settled rather than when it opened. */
+export interface SettledCard {
+  readonly paymentMethodId: string | null;
+  readonly brand: CardBrand;
+  readonly last4: string;
+}
+
 export interface NewTopUp {
   readonly amountCents: number;
   readonly currency: string;
   readonly trigger: TopUpTrigger;
   readonly provider: PaymentProvider;
-  readonly paymentMethodId: string;
-  readonly cardBrand: CardBrand;
-  readonly cardLast4: string;
+  /**
+   * The card being charged, where one is known when the charge opens.
+   *
+   * Null for a hosted checkout, which is the case these three were not written for: the
+   * cardholder picks the card on the provider's own page, so what it was is something the
+   * completion event tells us rather than something we chose. The columns have always
+   * allowed it — only this interface did not — and `settle` fills them in.
+   */
+  readonly paymentMethodId?: string | null | undefined;
+  readonly cardBrand?: CardBrand | null | undefined;
+  readonly cardLast4?: string | null | undefined;
   readonly requestedBy: string | null;
 }
 
@@ -140,10 +155,26 @@ export class TopUpRepository extends OrgRepository<typeof topUps> {
     state: TopUpState,
     failureCode: string | null,
     settledAt: Date,
+    card: SettledCard | null = null,
   ): Promise<TopUpRow | null> {
     const rows = await this.tx
       .update(topUps)
-      .set({ state, failureCode, settledAt })
+      .set({
+        state,
+        failureCode,
+        settledAt,
+        // Written here rather than at `start` for a hosted checkout, where the cardholder
+        // picked the card on the provider's page. The row keeps its own copy of the brand
+        // and four digits on purpose: removing the card is a delete, and a receipt that
+        // could not say what paid it would be a worse record than none.
+        ...(card === null
+          ? {}
+          : {
+              paymentMethodId: card.paymentMethodId,
+              cardBrand: card.brand,
+              cardLast4: card.last4,
+            }),
+      })
       .where(
         and(
           this.orgScope(),

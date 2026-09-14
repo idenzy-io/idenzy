@@ -393,6 +393,29 @@ export class CountryNotAllowedError extends ForbiddenError {
  * a customer debugging their integration needs to be told the difference between "you are
  * calling the wrong thing" and "your own configuration refuses this".
  */
+/**
+ * This installation takes no payments, so there is nothing to charge.
+ *
+ * A 409 rather than a 500 or a 503: nothing is broken and nothing will recover on a retry.
+ * The deployment is configured not to do this, the wallet says so through `provider: null`
+ * before anybody presses anything, and a caller reaching the route anyway has asked for
+ * something that is not on offer here.
+ */
+export class PaymentsUnavailableError extends ConflictError {
+  override readonly code = ErrorCode.PaymentsUnavailable;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This deployment cannot take payments.", options);
+  }
+}
+
+/** An automatic top-up with no card is a rule that cannot fire, which is worse than none. */
+export class PaymentMethodRequiredError extends ConflictError {
+  override readonly code = ErrorCode.PaymentMethodRequired;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "An automatic top-up needs a card on file.", options);
+  }
+}
+
 export class SignInMethodDisabledError extends ForbiddenError {
   override readonly code = ErrorCode.SignInMethodDisabled;
   constructor(options: ErrorOptions = {}) {

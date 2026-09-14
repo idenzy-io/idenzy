@@ -183,6 +183,9 @@ catalogs:
     solid-js:
       specifier: 1.9.15
       version: 1.9.15
+    stripe:
+      specifier: 22.6.2
+      version: 22.6.2
     svelte:
       specifier: 5.57.0
       version: 5.57.0
@@ -549,6 +552,9 @@ importers:
       '@idenzy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@idenzy/providers-payment':
+        specifier: workspace:*
+        version: link:../../packages/providers-payment
       '@nestjs/common':
         specifier: 'catalog:'
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -932,6 +938,31 @@ importers:
       '@idenzy/testing':
         specifier: workspace:*
         version: link:../testing
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.4.1
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
+
+  packages/providers-payment:
+    dependencies:
+      '@idenzy/core':
+        specifier: workspace:*
+        version: link:../core
+      '@idenzy/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@idenzy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      stripe:
+        specifier: 'catalog:'
+        version: 22.6.2(@types/node@26.4.1)
+    devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 26.4.1
@@ -6358,6 +6389,15 @@ packages:
 
   strip-literal@4.0.0:
     resolution: {integrity: sha512-PaqAvfUZKBwc/SLmNZtHmzK+v19Z4O4eS3cKPeGvbIv/U3pnyEq4Tuw3/4v/FwfM8VQaEawsyCcOQ0P+kpwWWw==}
+
+  stripe@22.6.2:
+    resolution: {integrity: sha512-PwRE2scocvXqDKPiskMa5vRJEAEkq46W69XyUYmAwrNSLr675lQnfqLwnsndAWizwgihOWw/irLmoFRo3ez7ew==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   strtok3@10.3.5:
     resolution: {integrity: sha512-ki4hZQfh5rX0QDLLkOCj+h+CVNkqmp/CMf8v8kZpkNVK6jGQooMytqzLZYUVYIZcFZ6yDB70EfD8POcFXiF5oA==}
@@ -12633,6 +12673,10 @@ snapshots:
   strip-literal@4.0.0:
     dependencies:
       js-tokens: 10.0.0
+
+  stripe@22.6.2(@types/node@26.4.1):
+    optionalDependencies:
+      '@types/node': 26.4.1
 
   strtok3@10.3.5:
     dependencies:

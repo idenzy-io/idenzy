@@ -87,6 +87,12 @@ export const ErrorCode = {
   // raised inside a receiver's own process by the SDK's verifier, and their right answer is 400.
   WebhookSignatureInvalid: "webhook_signature_invalid",
 
+  // Billing. A deployment with no payment provider is a correct one, so asking it to take
+  // money is a refusal about this installation rather than about the request: the wallet
+  // has already said `provider: null` and the screen is built to show that.
+  PaymentsUnavailable: "payments_unavailable",
+  PaymentMethodRequired: "payment_method_required",
+
   // Ours, not theirs
   ProviderUnavailable: "provider_unavailable",
   AnalyticsUnavailable: "analytics_unavailable",

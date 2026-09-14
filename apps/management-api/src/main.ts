@@ -4,6 +4,7 @@ import { Logger } from "@idenzy/core/logging/logger";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { AppModule } from "./app.module.js";
+import { PAYMENT_WEBHOOK_PATH } from "./billing/payment-webhook.controller.js";
 import { IdenzyExceptionFilter } from "./common/exception.filter.js";
 import { CorsPolicy } from "./http/cors-policy.js";
 
@@ -33,7 +34,29 @@ async function bootstrap(): Promise<void> {
 
   app.useGlobalFilters(new IdenzyExceptionFilter(logger));
 
-  app.get(CorsPolicy).bindTo(app.getHttpAdapter().getInstance());
+  // The payment webhook verifies a signature over the bytes that arrived, and Fastify's
+  // JSON parser hands a route the object rather than them. Re-parsing an object back to a
+  // string produces different bytes — key order, spacing, unicode escapes — and the check
+  // would fail in a way that looks exactly like a misconfigured secret. So the raw body is
+  // kept, and only for that one path: every other route gets the parser it always had, and
+  // holding a megabyte of string on every request to save it on one would be the wrong
+  // trade.
+  const fastify = app.getHttpAdapter().getInstance();
+  fastify.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (request, body: Buffer, done) => {
+      const raw = body.toString("utf8");
+      if (request.url.startsWith(PAYMENT_WEBHOOK_PATH)) request.rawBody = raw;
+      try {
+        done(null, raw.length === 0 ? {} : JSON.parse(raw));
+      } catch (cause: unknown) {
+        done(cause instanceof Error ? cause : new Error("invalid json"), undefined);
+      }
+    },
+  );
+
+  app.get(CorsPolicy).bindTo(fastify);
   app.enableShutdownHooks();
 
   process.on("unhandledRejection", (reason: unknown) => {

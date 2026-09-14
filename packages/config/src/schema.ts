@@ -259,6 +259,26 @@ export const configSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   SES_CONFIGURATION_SET: z.string().min(1).optional(),
 
+  /**
+   * Stripe (PROJECT.md 5.1). All five or none, checked where the provider is built.
+   *
+   * A partial set is the failure worth naming: four of five would start, and the symptom
+   * would be a customer's card charged by a checkout whose webhook we cannot verify —
+   * money taken and no credit granted, which is the one failure on this path nobody can
+   * shrug off. The five travel together for the reason the Cloud Tasks five do.
+   *
+   * `STRIPE_API_VERSION` is ours to pin and is sent on every request. Stripe rolls the
+   * shape of its objects per version, so a deployment that let the account default decide
+   * would change behaviour the day somebody upgrades the account in a dashboard nobody
+   * here is watching.
+   */
+  STRIPE_SECRET_KEY: z.string().startsWith("sk_").optional(),
+  STRIPE_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
+  STRIPE_CHECKOUT_SUCCESS_URL: z.string().url().optional(),
+  STRIPE_CHECKOUT_CANCEL_URL: z.string().url().optional(),
+  STRIPE_API_VERSION: z.string().min(1).default("2026-08-26.dahlia"),
+
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
 });
 

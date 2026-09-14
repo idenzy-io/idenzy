@@ -1,4 +1,5 @@
 import { AppConfig } from "@idenzy/config/app-config";
+import { Logger } from "@idenzy/core/logging/logger";
 
 /**
  * A config parsed from a fixed environment rather than a hand-built object, so a test
@@ -21,4 +22,15 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
     DASHBOARD_PROJECT_ID: "prj_00000000000040008000000000000002",
     ...overrides,
   });
+}
+
+/** Says nothing. A test asserting on behaviour should not be reading log lines. */
+export class SilentLogger extends Logger {
+  debug(): void {}
+  info(): void {}
+  warn(): void {}
+  error(): void {}
+  override child(): Logger {
+    return this;
+  }
 }

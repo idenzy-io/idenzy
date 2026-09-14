@@ -59,6 +59,13 @@ catalog:
   '@simplewebauthn/server': 14.0.0
   '@google-cloud/kms': 6.0.0
 
+  # Payments. The one vendor SDK we take rather than calling the REST API ourselves, unlike
+  # SES and Cloud Tasks: Stripe's surface here is customers, checkout sessions, payment
+  # methods and off-session intents, and its webhook signature check is the part worth not
+  # hand-rolling — the tolerance window and the constant-time compare are exactly where a
+  # careful implementation of ours would be a liability rather than an asset.
+  stripe: 22.6.2
+
   # Front end
   nuxt: 4.5.2
   '@nuxt/kit': 4.5.2

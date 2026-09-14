@@ -22,6 +22,21 @@ export const IdPrefix = {
   Challenge: "chl",
   Passkey: "pky",
   Factor: "mfa",
+  /** A card on file. Never the provider's own token, which is not ours to publish. */
+  PaymentMethod: "pmt",
+  /** A charge that added credit. */
+  TopUp: "top",
+  /** A grant of credit, bought or given. */
+  CreditGrant: "crd",
+  /**
+   * An invoice. `bil` and not `inv`, which an invitation already holds — `PublicId` splits
+   * on the first underscore, so two prefixes cannot share one and a near-miss would parse
+   * as the other kind of thing rather than fail.
+   *
+   * Its `number` is what a customer quotes at us and is not this: the id is ours and
+   * opaque, the number is a sequence an auditor asks about gaps in.
+   */
+  Invoice: "bil",
 } as const;
 export type IdPrefix = (typeof IdPrefix)[keyof typeof IdPrefix];
 

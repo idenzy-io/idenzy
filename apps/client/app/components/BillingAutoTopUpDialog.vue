@@ -23,11 +23,14 @@ import {
   formatCents,
   isCardExpired,
   MIN_TOPUP_CENTS,
-  PAYMENTS,
+  PAYMENTS_UNAVAILABLE,
   type PaymentMethod,
   topUpEveryWords,
   validateAutoTopUp,
 } from "~/utils/billing";
+
+/* Whether a card can be charged is the server's answer about this deployment. */
+const billing = useBillingStore();
 
 const props = defineProps<{
   setting: AutoTopUp;
@@ -267,7 +270,7 @@ function confirm() {
             A failed charge does not stop a sign-in. It leaves the balance where it is and
             emails the billing address, so an expired method is a message rather than an
             outage.
-            <template v-if="!PAYMENTS.running">
+            <template v-if="!billing.running">
               While no payment provider is connected, this rule is saved and never fires.
             </template>
           </span>

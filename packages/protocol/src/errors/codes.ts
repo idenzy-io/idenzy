@@ -83,8 +83,11 @@ export const ErrorCode = {
   HookRejected: "hook_rejected",
   HookTimedOut: "hook_timed_out",
 
-  // Webhooks. The one code we never answer with: a delivery is a request *we* make, so this is
-  // raised inside a receiver's own process by the SDK's verifier, and their right answer is 400.
+  // Webhooks, in both directions now. It is raised inside a customer's own process by the
+  // SDK's verifier when a delivery *we* made does not check out — and it is answered by us
+  // on the one route where we are the receiver rather than the sender, which is the payment
+  // provider's. A 400 either way: a signature that cannot be verified will not verify on a
+  // retry, and a 5xx has a provider redelivering for days over a body that never will.
   WebhookSignatureInvalid: "webhook_signature_invalid",
 
   // Billing. A deployment with no payment provider is a correct one, so asking it to take

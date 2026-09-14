@@ -1,50 +1,52 @@
 /**
- * The organisation's wallet: what credit it holds, what may charge it, and the invoices
- * its projects have produced (`orgs.billing_customer_id`, PROJECT.md 5.1).
+ * The organisation's money, as the four billing tabs read and write it (PROJECT.md 5.1).
  *
- * Keyed by organisation and never by project. One `billing_customer_id` sits on `orgs`,
- * so every project underneath draws on one balance, and an invoice covers the whole
- * organisation: the total is the sum of each project's own rounded total for that month,
- * which is what keeps this screen, the usage screen and the invoice one figure
- * (notes/usage.md).
+ * **Everything is the management API's now.** The balance is what the credit grants say,
+ * the cards are what the provider holds, and the invoices are what was issued — none of it
+ * is derived from usage any more. That was the placeholder's shape and it had to be: with
+ * nothing that charges, an invoice could only be a sum of closed periods, which is a
+ * forecast wearing an invoice's clothes.
  *
- * Cents throughout, the way the billing API hands them over. A float here rounds the
- * wrong way once and then disagrees with an invoice forever.
+ * **Nothing here adds a cent to a ref.** Adding credit asks the API for a hosted page and
+ * sends the browser to it; the credit arrives when the provider tells the server it was
+ * paid, and this store learns about it by reading the wallet again. That is the note's
+ * first finding kept true at the only layer that can keep it true — a changed local
+ * balance must never read as proof of a payment (notes/settings-billing.md P1).
  *
- * What the month has drawn down is not computed here. It is the usage screen's bill, and
- * a second reading of the same meters would be a second number to explain.
+ * **The card number never reaches this panel.** There is no add-card form and no token to
+ * post: `startCardSetup` answers with a URL to leave for, because the provider's own page
+ * is the only place a card is typed.
  *
- * Nothing charges anything. `PAYMENTS.running` is false, so `topUp` refuses and returns
- * the reason instead of adding cents to a ref: a local balance that grew is exactly what
- * notes/settings-billing.md forbids as proof of a payment. The credit in the fixture is
- * granted rather than bought, and the two kinds say which they are.
- *
- * A placeholder until the management client exists, like every store here.
+ * `running` is the server's answer and not a constant. A deployment with no payment
+ * provider is a correct one, and the screens are built to say so rather than to offer a
+ * control that would fail.
  */
 
+import type {
+  AutoTopUp as ApiAutoTopUp,
+  Invoice as ApiInvoice,
+  PaymentMethod as ApiPaymentMethod,
+  SpendAlert as ApiSpendAlert,
+  Wallet as ApiWallet,
+  HostedCheckout,
+  InvoiceList,
+} from "@idenzy/protocol/schemas/billing";
 import {
   type AutoTopUp,
   type CheckoutState,
   type CreditGrant,
   defaultMethodOf,
   type Invoice,
-  PAYMENTS,
   type PaymentMethod,
   type SpendAlert,
   type TopUpIssue,
   type TopUpRequest,
   validateTopUpRequest,
-  walletOf,
-  withDefaultMethod,
-  withMethod,
-  withoutMethod,
 } from "~/utils/billing";
-import { DURATIONS } from "~/utils/time";
-import { billFor } from "~/utils/usage";
+import { managementMessage } from "~/utils/sign-in-errors";
 
-const PLACEHOLDER_LATENCY = 700;
-const SAVE_LATENCY = 600;
-
+/* What a project that has configured nothing reads as, matching the server's own
+   defaults: off, and a threshold under the amount so switching it on is one decision. */
 const AUTO_TOPUP_DEFAULT: AutoTopUp = {
   enabled: false,
   thresholdCents: 2000,
@@ -55,53 +57,115 @@ const AUTO_TOPUP_DEFAULT: AutoTopUp = {
 const ALERT_DEFAULT: SpendAlert = { enabled: false, thresholdCents: 5000 };
 
 export const useBillingStore = defineStore("billing", () => {
-  const usage = useUsageStore();
   const projects = useProjectStore();
+  const members = useMembersStore();
 
-  const grants = ref<Record<string, CreditGrant[]>>({});
-  const methods = ref<Record<string, PaymentMethod[]>>({});
-  const autoTopUp = ref<Record<string, AutoTopUp>>({});
-  const alerts = ref<Record<string, SpendAlert>>({});
-  /** Where a checkout got to, per organisation. Never `confirmed` while nothing charges. */
+  const wallets = ref<Record<string, ApiWallet>>({});
+  const invoices = ref<Record<string, Invoice[]>>({});
   const checkout = ref<Record<string, CheckoutState>>({});
   const loading = ref(true);
+  const refusal = ref<string | null>(null);
   const lastSaved = ref<Record<string, string>>({});
+  /** Non-reactive on purpose: mutating a ref inside a computed re-invalidates the computed. */
+  const requested = new Set<string>();
 
-  setTimeout(() => {
-    grants.value = { org_hasan: hasanGrants(), org_acme: acmeGrants() };
-    methods.value = { org_hasan: [], org_acme: acmeMethods() };
-    autoTopUp.value = {
-      org_hasan: { ...AUTO_TOPUP_DEFAULT },
-      org_acme: {
-        enabled: true,
-        thresholdCents: 5000,
-        amountCents: 10_000,
-        methodId: "pm_acme_visa",
-      },
+  function basePath(orgId: string): string {
+    return `/v1/orgs/${orgId}/billing`;
+  }
+
+  function present(method: ApiPaymentMethod): PaymentMethod {
+    return {
+      id: method.id,
+      brand: method.brand,
+      last4: method.last4,
+      expiryMonth: method.expiryMonth,
+      expiryYear: method.expiryYear,
+      isDefault: method.isDefault,
+      /* The server answers with a member id resolved to a person, or null where that
+         member has left. "Someone who has left" is the honest reading of null and is a
+         normal row: a card outlives the person who added it. */
+      addedBy: method.addedBy ?? "A former member",
+      addedAt: method.addedAt,
     };
-    alerts.value = {
-      org_hasan: { enabled: false, thresholdCents: 5000 },
-      org_acme: { enabled: true, thresholdCents: 15_000 },
+  }
+
+  function presentInvoice(invoice: ApiInvoice): Invoice {
+    return {
+      id: invoice.id,
+      number: invoice.number,
+      periodStart: invoice.periodStart,
+      periodEnd: invoice.periodEnd,
+      issuedAt: invoice.issuedAt,
+      totalCents: invoice.totalCents,
+      currency: invoice.currency,
+      status: invoice.status,
+      pdfUri: invoice.pdfUri,
     };
-    loading.value = false;
-  }, PLACEHOLDER_LATENCY);
+  }
+
+  async function load(orgId: string): Promise<void> {
+    loading.value = true;
+    refusal.value = null;
+    try {
+      const path = basePath(orgId);
+      const api = useManagementApi();
+      const { data, error } = await api(path).get().json<ApiWallet>();
+      if (error.value !== null) throw error.value;
+      if (data.value !== null) wallets.value = { ...wallets.value, [orgId]: data.value };
+
+      const billed = await api(`${path}/invoices`).get().json<InvoiceList>();
+      if (billed.error.value === null && billed.data.value !== null) {
+        invoices.value = {
+          ...invoices.value,
+          [orgId]: billed.data.value.invoices.map(presentInvoice),
+        };
+      }
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  function ensure(orgId: string): void {
+    if (requested.has(orgId)) return;
+    requested.add(orgId);
+    void load(orgId);
+  }
+
+  function walletOfOrg(orgId: string): ApiWallet | null {
+    ensure(orgId);
+    return wallets.value[orgId] ?? null;
+  }
+
+  /** Whether this deployment can charge a card at all. The server's answer, not a constant. */
+  const running = computed(() => walletOfOrg(projects.currentOrg.id)?.provider !== null);
 
   function grantsFor(orgId: string): CreditGrant[] {
-    return grants.value[orgId] ?? [];
+    return (walletOfOrg(orgId)?.grants ?? []).map((grant) => ({
+      id: grant.id,
+      kind: grant.kind,
+      amountCents: grant.amountCents,
+      remainingCents: grant.remainingCents,
+      grantedAt: grant.grantedAt,
+      expiresAt: grant.expiresAt,
+      note: grant.note,
+    }));
   }
 
   /**
    * What is left to spend, in cents. The app bar and the SMS readiness check read this.
    *
-   * Summed from the grants rather than held as a figure of its own, because credit that
-   * has expired is worth nothing and a stored total would keep counting it.
+   * The server's figure rather than a sum taken here. It is the same arithmetic, over the
+   * same grants, with one difference that matters: expiry is decided against the database's
+   * clock, so a browser left open overnight does not go on counting credit that has run out.
    */
   function balanceFor(orgId: string): number {
-    return walletOf(grantsFor(orgId), new Date()).totalCents;
+    return walletOfOrg(orgId)?.balanceCents ?? 0;
   }
 
   function methodsFor(orgId: string): PaymentMethod[] {
-    return methods.value[orgId] ?? [];
+    return (walletOfOrg(orgId)?.methods ?? []).map(present);
   }
 
   function defaultMethodFor(orgId: string): PaymentMethod | null {
@@ -109,51 +173,27 @@ export const useBillingStore = defineStore("billing", () => {
   }
 
   function autoTopUpFor(orgId: string): AutoTopUp {
-    return autoTopUp.value[orgId] ?? { ...AUTO_TOPUP_DEFAULT };
+    const rule = walletOfOrg(orgId)?.autoTopUp;
+    return rule === undefined ? { ...AUTO_TOPUP_DEFAULT } : { ...rule };
   }
 
   function alertFor(orgId: string): SpendAlert {
-    return alerts.value[orgId] ?? { ...ALERT_DEFAULT };
+    const alert = walletOfOrg(orgId)?.spendAlert;
+    return alert === undefined ? { ...ALERT_DEFAULT } : { ...alert };
   }
 
   function checkoutFor(orgId: string): CheckoutState {
-    return checkout.value[orgId] ?? (PAYMENTS.running ? "idle" : "unavailable");
+    ensure(orgId);
+    return checkout.value[orgId] ?? (running.value ? "idle" : "unavailable");
   }
 
-  /** Newest first, one per closed month, over every project the organisation holds. */
   function invoicesFor(orgId: string): Invoice[] {
-    return invoicesFrom(orgId, monthsFor(orgId));
+    ensure(orgId);
+    return invoices.value[orgId] ?? [];
   }
 
-  /**
-   * Each closed month the organisation has, with the month's total across its projects.
-   *
-   * Per project and then summed, never recomputed from combined meters: each project's
-   * lines are rounded once by `billFor` and the invoice is the sum of those rounded
-   * totals, which is the rule the usage screen states and the only way the two agree.
-   */
-  function monthsFor(orgId: string): ClosedMonth[] {
-    const byMonth = new Map<string, ClosedMonth>();
-    for (const project of projects.projectsOf(orgId)) {
-      for (const period of usage.periodsFor(project.id)) {
-        if (!period.closed) continue;
-        const totalCents = billFor(period).totalCents;
-        const found = byMonth.get(period.id);
-        if (found) {
-          found.totalCents += totalCents;
-        } else {
-          byMonth.set(period.id, {
-            id: period.id,
-            start: period.start,
-            end: period.end,
-            totalCents,
-          });
-        }
-      }
-    }
-    return [...byMonth.values()].sort(
-      (left, right) => Date.parse(right.start) - Date.parse(left.start),
-    );
+  function outstandingFor(orgId: string): number {
+    return walletOfOrg(orgId)?.outstandingCents ?? 0;
   }
 
   function stamp(orgId: string) {
@@ -161,14 +201,16 @@ export const useBillingStore = defineStore("billing", () => {
   }
 
   /**
-   * Would add credit, and does not.
+   * Opens a charge and leaves for the page that takes it.
    *
-   * Returns the refusal rather than throwing, so the dialog can put the reason beside a
-   * disabled action. Nothing is written: no grant, no balance, no stamp. A store that
-   * added the cents and reported success would be the defect the note names first.
+   * The state goes to `processing` and stays there, because this tab is about to be
+   * replaced by the provider's. What brings it back is the browser returning to the
+   * success or cancel URL, which the wallet screen reads off the query and turns into the
+   * state the reader sees — and the balance behind it is a fresh read rather than anything
+   * this function guessed.
    */
   async function topUp(orgId: string, request: TopUpRequest): Promise<TopUpIssue | null> {
-    const issue = validateTopUpRequest(request);
+    const issue = validateTopUpRequest(request, running.value);
     if (issue !== null) {
       checkout.value = {
         ...checkout.value,
@@ -176,72 +218,133 @@ export const useBillingStore = defineStore("billing", () => {
       };
       return issue;
     }
-    /* Unreachable while `PAYMENTS.running` is false, and written out so the shape is
-       here when a provider is connected: the charge is started, the provider answers,
-       and the credit arrives from that answer rather than from this call. */
     checkout.value = { ...checkout.value, [orgId]: "processing" };
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    checkout.value = { ...checkout.value, [orgId]: "unavailable" };
-    return "unavailable";
+    try {
+      const { data, error } = await useManagementApi()(`${basePath(orgId)}/top-ups`)
+        .post({ amountCents: request.amountCents })
+        .json<HostedCheckout>();
+      if (error.value !== null) throw error.value;
+      const url = data.value?.url;
+      /* A 200 with no URL is not something to throw over: there is nothing the reader can
+         do about it and nothing here that would carry a stable code. The checkout stays
+         unstarted and says so, which is the same answer a refusal gives. */
+      if (url === undefined || url.length === 0) {
+        checkout.value = { ...checkout.value, [orgId]: "failed" };
+        return "unavailable";
+      }
+      window.location.assign(url);
+      return null;
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+      checkout.value = { ...checkout.value, [orgId]: "failed" };
+      return "unavailable";
+    }
   }
 
   function resetCheckout(orgId: string) {
-    checkout.value = { ...checkout.value, [orgId]: PAYMENTS.running ? "idle" : "unavailable" };
+    checkout.value = { ...checkout.value, [orgId]: running.value ? "idle" : "unavailable" };
+  }
+
+  /** Records what the browser came back to, so a reader is told rather than left guessing. */
+  function settleCheckout(orgId: string, outcome: "success" | "cancel"): void {
+    checkout.value = {
+      ...checkout.value,
+      /* Not `confirmed`. Landing on the success URL means the page was completed, not that
+         the money moved — the provider says that on a webhook, and the balance below is
+         what proves it. Saying "confirmed" here would be the simulated success the note
+         puts first, one layer up from where it used to be. */
+      [orgId]: outcome === "success" ? "processing" : "cancelled",
+    };
+    requested.delete(orgId);
+    void load(orgId);
   }
 
   /**
-   * Records a method the provider handed back. The number never reaches this panel: what
-   * arrives is a token, a brand and four digits.
-   */
-  async function addMethod(orgId: string, method: PaymentMethod): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    methods.value = { ...methods.value, [orgId]: withMethod(methodsFor(orgId), method) };
-    stamp(orgId);
-  }
-
-  /** Makes one the default, in one change, so there is never a moment with two or none. */
-  async function setDefaultMethod(orgId: string, id: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    methods.value = { ...methods.value, [orgId]: withDefaultMethod(methodsFor(orgId), id) };
-    stamp(orgId);
-  }
-
-  /**
-   * Takes a method off, promoting another where it was the default.
+   * A page that saves a card and charges nothing.
    *
-   * Removing the last one also switches off anything that would have charged it, because
-   * a rule that cannot fire is worse than one that is plainly off.
+   * There is no method to hand over, which is the whole point: the panel has no card field
+   * and never will, so what this does is ask where to send the reader.
+   */
+  async function addMethod(orgId: string): Promise<void> {
+    try {
+      const { data, error } = await useManagementApi()(`${basePath(orgId)}/methods/setup`)
+        .post({})
+        .json<HostedCheckout>();
+      if (error.value !== null) throw error.value;
+      const url = data.value?.url;
+      if (url !== undefined && url.length > 0) window.location.assign(url);
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    }
+  }
+
+  async function write(orgId: string, run: () => Promise<void>): Promise<void> {
+    refusal.value = null;
+    try {
+      await run();
+      requested.delete(orgId);
+      await load(orgId);
+      stamp(orgId);
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+    }
+  }
+
+  /** Makes one the default, in one call, so there is never a moment with two or none. */
+  async function setDefaultMethod(orgId: string, id: string): Promise<void> {
+    await write(orgId, async () => {
+      const { error } = await useManagementApi()(`${basePath(orgId)}/methods/${id}/default`).post(
+        {},
+      );
+      if (error.value !== null) throw error.value;
+    });
+  }
+
+  /**
+   * Takes a method off, at the provider as well as here.
+   *
+   * The rule about the last card switching the automatic top-up off lives on the server
+   * now, not in this function. It has to: a rule that cannot fire is a promise nobody
+   * keeps, and a panel enforcing it would leave the promise broken for anything that is
+   * not this panel.
    */
   async function removeMethod(orgId: string, id: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    const next = withoutMethod(methodsFor(orgId), id);
-    methods.value = { ...methods.value, [orgId]: next };
-    if (next.length === 0) {
-      autoTopUp.value = { ...autoTopUp.value, [orgId]: { ...autoTopUpFor(orgId), enabled: false } };
-    } else if (autoTopUpFor(orgId).methodId === id) {
-      autoTopUp.value = { ...autoTopUp.value, [orgId]: { ...autoTopUpFor(orgId), methodId: null } };
-    }
-    stamp(orgId);
+    await write(orgId, async () => {
+      const { error } = await useManagementApi()(`${basePath(orgId)}/methods/${id}`).delete();
+      if (error.value !== null) throw error.value;
+    });
   }
 
   async function setAutoTopUp(orgId: string, setting: AutoTopUp): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    autoTopUp.value = { ...autoTopUp.value, [orgId]: setting };
-    stamp(orgId);
+    await write(orgId, async () => {
+      const { error } = await useManagementApi()(`${basePath(orgId)}/auto-top-up`).put(
+        setting satisfies ApiAutoTopUp,
+      );
+      if (error.value !== null) throw error.value;
+    });
   }
 
   async function setAlert(orgId: string, alert: SpendAlert): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, SAVE_LATENCY));
-    alerts.value = { ...alerts.value, [orgId]: alert };
-    stamp(orgId);
+    await write(orgId, async () => {
+      const { error } = await useManagementApi()(`${basePath(orgId)}/spend-alert`).put(
+        alert satisfies ApiSpendAlert,
+      );
+      if (error.value !== null) throw error.value;
+    });
   }
 
   function lastSavedAt(orgId: string): string | null {
     return lastSaved.value[orgId] ?? null;
   }
 
+  /* Read once so the store sees the team behind `addedBy`, which the server resolves but
+     the members screen is what keeps current. */
+  void members;
+
   return {
     loading,
+    refusal,
+    running,
     grantsFor,
     balanceFor,
     methodsFor,
@@ -250,9 +353,10 @@ export const useBillingStore = defineStore("billing", () => {
     alertFor,
     checkoutFor,
     invoicesFor,
-    monthsFor,
+    outstandingFor,
     topUp,
     resetCheckout,
+    settleCheckout,
     addMethod,
     setDefaultMethod,
     removeMethod,
@@ -261,125 +365,3 @@ export const useBillingStore = defineStore("billing", () => {
     lastSavedAt,
   };
 });
-
-/*
- * The placeholder.
- */
-
-interface ClosedMonth {
-  id: string;
-  start: string;
-  end: string;
-  totalCents: number;
-}
-
-function daysFromNow(days: number): string {
-  return new Date(Date.now() + days * DURATIONS.DAY).toISOString();
-}
-
-function daysAgo(days: number): string {
-  return new Date(Date.now() - days * DURATIONS.DAY).toISOString();
-}
-
-/**
- * A personal organisation: credit granted at sign-up, part of it promotional and running
- * out, which is the state the expiry warning exists for.
- */
-function hasanGrants(): CreditGrant[] {
-  return [
-    {
-      id: "cg_hasan_trial",
-      kind: "promotional",
-      amountCents: 2500,
-      remainingCents: 1800,
-      grantedAt: daysAgo(21),
-      expiresAt: daysFromNow(9),
-      note: "Sign-up credit",
-    },
-    {
-      id: "cg_hasan_top",
-      kind: "purchased",
-      amountCents: 15_000,
-      remainingCents: 12_840,
-      grantedAt: daysAgo(40),
-      expiresAt: null,
-      note: "Top-up",
-    },
-  ];
-}
-
-/** A team: a purchased balance running low, and a support credit that already expired. */
-function acmeGrants(): CreditGrant[] {
-  return [
-    {
-      id: "cg_acme_support",
-      kind: "promotional",
-      amountCents: 5000,
-      remainingCents: 5000,
-      grantedAt: daysAgo(90),
-      expiresAt: daysAgo(12),
-      note: "Credit raised by support",
-    },
-    {
-      id: "cg_acme_top",
-      kind: "purchased",
-      amountCents: 50_000,
-      remainingCents: 4_120,
-      grantedAt: daysAgo(26),
-      expiresAt: null,
-      note: "Top-up",
-    },
-  ];
-}
-
-/** Two methods and one default, because the default is the thing worth being able to see. */
-function acmeMethods(): PaymentMethod[] {
-  const soon = new Date(Date.now() + 45 * DURATIONS.DAY);
-  return [
-    {
-      id: "pm_acme_visa",
-      brand: "visa",
-      last4: "6411",
-      expiryMonth: soon.getMonth() + 1,
-      expiryYear: soon.getFullYear(),
-      isDefault: true,
-      addedBy: "Hasan Musluoglu",
-      addedAt: "2026-03-14T10:20:00.000Z",
-    },
-    {
-      id: "pm_acme_mc",
-      brand: "mastercard",
-      last4: "2087",
-      expiryMonth: 4,
-      expiryYear: 2030,
-      isDefault: false,
-      addedBy: "Ana Rodríguez",
-      addedAt: "2026-07-02T09:05:00.000Z",
-    },
-  ];
-}
-
-/**
- * One invoice per closed month with something on it, issued the day after it closes. The
- * most recent is still open and the one before it went past due, because a list where
- * everything is paid never shows what the other two states look like.
- */
-function invoicesFrom(orgId: string, months: readonly ClosedMonth[]): Invoice[] {
-  const suffix = orgId.replace(/^org_/, "").slice(0, 4).toUpperCase();
-  return months
-    .filter((month) => month.totalCents > 0)
-    .map((month, index): Invoice => {
-      const number = `IDZ-${month.id.replace("-", "")}-${suffix}`;
-      return {
-        id: `in_${suffix.toLowerCase()}_${month.id}`,
-        number,
-        periodStart: month.start,
-        periodEnd: month.end,
-        issuedAt: new Date(Date.parse(month.end) + DURATIONS.DAY).toISOString(),
-        totalCents: month.totalCents,
-        currency: "USD",
-        status: index === 0 ? "open" : index === 1 ? "past_due" : "paid",
-        pdfUri: `https://invoices.idenzy.io/${number}.pdf`,
-      };
-    });
-}

@@ -30,7 +30,7 @@ import {
   formatCents,
   isGrantExpiringSoon,
   MIN_TOPUP_CENTS,
-  PAYMENTS,
+  PAYMENTS_UNAVAILABLE,
   runwayTone,
   runwayWords,
   type TopUpRequest,
@@ -42,6 +42,25 @@ import {
 import { formatDate } from "~/utils/time";
 
 const screen = useBillingScreen();
+const route = useRouter().currentRoute;
+
+/**
+ * Where the provider's page sends the browser back to.
+ *
+ * Read once on arrival and then taken out of the URL, because a reload must not re-report
+ * a charge that happened minutes ago. `replace` rather than `push` for the same reason
+ * the audit screen replaces its view parameter: this is not a place in the history.
+ *
+ * Landing on the success URL is not proof the money moved — that is what the provider says
+ * on a webhook — so the store reads the wallet again rather than declaring it confirmed.
+ */
+onMounted(() => {
+  const outcome = route.value.query["checkout"];
+  if (outcome !== "success" && outcome !== "cancel") return;
+  store.settleCheckout(org.value.id, outcome);
+  const { checkout: _consumed, ...rest } = route.value.query;
+  void navigateTo({ path: route.value.path, query: rest }, { replace: true });
+});
 const {
   store,
   now,
@@ -212,8 +231,8 @@ const ZERO_SUMMARY = "Sign-in never stops · SMS stops · metered use above the 
 
     <!-- Said once, at the top, because it is true of every control below it. -->
     <InfoNote
-      v-if="!PAYMENTS.running"
-      :text="PAYMENTS.reason"
+      v-if="!store.running"
+      :text="PAYMENTS_UNAVAILABLE"
       icon="material-symbols:warning-outline"
       tone="warning"
     />

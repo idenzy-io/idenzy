@@ -90,6 +90,37 @@ band was tried and read as shouting; the error colour is kept for the glyph and 
 `useBillingScreen` derives every figure once for the four tabs, so the balance the overview
 shows is the balance the top-up dialog is handed and the wallet's fact band repeats.
 
+## Settled while implementing
+
+**The screens are the management API's now, and the first finding is kept true one layer
+lower than it was.** A changed local balance must never read as proof of a payment, and it
+cannot: nothing in the panel adds a cent to a ref. Adding credit asks for a hosted page and
+leaves for it, the credit arrives when the provider tells the *server* it was paid, and the
+wallet learns by reading itself again. Landing on the success URL is deliberately not
+`confirmed` — the page completing is not the money moving, and calling it confirmed would be
+the same simulated success moved up a floor.
+
+**`PAYMENTS.running` is gone.** It was a module constant reading `false`, which was true
+when it was written and would have outlived its truth silently the moment a provider was
+configured. Whether a card can be charged is the server's answer about this deployment —
+`wallet.provider` is null where none is — and a screen with no way to add money still
+explains itself rather than looking broken.
+
+**"Add a method" opened `https://billing.idenzy.io/portal`,** a hostname nobody had
+registered. It asks for a session now: minted for this organisation, expiring, which is what
+makes the card that comes back attributable to them. Same tab rather than a popup, because a
+card saved in a popup leaves the reader looking at a page that does not know it happened.
+
+**A card on file is no longer a condition of the first top-up.** That rule was written for
+charging a saved card; a hosted checkout lets the cardholder pick one on the provider's page,
+including a card nobody has used here before, so demanding one first refused the only route a
+new customer has.
+
+**The invoices tab is empty rather than invented.** It used to derive an invoice per closed
+usage period, which is a forecast wearing an invoice's clothes — and it had to be, with
+nothing that issues one. It reads what was issued now, and nothing has been: the job that
+closes a month is money *out* and is its own piece of work.
+
 ## Implementation references
 
 - [billing-screen.ts](../apps/client/app/composables/billing-screen.ts)

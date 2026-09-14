@@ -1,3 +1,4 @@
+import { WebhookSignatureInvalidError } from "@idenzy/core/errors";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
 import { PaymentProvider, type ProviderEvent } from "@idenzy/domain/ports/payment-provider";
@@ -13,7 +14,7 @@ import {
   PaymentProvider as ProviderName,
   TopUpState,
 } from "@idenzy/protocol/enums/billing";
-import { Injectable, Optional } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 
 /**
  * What the provider tells us, turned into credit — once (PROJECT.md 5.1).
@@ -43,13 +44,36 @@ export class PaymentWebhookService {
     private readonly events: PaymentProviderEventRepository,
     private readonly clock: Clock,
     private readonly logger: Logger,
-    @Optional() private readonly payments: PaymentProvider | null,
+    /**
+     * `@Inject` by token and not by type, which is not decoration.
+     *
+     * A constructor parameter typed `PaymentProvider | null` emits `Object` into
+     * `design:paramtypes` — a union has no runtime class — so Nest resolves nothing and the
+     * parameter arrives `undefined`. `=== null` is then false and the next line dereferences
+     * it. The symptom is a TypeError inside a handler rather than a boot failure, which is
+     * the same shape as the `useImportType` trap `repo.md` records, and it was found by a
+     * webhook answering 500 to a signature that verified perfectly well.
+     */
+    @Optional() @Inject(PaymentProvider) private readonly payments: PaymentProvider | null,
   ) {}
 
   async receive(rawBody: string, signature: string, requestId: string): Promise<void> {
-    if (this.payments === null) return;
+    if (this.payments == null) return;
     // Verified before anything is read off it. Everything below treats the payload as ours.
-    const event = this.payments.readEvent(rawBody, signature);
+    //
+    // A signature that does not check out is a 400 and not a 500: nothing here is broken,
+    // the caller sent something we will not accept, and a provider reading a 5xx retries
+    // for days over a body that will never verify. The provider's own error class is
+    // translated rather than propagated, because an internal_error on this route would
+    // also hide a forgery among genuine faults.
+    let event: ProviderEvent;
+    try {
+      event = this.payments.readEvent(rawBody, signature);
+    } catch (cause: unknown) {
+      throw new WebhookSignatureInvalidError({
+        detail: { reason: cause instanceof Error ? cause.name : "unverifiable" },
+      });
+    }
 
     const first = await this.events.record({
       provider: ProviderName.Stripe,
@@ -184,7 +208,7 @@ export class PaymentWebhookService {
    */
   private async syncCards(context: OrgContext): Promise<void> {
     const provider = this.payments;
-    if (provider === null) return;
+    if (provider == null) return;
     const customer = await this.uow.runForOrg(context, (tx) =>
       new OrgBillingCustomerRepository(tx, context).current(),
     );

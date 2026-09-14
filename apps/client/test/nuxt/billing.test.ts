@@ -33,7 +33,7 @@ import {
   methodForAuto,
   methodRemovalIssue,
   outstandingCents,
-  PAYMENTS,
+  PAYMENTS_UNAVAILABLE,
   type PaymentCard,
   type PaymentMethod,
   paymentRepair,
@@ -126,28 +126,45 @@ describe("money", () => {
 });
 
 /*
- * Nothing charges anything, and the screen is built against that rather than around it.
+ * Whether a payment can happen is the deployment's answer, and the screen is built against
+ * that rather than around it.
  */
 describe("whether a payment can happen at all", () => {
-  it("says it cannot, and says why", () => {
-    expect(PAYMENTS.running).toBe(false);
-    expect(PAYMENTS.reason.length).toBeGreaterThan(0);
-  });
-
-  it("refuses a perfectly good request while no provider is connected", () => {
+  /**
+   * `running` is passed in rather than read from a constant, which is the change that
+   * matters: it was a module-level `false` that would have outlived its truth the moment a
+   * provider was configured, and the screens read the server's answer now.
+   */
+  it("refuses a perfectly good request where no provider is connected", () => {
     const request = { amountCents: 5000, currency: "USD", methodId: "pm_1" };
-    expect(validateTopUpRequest(request)).toBe(PAYMENTS.running ? null : "unavailable");
+    expect(validateTopUpRequest(request, false)).toBe("unavailable");
+    expect(validateTopUpRequest(request, true)).toBeNull();
   });
 
   it("names what the reader can fix before what they cannot", () => {
-    /* An amount they can correct, then a method they can add, and only then the
-       integration they cannot do anything about. */
-    expect(validateTopUpRequest({ amountCents: 5, currency: "USD", methodId: "pm_1" })).toBe(
+    /* An amount they can correct comes before the integration they cannot do anything
+       about, whichever way the deployment is configured. */
+    expect(validateTopUpRequest({ amountCents: 5, currency: "USD", methodId: "pm_1" }, false)).toBe(
       "amount_too_small",
     );
-    expect(validateTopUpRequest({ amountCents: 5000, currency: "USD", methodId: null })).toBe(
-      "no_method",
+    expect(validateTopUpRequest({ amountCents: 5, currency: "USD", methodId: "pm_1" }, true)).toBe(
+      "amount_too_small",
     );
+  });
+
+  /**
+   * A card on file is no longer a condition of adding credit. It was, while the shape in
+   * mind was charging a saved card; a hosted checkout lets the cardholder pick one on the
+   * provider's page, so demanding one first would refuse the only route a new customer has.
+   */
+  it("does not demand a card before the first top-up", () => {
+    expect(
+      validateTopUpRequest({ amountCents: 5000, currency: "USD", methodId: null }, true),
+    ).toBeNull();
+  });
+
+  it("still has a reason to show where payments are off", () => {
+    expect(PAYMENTS_UNAVAILABLE.length).toBeGreaterThan(0);
   });
 
   it("has a sentence for every refusal", () => {

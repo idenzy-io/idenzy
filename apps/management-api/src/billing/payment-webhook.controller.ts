@@ -3,12 +3,15 @@ import { Body, Controller, Headers, HttpCode, Post, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { PaymentWebhookService } from "./payment-webhook-service.js";
 
-/** Declared here and read by `main.ts`, so the raw-body rule names one path and not a guess. */
-export const PAYMENT_WEBHOOK_PATH = "/v1/payments/stripe/webhook";
+const PAYMENT_WEBHOOK_PATH = "v1/payments/stripe/webhook";
 
+/**
+ * Nest writes this when the application is created with `rawBody`, and declares it on its
+ * own request type rather than on Fastify's — which is the one the `@Req()` parameter has.
+ */
 declare module "fastify" {
   interface FastifyRequest {
-    rawBody?: string;
+    rawBody?: Buffer;
   }
 }
 
@@ -38,7 +41,9 @@ export class PaymentWebhookController {
     @Headers("stripe-signature") signature: string | undefined,
     @Body() _body: unknown,
   ): Promise<{ received: boolean }> {
-    const raw = request.rawBody;
+    // Nest keeps this when the app is created with `rawBody`, as a Buffer. The signature
+    // covers these bytes and not a re-serialised copy of the object beside them.
+    const raw = request.rawBody?.toString("utf8");
     if (raw === undefined || signature === undefined || signature.length === 0) {
       throw new ValidationFailedError({
         message: "That webhook could not be read.",

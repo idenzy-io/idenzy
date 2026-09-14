@@ -12,13 +12,13 @@
  * never both worth reading (the note's "a failed payment replaces the normal status").
  *
  * Add credit sits beside the balance, as the note asks, and is disabled with its reason
- * while `PAYMENTS.running` is false. Nothing on this tab writes anything else.
+ * where the deployment takes no payments. Nothing on this tab writes anything else.
  */
 import type { Fact } from "~/components/FactGrid.vue";
 import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
   formatCents,
-  PAYMENTS,
+  PAYMENTS_UNAVAILABLE,
   RUNWAY_HORIZON_DAYS,
   runwayDays,
   runwayTone,
@@ -198,8 +198,8 @@ watch(
 
     <!-- Said once, at the top, because it is true of every figure below it. -->
     <InfoNote
-      v-if="!PAYMENTS.running"
-      :text="PAYMENTS.reason"
+      v-if="!store.running"
+      :text="PAYMENTS_UNAVAILABLE"
       icon="material-symbols:warning-outline"
       tone="warning"
     />

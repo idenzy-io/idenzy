@@ -28,6 +28,11 @@ export class IdenzyExceptionFilter implements ExceptionFilter {
         requestId,
         errorCode: error.code,
         statusCode: error.status,
+        // The class of what actually went wrong, which `internal_error` alone never says.
+        // Never the message: that is the one field on an exception that can quote a value
+        // (PROJECT.md 4.13.8), and a driver error naming the row it choked on is exactly
+        // what the log allowlist exists to keep out.
+        errorName: exception instanceof Error ? exception.name : "unknown",
       });
     }
 

@@ -28,7 +28,6 @@ import {
   isCardExpired,
   isCheckoutPending,
   MIN_TOPUP_CENTS,
-  PAYMENTS,
   type PaymentMethod,
   runwayWords,
   TOPUP_ISSUE_LABELS,
@@ -37,6 +36,9 @@ import {
   type TopUpRequest,
   validateTopUp,
 } from "~/utils/billing";
+
+/* Whether a card can be charged is the server's answer about this deployment. */
+const billing = useBillingStore();
 
 const props = defineProps<{
   balance: Balance;
@@ -84,7 +86,7 @@ const blocker = computed<TopUpIssue | null>(() => {
   const amount = validateTopUp(cents.value);
   if (amount !== null) return amount;
   if (method.value === null) return "no_method";
-  return PAYMENTS.running ? null : "unavailable";
+  return billing.running ? null : "unavailable";
 });
 
 const ready = computed(

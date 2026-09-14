@@ -26,8 +26,16 @@ import { isoDateTimeSchema } from "./common.js";
 const centsSchema = z.number().int().min(0);
 const currencySchema = z.string().length(3).toUpperCase();
 
+/**
+ * A zod enum over one of the vocabularies, keeping the literal union.
+ *
+ * The naive spelling widens to `string`, which compiles here and then loses every caller
+ * the type they actually wanted: the panel's own `CardBrand` is a union of five names, and
+ * a schema answering `string` makes assigning one to the other an error at the far end of
+ * the wire rather than a match.
+ */
 const enumOf = <T extends Record<string, string>>(values: T) =>
-  z.enum(Object.values(values) as [string, ...string[]]);
+  z.enum(Object.values(values) as [T[keyof T], ...T[keyof T][]]);
 
 /** One grant of credit, and what is left of it. */
 export const creditGrantSchema = z.object({

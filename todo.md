@@ -1246,7 +1246,38 @@ template pipeline of its own rather than a branch in the OTP flow.
       that charges: no Stripe client, no checkout, no webhook receiver, no metering job
       writing `credit_grants`, and `PAYMENTS.running` in the panel is still false. The tables
       `payment_provider_events` and `top_ups` exist precisely so the webhook half can be
-      idempotent when it lands
+      idempotent when it lands.
+      **Money in is done.** A Stripe adapter behind a `PaymentProvider` port, a hosted
+      checkout, cards on file, the automatic rule's settings, the webhook receiver, and all
+      four panel screens off their fixtures. The SDK rather than the REST API, which
+      reverses the call SES and Cloud Tasks got: those are one signed request, this is five
+      object families plus signature verification, where `constructEvent` owns the tolerance
+      window and the constant-time compare and a careful implementation of ours would be a
+      liability. No card number reaches this system — adding credit answers with a URL to
+      leave for, which is what keeps every service out of PCI scope. Three guards stand
+      between a delivery and a second lot of credit and all three are in the database: a
+      unique index on the provider's event id, a unique index on the intent id, and
+      `settled_at is null` inside the update that settles; granting and settling are one
+      transaction. The organisation comes off the event rather than a lookup — stamped on
+      the session, the intent and the setup intent, read only after the signature verifies.
+      A deployment with no keys is correct and answers `provider: null`; a *partial* one is
+      a boot failure, because missing only the webhook secret means a checkout we cannot
+      verify the outcome of.
+      **Four bugs that only running it could find**, which is the argument for doing so.
+      A `mode: setup` session is refused without a `currency` even though it charges
+      nothing. A content-type parser of ours collides with the one Nest's adapter
+      registers — `FST_ERR_CTP_ALREADY_PRESENT`, a boot crash — so the raw body comes from
+      Nest's own `rawBody` option instead. A constructor parameter typed
+      `PaymentProvider | null` emits `Object` into `design:paramtypes`, so Nest resolved
+      nothing and the parameter arrived `undefined`: `=== null` was false and the next line
+      dereferenced it, which is the same shape as the `useImportType` trap and surfaced as a
+      webhook answering 500 to a signature that verified perfectly. And a forged signature
+      was a 500 rather than a 400, which would have had Stripe redelivering for days over a
+      body that will never verify.
+      What is left is money *out*: the job that closes a month, prices `usage_periods`
+      against the 5.1 price list, raises an invoice with per-project lines and draws down
+      `credit_grants`. Until it exists the invoices list is empty rather than invented, and
+      the automatic rule has settings and no sweep to fire it
 - [ ] `admin` panel v1: tenancy administration, abuse response, spend caps
 - [ ] Status page and public incident communication
 - [ ] External penetration test

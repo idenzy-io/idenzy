@@ -33,23 +33,15 @@ export interface PaymentCapability {
 }
 
 /**
- * Nothing charges anything yet, and every action that would need a payment reads this.
+ * Why a screen says nothing can take a card, where that is the answer.
  *
- * Stripe is not integrated: `orgs.billing_customer_id` is the only billing column in the
- * schema, there is no wallet, credit, payment-method or invoice table, `management-api`
- * registers a health controller and nothing else, and no worker consumes a payment
- * webhook. So a top-up cannot be started, the credit below is granted rather than bought,
- * and the invoices are raised from closed usage periods rather than issued by anybody.
- *
- * The note's first finding is that a changed local balance must never read as proof of a
- * payment (notes/settings-billing.md P1). This is how that is kept true: the store
- * refuses the write instead of adding cents to a ref.
+ * It is a reason and no longer a verdict. Whether payments run is the server's answer —
+ * `wallet.provider` is null on a deployment with no keys — and a constant here saying
+ * `running: false` outlived its truth the moment one was configured. The reason survives
+ * because a disabled control still has to explain itself.
  */
-export const PAYMENTS: PaymentCapability = {
-  running: false,
-  reason:
-    "No payment provider is connected yet, so nothing here can charge a card. The balance is credit granted to the account rather than money anybody has paid, and adding credit is unavailable rather than simulated.",
-};
+export const PAYMENTS_UNAVAILABLE =
+  "No payment provider is connected on this deployment, so nothing here can charge a card. The balance is credit granted to the account rather than money anybody has paid.";
 
 /**
  * The states a real checkout passes through, named now so the screen is built against
@@ -80,7 +72,7 @@ export const CHECKOUT_STATE_LABELS: Record<CheckoutState, string> = {
 };
 
 export const CHECKOUT_STATE_NOTES: Record<CheckoutState, string> = {
-  unavailable: PAYMENTS.reason,
+  unavailable: PAYMENTS_UNAVAILABLE,
   idle: "Nothing has been charged.",
   processing: "The provider has the charge. Leaving this page does not cancel it.",
   requires_action:
@@ -341,7 +333,7 @@ export const TOPUP_ISSUE_LABELS: Record<TopUpIssue, string> = {
   amount_invalid: "An amount to add, in whole dollars.",
   amount_too_small: `The smallest top-up is ${formatCents(MIN_TOPUP_CENTS)}. Below that the card fee is most of the transaction.`,
   no_method: "A payment method has to be on the account before anything can charge one.",
-  unavailable: PAYMENTS.reason,
+  unavailable: PAYMENTS_UNAVAILABLE,
 };
 
 export function validateTopUp(cents: number): TopUpIssue | null {
@@ -363,12 +355,21 @@ export interface TopUpRequest {
   methodId: string | null;
 }
 
-/** Whether a top-up could be attempted at all, in the order the reader can act on. */
-export function validateTopUpRequest(request: TopUpRequest): TopUpIssue | null {
+/**
+ * Whether a top-up could be attempted at all, in the order the reader can act on.
+ *
+ * `running` is passed in rather than read from a constant, because it is the server's
+ * answer about this deployment and this file holds rules rather than state.
+ *
+ * A card on file is no longer one of the conditions. It was, while the shape in mind was
+ * charging a saved card; a hosted checkout lets the cardholder pick one on the provider's
+ * page, including a card nobody has used here before, so demanding one first would refuse
+ * the only route a new customer has.
+ */
+export function validateTopUpRequest(request: TopUpRequest, running: boolean): TopUpIssue | null {
   const amount = validateTopUp(request.amountCents);
   if (amount !== null) return amount;
-  if (request.methodId === null) return "no_method";
-  return PAYMENTS.running ? null : "unavailable";
+  return running ? null : "unavailable";
 }
 
 export interface AutoTopUp {
@@ -489,18 +490,6 @@ export interface PaymentMethod extends PaymentCard {
   id: string;
   isDefault: boolean;
 }
-
-/**
- * Where a card, an address, a tax registration and a receipt are managed: the payment
- * provider's own hosted page.
- *
- * None of that is ours to build. The provider already has a portal that takes a card
- * number on its own origin, holds the billing address that decides the tax, and serves
- * every invoice as a PDF, and a second implementation here would be a second thing to keep
- * correct in two tax jurisdictions. What this panel owns is the balance and the rule that
- * tops it up; everything downstream of the charge is a link.
- */
-export const BILLING_PORTAL_URL = "https://billing.idenzy.io/portal";
 
 export function cardLabel(card: PaymentCard): string {
   return `${CARD_BRAND_LABELS[card.brand]} ending ${card.last4}`;

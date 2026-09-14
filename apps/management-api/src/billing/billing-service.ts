@@ -57,7 +57,17 @@ export class BillingService {
   constructor(
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
-    @Optional() private readonly payments: PaymentProvider | null,
+    /**
+     * `@Inject` by token and not by type, which is not decoration.
+     *
+     * A constructor parameter typed `PaymentProvider | null` emits `Object` into
+     * `design:paramtypes` — a union has no runtime class — so Nest resolves nothing and the
+     * parameter arrives `undefined`. `=== null` is then false and the next line dereferences
+     * it. The symptom is a TypeError inside a handler rather than a boot failure, which is
+     * the same shape as the `useImportType` trap `repo.md` records, and it was found by a
+     * webhook answering 500 to a signature that verified perfectly well.
+     */
+    @Optional() @Inject(PaymentProvider) private readonly payments: PaymentProvider | null,
     @Optional() @Inject(CHECKOUT_URLS) private readonly urls: CheckoutUrls | null,
   ) {}
 
@@ -88,7 +98,7 @@ export class BillingService {
         autoTopUp: present.autoTopUp(settings),
         spendAlert: present.spendAlert(settings),
         outstandingCents,
-        provider: this.payments === null ? null : ProviderName.Stripe,
+        provider: this.payments == null ? null : ProviderName.Stripe,
       };
     });
   }
@@ -301,7 +311,7 @@ export class BillingService {
    * screen as much through `provider: null`.
    */
   private configured(): { provider: PaymentProvider; urls: CheckoutUrls } {
-    if (this.payments === null || this.urls === null) {
+    if (this.payments == null || this.urls == null) {
       throw new PaymentsUnavailableError();
     }
     return { provider: this.payments, urls: this.urls };

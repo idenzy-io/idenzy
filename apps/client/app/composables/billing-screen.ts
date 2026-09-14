@@ -3,7 +3,6 @@ import {
   alertReached,
   type Balance,
   BILLING_CURRENCY,
-  BILLING_PORTAL_URL,
   isCardExpired,
   isCardExpiringSoon,
   isPastDue,
@@ -159,9 +158,19 @@ export function useBillingScreen() {
     }
   }
 
-  /** The provider's hosted page, which is where a card number is taken, on their origin. */
-  function openPortal() {
-    window.open(BILLING_PORTAL_URL, "_blank", "noopener");
+  /**
+   * The provider's hosted page, which is where a card number is taken, on their origin.
+   *
+   * The URL is asked for rather than known: it is a session minted for this organisation
+   * and it expires, which is what makes the card that comes back attributable to them.
+   * `BILLING_PORTAL_URL` used to stand here and was a hostname nobody had registered.
+   *
+   * The same tab, not a new one. A card saved in a popup leaves the reader looking at a
+   * page that does not know it happened, and the return URL is what brings them back to a
+   * wallet that has re-read itself.
+   */
+  function openPortal(): Promise<void> {
+    return whileBusy("portal", () => store.addMethod(org.value.id));
   }
 
   /*

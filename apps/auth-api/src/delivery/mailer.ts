@@ -1,4 +1,3 @@
-import { AppConfig } from "@idenzy/config/app-config";
 import { InternalError } from "@idenzy/core/errors";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { EmailProvider } from "@idenzy/domain/ports/email-provider";
@@ -8,6 +7,7 @@ import type { TemplateType } from "@idenzy/protocol/enums/delivery";
 import { TemplateRenderer } from "@idenzy/templating/renderer";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
+import { SendingDomains } from "./sending-domains.js";
 
 /**
  * What a flow supplies. `project.name` and `user.email` are filled in here.
@@ -39,7 +39,7 @@ export class Mailer {
     private readonly uow: UnitOfWork,
     private readonly renderer: TemplateRenderer,
     private readonly provider: EmailProvider,
-    private readonly config: AppConfig,
+    private readonly domains: SendingDomains,
   ) {}
 
   async deliver(
@@ -64,9 +64,14 @@ export class Mailer {
       ...(expiresInSeconds === undefined ? {} : { expires_in: humanize(expiresInSeconds) }),
     });
 
+    // The project's own verified domain where it has one, and the shared sender where it
+    // does not. This used to be one address from the environment for every project on the
+    // deployment, which meant a customer paying for a sending domain had it collected,
+    // verified, displayed on a screen and never used (PROJECT.md 11.2).
+    const identity = await this.domains.forProject(context.projectId);
     await this.provider.send(context.projectId, {
       to,
-      from: this.config.get("EMAIL_FROM_ADDRESS"),
+      from: identity.from,
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,

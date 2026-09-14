@@ -395,6 +395,26 @@ export class CountryNotAllowedError extends ForbiddenError {
  * calling the wrong thing" and "your own configuration refuses this".
  */
 /**
+ * The shared development sender has been used as though it were a production one.
+ *
+ * A 403 rather than a 429, and the distinction is the whole point of having its own code: a
+ * rate limit says "try again later", which is true and useless. What this says is "go and
+ * verify a sending domain", which is a thing the reader can do and the only thing that
+ * makes the send work. The message is the entire teaching mechanism for the rule, so it
+ * carries the instruction rather than the symptom.
+ */
+export class SendingDomainRequiredError extends ForbiddenError {
+  override readonly code = ErrorCode.SendingDomainRequired;
+  constructor(options: ErrorOptions = {}) {
+    super(
+      options.message ??
+        "This project has no verified sending domain, so it is using the shared development sender. That sender is limited and is not for production traffic — verify a sending domain of your own to send without it.",
+      options,
+    );
+  }
+}
+
+/**
  * Out of credit, and past the tolerance that would have carried it.
  *
  * A 402 and not a 403: this is about money rather than about permission, and the caller's

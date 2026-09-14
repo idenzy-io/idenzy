@@ -18,6 +18,7 @@ import { ATTESTATION_VERIFIER, PHONE_GEOGRAPHY } from "./delivery-tokens.js";
 import { emailProviderFor } from "./email-transport.js";
 import { Mailer } from "./mailer.js";
 import { RedirectTargets } from "./redirect-targets.js";
+import { SendingDomains } from "./sending-domains.js";
 import { SmsFraudGuard } from "./sms-fraud-guard.js";
 import { Texter } from "./texter.js";
 import { UnconfiguredAttestation } from "./unconfigured-attestation.js";
@@ -45,6 +46,7 @@ import { WalletSolvency } from "./wallet-solvency.js";
   providers: [
     DatabaseSuppressionList,
     DatabaseUsageMeter,
+    SendingDomains,
     DatabaseSpendCap,
     WalletSolvency,
     SmsFraudGuard,

@@ -90,6 +90,12 @@ export const ErrorCode = {
   // retry, and a 5xx has a provider redelivering for days over a body that never will.
   WebhookSignatureInvalid: "webhook_signature_invalid",
 
+  // The shared sender is a place to build an integration against, not to run a product on
+  // (PROJECT.md 11.2). A project past its allowance there has to verify a sending domain,
+  // which is a thing to go and do rather than a thing to wait out — so it is its own code
+  // and not a rate limit, whose message would say "try again later" and be wrong.
+  SendingDomainRequired: "sending_domain_required",
+
   // The organisation has spent its credit and used up its tolerance, so the channels that
   // cost money the moment they leave refuse (ADR-0014). Never authentication: signing
   // somebody in is not a lever we have over an unpaid balance.

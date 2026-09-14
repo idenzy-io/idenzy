@@ -17,6 +17,7 @@ import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { Mailer } from "../dist/delivery/mailer.js";
+import { SendingDomains } from "../dist/delivery/sending-domains.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
@@ -85,7 +86,12 @@ beforeAll(async () => {
   );
 
   mail = new CapturingEmailProvider();
-  const mailer = new Mailer(uow, new TemplateRenderer(new NoStoredTemplates()), mail, config);
+  const mailer = new Mailer(
+    uow,
+    new TemplateRenderer(new NoStoredTemplates()),
+    mail,
+    new SendingDomains(uow, config),
+  );
   service = new MagicLinkService(
     uow,
     clock,

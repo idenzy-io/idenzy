@@ -1325,10 +1325,20 @@ template pipeline of its own rather than a branch in the OTP flow.
       Email and SMS rates are declared in the price list and marked as placeholders: 5.1
       quotes them and neither has been checked against a vendor bill. Only MAU is charged
       today
-- [ ] Close what `risks.md` lists as open, in the order it gives. **Email has no ceiling of
-      any kind** — `assertWithinQuota` allows everything and says so — which is a shared
-      sending-domain reputation problem before it is a cost one: one project's blast puts
-      every other free-tier customer's verification mail in spam. **Authentication is to
+- [ ] Close what `risks.md` lists as open, in the order it gives. **The shared sender is a
+      sandbox now**, which was the first of them: `assertWithinQuota` refuses past a burst
+      of three a minute and two hundred a day, because `mail.idenzy.io` is pooled reputation
+      and one project's blast puts every other such project's verification mail in spam.
+      Not a free-tier restriction and not a payment control — anyone going to production
+      verifies a domain, whatever they pay. `Mailer` resolves that domain now, which was
+      also the missing half of the $5/mo custom-domain product: the identity was collected,
+      verified, shown on a screen and never used. Two bugs the test caught, both silent —
+      the burst and daily rules shared one rate-limit key so each corrupted the other's
+      count, and the dashboard carve-out compared a uuid to a `prj_` public id, so it could
+      never have fired and our own sign-ups would have stopped at two hundred a day. **What
+      is still open on email is the SNS receiver**: no bounce or complaint data reaches us
+      at all, which blocks the suppression list, the warm-up ladder 11.2.6 describes, and
+      any account-level breaker. **Authentication is to
       become stoppable**, reversing `ZERO_KEEPS_WORKING`, because an organisation at 500k
       MAU that never pays costs roughly $400 a month in infrastructure alone on top of the
       unbilled revenue, for as long as it likes. It must not ship before the three

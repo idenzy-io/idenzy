@@ -23,6 +23,7 @@ import { ProfileService } from "../dist/account/profile-service.js";
 import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { Mailer } from "../dist/delivery/mailer.js";
 import { RedirectKind, RedirectTargets } from "../dist/delivery/redirect-targets.js";
+import { SendingDomains } from "../dist/delivery/sending-domains.js";
 import { NullFlowHooks } from "../dist/flows/null-flow-hooks.js";
 import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { PasswordResetService } from "../dist/password/password-reset-service.js";
@@ -118,7 +119,12 @@ beforeAll(async () => {
   );
 
   mail = new CapturingEmailProvider();
-  const mailer = new Mailer(uow, new TemplateRenderer(new NoStoredTemplates()), mail, config);
+  const mailer = new Mailer(
+    uow,
+    new TemplateRenderer(new NoStoredTemplates()),
+    mail,
+    new SendingDomains(uow, config),
+  );
   const targets = new RedirectTargets(uow);
 
   reset = new PasswordResetService(
@@ -441,7 +447,12 @@ describe("the project's reset policy", () => {
       clock,
       hasher,
       new NoBreaches(),
-      new Mailer(uow, new TemplateRenderer(new NoStoredTemplates()), new FailingEmail(), config),
+      new Mailer(
+        uow,
+        new TemplateRenderer(new NoStoredTemplates()),
+        new FailingEmail(),
+        new SendingDomains(uow, config),
+      ),
       new RedirectTargets(uow),
       new ProjectSettingsReader(uow),
       revocations.publisher,

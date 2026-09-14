@@ -34,7 +34,8 @@ order is by what each costs us per unit:
 | Tier | Stops at | Why here |
 | --- | --- | --- |
 | SMS and WhatsApp | The tolerance | Money leaves before the message arrives. Nothing to reconcile afterwards. |
-| Email | Always bounded; the bound tightens past the tolerance | Cheap per unit, but shared reputation makes the volume matter more than the cost. |
+| Email on the shared sender | A burst of 3/minute and 200 a day, always | Not a payment control. Pooled reputation: a sandbox to build against, never a production facility. |
+| Email on a verified domain | Not limited here | The reputation at stake is mostly the customer's own. |
 | Authentication | A much higher tolerance, and **it does stop** | Taking it down takes the customer's product down. Last resort, never the first. |
 
 **Authentication stopping is a reversal**, and it should be recorded as one. The panel's
@@ -52,34 +53,67 @@ are choosing not to honour.
 
 ---
 
-## 2. Email has no ceiling of any kind
+## 2. The shared sender, and why it is a sandbox
 
-**Risk.** `UsageMeter.assertWithinQuota` returns without checking anything. Its own comment
-admits it. There is no daily limit, no rate limit, and no wallet check on the email path, so
-a single project can send without bound — a delinquent customer deliberately, or a paying
-customer with a retry loop by accident.
+**Risk.** Every project that has configured nothing sends from `mail.idenzy.io`. SES scores
+reputation per domain, so one project blasting to scraped addresses puts **every other such
+project's** verification mail in spam — customers who did nothing wrong and have no way to
+fix it. The cost of the volume ($0.0001 an email) was never the point; the pooled reputation
+is.
 
-**Exposure.** Two, and the second is worse.
+**The rule.** The shared sender is a place to build an integration against and **not a
+place to run a product on**, whatever a customer is paying. Anyone going to production
+verifies a sending domain of their own. This is not a free-tier restriction — the free tier
+is 50,000 MAU and has nothing to do with which domain mail leaves from.
 
-- *Cost*: a million emails is $100. Real but survivable.
-- *Reputation*: `mail.idenzy.io` is shared by every free-tier project. SES reputation is
-  per-domain, so one project's blast puts **every other customer's** verification mail in
-  spam. PROJECT.md 11.2 already anticipates this — the shared sender is a subdomain
-  specifically so an incident cannot reach mail from `idenzy.io` itself — but the control
-  that would prevent the incident was never built.
+**Today.** Enforced. `DatabaseUsageMeter.assertWithinQuota` refuses past **a burst of three
+refilling at one a minute, and two hundred a day**, on the shared sender only. Generous for
+building against, hopeless for anything real, and the refusal is
+`sending_domain_required` rather than a rate limit — a rate limit says "try again later",
+which is true and useless, where this says the one thing that makes the send work.
 
-**Today.** Nothing. The suppression list stops sending to addresses that bounced; it does
-not stop sending.
+Checked `checkStrictly`, so a cache we cannot reach refuses rather than allows. That is the
+opposite of the call sign-in makes and the same one `SmsFraudGuard` makes: a developer
+blocked by a Valkey outage is a minor inconvenience, an unmetered window on a shared sender
+is the thing this exists to prevent.
 
-**What closes it.** The per-project daily ceiling PROJECT.md 11.2 item 6 already specifies:
-"new projects start with a low daily ceiling that grows with a clean bounce rate." Sizing
-from 5.2's own assumption of about two emails per MAU per month, a free-tier customer at
-50,000 MAU sends roughly 3,300 a day, so a default around 10,000 leaves headroom and caps
-exposure at about $1 per project per day. Past the tolerance the ceiling tightens to a floor
-rather than closing, so existing users can still reset a password while nobody can onboard
-new ones at our expense.
+**Two carve-outs, both deliberate and both visible.**
 
-**Status: open.** Numbers not yet agreed.
+A project with its **own verified sending domain** is not limited here, because the
+reputation at stake is then mostly its own. Not entirely — see below.
+
+**Our own dashboard is exempt**, because we run the panel on our own product (PROJECT.md
+9.5) and it has no verified sending domain yet, so it would be held to a developer's
+allowance and our sign-ups would stop at two hundred a day. The durable fix is to verify a
+domain for it, which also makes us the first user of the feature. Until then the exemption
+is a named branch rather than a quiet one.
+
+**Still open: the account-level rate.** Mail on a customer's own domain still leaves through
+**our SES account**, and AWS tracks bounce and complaint rates per account as well as per
+domain. A bad enough account-wide rate is a review or a suspension that takes mail down for
+everyone at once. The control for that is a bounce-rate breaker per project, and it needs
+bounce data — which brings us to the next entry.
+
+**Status: closed for the shared sender. The account-level rate is open.**
+
+---
+
+## 2b. Nothing tells us when mail bounces
+
+**Risk.** PROJECT.md 11.2 item 4 describes SES publishing send, delivery, bounce, complaint
+and reject events to SNS, into a webhook on our side, into the suppression list. The SNS
+receiver at our end was never built, so **no bounce or complaint data reaches us at all**.
+
+**Exposure.** Three things depend on it and none can be built without it: the suppression
+list never learns about a hard bounce and we keep sending to it; the warm-up ladder
+PROJECT.md 11.2 item 6 specifies has nothing to grow a ceiling on; and the account-level
+breaker above has nothing to trip on. It is also how we would find out we have a problem
+*before* AWS tells us.
+
+**Today.** Nothing. The suppression list and its repository exist and are only ever written
+by hand.
+
+**Status: open, and it blocks every remaining email control.**
 
 ---
 
@@ -232,8 +266,8 @@ overage lands on `org_debts` instead, and a top-up settles debt before becoming 
 
 | # | Decision | Needed for |
 | --- | --- | --- |
-| 1 | Default daily email ceiling per project, and how it grows with a clean bounce rate | 2 |
-| 2 | Email floor past the tolerance | 2 |
+| 1 | Whether our own dashboard gets a verified sending domain, retiring its exemption | 2 |
+| 2 | The account-level bounce-rate breaker, once the SNS receiver exists | 2, 2b |
 | 3 | The authentication tolerance — how much larger than the metered one | 3 |
 | 4 | Whether suspension above some size requires a person | 3, 7 |
 | 5 | Email and SMS rates, which are placeholders in the price list pending a margin study | 5.1 |

@@ -85,6 +85,9 @@ const selectedPerson = computed(
  */
 const contiguous = computed(() => filterCount.value === 0 && isContiguous(shown.value));
 
+/** Whether the read hit its bound, which is what makes the figures above a subset. */
+const truncated = computed(() => store.isTruncated(projects.current.id));
+
 /* How many rows are drawn at once. A month of trail is thousands of entries and the
    browser is asked for none of them until somebody asks for more. */
 const PAGE = 40;
@@ -127,7 +130,11 @@ const windowOptions = computed(() =>
 );
 
 function setWindow(value: string) {
-  filters.value = { ...filters.value, window: value as TimeWindow };
+  const window = value as TimeWindow;
+  filters.value = { ...filters.value, window };
+  /* The period is the one control that changes what exists rather than what is shown: the
+     API is what narrows to it, so widening has to go back and ask. */
+  void store.setWindow(projects.current.id, window);
 }
 
 function toggleActor(actor: ActorType) {
@@ -163,14 +170,23 @@ function clear() {
 
 const exportOpen = ref(false);
 
-const scope = computed(() =>
-  auditScope(
+const scope = computed(() => {
+  const lines = auditScope(
     filters.value,
     projects.current.name,
     shown.value.length,
     WINDOW_LABELS[filters.value.window],
-  ),
-);
+  );
+  /* The dialog exists to stop somebody reading a narrowed file as the whole trail, and the
+     read's own bound is a second way it is narrow — one the filters do not mention. */
+  if (truncated.value) {
+    lines.push({
+      label: "Not the whole period",
+      value: "The most recent entries only, as far back as one read goes",
+    });
+  }
+  return lines;
+});
 
 function exportCsv() {
   exportOpen.value = false;
@@ -362,6 +378,28 @@ function exportCsv() {
           {{ summary.people === 1 ? "actor" : "actors" }},
           {{ WINDOW_LABELS[filters.window].toLowerCase() }}
         </p>
+
+        <!--
+          The one claim wiring took off this screen. The placeholder could total a period
+          because it had invented all of it; the trail is read newest-first and bounded, so
+          past that bound these figures describe what was fetched and not the period. Said
+          here rather than left implied, because a count that is quietly partial is worse
+          than one that admits it.
+        -->
+        <InfoNote
+          v-if="truncated"
+          :text="`These figures cover the most recent ${events.length.toLocaleString('en')} entries, which is as far back as one read goes. Narrow the period to total a whole one.`"
+          class="mx-1"
+          tone="warning"
+        />
+
+        <InfoNote
+          v-if="store.refusal"
+          :text="store.refusal"
+          class="mx-1"
+          icon="material-symbols:error-outline"
+          tone="warning"
+        />
 
         <div
           v-if="store.loading"

@@ -100,6 +100,46 @@ Find a user's sign-in after seeing the default administrative view. Explain why 
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
 
+**The trail is the management API's now, and the screen reads a bound rather than a
+period.** `GET .../projects/:projectId/audit` at viewer, keyset on `seq` — which this table
+can do and the users list cannot, because `seq` is per-project, unique and monotonic and is
+the order the chain is built in, so a page boundary never falls between two entries a
+reader expects to see linked.
+
+What the wiring cost this screen is one claim, and it is the one worth naming. The
+placeholder could total a period because it had invented every entry in it; a real trail is
+read newest-first and the read is bounded, so past that bound the figures describe what was
+fetched and not the period. The screen says so — in the strip, and again in the export
+dialog's scope, because that dialog exists to stop somebody reading a narrowed file as the
+whole trail and the read's own bound is a second way it is narrow, one the filters do not
+mention. Narrowing the period is what makes a total honest again, which is why the period
+is the one control that goes back to the API instead of filtering what arrived.
+
+**The second P1 above is answered by the trail being real.** The CI deploy key signing in
+to the dashboard was the generator's invention; nothing emits it, because nothing can —
+a key acts through the API and a person signs in, and the vocabulary now comes from
+`audit_events.actor_type` rather than from a second set the panel made up.
+
+That vocabulary was the find worth keeping. The panel had `end_user`, `member` and `staff`
+against the column's `user`, `customer_staff` and `idenzy_staff`: three of five names
+disagreed, so a filter built on the panel's set would have matched nothing at all. The
+database's names win because they are the ones that exist, and the screen's labels are
+labels now rather than a parallel set of ids. The category is the same story in reverse —
+it is derived from the action's prefix and is deliberately not a column, so an action
+shipped next year falls into a group without a migration, and an unknown one is filed under
+settings rather than dropped.
+
+An entry's `actorName` is the server's answer and only for accounts. A team member, an API
+key and a background job are not rows in this project, so the screen prints the actor's
+kind instead of crossing a tenant boundary for a label. A name that resolves to nothing
+stays null: the trail outlives its subject on purpose, and an erased account is the normal
+case rather than an error.
+
+Export is still assembled in the browser from what is on screen. That is honest while the
+screen says what it holds, and it is not a substitute for the real one: an export of a
+year's trail is a file a worker writes, which is the DSR path's shape and does not exist
+yet.
+
 ## Implementation references
 
 - [AuditEntryRow.vue](../apps/client/app/components/AuditEntryRow.vue)

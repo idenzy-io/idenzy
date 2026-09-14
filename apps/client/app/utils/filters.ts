@@ -20,12 +20,23 @@ export const WINDOW_LABELS: Record<TimeWindow, string> = {
   "90d": "Last 90 days",
 };
 
-const WINDOW_MS: Record<Exclude<TimeWindow, "any">, number> = {
+export const WINDOW_MS: Record<Exclude<TimeWindow, "any">, number> = {
   "24h": DURATIONS.DAY,
   "7d": DURATIONS.WEEK,
   "30d": 30 * DURATIONS.DAY,
   "90d": 90 * DURATIONS.DAY,
 };
+
+/**
+ * The window as a lower bound the API can take, or null for one that has none.
+ *
+ * Exported because a list the server pages cannot be narrowed to a period after the fact:
+ * the period decides which rows were fetched at all, so it is the one filter the audit
+ * screen sends rather than applies.
+ */
+export function windowStart(window: TimeWindow, now: Date): Date | null {
+  return window === "any" ? null : new Date(now.getTime() - WINDOW_MS[window]);
+}
 
 /** Whether an instant falls inside the window. Nothing never does; "any" always does. */
 export function within(iso: string | null, window: TimeWindow, now: Date): boolean {

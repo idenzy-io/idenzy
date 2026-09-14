@@ -958,7 +958,15 @@ client have no server halves to talk to yet.
       `add` and `remove` refuse with a reason instead of pretending: creating an account
       needs a `PasswordHasher` the management API does not have, and erasure is the DSR path
       (4.13.6), whose worker does not exist. The remaining stores are placeholders, and each
-      one waits on an endpoint rather than on the panel. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
+      one waits on an endpoint rather than on the panel. **Audit is off its fixture now**, which is the
+      first of the compliance-shaped screens and the only remaining store whose backend
+      already existed: the relay has been writing hash-chained rows since phase 1 and
+      nothing could read them but the relay. `GET .../projects/:projectId/audit` at
+      viewer, keyset on `seq`. It cost the screen one claim — a bounded read cannot total
+      a period, so the strip and the export dialog both say what they are counting — and
+      settled two vocabularies into `@idenzy/protocol`, the actor kinds (where three of
+      five panel names disagreed with the column and a filter would have matched nothing)
+      and the action categories. Sign-in is real: the panel authenticates through `@idenzy/js` against our own
       auth API in cookie mode, so the refresh token is a `__Host-` HttpOnly cookie no script
       can read (ADR-0008), and a global middleware decides who sees which half of the panel.
       Seven stores are off fixtures now: the organisation and project lists, API keys, auth

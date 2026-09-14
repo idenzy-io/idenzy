@@ -128,13 +128,17 @@ export const configSchema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: durationSeconds.min(60).max(3600).default(300),
   REFRESH_TOKEN_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 30),
 
-  /**
-   * The two ways a session ends on its own (PROJECT.md 4.2). Idle slides on every
-   * refresh; absolute never moves, which is what bounds the damage from a session an
-   * attacker keeps warm.
-   */
-  SESSION_IDLE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 30),
-  SESSION_ABSOLUTE_TTL_SECONDS: durationSeconds.default(60 * 60 * 24 * 90),
+  // The two ways a session ends on its own are the project's, in `lifetimes` on the
+  // settings document, and were `SESSION_IDLE_TTL_SECONDS` and
+  // `SESSION_ABSOLUTE_TTL_SECONDS` here. Both are gone rather than left as fallbacks: two
+  // answers to one question is how the idle window came to be stamped from the setting at
+  // sign-in and from the environment at every rotation after it, with different defaults.
+  // `ACCESS_TOKEN_TTL_SECONDS` above is the third of that group and is still read, but
+  // for the deployment-wide jobs rather than for a token a project's setting governs: the
+  // issuer's own default, and the retention bound on the revocation set, which is one
+  // access-token lifetime plus skew (ADR-0009). `REFRESH_TOKEN_TTL_SECONDS` stays because
+  // it is genuinely ours: §4.2 offers no control over it and the Lifetimes screen states
+  // it as fixed.
 
   /**
    * How long an active user may sit in a meter's memory before the sketch is written down

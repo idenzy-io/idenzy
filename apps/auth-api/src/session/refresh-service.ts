@@ -20,6 +20,7 @@ import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { type Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { Injectable } from "@nestjs/common";
+import { ProjectSettingsReader } from "../config/project-settings-reader.js";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 import { RevocationPublisher } from "./revocation-publisher.js";
 import { SessionService } from "./session-service.js";
@@ -61,12 +62,19 @@ export class RefreshService {
     private readonly revocations: RevocationPublisher,
     private readonly actives: ActiveUserMeter,
     private readonly analytics: AnalyticsRecorder,
+    private readonly settings: ProjectSettingsReader,
   ) {}
 
   async rotate(context: FlowContext, presented: string): Promise<IssuedSession> {
     const tenant = tenantContextFrom(context);
+    // The project's idle window, read here and not taken from the environment. The
+    // Lifetimes screen promises this one reaches sessions that already exist — "read at
+    // the next rotation" is its own wording — and this is that rotation. It is also the
+    // one read on this path, which is the hot one, so it is resolved before the
+    // transaction rather than inside it.
+    const idleSeconds = (await this.settings.for(context)).lifetimes.idleSeconds;
     const rotation = await this.uow.run(tenant, (tx) =>
-      this.attempt(tx, tenant, context, hashToken(presented)),
+      this.attempt(tx, tenant, context, hashToken(presented), idleSeconds),
     );
     // After the commit, and before the throw that follows it. Reuse detection revokes a
     // session nobody asked us to revoke, so it is the one revocation a customer's verifier
@@ -102,6 +110,7 @@ export class RefreshService {
     tenant: TenantContext,
     context: FlowContext,
     tokenHash: string,
+    idleSeconds: number,
   ): Promise<Rotation> {
     const repos = this.repositories(tx, tenant);
     const state = await repos.refresh.findByHash(tokenHash);
@@ -123,7 +132,7 @@ export class RefreshService {
     if (!won)
       return this.compromise(repos, state.familyId, state.sessionId, context, this.clock.now());
 
-    return this.reissue(repos, tenant, state.id, state.familyId, state.sessionId);
+    return this.reissue(repos, tenant, state.id, state.familyId, state.sessionId, idleSeconds);
   }
 
   private async reissue(
@@ -132,6 +141,7 @@ export class RefreshService {
     parentId: string,
     familyId: string,
     sessionId: string,
+    idleSeconds: number,
   ): Promise<Rotation> {
     const session = await repos.sessions.findById(sessionId);
     if (session === null) return { kind: "invalid" };
@@ -154,11 +164,7 @@ export class RefreshService {
       parentId,
       expiresAt: this.clock.inSeconds(this.config.get("REFRESH_TOKEN_TTL_SECONDS")),
     });
-    await repos.sessions.touch(
-      sessionId,
-      now,
-      this.clock.inSeconds(this.config.get("SESSION_IDLE_TTL_SECONDS")),
-    );
+    await repos.sessions.touch(sessionId, now, this.clock.inSeconds(idleSeconds));
 
     // Carried across the rotation rather than dropped. The factor age belongs to the
     // session and a rotation does not undo the proof: minting without it would make `fva`

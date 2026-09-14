@@ -1005,10 +1005,28 @@ client have no server halves to talk to yet.
       so every rule on the screen was measured against a guess; it is the caller's own
       `memberId` from `/v1/me` now. `org_members.last_active_at` is still written by nothing,
       so the column reads "Never signed in" for the person reading the page
-- [ ] `SESSION_IDLE_TTL_SECONDS` is read on rotation and the project's setting is read on
-      issuance, so a customer who shortens their idle window gets it applied when a session
-      is created and ignored every time it slides. Found while deleting the reset path's
-      equivalent variable. `refresh-service.ts` is the one caller
+- [x] `SESSION_IDLE_TTL_SECONDS` was read on rotation while the project's setting was read
+      on issuance, so a customer who shortened their idle window had it applied when a
+      session was created and ignored every time it slid. Found while deleting the reset
+      path's equivalent variable. **It was worse than a setting being ignored: the two
+      defaults disagreed** — fourteen days from the schema at sign-in, thirty from the
+      environment on the first rotation after it — so every session on every project that
+      had configured nothing silently more than doubled its idle window the first time it
+      refreshed. `RefreshService` reads `lifetimes.idleSeconds` now.
+      The Lifetimes screen is what settled the design, because it already promised the
+      answer in as many words: an idle window is "read at the next rotation, so it reaches
+      sessions that exist", unlike the absolute lifetime, which is stamped at sign-in and
+      never moved. Storing the window on the session row would have been cheaper — no read
+      on the hot path — and would have pinned every existing session to the policy it was
+      born under, which is the opposite of what somebody shortening an idle window is
+      asking for. So `ProjectSettingsReader` is on the refresh path now and its docstring
+      no longer claims otherwise. One primary-key read, resolved before the transaction,
+      and the strongest reason yet for the project-config cache 4.2 assumes.
+      `SESSION_ABSOLUTE_TTL_SECONDS` went with it and had been dead already: nothing had
+      read it since `SessionService` began stamping the setting. `ACCESS_TOKEN_TTL_SECONDS`
+      stays, but only for the deployment-wide jobs — the issuer's own default and the
+      revocation set's retention bound — and `REFRESH_TOKEN_TTL_SECONDS` stays because §4.2
+      offers a customer no control over it and the screen states it as fixed
 - [x] Record `org_members.last_active_at`. The column had existed since 0025 with a column
       on the members screen and nothing that ever wrote it, so a dormant seat and an active
       one read the same — including for the person reading the page, who saw "Never signed

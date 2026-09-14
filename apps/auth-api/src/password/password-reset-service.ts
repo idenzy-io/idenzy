@@ -66,8 +66,9 @@ export class PasswordResetService {
     // documenting: it called this value deployment-fixed while the Passwords screen
     // offered a control for it. The variable is deleted rather than left as a fallback,
     // because this was its only reader and a second answer to one question is how
-    // `SESSION_IDLE_TTL_SECONDS` came to be read on rotation while the setting is read
-    // on issuance.
+    // `SESSION_IDLE_TTL_SECONDS` came to be read on rotation while the setting was read
+    // on issuance — with different defaults, so every session quietly changed window on
+    // its first refresh. That one is fixed too, and the variable is gone with it.
     const ttl = (await this.settings.for(context)).password.resetLifetime * 60;
     // Resolved before the user lookup so a project with no reset page fails the same way
     // whether or not the address exists.

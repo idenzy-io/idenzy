@@ -15,9 +15,17 @@ import { Injectable } from "@nestjs/common";
  *
  * One primary-key read per call, and that cost is the reason this is a class rather than a
  * line inside each flow: PROJECT.md 4.2 assumes a project-config cache and todo.md still
- * lists it as open, so when it lands it lands here and nothing else changes. It is
- * deliberately not on the refresh path, which is the hot one — only sign-up, sign-in and
- * reset ask, and each of those already costs several writes.
+ * lists it as open, so when it lands it lands here and nothing else changes.
+ *
+ * It is on the refresh path now, which this comment used to say it deliberately was not.
+ * The exemption did not survive contact with what the Lifetimes screen promises: the idle
+ * window is "read at the next rotation, so it reaches sessions that exist", and a rotation
+ * that read the deployment's environment variable instead was the screen saying one thing
+ * and the session row recording another. Keeping the exemption would have meant either
+ * breaking that promise or storing the window on the session, which pins every existing
+ * session to the policy it was born under — the opposite of what a customer shortening an
+ * idle window is asking for. So the refresh path costs one primary-key read, resolved
+ * before the transaction, and is the strongest reason yet for the cache 4.2 assumes.
  *
  * The stored document is parsed rather than trusted, for the reason the management API
  * parses it too: `projects.settings` is jsonb written by whatever version of this code was

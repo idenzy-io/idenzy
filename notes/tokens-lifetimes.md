@@ -50,6 +50,16 @@ stopped making that claim true when `PasswordResetService` began reading
 `password.resetLifetime` instead of `PASSWORD_RESET_TTL_SECONDS` — the environment variable
 is gone. Step-up is still deployment-owned and this finding still covers it.
 
+**And the idle window, which this page was right about and the server was not.** The copy
+here says an idle window is read at the next rotation so it reaches sessions that exist,
+against an absolute lifetime stamped at sign-in and never moved. `RefreshService` was
+reading `SESSION_IDLE_TTL_SECONDS` at that rotation while `SessionService` stamped the
+setting at sign-in, so the promise belonged to the environment. Worse, the two defaults
+disagreed — fourteen days at sign-in, thirty on the first rotation — so an unconfigured
+project's sessions silently changed window the first time they refreshed, in the direction
+of lasting longer. Both session variables are deleted; the page's description of what
+saving does is now true of the server.
+
 ### P1 — Revocation estimates need explicit assumptions
 
 The page describes token-only delay, poll-based delay and suspension separately, which is useful. Keep those differences visible, and identify polling as observed for a particular integration rather than proof that every verifier is covered.

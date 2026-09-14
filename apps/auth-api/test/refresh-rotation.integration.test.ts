@@ -10,7 +10,7 @@ import { AuthMethod, SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectSettingsReader } from "../dist/config/project-settings-reader.js";
 import { RefreshService } from "../dist/session/refresh-service.js";
 import { SessionService } from "../dist/session/session-service.js";
@@ -68,6 +68,7 @@ beforeAll(async () => {
     revocations.publisher,
     actives,
     new NullAnalyticsRecorder(),
+    new ProjectSettingsReader(uow),
   );
 
   await harness.owner.query(
@@ -175,6 +176,87 @@ describe("rotation", () => {
     await expect(refresh.rotate(context, "not-a-real-token")).rejects.toMatchObject({
       code: "refresh_token_invalid",
     });
+  });
+});
+
+/**
+ * The idle window is the project's, and a rotation is where it reaches a session that
+ * already exists.
+ *
+ * The Lifetimes screen states this in as many words — an idle window is "read at the next
+ * rotation, so it reaches sessions that exist", unlike the absolute lifetime, which is
+ * stamped at sign-in and never moved. It was read from `SESSION_IDLE_TTL_SECONDS` here
+ * while `SessionService` stamped the setting at sign-in, so the promise was the
+ * environment's and the two disagreed by default: fourteen days at sign-in, thirty on the
+ * first rotation after it.
+ */
+describe("the project's idle window", () => {
+  async function setLifetimes(lifetimes: Readonly<Record<string, unknown>>): Promise<void> {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+    await harness.owner.query(
+      `UPDATE projects SET settings = jsonb_build_object('lifetimes', $2::jsonb) WHERE id = $1`,
+      [PROJECT, JSON.stringify(lifetimes)],
+    );
+  }
+
+  async function idleExpiryOf(sessionId: string): Promise<Date> {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+    const { rows } = await harness.owner.query<{ idle_expires_at: Date }>(
+      `SELECT idle_expires_at FROM sessions WHERE id = $1`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (row === undefined) return expect.fail("no such session");
+    return new Date(row.idle_expires_at);
+  }
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  afterEach(async () => {
+    await setLifetimes({});
+  });
+
+  it("slides by the window the project set, not by one the deployment set", async () => {
+    await setLifetimes({ idleSeconds: 7 * 24 * 60 * 60 });
+    const { refreshToken, sessionId } = await signIn("idle-seven@a.test");
+    await refresh.rotate(context, refreshToken);
+
+    const slid = (await idleExpiryOf(sessionId)).getTime() - Date.now();
+    expect(slid).toBeGreaterThan(6.9 * DAY);
+    expect(slid).toBeLessThan(7.1 * DAY);
+  });
+
+  /**
+   * The case the split actually broke. A customer shortening the window is asking for it
+   * to reach the sessions they already have, and this is the rotation that must apply it —
+   * a session signed in under the old policy must come back shorter, never longer.
+   */
+  it("reaches a session that was signed in under the previous policy", async () => {
+    await setLifetimes({ idleSeconds: 30 * 24 * 60 * 60 });
+    const { refreshToken, sessionId } = await signIn("idle-shortened@a.test");
+    const atSignIn = (await idleExpiryOf(sessionId)).getTime() - Date.now();
+    expect(atSignIn).toBeGreaterThan(29 * DAY);
+
+    await setLifetimes({ idleSeconds: 300 });
+    await refresh.rotate(context, refreshToken);
+
+    const afterRotation = (await idleExpiryOf(sessionId)).getTime() - Date.now();
+    expect(afterRotation).toBeLessThan(6 * 60 * 1000);
+  });
+
+  /**
+   * A project that has never opened the screen gets the schema's default on both paths.
+   * That it is the *same* number is the whole point: the two used to differ, so every
+   * unconfigured session quietly doubled its idle window on its first rotation.
+   */
+  it("agrees with sign-in on a project that has configured nothing", async () => {
+    const { refreshToken, sessionId } = await signIn("idle-default@a.test");
+    const atSignIn = (await idleExpiryOf(sessionId)).getTime();
+    await refresh.rotate(context, refreshToken);
+    const afterRotation = (await idleExpiryOf(sessionId)).getTime();
+
+    // Both are fourteen days out, so the difference is only the seconds between them.
+    expect(Math.abs(afterRotation - atSignIn)).toBeLessThan(60_000);
   });
 });
 

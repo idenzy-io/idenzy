@@ -29,15 +29,15 @@ const DAY = 24 * HOUR;
  */
 
 export interface LifetimeSettings {
-  /** `ACCESS_TOKEN_TTL_SECONDS`. The one number with a cost on both sides. */
+  /** The one number with a cost on both sides. */
   accessTokenSeconds: number;
-  /** `SESSION_IDLE_TTL_SECONDS`. Slides forward on every rotation. */
+  /** Slides forward on every rotation, so a change reaches sessions that exist. */
   idleSeconds: number;
-  /** `SESSION_ABSOLUTE_TTL_SECONDS`. Set at sign-in and never moved again. */
+  /** Set at sign-in and never moved again, so a change reaches nobody already signed in. */
   absoluteSeconds: number;
 }
 
-/** A fresh deployment, and what the placeholder sessions were generated against. */
+/** A project that has configured nothing. The same defaults the auth API resolves. */
 export const DEFAULT_LIFETIME_SETTINGS: LifetimeSettings = {
   accessTokenSeconds: 5 * MINUTE,
   idleSeconds: 14 * DAY,

@@ -26,14 +26,22 @@ const STYLES = {
   footer: "margin:24px 0 0;font-size:13px;line-height:20px;color:#71717a;",
 } as const;
 
-/** One layout for every template, so a customer's brand kit later has one place to land. */
-function layout(heading: string, body: string): string {
+const IGNORE_LINE = "If you did not request this, you can ignore this email. Nothing has changed.";
+
+/**
+ * One layout for every template, so a customer's brand kit later has one place to land.
+ *
+ * The footer is a parameter because the default is advice, not decoration, and it is
+ * wrong on exactly one template: a mail reporting a password that has already changed
+ * must not tell the reader that ignoring it is safe and nothing happened.
+ */
+function layout(heading: string, body: string, footer: string = IGNORE_LINE): string {
   return [
     `<div style="${STYLES.body}">`,
     `<div style="${STYLES.card}">`,
     `<h1 style="${STYLES.heading}">${heading}</h1>`,
     body,
-    `<p style="${STYLES.footer}">If you did not request this, you can ignore this email. Nothing has changed.</p>`,
+    `<p style="${STYLES.footer}">${footer}</p>`,
     "</div>",
     "</div>",
   ].join("");
@@ -46,8 +54,6 @@ function paragraph(text: string): string {
 function button(label: string): string {
   return `<p style="${STYLES.text}"><a href="{{ link }}" style="${STYLES.button}">${label}</a></p>`;
 }
-
-const IGNORE_LINE = "If you did not request this, you can ignore this email. Nothing has changed.";
 
 const templates: readonly EmailTemplate[] = [
   {
@@ -152,6 +158,12 @@ const templates: readonly EmailTemplate[] = [
           "If this was not you, do not confirm. Change your password instead, and the request expires in {{ expires_in }}.",
         ),
       ].join(""),
+      // Its own docstring calls this a warning rather than an invitation, and its text
+      // body already leaves `IGNORE_LINE` out for that reason — but the HTML went through
+      // the default footer, so the mail told the reader not to confirm and then told them
+      // ignoring it was safe and nothing had changed, two sentences apart. Only `.text`
+      // was ever asserted, which is why it survived.
+      "If this was not you, do not confirm, and change your password.",
     ),
     text: [
       "Your {{ project.name }} account is set to move from {{ user.email }} to {{ new_email }}.",
@@ -180,6 +192,43 @@ const templates: readonly EmailTemplate[] = [
       "",
       "The link expires in {{ expires_in }}.",
       IGNORE_LINE,
+    ].join("\n"),
+  },
+  {
+    /**
+     * The only built-in that reports rather than invites, and the reason the footer is a
+     * parameter: "ignore this, nothing has changed" is the standing advice on every other
+     * template and is the opposite of the truth here.
+     *
+     * It carries no clock and no link, and both absences are decisions. There is nothing
+     * to expire, so `expires_in` must not appear — substitution fails closed and the
+     * service supplies no such variable. And the only URI we hold for this project is the
+     * one registered for `password_reset`, which is where a *token* lands: `withToken`
+     * appends one, so sending it bare hands the customer's route a request it was never
+     * told to expect. We render no page of our own to offer instead (ADR-0002), so the
+     * mail names the product and stops there rather than pointing somewhere we cannot
+     * vouch for. A `RedirectKind` the project registers for account security is the shape
+     * that would earn a button here.
+     */
+    type: TemplateType.PasswordChanged,
+    locale: "en",
+    subject: "Your {{ project.name }} password was changed",
+    html: layout(
+      "Your password was changed",
+      [
+        paragraph(
+          "The password on the {{ project.name }} account for {{ user.email }} has just been changed.",
+        ),
+        paragraph("If you made this change, there is nothing to do."),
+      ].join(""),
+      "If you did not do this, your account may be at risk: reset your password and contact {{ project.name }}.",
+    ),
+    text: [
+      "The password on the {{ project.name }} account for {{ user.email }} has just been changed.",
+      "",
+      "If you made this change, there is nothing to do.",
+      "",
+      "If you did not do this, your account may be at risk: reset your password and contact {{ project.name }}.",
     ].join("\n"),
   },
 ];

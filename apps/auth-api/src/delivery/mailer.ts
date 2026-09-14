@@ -9,12 +9,20 @@ import { TemplateRenderer } from "@idenzy/templating/renderer";
 import { Injectable } from "@nestjs/common";
 import { tenantContextFrom } from "../tenancy/flow-context.js";
 
-/** What a flow supplies. `project.name` and `user.email` are filled in here. */
+/**
+ * What a flow supplies. `project.name` and `user.email` are filled in here.
+ *
+ * `expiresInSeconds` is optional because not every mail is an invitation with a clock on
+ * it: `password_changed` reports something that already happened. Omitting it leaves
+ * `expires_in` out of scope entirely rather than binding it to zero, which matters
+ * because substitution fails closed — a template that names a variable nothing supplies
+ * is a render error, and that is the check that catches a typo before a user does.
+ */
 export interface MailVariables {
   readonly otp?: string;
   readonly link?: string;
   readonly new_email?: string;
-  readonly expiresInSeconds: number;
+  readonly expiresInSeconds?: number;
 }
 
 /**
@@ -53,7 +61,7 @@ export class Mailer {
       ...supplied,
       project: { name: project.name },
       user: { email: to },
-      expires_in: humanize(expiresInSeconds),
+      ...(expiresInSeconds === undefined ? {} : { expires_in: humanize(expiresInSeconds) }),
     });
 
     await this.provider.send(context.projectId, {

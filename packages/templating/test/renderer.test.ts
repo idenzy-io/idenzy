@@ -95,8 +95,26 @@ describe("the built-in set", () => {
       TemplateType.PasswordReset,
       TemplateType.EmailChangeOld,
       TemplateType.EmailChangeNew,
+      TemplateType.PasswordChanged,
     ]) {
       expect(englishTemplates.has(type), type).toBe(true);
+    }
+  });
+
+  /**
+   * The four nothing sends yet, named rather than left to be noticed. A list of known
+   * gaps that is itself out of date is worse than none, which is the lesson
+   * `webhook-events.test.ts` already records about the event catalogue: `password_changed`
+   * sat in the enum with no built-in and no sender until the reset path was wired, so
+   * turning the project setting on would have thrown at send time.
+   */
+  it("names the types nothing sends yet, so a built-in is not forgotten with them", () => {
+    for (const type of [
+      TemplateType.Invite,
+      TemplateType.NewDeviceSignin,
+      TemplateType.MfaEnrolled,
+    ]) {
+      expect(englishTemplates.has(type), type).toBe(false);
     }
   });
 
@@ -120,6 +138,47 @@ describe("the built-in set", () => {
         expect(supplied.has(name), `${template.type} references ${name}`).toBe(true);
       }
     }
+  });
+
+  /**
+   * A notification is not an invitation, and the standing footer is advice rather than
+   * decoration: telling someone their password just changed and then that they may ignore
+   * it because nothing has changed is the one place that sentence is false.
+   */
+  it("does not tell a password-changed reader that nothing has changed", () => {
+    const changed = englishTemplates.get(TemplateType.PasswordChanged);
+    expect(changed).toBeDefined();
+    expect(changed?.html).not.toContain("you can ignore this email");
+    expect(changed?.text).not.toContain("you can ignore this email");
+  });
+
+  /**
+   * Substitution fails closed, so a body naming a variable its sender does not supply is
+   * a render error rather than an empty string. `password_changed` has no clock and is
+   * sent with no `expires_in` in scope, and this pair is what stops somebody defaulting
+   * the variable later to make the throw go away.
+   */
+  it("renders password_changed without a clock, and refuses one that asks for it", async () => {
+    const { expires_in: _omitted, link: _unused, ...withoutClock } = variables;
+    const builtIn = new TemplateRenderer(new NoStoredTemplates());
+    await expect(
+      builtIn.render(PROJECT, TemplateType.PasswordChanged, "en", withoutClock),
+    ).resolves.toMatchObject({ locale: "en" });
+
+    const stored = new TemplateRenderer(
+      new FixedStore([
+        {
+          type: TemplateType.PasswordChanged,
+          locale: "en",
+          subject: "changed",
+          html: "<p>expires in {{ expires_in }}</p>",
+          text: "expires in {{ expires_in }}",
+        },
+      ]),
+    );
+    await expect(
+      stored.render(PROJECT, TemplateType.PasswordChanged, "en", withoutClock),
+    ).rejects.toThrow();
   });
 
   /** No images, no fonts, no trackers: a transactional mail should fetch nothing. */

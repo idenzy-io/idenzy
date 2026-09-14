@@ -69,6 +69,43 @@ Raise the minimum, open Add user, and confirm the same requirement. Disable pass
 
 Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md). Findings describe the current prototype; proposed behavior requires implementation and usability validation.
 
+## Settled while implementing
+
+**The reset lifetime is the project's, and the Lifetimes table was the half that was
+wrong.** The P1 above had the two screens disagreeing about whether this clock is
+editable; the panel had already resolved it as a control, and the server had not — it read
+`PASSWORD_RESET_TTL_SECONDS`, one number for every customer on the deployment. It reads
+`password.resetLifetime` now and the environment variable is deleted rather than left as a
+fallback, because a second answer to one question is how `SESSION_IDLE_TTL_SECONDS` came
+to be read on rotation while the setting is read on issuance. The strength-meter half of
+that same finding is untouched and stands.
+
+**Whether a reset ends the other sessions is the project's answer and nobody else's.** The
+confirm request used to carry a `signOutOtherSessions` flag, so whoever built the reset
+form could switch off a protection this screen had shown the account's owner as on. The
+field is gone from the wire rather than ignored: one that cannot change an outcome is
+worse than none, because it reads as a control. A client still sending it is stripped by
+the schema rather than refused, so nothing breaks on the way through.
+
+**Wiring the three controls found two more the reset path was not obeying.** `minLength`
+was enforced at sign-up and not at reset, so an unauthenticated caller holding a link could
+put an eight-character password on an account whose project demands twenty — the same
+class of gap as a setting nothing reads, and the more serious one. And `breachCheck` was
+ignored in the other direction: the corpus was consulted unconditionally, so a project that
+switched it off still paid the round trip and still had its users refused, while this page
+promised the switch covered sign-up and reset alike. Both now read the policy, in the order
+`PasswordSignUpFlow` reads it.
+
+**The notification carries no link, and that is a decision rather than an omission.** The
+only URI we hold for a project is the one registered for where a reset *token* lands, and
+sending it bare hands the customer's route a request it was never told to expect. We render
+no page of our own to offer instead (ADR-0002), so the mail names the product and stops.
+A `RedirectKind` a project registers for account security is the shape that would earn a
+button, and it is a protocol enum, an endpoint and a control of its own.
+
+**A signed-in password change does not exist**, so this screen no longer says the template
+is sent "after a reset or a change". The switch will cover that path when there is one.
+
 ## Implementation references
 
 - [NumberDialog.vue](../apps/client/app/components/NumberDialog.vue)

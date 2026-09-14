@@ -36,8 +36,9 @@ export type EmailTemplateType =
   | "password_changed";
 
 /**
- * A variable a body may substitute. `project.name`, `user.email` and `expires_in` are
- * filled in by the mailer for every send; the rest are the flow's and differ by type.
+ * A variable a body may substitute. `project.name` and `user.email` are filled in by the
+ * mailer for every send; the rest are the flow's and differ by type, `expires_in`
+ * included — only a message with something to expire carries one.
  */
 export type TemplateVariable =
   | "project.name"
@@ -47,12 +48,15 @@ export type TemplateVariable =
   | "link"
   | "new_email";
 
-/** Supplied on every send, whatever the type, because the mailer adds them itself. */
-export const ALWAYS_IN_SCOPE: readonly TemplateVariable[] = [
-  "project.name",
-  "user.email",
-  "expires_in",
-];
+/**
+ * Supplied on every send, whatever the type, because the mailer adds them itself.
+ *
+ * `expires_in` used to be here and is not universal: the mailer puts it in scope only
+ * where the flow passes one, and `password_changed` announces something that has already
+ * happened. Substitution fails closed, so a body naming a variable its sender does not
+ * supply throws at send time — which is why each type now carries its own.
+ */
+export const ALWAYS_IN_SCOPE: readonly TemplateVariable[] = ["project.name", "user.email"];
 
 export interface TemplateCatalogueEntry {
   type: EmailTemplateType;
@@ -83,7 +87,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "A one-time code was asked for",
     icon: "material-symbols:dialpad",
     live: true,
-    variables: ["otp"],
+    variables: ["expires_in", "otp"],
     payload: "otp",
     note: "The highest-volume mail we send, and the one flow we document first because it needs no redirect and no deep link. The code is a value, so it is escaped like any other and cannot carry markup.",
   },
@@ -93,7 +97,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "A sign-in link was asked for",
     icon: "material-symbols:link",
     live: true,
-    variables: ["link"],
+    variables: ["expires_in", "link"],
     payload: "link",
     note: "The link is signed and pinned to a registered redirect target before it reaches the template, so a body cannot turn it into an open redirect. It is single use and dies with the challenge behind it.",
   },
@@ -103,7 +107,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "An address needs confirming",
     icon: "material-symbols:mark-email-read-outline",
     live: true,
-    variables: ["link"],
+    variables: ["expires_in", "link"],
     payload: "link",
     note: "Often opened on a different device from the one that asked, which is why the link behind it lives a day rather than ten minutes.",
   },
@@ -113,7 +117,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "A reset was asked for",
     icon: "material-symbols:lock-reset",
     live: true,
-    variables: ["link"],
+    variables: ["expires_in", "link"],
     payload: "link",
     note: "Single use, and issuing one invalidates every other reset token on the account. The current password stays valid until the reset finishes, which the built-in copy says so nobody is locked out mid-way.",
   },
@@ -123,7 +127,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "An account asked to move address",
     icon: "material-symbols:outgoing-mail",
     live: true,
-    variables: ["link", "new_email"],
+    variables: ["expires_in", "link", "new_email"],
     payload: "link",
     note: "The one template that is a warning rather than an invitation. It goes to the address being moved away from, which is the address an attacker who has taken the account no longer wants read, so the copy tells the reader not to confirm and to change their password instead.",
   },
@@ -133,7 +137,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "An account asked to move address",
     icon: "material-symbols:alternate-email",
     live: true,
-    variables: ["link"],
+    variables: ["expires_in", "link"],
     payload: "link",
     note: "The other half. The address does not move until both this one and the old one are confirmed, so a body that reads as though confirming here finishes the job is wrong.",
   },
@@ -143,7 +147,7 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
     trigger: "Nothing sends this yet",
     icon: "material-symbols:person-add-outline",
     live: false,
-    variables: ["link"],
+    variables: ["expires_in", "link"],
     payload: "link",
     note: "Named in the protocol and part of the organisations work, which is phase 4. Copy written now is stored and never sent until the flow behind it exists.",
   },
@@ -170,12 +174,12 @@ export const TEMPLATE_CATALOGUE: readonly TemplateCatalogueEntry[] = [
   {
     type: "password_changed",
     label: "Password changed",
-    trigger: "Nothing sends this yet",
+    trigger: "A password was reset",
     icon: "material-symbols:password",
-    live: false,
+    live: true,
     variables: [],
     payload: null,
-    note: "The same shape. A password change already ends every session the account holds; this is the part that tells the owner it happened.",
+    note: "Sent after a reset when 'Email when a password changes' is on, under Passwords. Whether the reset also ended the account's other sessions is the separate switch beside it. It carries no clock and no link: there is nothing to expire, and the only address we hold for a project is where a reset token lands.",
   },
 ];
 
@@ -626,13 +630,13 @@ const STYLES = {
 
 const IGNORE_LINE = "If you did not request this, you can ignore this email. Nothing has changed.";
 
-function layout(heading: string, body: string): string {
+function layout(heading: string, body: string, footer: string = IGNORE_LINE): string {
   return [
     `<div style="${STYLES.body}">`,
     `<div style="${STYLES.card}">`,
     `<h1 style="${STYLES.heading}">${heading}</h1>`,
     body,
-    `<p style="${STYLES.footer}">${IGNORE_LINE}</p>`,
+    `<p style="${STYLES.footer}">${footer}</p>`,
     "</div>",
     "</div>",
   ].join("");
@@ -730,6 +734,7 @@ export const BUILT_IN: Readonly<Partial<Record<EmailTemplateType, TemplateBodies
           "If this was not you, do not confirm. Change your password instead, and the request expires in {{ expires_in }}.",
         ),
       ].join(""),
+      "If this was not you, do not confirm, and change your password.",
     ),
     /* No ignore line, and that is deliberate: this one is a warning, and telling the
        reader they may ignore it is the opposite of what it is for. */
@@ -758,6 +763,30 @@ export const BUILT_IN: Readonly<Partial<Record<EmailTemplateType, TemplateBodies
       "",
       "The link expires in {{ expires_in }}.",
       IGNORE_LINE,
+    ].join("\n"),
+  },
+  password_changed: {
+    subject: "Your {{ project.name }} password was changed",
+    /* The one built-in that reports rather than invites, which is why it takes the footer:
+       the standing line says ignoring this is safe and nothing has changed, and here both
+       halves are false. It names no variable but the two the mailer fills in — there is no
+       clock to expire, and the only URI we hold is where a reset token lands. */
+    html: layout(
+      "Your password was changed",
+      [
+        paragraph(
+          "The password on the {{ project.name }} account for {{ user.email }} has just been changed.",
+        ),
+        paragraph("If you made this change, there is nothing to do."),
+      ].join(""),
+      "If you did not do this, your account may be at risk: reset your password and contact {{ project.name }}.",
+    ),
+    text: [
+      "The password on the {{ project.name }} account for {{ user.email }} has just been changed.",
+      "",
+      "If you made this change, there is nothing to do.",
+      "",
+      "If you did not do this, your account may be at risk: reset your password and contact {{ project.name }}.",
     ].join("\n"),
   },
 };

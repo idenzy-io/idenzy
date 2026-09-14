@@ -217,8 +217,6 @@ export const configSchema = z.object({
    */
   STEP_UP_MAX_AGE_SECONDS: durationSeconds.max(3600).default(900),
 
-  PASSWORD_RESET_TTL_SECONDS: durationSeconds.max(3600).default(900),
-
   /**
    * Longer than the others because two people have to act: the address is not moved
    * until the old and the new address have both confirmed (PROJECT.md 4.5).

@@ -44,6 +44,12 @@ No modal is needed for normal edits. A large consequential change gets an inline
 
 The clock table calls password reset and step-up deployment-owned, while their own pages offer changes. Read their effective values and ownership from the same configuration and link to the owning editor. A table with confident but stale values is worse than a reference link.
 
+**Closed for password reset, both halves.** The table stopped calling it deployment-fixed
+when it began reading `passwordResetSeconds` off the passwords store, and the server
+stopped making that claim true when `PasswordResetService` began reading
+`password.resetLifetime` instead of `PASSWORD_RESET_TTL_SECONDS` — the environment variable
+is gone. Step-up is still deployment-owned and this finding still covers it.
+
 ### P1 — Revocation estimates need explicit assumptions
 
 The page describes token-only delay, poll-based delay and suspension separately, which is useful. Keep those differences visible, and identify polling as observed for a particular integration rather than proof that every verifier is covered.

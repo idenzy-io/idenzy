@@ -47,7 +47,7 @@ describe("the catalogue", () => {
     expect(TEMPLATE_CATALOGUE.some((entry) => (entry.type as string) === "sms_otp")).toBe(false);
   });
 
-  it("gives every message the three the mailer fills in, plus its own", () => {
+  it("gives every message the two the mailer fills in, plus its own", () => {
     for (const entry of TEMPLATE_CATALOGUE) {
       const scope = variablesInScope(entry.type);
       for (const always of ALWAYS_IN_SCOPE) expect(scope).toContain(always);
@@ -113,9 +113,22 @@ describe("the built-in copy", () => {
     }
   });
 
-  it("keeps the ignore line off the one template that is a warning", () => {
+  it("keeps the ignore line off the templates that are warnings", () => {
     expect(BUILT_IN.email_change_old?.text).not.toContain("you can ignore this email");
+    expect(BUILT_IN.email_change_old?.html).not.toContain("you can ignore this email");
+    expect(BUILT_IN.password_changed?.text).not.toContain("you can ignore this email");
+    expect(BUILT_IN.password_changed?.html).not.toContain("you can ignore this email");
     expect(BUILT_IN.email_verification?.text).toContain("you can ignore this email");
+  });
+
+  /**
+   * The screen told a customer `expires_in` was available on every type. Binding fails
+   * closed, so the day the studio can write a body, a `{{ expires_in }}` in the one
+   * message with nothing to expire would throw at send rather than render empty.
+   */
+  it("offers a clock only to the messages that have one", () => {
+    expect(variablesInScope("password_changed")).not.toContain("expires_in");
+    expect(variablesInScope("password_reset")).toContain("expires_in");
   });
 });
 

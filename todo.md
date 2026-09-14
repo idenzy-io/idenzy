@@ -918,8 +918,40 @@ client have no server halves to talk to yet.
       not, so it has one now, and `@nestjs/testing` is a dependency of it for the first time.
       One knob is deliberately stored and not yet enforced: `lockout` and `lockoutAttempts`
       need a counter on the sign-in path, which is the rate limiter's shape and not the
-      policy's. `resetLifetime`, `signOutOnReset` and `notifyOnChange` are stored and read
-      by nothing yet either — the reset path is next.
+      policy's. **The reset path obeys the other three now.** `resetLifetime` replaces
+      `PASSWORD_RESET_TTL_SECONDS`, which was one number for every customer on the
+      deployment and is deleted rather than left as a fallback — this was its only reader,
+      and a second answer to one question is how `SESSION_IDLE_TTL_SECONDS` came to be read
+      on rotation while the setting is read on issuance. `signOutOnReset` replaces a
+      `signOutOtherSessions` flag the *caller* sent, which let whoever built the reset form
+      switch off a protection the account's owner had been shown as on; the field is gone
+      from the wire rather than ignored, because one that cannot change an outcome reads as
+      a control, and `z.object` strips it so a client still sending it is not refused.
+      `notifyOnChange` had no template and no sender at all: `password_changed` sat in the
+      enum while `englishTemplates` had no entry for it, so turning the switch on would have
+      thrown at send. It is the first built-in that reports rather than invites, which is
+      why `layout()` now takes its footer — "you can ignore this, nothing has changed" is
+      the standing advice on every other mail and is false on this one. That parameter also
+      fixed a live contradiction it exposed: `email_change_old` calls itself a warning and
+      leaves that line out of its text body, but its HTML went through the default footer,
+      so the mail said "do not confirm, change your password" and then said ignoring it was
+      safe. Only `.text` was ever asserted, which is why nobody saw it.
+      **Wiring the three found two more the reset path was not obeying**, and the first is
+      the serious one: `minLength` was enforced at sign-up and not at reset, so an
+      unauthenticated caller holding a link could put an eight-character password on an
+      account whose project demands twenty. `breachCheck` was ignored in the other
+      direction — consulted unconditionally, so a project that switched it off still paid
+      the HIBP round trip and still had its users refused, against a screen promising the
+      switch covered sign-up and reset alike. The notification carries no link: the only URI
+      we hold is registered for where a reset *token* lands, `withToken` appends one, and
+      sending it bare hands the customer's route a request it was never told to expect. It
+      never fails the reset either — the password is committed before the mail is attempted,
+      so a provider outage reported as a failed reset would send someone round again to a
+      form their new password already works against. Six integration tests, each asserting
+      the direction that fails rather than the happy path (PROJECT.md 7.4).
+      `notifyOnChange`'s reach is the reset path only, because a signed-in change-password
+      endpoint does not exist; the screen says so now rather than promising "a reset or a
+      change".
       The panel's password-policy store is off its fixture; the stats beside it are not,
       because those are counts over sign-ins and refusals that live in ClickHouse (ADR-0013)
       and wait on 3.2's panel wiring rather than on an endpoint that could exist today
@@ -973,6 +1005,10 @@ client have no server halves to talk to yet.
       so every rule on the screen was measured against a guess; it is the caller's own
       `memberId` from `/v1/me` now. `org_members.last_active_at` is still written by nothing,
       so the column reads "Never signed in" for the person reading the page
+- [ ] `SESSION_IDLE_TTL_SECONDS` is read on rotation and the project's setting is read on
+      issuance, so a customer who shortens their idle window gets it applied when a session
+      is created and ignored every time it slides. Found while deleting the reset path's
+      equivalent variable. `refresh-service.ts` is the one caller
 - [ ] Record `org_members.last_active_at`. The column exists, the members screen has a
       column for it, and nothing ever writes it — so a dormant seat and an active one look
       identical. Wants a bounded write (at most once a day per membership) on the management

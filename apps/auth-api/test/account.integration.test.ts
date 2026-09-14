@@ -5,16 +5,18 @@ import { generateOpaqueToken } from "@idenzy/crypto/tokens/random";
 import { NullAnalyticsRecorder } from "@idenzy/domain/ports/analytics-recorder";
 import type { FlowContext } from "@idenzy/domain/ports/auth-flow";
 import { BreachedPasswordChecker } from "@idenzy/domain/ports/breached-password-checker";
+import { EmailProvider } from "@idenzy/domain/ports/email-provider";
 import { RedirectUriRepository } from "@idenzy/persistence/repository/redirect-uri-repository";
 import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { confirmPasswordResetSchema } from "@idenzy/protocol/schemas/auth";
 import { NoStoredTemplates, TemplateRenderer } from "@idenzy/templating/renderer";
 import { sessionOf } from "@idenzy/testing/auth-outcome";
-import { CapturingEmailProvider } from "@idenzy/testing/fakes";
+import { AllowAll, CapturingEmailProvider, CountAll } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { EmailChangeService } from "../dist/account/email-change-service.js";
 import { EmailVerificationService } from "../dist/account/email-verification-service.js";
 import { ProfileService } from "../dist/account/profile-service.js";
@@ -29,6 +31,7 @@ import { PasswordSignUpFlow } from "../dist/password/password-sign-up.flow.js";
 import { SessionService } from "../dist/session/session-service.js";
 import {
   claimTemplates,
+  SilentLogger,
   testActives,
   testConfig,
   testMfaGate,
@@ -61,6 +64,19 @@ class NoBreaches extends BreachedPasswordChecker {
   }
 }
 
+/** A provider that is down, for the one case where that must not fail the caller. */
+class FailingEmail extends EmailProvider {
+  override readonly id = "failing";
+  // Widens the abstract base's protected constructor, the same reason every concrete
+  // OAuth provider carries one.
+  constructor() {
+    super(new AllowAll(), new CountAll());
+  }
+  protected override dispatch(): Promise<string> {
+    return Promise.reject(new Error("provider unavailable"));
+  }
+}
+
 const context: FlowContext = {
   projectId: PROJECT,
   requestId: "req_account",
@@ -72,7 +88,13 @@ const context: FlowContext = {
 };
 const tenant = new TenantContext(PROJECT, "req_account", "user");
 
-/** The token as the recipient sees it, out of the link in the mail we rendered. */
+/**
+ * The token as the recipient sees it, out of the link in the mail we rendered.
+ *
+ * Read it after `request` and before `confirm`. `notifyOnChange` defaults on, so a
+ * successful confirm puts a `password_changed` mail after the link in `sent` — and
+ * `lastTo` is a `findLast`, so calling this afterwards finds a body with no link in it.
+ */
 function tokenIn(to: string): string {
   const body = mail.lastTo(to)?.text ?? "";
   const link = /https?:\/\/\S+/.exec(body)?.[0] ?? "";
@@ -106,8 +128,9 @@ beforeAll(async () => {
     new NoBreaches(),
     mailer,
     targets,
-    config,
+    new ProjectSettingsReader(uow),
     revocations.publisher,
+    new SilentLogger(),
   );
   verification = new EmailVerificationService(uow, clock, mailer, targets, config);
   profile = new ProfileService(uow);
@@ -193,7 +216,6 @@ describe("resetting a password", () => {
     await reset.confirm(context, {
       token: tokenIn(email),
       password: "a-brand-new-password",
-      signOutOtherSessions: true,
     });
 
     const session = await uow.run(tenant, (tx) =>
@@ -218,13 +240,11 @@ describe("resetting a password", () => {
     await reset.confirm(context, {
       token,
       password: "another-new-password",
-      signOutOtherSessions: false,
     });
     await expect(
       reset.confirm(context, {
         token,
         password: "third-password-here",
-        signOutOtherSessions: false,
       }),
     ).rejects.toMatchObject({ code: "challenge_invalid" });
   });
@@ -242,7 +262,6 @@ describe("resetting a password", () => {
       reset.confirm(context, {
         token: older,
         password: "should-not-work",
-        signOutOtherSessions: false,
       }),
     ).rejects.toMatchObject({ code: "challenge_invalid" });
   });
@@ -257,16 +276,188 @@ describe("resetting a password", () => {
       reset.confirm(context, {
         token: tokenIn(email),
         password: "x".repeat(12),
-        signOutOtherSessions: false,
       }),
     ).rejects.toMatchObject({ code: "challenge_expired" });
     await expect(
       reset.confirm(context, {
         token: generateOpaqueToken(),
         password: "x".repeat(12),
-        signOutOtherSessions: false,
       }),
     ).rejects.toMatchObject({ code: "challenge_invalid" });
+  });
+});
+
+/**
+ * The three controls the Passwords screen has always offered and the reset path has never
+ * read. Each one is asserted in the direction that fails: a policy nothing enforces looks
+ * exactly like a policy that is working, which is the whole reason these exist.
+ *
+ * The policy is written straight into `projects.settings` rather than through the
+ * management API, as `password.integration.test.ts` does for the same section: this is the
+ * enforcement under test and not the plumbing that stores it.
+ */
+describe("the project's reset policy", () => {
+  const email = "policy@a.test";
+  const original = "the-original-password";
+
+  async function setPolicy(policy: Readonly<Record<string, unknown>>): Promise<void> {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
+    await harness.owner.query(
+      `UPDATE projects SET settings = jsonb_build_object('password', $2::jsonb) WHERE id = $1`,
+      [PROJECT, JSON.stringify(policy)],
+    );
+  }
+
+  async function outstandingExpiry(): Promise<Date> {
+    const { rows } = await harness.owner.query<{ expires_at: Date }>(
+      `SELECT expires_at FROM verification_tokens
+       WHERE consumed_at IS NULL AND purpose = 'password_reset'
+       ORDER BY created_at DESC LIMIT 1`,
+    );
+    const row = rows[0];
+    if (row === undefined) return expect.fail("no outstanding reset token");
+    return new Date(row.expires_at);
+  }
+
+  beforeAll(async () => {
+    await signUp.authenticate(context, { email, password: original });
+  });
+
+  afterEach(async () => {
+    await setPolicy({});
+  });
+
+  /**
+   * The clock the Lifetimes screen used to call deployment-fixed. Two projects producing
+   * two different expiries is what says the setting reached the write; that it is refused
+   * once past is already covered above.
+   */
+  it("gives the link the lifetime the project chose, not a deployment-wide one", async () => {
+    await setPolicy({ resetLifetime: 10 });
+    const before = Date.now();
+    await reset.request(context, email);
+    const short = (await outstandingExpiry()).getTime() - before;
+    expect(short).toBeGreaterThan(9 * 60_000);
+    expect(short).toBeLessThan(11 * 60_000);
+
+    await setPolicy({ resetLifetime: 60 });
+    const later = Date.now();
+    await reset.request(context, email);
+    const long = (await outstandingExpiry()).getTime() - later;
+    expect(long).toBeGreaterThan(59 * 60_000);
+  });
+
+  /** Off means off: the other devices stay, and nothing is published about them. */
+  it("leaves other sessions alive when the project says to", async () => {
+    await setPolicy({ signOutOnReset: false });
+    const before = sessionOf(await signIn.authenticate(context, { email, password: original }));
+    await reset.request(context, email);
+    await reset.confirm(context, { token: tokenIn(email), password: "kept-signed-in-please" });
+
+    const session = await uow.run(tenant, (tx) =>
+      new SessionRepository(tx, tenant).findById(before.sessionId),
+    );
+    expect(session?.isRevoked()).toBe(false);
+    expect(
+      await revocations.set.isRevoked(PROJECT, {
+        sessionId: before.sessionId,
+        userId: before.user.id,
+        issuedAt: Math.floor(clock.now().getTime() / 1000),
+      }),
+    ).toBe(false);
+    await reset.request(context, email);
+    await reset.confirm(context, { token: tokenIn(email), password: original });
+  });
+
+  /**
+   * The attack the removed request field was. `signOutOtherSessions` used to ride on the
+   * body, so whoever built the reset form could switch off a protection the account's
+   * owner had been shown as on. The schema strips what it does not declare, so a client
+   * still sending it is ignored rather than refused — and the project's answer stands.
+   */
+  it("ignores a caller still asking for the opposite", async () => {
+    await setPolicy({ signOutOnReset: true });
+    const before = sessionOf(await signIn.authenticate(context, { email, password: original }));
+    await reset.request(context, email);
+    const stale = {
+      token: tokenIn(email),
+      password: "the-caller-cannot-say",
+      signOutOtherSessions: false,
+    };
+    await reset.confirm(context, confirmPasswordResetSchema.parse(stale));
+
+    const session = await uow.run(tenant, (tx) =>
+      new SessionRepository(tx, tenant).findById(before.sessionId),
+    );
+    expect(session?.isRevoked()).toBe(true);
+    await reset.request(context, email);
+    await reset.confirm(context, { token: tokenIn(email), password: original });
+  });
+
+  /**
+   * A minimum only one of the two paths enforced was not a minimum: sign-up refused a
+   * short password and a reset link set one anyway, with no session needed to do it.
+   */
+  it("refuses a password under the project's minimum", async () => {
+    await setPolicy({ minLength: 20 });
+    await reset.request(context, email);
+    const token = tokenIn(email);
+    await expect(
+      reset.confirm(context, { token, password: "nineteen-chars-xyz" }),
+    ).rejects.toMatchObject({ code: "password_too_short" });
+
+    // The same link still works for a password that clears the bar, so the refusal did
+    // not spend it.
+    await reset.confirm(context, { token, password: "twenty-characters-ok" });
+    await reset.request(context, email);
+    await reset.confirm(context, { token: tokenIn(email), password: original });
+  });
+
+  it("mails the account when the project asks to be told, and nothing when it does not", async () => {
+    await setPolicy({ notifyOnChange: true });
+    await reset.request(context, email);
+    await reset.confirm(context, { token: tokenIn(email), password: "told-about-this-one" });
+    const told = mail.lastTo(email);
+    expect(told?.subject).toContain("password was changed");
+    // No destination is invented: the only URI we hold is where a reset token lands.
+    expect(told?.text).not.toMatch(/https?:\/\//);
+
+    await setPolicy({ notifyOnChange: false });
+    await reset.request(context, email);
+    const quiet = mail.sent.length;
+    await reset.confirm(context, { token: tokenIn(email), password: original });
+    expect(mail.sent.length).toBe(quiet);
+  });
+
+  /**
+   * The honesty property of the whole notification. The password is committed by the time
+   * the mail is attempted, so a send that throws must not come back as a failed reset —
+   * the user would be sent round again to a form their new password already works against.
+   */
+  it("changes the password even when the notification cannot be sent", async () => {
+    await setPolicy({ notifyOnChange: true });
+    const broken = new PasswordResetService(
+      uow,
+      clock,
+      hasher,
+      new NoBreaches(),
+      new Mailer(uow, new TemplateRenderer(new NoStoredTemplates()), new FailingEmail(), config),
+      new RedirectTargets(uow),
+      new ProjectSettingsReader(uow),
+      revocations.publisher,
+      new SilentLogger(),
+    );
+    await reset.request(context, email);
+    await expect(
+      broken.confirm(context, { token: tokenIn(email), password: "sent-nowhere-at-all" }),
+    ).resolves.toBeUndefined();
+
+    const after = sessionOf(
+      await signIn.authenticate(context, { email, password: "sent-nowhere-at-all" }),
+    );
+    expect(after.user.email).toBe(email);
+    await reset.request(context, email);
+    await reset.confirm(context, { token: tokenIn(email), password: original });
   });
 });
 

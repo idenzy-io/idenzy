@@ -513,7 +513,8 @@ const GUIDES_URL = "https://idenzy.io/docs/passwords";
         <SettingRow label="Email when a password changes">
           <template #description>
             Sends the <span class="font-mono text-ink/80">password_changed</span> template
-            after a reset or a change, so an owner who did not do it finds out. Edited under
+            after a reset, so an owner who did not do it finds out. A signed-in change will
+            use the same switch once that endpoint exists; today there is none. Edited under
             <NuxtLink
               class="font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
               to="/email/templates"

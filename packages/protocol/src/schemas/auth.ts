@@ -79,13 +79,17 @@ export const requestPasswordResetSchema = z.object({
 });
 
 /**
- * Reset tokens are single-use and 15 minutes long, and confirming one invalidates every
- * other outstanding reset for that user (PROJECT.md 4.5).
+ * Reset tokens are single-use and confirming one invalidates every other outstanding
+ * reset for that user (PROJECT.md 4.5).
+ *
+ * How long one lasts is the project's to set and is not on this request: `resetLifetime`
+ * on the password policy decides it. Whether the other sessions end is the project's too,
+ * which is why the caller cannot say — a `signOutOtherSessions` here would let whoever
+ * builds the reset form switch off a protection the account's owner was shown as on.
  */
 export const confirmPasswordResetSchema = z.object({
   token: z.string().min(20),
   password: passwordSchema,
-  signOutOtherSessions: z.boolean().default(true),
 });
 
 /** Requires a recent factor verification, and confirms on both addresses (PROJECT.md 4.5). */

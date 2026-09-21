@@ -10,6 +10,11 @@
  * The mark is an initial on the accent rather than a logo, because a project is a tenant
  * and not a brand: the panel holds no image for it, and a letter reads at twenty pixels
  * where a logo would not.
+ *
+ * Making one lives here too, under the list and behind a rule, because the question that
+ * reaches for it is the one the list just failed to answer: the project wanted is not in
+ * it. `ProjectCreateDialog` asks for the name and this component owns the write, so the
+ * menu closes on a project rather than on a click.
  */
 defineProps<{
   /** Folded to the mark alone, with the name in a tooltip. */
@@ -22,8 +27,41 @@ function initial(name: string): string {
   return name.trim().charAt(0).toUpperCase();
 }
 
+/**
+ * The dialog, its wait and whatever the service refused it with.
+ *
+ * Local rather than the store's `refusal`, which the settings screen reads too: a delete
+ * that failed there must not be the sentence this dialog opens carrying.
+ */
+const createOpen = ref(false);
+const creating = ref(false);
+const createError = ref("");
+
 function create() {
-  // POST /v1/projects through the management API, then select the answer.
+  createError.value = "";
+  createOpen.value = true;
+}
+
+/**
+ * Closes on a project and not on the request finishing.
+ *
+ * Creating takes an admin and this menu offers the item to every role, so a refusal is the
+ * ordinary outcome rather than the exceptional one; the dialog keeps the typed name and
+ * says what the service said. On success the panel moves to it, because a project made from
+ * the switcher is the one the reader means to work in, and a drawer still showing the old
+ * name reads as a create that did not happen.
+ */
+async function confirmCreate(name: string) {
+  createError.value = "";
+  creating.value = true;
+  const made = await store.create(name);
+  creating.value = false;
+  if (made === null) {
+    createError.value = store.refusal ?? "";
+    return;
+  }
+  store.select(made);
+  createOpen.value = false;
 }
 </script>
 
@@ -84,4 +122,16 @@ function create() {
       </v-list>
     </v-menu>
   </button>
+
+  <!-- A sibling of the button rather than a child of it, because a dialog is not part of
+       the control that opens it; Vuetify teleports the overlay either way, and nesting one
+       inside a `button` is markup the drawer would carry on every screen. -->
+  <ProjectCreateDialog
+    v-if="createOpen"
+    v-model="createOpen"
+    :busy="creating"
+    :error="createError"
+    :org="store.currentOrg.name"
+    @confirm="confirmCreate"
+  />
 </template>

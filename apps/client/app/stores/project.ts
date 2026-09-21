@@ -16,14 +16,17 @@
  * pays for it, and two stores would be two answers to "which organisation am I in" the
  * first time a switch left one of them behind.
  *
- * Renaming and deleting are real writes now, against `PATCH` and `DELETE` on
- * `/v1/orgs/:orgId/projects/:projectId`, and each keeps the server's answer rather than its
- * own: the name is trimmed on the way in, and a delete that the service refuses — the last
- * project in an organisation — must leave the switcher showing what is actually there.
+ * Creating, renaming and deleting are real writes now, against `POST` on
+ * `/v1/orgs/:orgId/projects` and `PATCH` and `DELETE` on the project under it, and each
+ * keeps the server's answer rather than its own: a created project is stored as the summary
+ * it answered with, the name is trimmed on the way in, and a delete that the service
+ * refuses — the last project in an organisation — must leave the switcher showing what is
+ * actually there.
  * Renaming an organisation is still local, because there is no route for it and nothing in
  * the panel calls it.
  */
-import type { ProjectDetail } from "@idenzy/protocol/schemas/management";
+import { InternalError } from "@idenzy/core/errors";
+import type { ProjectDetail, ProjectSummary } from "@idenzy/protocol/schemas/management";
 import type { Org } from "~/utils/organisation";
 import { managementMessage } from "~/utils/sign-in-errors";
 
@@ -86,7 +89,7 @@ export const useProjectStore = defineStore("project", () => {
    */
   const selected = ref<string | null>(null);
 
-  /** What the last rename or delete was refused with, for the screen that asked for it. */
+  /** What the last write was refused with, for the screen or dialog that asked for it. */
   const refusal = ref<string | null>(null);
 
   const current = computed<Project>(() => {
@@ -121,6 +124,45 @@ export const useProjectStore = defineStore("project", () => {
   function orgOf(projectId: string): Org | null {
     const project = projects.value.find((entry) => entry.id === projectId);
     return project ? orgById(project.orgId) : null;
+  }
+
+  /**
+   * Makes one, in the organisation the panel is currently in, and answers it or null.
+   *
+   * Answers rather than only setting `refusal`, because the switcher's dialog closes on a
+   * project and not on a request finishing. Creating takes an admin and the drawer offers
+   * the item to everybody, so a viewer's click is refused by the service — and a dialog
+   * that closed on the busy flag alone would report a project that was never made
+   * (notes/dialogs.md, "Saving is not the same as closing").
+   *
+   * The organisation is the current one rather than a choice. The switcher lists every
+   * project across every organisation, so "which of them pays for this" has no answer in
+   * the list itself; the one the reader is already in is the only unambiguous one, which is
+   * why the dialog names it rather than asking. A second organisation is a different act
+   * and has no route here.
+   *
+   * The summary the service answers with goes into the bootstrap whole. Rebuilding one from
+   * the typed name would invent the id, the plan and the tier, and the switcher would show a
+   * project whose facts were this panel's guesses until the next reload.
+   */
+  async function create(name: string): Promise<Project | null> {
+    const org = currentOrg.value;
+    refusal.value = null;
+    try {
+      const { data, error } = await useManagementApi()(`/v1/orgs/${org.id}/projects`)
+        .post({ name })
+        .json<ProjectSummary>();
+      if (error.value !== null) throw error.value;
+      const made = data.value;
+      // A 2xx carrying nothing is not a created project, and the caller must not get one.
+      if (made === null || made === undefined)
+        throw new InternalError({ detail: { reason: "the server returned no project" } });
+      bootstrap.projects = [...bootstrap.projects, made];
+      return { id: made.id, name: made.name, orgId: made.orgId };
+    } catch (cause: unknown) {
+      refusal.value = managementMessage(cause);
+      return null;
+    }
   }
 
   /**
@@ -210,6 +252,7 @@ export const useProjectStore = defineStore("project", () => {
     canDelete,
     refusal,
     select,
+    create,
     orgById,
     orgOf,
     projectsOf,

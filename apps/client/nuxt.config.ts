@@ -173,12 +173,37 @@ export default defineNuxtConfig({
       icons: { defaultSet: "custom" },
 
       /**
-       * Ripple is off everywhere rather than per component. It is a Material signature
-       * and reads as one, and a panel this dense shows the animation more often than it
-       * shows the thing the animation was meant to confirm. Hover, focus and pressed
-       * states carry that on their own.
+       * The one labs component the panel uses: the chart range on /usage is picked on a
+       * calendar, and `VDateRangePicker` is the only thing that draws two months as one
+       * control. Named rather than `true`, because `true` pulls every lab component into
+       * the bundle and the rest of the panel wants none of them.
        */
-      defaults: { global: { ripple: false } },
+      labComponents: ["VDateRangePicker"],
+
+      /**
+       * A date picker needs a date adapter, and the module only includes the composables
+       * for one when this is set. Vuetify's own adapter works on the native `Date`, which
+       * is what every figure on /usage is already keyed by; a library adapter would add a
+       * dependency for a single control.
+       */
+      date: { adapter: "vuetify" },
+
+      /**
+       * Ripple is on everywhere rather than per component, and it was off for years.
+       *
+       * The argument for off was that it is a Material signature, and that a panel this
+       * dense shows the animation more often than it shows the thing it was meant to
+       * confirm: hover, focus and pressed carried that on their own. That held while an
+       * action was a filled or outlined box, which has a fill and an edge to change.
+       *
+       * Every action in the panel is a text button now. A text button has nothing of its
+       * own to change under a finger, and on a touch screen the hover overlay is all that
+       * is left — which outlives the finger that caused it and reads as a stuck selection.
+       * The signed-out screens reached this first and turned it back on for themselves
+       * (the `v-defaults-provider` that used to be in layouts/auth.vue); this is that same
+       * finding, once, for the whole product.
+       */
+      defaults: { global: { ripple: true } },
 
       theme: {
         // Vuetify 4 follows prefers-color-scheme itself, so no watcher of ours can
@@ -202,10 +227,12 @@ export default defineNuxtConfig({
            *
            * Material Blue A400 and A200: the accent pair, one step apart so the dark
            * theme's fill sits off a dark surface without becoming a second colour.
-           * `primary-sharp` is the ground of the one lit button (FancyButton): deeper
-           * and more saturated than either, because that button carries a wash of white
-           * that brings it back up, and it is the same in both themes so the one call
-           * to action looks the same wherever it is met.
+           * `primary-sharp` was the ground of the one lit button, deeper and more
+           * saturated than either because that button carried a wash of white over it.
+           * That button is gone — every action in the panel is a text button now — and
+           * the colour is kept rather than deleted because it is the one saturated blue
+           * the palette has, and the next thing that needs to be pressed harder than
+           * text wants it rather than a sixth hex somebody picks again.
            *
            * `neutral` is the ink for a control that carries no accent, a step in from
            * pure black and pure white so an outlined button does not out-contrast the

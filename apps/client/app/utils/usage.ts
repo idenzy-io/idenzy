@@ -537,7 +537,34 @@ export function projectBill(period: UsagePeriod, asOf: Date): Bill {
  * A missing hour stays missing. The roller writes one when it observes it and a level cannot be
  * reconstructed afterwards, so a gap is drawn as a gap rather than as a line through it.
  */
-export type UsageRange = "1d" | "7d" | "30d";
+/** The three spans that are counted back from now rather than chosen on a calendar. */
+export type UsagePreset = "1d" | "7d" | "30d";
+
+/**
+ * A span of whole UTC days picked on a calendar, both ends inclusive, as `YYYY-MM-DD`.
+ *
+ * Dates and not an offset, because a chosen span is a fixed piece of the calendar: a
+ * preset re-reads as the day turns and this must not. It is days and never hours — the
+ * hourly series is a level with its own six-month table (`notes/usage.md`), and asking it
+ * for March would be asking a question it drops the answer to.
+ */
+export interface UsageDays {
+  from: string;
+  to: string;
+}
+
+export type UsageRange = UsagePreset | UsageDays;
+
+export function isPreset(range: UsageRange): range is UsagePreset {
+  return typeof range === "string";
+}
+
+/**
+ * The longest span the chart draws. Past this the categories are narrower than their own
+ * labels and the picture stops being one; the reader who wants a quarter wants the
+ * monthly totals the period selector above already carries.
+ */
+export const MAX_RANGE_DAYS = 92;
 
 export interface UsageWindow {
   granularity: "hour" | "day";
@@ -545,10 +572,37 @@ export interface UsageWindow {
   buckets: number[];
 }
 
-const RANGE_BUCKETS: Record<UsageRange, number> = { "1d": 24, "7d": 7, "30d": 30 };
+const RANGE_BUCKETS: Record<UsagePreset, number> = { "1d": 24, "7d": 7, "30d": 30 };
 
-/** The buckets that end at `anchor`, which is exclusive: the instant the figures run to. */
+/** Midnight UTC on the day a `YYYY-MM-DD` names. */
+export function dayStart(day: string): number {
+  return Date.parse(`${day}T00:00:00.000Z`);
+}
+
+/** The `YYYY-MM-DD` a bucket falls in. */
+export function dayOf(at: number): string {
+  return new Date(at).toISOString().slice(0, 10);
+}
+
+/** How many days a chosen span covers, counting both ends. */
+export function spanDays(days: UsageDays): number {
+  return Math.floor((dayStart(days.to) - dayStart(days.from)) / DAY) + 1;
+}
+
+/**
+ * The buckets a range covers. For a preset they end at `anchor`, which is exclusive: the
+ * instant the figures run to. A chosen span ignores the anchor and is exactly its own
+ * days, capped at `MAX_RANGE_DAYS` from its start.
+ */
 export function usageWindow(range: UsageRange, anchor: Date): UsageWindow {
+  if (!isPreset(range)) {
+    const first = dayStart(range.from);
+    const length = Math.min(Math.max(spanDays(range), 1), MAX_RANGE_DAYS);
+    return {
+      granularity: "day",
+      buckets: Array.from({ length }, (_, index) => first + index * DAY),
+    };
+  }
   const granularity = range === "1d" ? "hour" : "day";
   const step = granularity === "hour" ? HOUR : DAY;
   const last = Math.floor((anchor.getTime() - 1) / step) * step;
@@ -575,7 +629,19 @@ export function windowDays(window: UsageWindow): { from: string; to: string } {
  * on the 1st, and the seven days before the 7th of a month straddle that reset.
  */
 export function usageWindows(range: UsageRange, anchor: Date) {
-  return { current: usageWindow(range, anchor), previous: usageWindow(range, monthBefore(anchor)) };
+  if (isPreset(range)) {
+    return {
+      current: usageWindow(range, anchor),
+      previous: usageWindow(range, monthBefore(anchor)),
+    };
+  }
+  /* A chosen span is absolute, so moving the anchor would hand back the same days. The
+     span itself is moved instead, each end clamped by `monthBefore` to the shorter month. */
+  const shifted = {
+    from: dayOf(monthBefore(new Date(dayStart(range.from))).getTime()),
+    to: dayOf(monthBefore(new Date(dayStart(range.to))).getTime()),
+  };
+  return { current: usageWindow(range, anchor), previous: usageWindow(shifted, anchor) };
 }
 
 const TICK_DAY = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });

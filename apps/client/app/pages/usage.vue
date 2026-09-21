@@ -29,7 +29,9 @@ import {
   bucketTitle,
   CHART_METERS,
   type ChartMeterId,
+  dayOf,
   FREE_MAU,
+  isPreset,
   MAU_DEFINITION,
   MAU_EXAMPLES,
   MAU_PRICE,
@@ -45,6 +47,7 @@ import {
   projectBill,
   projectTotals,
   ROUNDING_RULE,
+  spanDays,
   totalsOf,
   type UsageRange,
   usageCsv,
@@ -196,14 +199,30 @@ const METRIC_OPTIONS: readonly MetricOption[] = CHART_METERS.map((entry) => ({
   description: entry.description,
 }));
 
-const RANGES: readonly SegmentedOption[] = [
-  { value: "1d", label: "1d", title: "The last 24 hours, by the hour" },
-  { value: "7d", label: "7d", title: "The last 7 days" },
-  { value: "30d", label: "30d", title: "The last 30 days" },
-];
-
 const meter = ref<ChartMeterId>("mau");
 const range = ref<UsageRange>("7d");
+
+/*
+ * What the calendar in the range picker is allowed to offer: the days the store actually
+ * holds. It reads seven months — the open one and six closed — and a day outside them has
+ * no row, so offering it would buy a chart of gaps. The newest day is the one the figures
+ * run to rather than today, which for a closed period is the last day of that month.
+ */
+const pickable = computed(() => {
+  const held = periods.value;
+  const oldest = held.at(-1);
+  return {
+    earliest: dayOf(Date.parse(oldest?.start ?? period.value.start)),
+    latest: dayOf(asOf.value.getTime() - 1),
+  };
+});
+
+/* A span that is still inside the window after a project switch or a period change. The
+   picker bounds what can be chosen; this is what happens to a choice already made. */
+watch(pickable, (bounds) => {
+  if (isPreset(range.value)) return;
+  if (range.value.from < bounds.earliest || range.value.to > bounds.latest) range.value = "7d";
+});
 
 const windows = computed(() => usageWindows(range.value, asOf.value));
 
@@ -247,9 +266,17 @@ const chart = computed(() => {
 
 const activityWords = computed(() => {
   const of = closed.value ? ` of ${month.value}` : "";
-  return range.value === "1d"
-    ? `The last 24 hours${of} by the hour, against the same hours a month before. An hour with no point is one nothing recorded. UTC.`
-    : `The last ${range.value === "7d" ? 7 : 30} days${of}, against the same dates a month before. UTC.`;
+  /* A chosen span says its own dates rather than "the last N days": it is a piece of the
+     calendar and does not move as the day turns, and a sentence that counted back from now
+     would describe a different window tomorrow. */
+  if (!isPreset(range.value)) {
+    const days = spanDays(range.value);
+    return `${windowLabel(windows.value.current)}, ${days} ${days === 1 ? "day" : "days"}, against the same dates a month before. A day with no point is one nothing recorded. UTC.`;
+  }
+  if (range.value === "1d") {
+    return `The last 24 hours${of} by the hour, against the same hours a month before. An hour with no point is one nothing recorded. UTC.`;
+  }
+  return `The last ${range.value === "7d" ? 7 : 30} days${of}, against the same dates a month before. UTC.`;
 });
 
 /*
@@ -318,7 +345,7 @@ function exportCsv() {
         color="neutral"
         prepend-icon="material-symbols:refresh"
         size="small"
-        variant="outlined"
+        variant="text"
         @click="store.refresh()"
       >
         Retry
@@ -455,7 +482,7 @@ function exportCsv() {
       <MetricCard
         v-model="meter"
         :categories="chart.categories"
-        :category-label="range === '1d' ? 'Hour' : 'Day'"
+        :category-label="windows.current.granularity === 'hour' ? 'Hour' : 'Day'"
         :loading="loading"
         :options="METRIC_OPTIONS"
         :series="chart.series"
@@ -463,7 +490,12 @@ function exportCsv() {
         type="area"
       >
         <template #actions>
-          <SegmentedControl v-model="range" :options="RANGES" label="Range" />
+          <UsageRangePicker
+            v-model="range"
+            :earliest="pickable.earliest"
+            :latest="pickable.latest"
+            :loading="loading"
+          />
         </template>
       </MetricCard>
 
@@ -563,7 +595,7 @@ function exportCsv() {
                 rel="noopener"
                 size="small"
                 target="_blank"
-                variant="outlined"
+                variant="text"
               >
                 View invoice {{ invoice.number }}
               </v-btn>

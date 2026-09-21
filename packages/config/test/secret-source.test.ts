@@ -137,8 +137,6 @@ describe("loading configuration through a store", () => {
     IDENZY_ENV: "production",
     NODE_ENV: "production",
     PORT: "3000",
-    CELL_CODE: "us1",
-    KMS_KEY_RING: "ring",
     ISSUER_BASE_URL: "https://auth.idenzy.io",
     DASHBOARD_PROJECT_ID: "prj_00000000000040008000000000000002",
     VALKEY_URL: "secret://valkey-url",

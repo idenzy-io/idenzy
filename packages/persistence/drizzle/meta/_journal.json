@@ -484,6 +484,13 @@
       "when": 1789486292277,
       "tag": "0068_project_signing_keys_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789988952851,
+      "tag": "0069_remove_rls_and_cells",
+      "breakpoints": true
     }
   ]
 }

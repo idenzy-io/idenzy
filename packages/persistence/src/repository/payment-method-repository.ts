@@ -3,7 +3,7 @@ import type { CardBrand, PaymentProvider } from "@idenzy/protocol/enums/billing"
 import { and, desc, eq, sql } from "drizzle-orm";
 import { paymentMethods } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { ControlTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface PaymentMethodRow {
@@ -54,7 +54,7 @@ function toRow(row: typeof paymentMethods.$inferSelect): PaymentMethodRow {
  * none — the second of which leaves an automatic top-up silently not firing.
  */
 export class PaymentMethodRepository extends OrgRepository<typeof paymentMethods> {
-  constructor(tx: ControlTx, context: OrgContext) {
+  constructor(tx: Transaction, context: OrgContext) {
     super(tx, context, paymentMethods);
   }
 

@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { orgs } from "../schema/control-plane.js";
+import { orgs } from "../schema/organisation.js";
 import type { OrgContext } from "../tenancy/org-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 import { AbstractRepository } from "./abstract-repository.js";

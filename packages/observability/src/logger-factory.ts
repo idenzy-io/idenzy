@@ -6,7 +6,7 @@ import { AllowlistLogger } from "./allowlist-logger.js";
 export interface LoggerOptions {
   readonly level: string;
   /**
-   * Which service wrote the line: `auth-api`, `management-api`, `workers`.
+   * Which service wrote the line: `api`, `workers`.
    *
    * Its own field rather than `component`, which it used to share and lose. A line passes
    * `component` to say which part of a service it came from — `valkey`, `usage`, `webhooks` — and

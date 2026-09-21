@@ -10,7 +10,6 @@ export const ErrorCode = {
   // Request shape and routing
   ValidationFailed: "validation_failed",
   UnknownProject: "unknown_project",
-  WrongRegion: "wrong_region",
   ProjectSuspended: "project_suspended",
   NotFound: "not_found",
   Conflict: "conflict",

@@ -26,12 +26,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { config } from "./presets.js";
 import { projects } from "./projects.js";
-import {
-  createdAtColumn,
-  projectIdColumn,
-  tenantIsolationPolicy,
-  updatedAtColumn,
-} from "./shared.js";
+import { createdAtColumn, projectIdColumn, updatedAtColumn } from "./shared.js";
 
 const delivery = {
   class: DataClass.Operational,
@@ -63,11 +58,8 @@ export const emailTemplates = classifiedTable(
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
-  (t) => [
-    uniqueIndex("email_templates_project_type_locale_key").on(t.projectId, t.type, t.locale),
-    tenantIsolationPolicy("email_templates"),
-  ],
-).enableRLS();
+  (t) => [uniqueIndex("email_templates_project_type_locale_key").on(t.projectId, t.type, t.locale)],
+);
 
 /**
  * The fraud and spend controls every SMS send is measured against (PROJECT.md 4.8).
@@ -129,8 +121,8 @@ export const smsPolicies = classifiedTable(
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
-  (t) => [primaryKey({ columns: [t.projectId] }), tenantIsolationPolicy("sms_policies")],
-).enableRLS();
+  (t) => [primaryKey({ columns: [t.projectId] })],
+);
 
 /**
  * Addresses that must never be sent to again.
@@ -156,9 +148,8 @@ export const suppressions = classifiedTable(
   },
   (t) => [
     uniqueIndex("suppressions_project_channel_target_key").on(t.projectId, t.channel, t.targetHash),
-    tenantIsolationPolicy("suppressions"),
   ],
-).enableRLS();
+);
 
 /**
  * Customer webhook endpoints, and the secret each one's deliveries are signed with.
@@ -244,9 +235,8 @@ export const webhooks = classifiedTable(
   (t) => [
     // The fan-out's own query: every enabled endpoint on a project, per event.
     index("webhooks_project_enabled_idx").on(t.projectId, t.enabled),
-    tenantIsolationPolicy("webhooks"),
   ],
-).enableRLS();
+);
 
 /**
  * Deliveries: the work still owed, and a short window of what happened (ADR-0012).
@@ -358,9 +348,8 @@ export const webhookDeliveries = classifiedTable(
     // The fan-out writes one delivery per endpoint per event, and relaying the same outbox row
     // twice must not send it twice.
     uniqueIndex("webhook_deliveries_webhook_sequence_key").on(t.webhookId, t.sequence),
-    tenantIsolationPolicy("webhook_deliveries"),
   ],
-).enableRLS();
+);
 
 /**
  * What an endpoint has done, a day at a time.
@@ -393,11 +382,8 @@ export const webhookEndpointStats = classifiedTable(
     lastDeliveredAt: classified(timestamp("last_delivered_at", { withTimezone: true }), config),
     lastFailedAt: classified(timestamp("last_failed_at", { withTimezone: true }), config),
   },
-  (t) => [
-    primaryKey({ columns: [t.webhookId, t.day] }),
-    tenantIsolationPolicy("webhook_endpoint_stats"),
-  ],
-).enableRLS();
+  (t) => [primaryKey({ columns: [t.webhookId, t.day] })],
+);
 
 /**
  * Transactional outbox (PROJECT.md 9.4).
@@ -432,9 +418,8 @@ export const outbox = classifiedTable(
   (t) => [
     index("outbox_unpublished_idx").on(t.publishedAt, t.createdAt),
     index("outbox_topic_seq_idx").on(t.topic, t.seq),
-    tenantIsolationPolicy("outbox"),
   ],
-).enableRLS();
+);
 
 /**
  * Counters kept as long as the daily usage rollup is, because they answer the same kind of
@@ -508,9 +493,8 @@ export const emailDeliveryStats = classifiedTable(
   (t) => [
     primaryKey({ columns: [t.projectId, t.day] }),
     index("email_delivery_stats_day_idx").on(t.day),
-    tenantIsolationPolicy("email_delivery_stats"),
   ],
-).enableRLS();
+);
 
 /**
  * A project whose sending is stopped because its bounce or complaint rate would cost us the
@@ -572,9 +556,8 @@ export const emailSendingHolds = classifiedTable(
   (t) => [
     uniqueIndex("email_sending_holds_open_key").on(t.projectId).where(sql`released_at is null`),
     index("email_sending_holds_project_opened_idx").on(t.projectId, t.openedAt),
-    tenantIsolationPolicy("email_sending_holds"),
   ],
-).enableRLS();
+);
 
 /**
  * Every SES delivery event we have been told about, once.

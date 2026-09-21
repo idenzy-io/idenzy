@@ -3,7 +3,7 @@ import type { VerificationPurpose } from "@idenzy/protocol/enums/auth";
 import { and, eq, isNull } from "drizzle-orm";
 import { verificationTokens } from "../schema/challenges.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface NewVerificationToken {
@@ -30,7 +30,7 @@ export interface VerificationTokenRow {
  * have it marked verified.
  */
 export class VerificationTokenRepository extends BaseRepository<typeof verificationTokens> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, verificationTokens);
   }
 

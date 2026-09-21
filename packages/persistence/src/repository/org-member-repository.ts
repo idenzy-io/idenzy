@@ -3,7 +3,7 @@ import { MemberRole } from "@idenzy/protocol/enums/tenancy";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { orgMembers } from "../schema/organisation.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { ControlTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface OrgMemberRow {
@@ -37,7 +37,7 @@ function toRow(row: typeof orgMembers.$inferSelect): OrgMemberRow {
  * bug here fails as a constraint violation rather than as a team with two owners.
  */
 export class OrgMemberRepository extends OrgRepository<typeof orgMembers> {
-  constructor(tx: ControlTx, context: OrgContext) {
+  constructor(tx: Transaction, context: OrgContext) {
     super(tx, context, orgMembers);
   }
 

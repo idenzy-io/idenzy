@@ -2,7 +2,7 @@ import { ResourceConflictError } from "@idenzy/core/errors";
 import { and, asc, eq } from "drizzle-orm";
 import { projectOrigins } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface ProjectOriginRow {
@@ -37,7 +37,7 @@ function toRow(row: typeof projectOrigins.$inferSelect): ProjectOriginRow {
  * caller of this repository rather than here.
  */
 export class ProjectOriginRepository extends BaseRepository<typeof projectOrigins> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, projectOrigins);
   }
 

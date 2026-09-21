@@ -3,13 +3,12 @@ import { ResourceConflictError } from "@idenzy/core/errors";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { projects } from "../schema/projects.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { ControlTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface OrgProjectRow {
   readonly id: string;
   readonly name: string;
-  readonly cellId: string;
   readonly plan: string;
   readonly complianceTier: string;
   readonly createdAt: Date;
@@ -22,7 +21,6 @@ export interface ProjectPurge {
 
 export interface NewOrgProject {
   readonly name: string;
-  readonly cellId: string;
   readonly complianceTier: string;
 }
 
@@ -39,7 +37,7 @@ export interface NewOrgProject {
  * policy match column for column, as they do on every other org-keyed table.
  */
 export class OrgProjectRepository extends OrgRepository<typeof projects> {
-  constructor(tx: ControlTx, context: OrgContext) {
+  constructor(tx: Transaction, context: OrgContext) {
     super(tx, context, projects);
   }
 
@@ -52,13 +50,24 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
     return rows.map(toRow);
   }
 
+  /**
+   * One project of this organisation's, or null.
+   *
+   * The organisation is in the predicate and not only in the id. It used to be the id
+   * alone, with the row policy narrowing the read and a comparison here as a backstop —
+   * which was true while the policy existed and is the single query in this package that
+   * depended on it. Scoped in SQL, a project of somebody else's does not come back to be
+   * rejected; it is not selected. "Not found" and "not yours" stay the same answer, which
+   * is what keeps the id space from telling a caller what our customers have built.
+   */
   async findById(id: string): Promise<OrgProjectRow | null> {
-    const rows = await this.tx.select().from(projects).where(eq(projects.id, id)).limit(1);
+    const rows = await this.tx
+      .select()
+      .from(projects)
+      .where(and(this.orgScope(), eq(projects.id, id)))
+      .limit(1);
     const row = rows[0];
-    // The policy already restricts this to the bound organisation, so a row that comes
-    // back is one this caller may see. The `orgScope()` predicate is the first line and
-    // is applied by `list`; here the id is the filter and the policy is what makes it safe.
-    return row === undefined || row.orgId !== this.context.orgId ? null : toRow(row);
+    return row === undefined ? null : toRow(row);
   }
 
   /**
@@ -119,7 +128,6 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
           id,
           orgId: this.context.orgId,
           name: project.name,
-          cellId: project.cellId,
           complianceTier: project.complianceTier,
           kmsKeyName: `projects/${id}/keys/signing`,
         })
@@ -135,7 +143,6 @@ function toRow(row: typeof projects.$inferSelect): OrgProjectRow {
   return {
     id: row.id,
     name: row.name,
-    cellId: row.cellId,
     plan: row.plan,
     complianceTier: row.complianceTier,
     createdAt: row.createdAt,

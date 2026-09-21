@@ -3,7 +3,7 @@ import { User } from "@idenzy/domain/entities/user";
 import { and, eq } from "drizzle-orm";
 import { users } from "../schema/identity.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 import { asRecord } from "./jsonb.js";
 import { OutboxRepository } from "./outbox-repository.js";
@@ -31,7 +31,7 @@ export interface NewUser {
  * about SQL.
  */
 export class UserRepository extends BaseRepository<typeof users> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, users);
   }
 

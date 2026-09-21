@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { projectSigningKeys } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface SigningKeyRow {
@@ -29,7 +29,7 @@ export interface NewSigningKey {
  * KMS — holds a blob that opens nowhere.
  */
 export class ProjectSigningKeyRepository extends BaseRepository<typeof projectSigningKeys> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, projectSigningKeys);
   }
 

@@ -33,11 +33,14 @@ function addDaysUtc(from: Date, days: number): Date {
 /**
  * The statutory clock one data-subject request is answered on (PROJECT.md 4.13.6).
  *
- * **Per request, not per cell.** A cell's jurisdiction says where bytes sit; this says which law
- * governs one person's rights, and the two come apart whenever a customer in one place has users
- * in another. Idenzy is a processor, so the rule is the controller's determination and travels
- * with the request — which is the shape `apps/client/app/utils/data-requests.ts` had first, and
- * it is the specification here.
+ * **Per request, and there is nothing else it could be keyed on.** This says which law governs
+ * one person's rights, and a customer in one place routinely has users in another, so no fact
+ * about where the data is kept could answer it. Idenzy is a processor, so the rule is the
+ * controller's determination and travels with the request — which is the shape
+ * `apps/client/app/utils/data-requests.ts` had first, and it is the specification here.
+ *
+ * This was once written as "per request, not per cell", against a deployment model where a
+ * project was pinned to a jurisdiction. That model is gone; the reasoning never depended on it.
  *
  * The figures are deliberately duplicated between this file and the panel's `RULE_INFO` rather
  * than shared, because the panel takes no dependency on `@idenzy/domain`. What stops them drifting

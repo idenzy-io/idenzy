@@ -1,4 +1,4 @@
-import { classified, controlTable } from "@idenzy/compliance/classification/classified";
+import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
@@ -17,7 +17,57 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { config } from "./presets.js";
-import { createdAtColumn, orgIdColumn, orgIsolationPolicy, updatedAtColumn } from "./shared.js";
+import { createdAtColumn, orgIdColumn, updatedAtColumn } from "./shared.js";
+
+const operational = {
+  class: DataClass.Operational,
+  purpose: Purpose.ServiceConfiguration,
+  retention: Retention.ProjectLifetime,
+  erasure: Erasure.NotApplicable,
+} as const;
+
+/**
+ * A customer organisation: the thing a team, a wallet and a set of projects belong to.
+ *
+ * Here rather than in a `control-plane.ts` of its own, which is where it used to live.
+ * That file existed to separate the tables that would not move when a second region cell
+ * was provisioned from the tables that would, and there are no cells to move between —
+ * `orgs` is an organisation, `org_members` is its team, and they belong side by side.
+ */
+export const orgs = classifiedTable(
+  "orgs",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), { ...operational, loggable: true }),
+    name: classified(text("name").notNull(), {
+      class: DataClass.Pii,
+      purpose: Purpose.BillingAndMetering,
+      retention: Retention.ProjectLifetime,
+      subjectField: true,
+      erasure: Erasure.Tombstone,
+      note: "Customer organisation name. Personal only when a sole trader uses their own name.",
+    }),
+    billingCustomerId: classified(text("billing_customer_id"), {
+      class: DataClass.Pseudonymous,
+      purpose: Purpose.BillingAndMetering,
+      retention: Retention.Years6,
+      erasure: Erasure.RetainPseudonymous,
+      note: "Stripe customer id. Retained for statutory financial record keeping.",
+    }),
+    createdAt: createdAtColumn(),
+  },
+  () => [
+    // The key of this table is its own id, not an org_id column, so the shared policy
+    // does not fit — the same shape `projects` carries. Without it, an organisation
+    // could read every other organisation's billing identity.
+  ],
+  {
+    subject: {
+      population: SubjectPopulation.CustomerStaff,
+      locatedBy: "id",
+      note: "The organisation name is personal only where a sole trader uses their own. The subject is the organisation, so there is no per-person row to find.",
+    },
+  },
+);
 
 /**
  * The team of an organisation (ADR-0011, PROJECT.md 4.13.7).
@@ -32,14 +82,14 @@ import { createdAtColumn, orgIdColumn, orgIsolationPolicy, updatedAtColumn } fro
  * owner, always. A transfer that promoted before it demoted would otherwise pass review,
  * pass tests, and leave two owners arguing over which may remove the other.
  *
- * `user_id` carries no foreign key, and that is deliberate twice over. The dashboard runs
- * on our own product (PROJECT.md 9.5), so a member is a `users` row of Idenzy's own
- * project; but `users` is a tenant table inside a region cell, and cells are independent
- * stacks (PROJECT.md 4.13.5). A control-plane row that referenced one could not survive
- * the cell being separate, which is the property residency claims rest on. `org_id`
- * carries none either, for the same reason `projectIdColumn` does not.
+ * `user_id` carries no foreign key, and that is still deliberate. The dashboard runs on
+ * our own product (PROJECT.md 9.5), so a member is a `users` row of Idenzy's own project —
+ * a tenant row reached through a different key than this table's. The reference would tie
+ * a row about our staff's access to a row about one project's end users, and the two are
+ * answered by different queries under different scopes. `org_id` carries none either, for
+ * the same reason `projectIdColumn` does not.
  */
-export const orgMembers = controlTable(
+export const orgMembers = classifiedTable(
   "org_members",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
@@ -50,7 +100,7 @@ export const orgMembers = controlTable(
       retention: Retention.ProjectLifetime,
       erasure: Erasure.RetainPseudonymous,
       loggable: true,
-      note: "The member's user id in Idenzy's own project. No FK: cells are independent (4.13.5).",
+      note: "The member's user id in Idenzy's own project. No FK: different scope, not a different store.",
     }),
     role: classified(text("role").notNull(), {
       ...config,
@@ -76,9 +126,8 @@ export const orgMembers = controlTable(
     uniqueIndex("org_members_org_user_key").on(t.orgId, t.userId),
     uniqueIndex("org_members_single_owner_key").on(t.orgId).where(sql`role = 'owner'`),
     index("org_members_user_idx").on(t.userId),
-    orgIsolationPolicy("org_members"),
   ],
-).enableRLS();
+);
 
 /**
  * An invitation to join an organisation, until it is accepted, revoked or expires.
@@ -92,7 +141,7 @@ export const orgMembers = controlTable(
  * to an organisation, so the rule every other token in this schema follows applies: store
  * what proves a match, never what grants access.
  */
-export const orgInvitations = controlTable(
+export const orgInvitations = classifiedTable(
   "org_invitations",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
@@ -147,14 +196,15 @@ export const orgInvitations = controlTable(
       .on(t.orgId, t.email)
       .where(sql`accepted_at is null and revoked_at is null`),
     index("org_invitations_expires_idx").on(t.expiresAt),
-    orgIsolationPolicy("org_invitations"),
   ],
   {
-    population: SubjectPopulation.CustomerStaff,
-    locatedBy: "email",
-    note: "The address is held in the clear because the members screen shows who has been asked, so it is also how the invitee is found.",
+    subject: {
+      population: SubjectPopulation.CustomerStaff,
+      locatedBy: "email",
+      note: "The address is held in the clear because the members screen shows who has been asked, so it is also how the invitee is found.",
+    },
   },
-).enableRLS();
+);
 
 /**
  * Whether the organisation demands a second factor of its own team on our dashboard.
@@ -167,7 +217,7 @@ export const orgInvitations = controlTable(
  * A missing row means not required, which is the same answer as `require_mfa = false` and
  * is what an organisation that has never opened the screen should get.
  */
-export const orgSecuritySettings = controlTable(
+export const orgSecuritySettings = classifiedTable(
   "org_security_settings",
   {
     orgId: orgIdColumn(),
@@ -184,8 +234,8 @@ export const orgSecuritySettings = controlTable(
     }),
     updatedAt: updatedAtColumn(),
   },
-  (t) => [primaryKey({ columns: [t.orgId] }), orgIsolationPolicy("org_security_settings")],
-).enableRLS();
+  (t) => [primaryKey({ columns: [t.orgId] })],
+);
 
 /**
  * What the person who created the organisation told us on the way in.
@@ -205,7 +255,7 @@ export const orgSecuritySettings = controlTable(
  * `Retention.Years1` rather than the project's lifetime: this informs what we build next
  * and stops being worth keeping long before the organisation does.
  */
-export const onboardingResponses = controlTable(
+export const onboardingResponses = classifiedTable(
   "onboarding_responses",
   {
     orgId: orgIdColumn(),
@@ -242,10 +292,12 @@ export const onboardingResponses = controlTable(
       },
     ),
   },
-  (t) => [primaryKey({ columns: [t.orgId] }), orgIsolationPolicy("onboarding_responses")],
+  (t) => [primaryKey({ columns: [t.orgId] })],
   {
-    population: SubjectPopulation.CustomerStaff,
-    locatedBy: "org_id",
-    note: "Free text somebody on the customer's team wrote. Attributed to the organisation rather than to a person, so it is reached by org.",
+    subject: {
+      population: SubjectPopulation.CustomerStaff,
+      locatedBy: "org_id",
+      note: "Free text somebody on the customer's team wrote. Attributed to the organisation rather than to a person, so it is reached by org.",
+    },
   },
-).enableRLS();
+);

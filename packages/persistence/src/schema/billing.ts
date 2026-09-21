@@ -1,4 +1,4 @@
-import { classified, controlTable } from "@idenzy/compliance/classification/classified";
+import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
@@ -21,7 +21,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createdAtColumn, orgIdColumn, orgIsolationPolicy, updatedAtColumn } from "./shared.js";
+import { createdAtColumn, orgIdColumn, updatedAtColumn } from "./shared.js";
 
 /**
  * What the organisation has to spend, what may charge it, and what it has been billed
@@ -81,7 +81,7 @@ const billingConfig = {
  * gone — the charges it made are on `top_ups`, which holds its own copy of the four
  * digits precisely so the receipt survives the card.
  */
-export const paymentMethods = controlTable(
+export const paymentMethods = classifiedTable(
   "payment_methods",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...billingConfig, loggable: true }),
@@ -121,9 +121,8 @@ export const paymentMethods = controlTable(
     uniqueIndex("payment_methods_org_default_key").on(t.orgId).where(sql`is_default`),
     index("payment_methods_org_idx").on(t.orgId),
     check("payment_methods_expiry_month_ck", sql`expiry_month between 1 and 12`),
-    orgIsolationPolicy("payment_methods"),
   ],
-).enableRLS();
+);
 
 /**
  * One piece of credit on the account, and what is left of it.
@@ -139,7 +138,7 @@ export const paymentMethods = controlTable(
  * constraint is what keeps it honest. A drawdown bug that overspent a grant would
  * otherwise show up as a balance nobody can reconcile against an invoice.
  */
-export const creditGrants = controlTable(
+export const creditGrants = classifiedTable(
   "credit_grants",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -182,9 +181,8 @@ export const creditGrants = controlTable(
     index("credit_grants_org_expiry_idx").on(t.orgId, t.expiresAt),
     check("credit_grants_amount_ck", sql`amount_cents > 0`),
     check("credit_grants_remaining_ck", sql`remaining_cents between 0 and amount_cents`),
-    orgIsolationPolicy("credit_grants"),
   ],
-).enableRLS();
+);
 
 /**
  * The rules the organisation has set about its own money: when to top up, and when to
@@ -200,7 +198,7 @@ export const creditGrants = controlTable(
  * refusing to authenticate somebody because an invoice is unpaid, which takes a
  * customer's own product down and takes their users with it. No amount owed is worth that.
  */
-export const billingSettings = controlTable(
+export const billingSettings = classifiedTable(
   "billing_settings",
   {
     orgId: orgIdColumn(),
@@ -251,9 +249,8 @@ export const billingSettings = controlTable(
       "billing_settings_auto_top_up_ck",
       sql`not auto_top_up_enabled or auto_top_up_amount_cents >= auto_top_up_threshold_cents`,
     ),
-    orgIsolationPolicy("billing_settings"),
   ],
-).enableRLS();
+);
 
 /**
  * One attempt to put money on the account.
@@ -271,7 +268,7 @@ export const billingSettings = controlTable(
  * `payment_method_id`, because a receipt has to keep saying which card paid after the
  * card is removed.
  */
-export const topUps = controlTable(
+export const topUps = classifiedTable(
   "top_ups",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -329,9 +326,8 @@ export const topUps = controlTable(
     index("top_ups_org_created_idx").on(t.orgId, t.createdAt),
     check("top_ups_amount_ck", sql`amount_cents > 0`),
     check("top_ups_settled_debt_ck", sql`settled_debt_cents between 0 and amount_cents`),
-    orgIsolationPolicy("top_ups"),
   ],
-).enableRLS();
+);
 
 /**
  * An invoice for one closed month, covering every project the organisation holds.
@@ -344,7 +340,7 @@ export const topUps = controlTable(
  * to keep correct in two tax jurisdictions, and the one the customer downloads has to be
  * the one the provider's records agree with.
  */
-export const invoices = controlTable(
+export const invoices = classifiedTable(
   "invoices",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -382,9 +378,8 @@ export const invoices = controlTable(
     uniqueIndex("invoices_org_period_key").on(t.orgId, t.periodStart),
     uniqueIndex("invoices_provider_invoice_key").on(t.provider, t.providerInvoiceId),
     index("invoices_org_issued_idx").on(t.orgId, t.issuedAt),
-    orgIsolationPolicy("invoices"),
   ],
-).enableRLS();
+);
 
 /**
  * What an invoice is made of: one line per meter per project.
@@ -393,12 +388,13 @@ export const invoices = controlTable(
  * question it gets asked internally is which application spent it. That is also what lets
  * the usage screen and the invoice reconcile line for line rather than at the total.
  *
- * `project_id` carries no foreign key. A project lives in a region cell and this row
- * lives in the control plane, so the reference would not survive the cells being
+ * `project_id` carries no foreign key, which is the shape every org-keyed table here uses:
+ * the row is reached through `app.org_id` and the project through `app.project_id`, so a
+ * reference would tie two scopes together that are never bound in the same
  * independent stacks (PROJECT.md 4.13.5) — the same reason `org_members.user_id` has none.
  * `org_id` is repeated so the isolation policy applies without a join to the invoice.
  */
-export const invoiceLines = controlTable(
+export const invoiceLines = classifiedTable(
   "invoice_lines",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), financialRecord),
@@ -412,7 +408,7 @@ export const invoiceLines = controlTable(
     projectId: classified(uuid("project_id").notNull(), {
       ...financialRecord,
       loggable: true,
-      note: "Which application spent it. No FK: the project is in a cell, this row is not.",
+      note: "Which application spent it. No FK: the row is org-keyed and the project is not.",
     }),
     item: classified(text("item").notNull(), {
       ...financialRecord,
@@ -435,9 +431,8 @@ export const invoiceLines = controlTable(
   (t) => [
     uniqueIndex("invoice_lines_invoice_project_item_key").on(t.invoiceId, t.projectId, t.item),
     index("invoice_lines_org_idx").on(t.orgId),
-    orgIsolationPolicy("invoice_lines"),
   ],
-).enableRLS();
+);
 
 /**
  * Every payment webhook the provider has sent us, once.
@@ -456,7 +451,7 @@ export const invoiceLines = controlTable(
  * `payload` is the provider's own body, kept verbatim. It is what a disputed charge is
  * reconciled against, and a re-serialised copy is not evidence of anything.
  */
-export const paymentProviderEvents = controlTable(
+export const paymentProviderEvents = classifiedTable(
   "payment_provider_events",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -508,7 +503,7 @@ export const paymentProviderEvents = controlTable(
  * the organisation's (ADR-0014). A project's own MAU is still readable from `usage_daily`;
  * it just is not what anybody is charged for.
  */
-export const usageBillingState = controlTable(
+export const usageBillingState = classifiedTable(
   "usage_billing_state",
   {
     orgId: orgIdColumn(),
@@ -530,9 +525,8 @@ export const usageBillingState = controlTable(
   (t) => [
     primaryKey({ columns: [t.orgId, t.period] }),
     check("usage_billing_state_not_negative", sql`billed_mau >= 0 and billed_cents >= 0`),
-    orgIsolationPolicy("usage_billing_state"),
   ],
-).enableRLS();
+);
 
 /**
  * What an organisation owes beyond the credit it holds (ADR-0014).
@@ -545,7 +539,7 @@ export const usageBillingState = controlTable(
  * One row per organisation, created on first need. The balance a screen shows is spendable
  * credit less this.
  */
-export const orgDebts = controlTable(
+export const orgDebts = classifiedTable(
   "org_debts",
   {
     orgId: classified(uuid("org_id").primaryKey(), {
@@ -559,8 +553,8 @@ export const orgDebts = controlTable(
     }),
     updatedAt: updatedAtColumn(),
   },
-  () => [check("org_debts_not_negative", sql`debt_cents >= 0`), orgIsolationPolicy("org_debts")],
-).enableRLS();
+  () => [check("org_debts_not_negative", sql`debt_cents >= 0`)],
+);
 
 /**
  * Every charge a drawdown raised, and how it was paid (ADR-0014).
@@ -577,7 +571,7 @@ export const orgDebts = controlTable(
  * `payment_provider_events` withholds DELETE: a charge somebody could amend afterwards is
  * not evidence of anything.
  */
-export const usageCharges = controlTable(
+export const usageCharges = classifiedTable(
   "usage_charges",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -614,6 +608,5 @@ export const usageCharges = controlTable(
       "usage_charges_covered",
       sql`from_credit_cents + to_debt_cents = charged_cents and charged_cents >= 0`,
     ),
-    orgIsolationPolicy("usage_charges"),
   ],
-).enableRLS();
+);

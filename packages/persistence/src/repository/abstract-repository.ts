@@ -31,15 +31,21 @@ function postgresErrorCode(error: unknown): PostgresError {
 }
 
 /**
- * What every repository has regardless of which plane it reads: a transaction, and one
- * translation of the driver's constraint violations into the error contract.
+ * What every repository has: a transaction, and one translation of the driver's
+ * constraint violations into the error contract.
  *
  * It holds no scope of its own, which is the point. Scope arrives with `BaseRepository`
- * (a project) or `OrgRepository` (an organisation), and a repository that extended this
- * directly would be one with no tenant at all — so nothing does.
+ * (a project) or `OrgRepository` (an organisation), and a repository that extends this
+ * directly is one with no tenant at all — which `ProvisioningRepository` is, because it
+ * creates the tenant, and which nothing else should be.
+ *
+ * It used to be generic over a branded transaction type so that a project repository
+ * could not be handed an organisation-bound one. The brands went with the row policies
+ * they protected: with no key bound to the connection there is no binding to get wrong,
+ * and the context each base requires is what names the scope now.
  */
-export abstract class AbstractRepository<TTx extends Transaction = Transaction> {
-  protected constructor(protected readonly tx: TTx) {}
+export abstract class AbstractRepository {
+  protected constructor(protected readonly tx: Transaction) {}
 
   /** Translates constraint violations into the error contract instead of a raw 500. */
   protected async guard<T>(work: () => Promise<T>): Promise<T> {

@@ -46,18 +46,6 @@ export const orgListSchema = z.object({
 });
 export type OrgList = z.infer<typeof orgListSchema>;
 
-/** A region a project can be pinned to. Only cells we actually run are ever listed. */
-export const regionSchema = z.object({
-  code: z.string(),
-  jurisdiction: z.string(),
-  /** The API host projects in this cell are reached on. What an SDK is pointed at. */
-  endpoint: z.string(),
-});
-export type Region = z.infer<typeof regionSchema>;
-
-export const regionListSchema = z.object({ regions: z.array(regionSchema) });
-export type RegionList = z.infer<typeof regionListSchema>;
-
 /**
  * A project's name, as the panel and the management API accept it.
  *
@@ -70,15 +58,11 @@ export const projectNameSchema = z.string().trim().min(1).max(80);
 /**
  * Getting started: the two answers that decide something, and the two that do not.
  *
- * The name and the region are required because both are written into rows that cannot be
- * changed afterwards — a cell is pinned at creation and moving a project is an audited
- * migration, not a setting (PROJECT.md 4.13.5). The rest is a survey: skipping it is a
- * normal answer and stores no row at all.
+ * The name is the only required answer. The rest is a survey: skipping it is a normal
+ * answer and stores no row at all.
  */
 export const startOnboardingSchema = z.object({
   projectName: projectNameSchema,
-  /** `region_cells.code`. Checked against the active list, never trusted from the body. */
-  region: z.string().min(1).max(40),
   organisationName: z.string().trim().min(1).max(120).optional(),
   useCase: z.string().trim().min(1).max(500).optional(),
   heardFrom: z.string().trim().min(1).max(200).optional(),
@@ -87,7 +71,6 @@ export type StartOnboarding = z.infer<typeof startOnboardingSchema>;
 
 export const createProjectSchema = z.object({
   name: projectNameSchema,
-  region: z.string().min(1).max(40),
 });
 export type CreateProject = z.infer<typeof createProjectSchema>;
 
@@ -96,7 +79,6 @@ export const projectSummarySchema = z.object({
   /** The organisation that owns it. The panel keys every screen on the pair. */
   orgId: z.string(),
   name: z.string(),
-  region: z.string(),
   plan: z.string(),
   complianceTier: z.string(),
   createdAt: z.iso.datetime(),
@@ -1355,15 +1337,13 @@ export type OrgSecurity = z.infer<typeof orgSecuritySchema>;
 /**
  * What the General settings screen states about a project.
  *
- * `cellCode` and `createdAt` are immutable and say so by being read-only here: a project is
- * pinned to its cell at creation (PROJECT.md 4.13.5) and moving one is an audited migration
- * rather than an `UPDATE`.
+ * `createdAt` is read-only because it is a fact rather than a setting; `name` is the one
+ * field the screen may change.
  */
 export const projectDetailSchema = z.object({
   id: projectIdSchema,
   orgId: z.string(),
   name: z.string(),
-  cellCode: z.string(),
   tier: z.string(),
   plan: z.string(),
   createdAt: isoDateTimeSchema,

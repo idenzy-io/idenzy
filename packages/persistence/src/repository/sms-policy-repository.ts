@@ -1,6 +1,6 @@
 import { smsPolicies } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface SmsPolicyRow {
@@ -22,7 +22,7 @@ export interface SmsPolicyRow {
  * safe reading of "not configured" for a channel that costs money is off.
  */
 export class SmsPolicyRepository extends BaseRepository<typeof smsPolicies> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, smsPolicies);
   }
 

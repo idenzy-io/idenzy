@@ -2,29 +2,27 @@ import { InternalError } from "@idenzy/core/errors";
 import { eq, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { AbstractRepository } from "./abstract-repository.js";
 
 /**
  * Base for every tenant-scoped repository (PROJECT.md 9.4).
  *
  * It cannot be constructed without a TenantContext, which is the point: the tenant
- * filter is structural rather than something each query has to remember. RLS at the
- * database is the second, independent line, and the negative tests prove it holds when
- * this one is deliberately bypassed.
+ * filter is structural rather than something each query has to remember.
  *
- * The constraint is `PgTable`, not `PgTableWithColumns`: `.enableRLS()` returns
- * `Omit<PgTableWithColumns<T>, "enableRLS">`, so every table in our schema fails the
- * narrower constraint.
+ * **It is now the only line.** RLS was the second — a policy on every tenant table that
+ * returned nothing whatever this class asked for — and it is gone. `tenantScope()` is
+ * therefore not defence in depth any more; it is the defence. Every `select`, `update`
+ * and `delete` in a subclass starts from it, and one that does not is a cross-tenant
+ * read.
  *
- * It takes a `CellTx` and not a `Transaction`, which is the third line and the newest. A tenant
- * table lives in a region cell; an organisation-bound transaction has no `app.project_id` set, so
- * handing one here would match nothing — no error, no rows, and a caller that cannot tell the
- * difference between "empty" and "wrong plane". Now it does not compile.
+ * The constraint is `PgTable`, not `PgTableWithColumns`, because that is what the schema
+ * builders return.
  */
-export abstract class BaseRepository<TTable extends PgTable> extends AbstractRepository<CellTx> {
+export abstract class BaseRepository<TTable extends PgTable> extends AbstractRepository {
   protected constructor(
-    tx: CellTx,
+    tx: Transaction,
     protected readonly context: TenantContext,
     protected readonly table: TTable,
   ) {

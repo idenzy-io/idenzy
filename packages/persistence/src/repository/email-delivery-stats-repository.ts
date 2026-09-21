@@ -1,7 +1,7 @@
 import { and, gte, sql } from "drizzle-orm";
 import { emailDeliveryStats } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** The one counter an event moves. Named so a caller cannot pass a column that is not one. */
@@ -38,7 +38,7 @@ export interface DeliveryWindow {
  * had added.
  */
 export class EmailDeliveryStatsRepository extends BaseRepository<typeof emailDeliveryStats> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, emailDeliveryStats);
   }
 

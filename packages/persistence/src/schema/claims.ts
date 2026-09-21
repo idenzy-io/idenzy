@@ -8,12 +8,7 @@ import {
 import { jsonb, primaryKey, timestamp } from "drizzle-orm/pg-core";
 import { config } from "./presets.js";
 import { projects } from "./projects.js";
-import {
-  createdAtColumn,
-  projectIdColumn,
-  tenantIsolationPolicy,
-  updatedAtColumn,
-} from "./shared.js";
+import { createdAtColumn, projectIdColumn, updatedAtColumn } from "./shared.js";
 
 /**
  * A project's mapping from what we hold into what its access tokens carry
@@ -49,5 +44,5 @@ export const claimTemplates = classifiedTable(
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
-  (t) => [primaryKey({ columns: [t.projectId] }), tenantIsolationPolicy("claim_templates")],
-).enableRLS();
+  (t) => [primaryKey({ columns: [t.projectId] })],
+);

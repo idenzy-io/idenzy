@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { projectSpendState } from "../schema/usage.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface SpendState {
@@ -19,7 +19,7 @@ export interface SpendState {
  * replaced was three reads across the plane boundary on the send path.
  */
 export class ProjectSpendStateRepository extends BaseRepository<typeof projectSpendState> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, projectSpendState);
   }
 

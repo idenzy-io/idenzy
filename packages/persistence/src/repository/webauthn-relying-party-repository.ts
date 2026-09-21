@@ -1,6 +1,6 @@
 import { webauthnRelyingParties } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface RelyingPartyRow {
@@ -18,7 +18,7 @@ export interface RelyingPartyRow {
  * prefix-matched redirect allowlist.
  */
 export class WebauthnRelyingPartyRepository extends BaseRepository<typeof webauthnRelyingParties> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, webauthnRelyingParties);
   }
 

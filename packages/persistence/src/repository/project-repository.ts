@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { projects } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 import { asRecord } from "./jsonb.js";
 
@@ -33,7 +33,7 @@ export interface ProjectRow {
  * It is not possible: RLS returns nothing, whatever this class asks for.
  */
 export class ProjectRepository extends BaseRepository<typeof projects> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, projects);
   }
 

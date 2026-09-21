@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { mfaFactors } from "../schema/mfa.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface NewMfaFactor {
@@ -33,7 +33,7 @@ export interface MfaFactorRow {
  * kind of value that ends up in a URL.
  */
 export class MfaFactorRepository extends BaseRepository<typeof mfaFactors> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, mfaFactors);
   }
 

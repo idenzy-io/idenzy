@@ -3,7 +3,7 @@ import type { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { apiKeys } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface ApiKeyRow {
@@ -51,7 +51,7 @@ function toRow(row: typeof apiKeys.$inferSelect): ApiKeyRow {
  * happened, and `revoked_at` is what lets the trail still name it afterwards.
  */
 export class ApiKeyRepository extends BaseRepository<typeof apiKeys> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, apiKeys);
   }
 

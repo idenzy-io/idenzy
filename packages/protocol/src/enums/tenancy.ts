@@ -12,24 +12,6 @@ export const ComplianceTier = {
 } as const;
 export type ComplianceTier = (typeof ComplianceTier)[keyof typeof ComplianceTier];
 
-/**
- * The law a region cell's data sits under (PROJECT.md 4.13.5).
- *
- * A code rather than a name, and declared here rather than left as free text in
- * `region_cells.jurisdiction`, because something now *selects behaviour* on it: a data-subject
- * request has a statutory deadline that differs by jurisdiction, and email for an EU cell has to
- * leave from an EU endpoint. A column that held "US" in one place and "United States" in another
- * — which is what it held — makes that selection a coin toss.
- *
- * The place name a customer reads is presentation and belongs in the panel, the same way a cell
- * code's label does. This is the value the code branches on.
- */
-export const Jurisdiction = {
-  Eu: "EU",
-  Us: "US",
-} as const;
-export type Jurisdiction = (typeof Jurisdiction)[keyof typeof Jurisdiction];
-
 /** API key kinds. Publishable keys are safe in a client bundle; secret keys never are. */
 export const ApiKeyKind = {
   Publishable: "publishable",

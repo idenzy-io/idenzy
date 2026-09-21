@@ -8,7 +8,7 @@ import type {
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { topUps } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { ControlTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface TopUpRow {
@@ -86,7 +86,7 @@ const IN_FLIGHT: readonly TopUpState[] = ["pending", "requires_action"];
  * balance from ever reading as proof of a payment.
  */
 export class TopUpRepository extends OrgRepository<typeof topUps> {
-  constructor(tx: ControlTx, context: OrgContext) {
+  constructor(tx: Transaction, context: OrgContext) {
     super(tx, context, topUps);
   }
 

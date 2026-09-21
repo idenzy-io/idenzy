@@ -4,7 +4,7 @@ import type { AuthMethod, SessionRevokeReason } from "@idenzy/protocol/enums/aut
 import { and, desc, eq, inArray, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import { sessions } from "../schema/sessions.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** A raw session row, as the operator list hands it out before wire shaping. */
@@ -42,7 +42,7 @@ export interface SessionListItem {
  * everywhere" instant regardless of how long an access token still has to live.
  */
 export class SessionRepository extends BaseRepository<typeof sessions> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, sessions);
   }
 

@@ -26,7 +26,7 @@ import { users } from "./identity.js";
 import { accountOperational, config, credential, ephemeralChallenge } from "./presets.js";
 import { projects } from "./projects.js";
 import { sessions } from "./sessions.js";
-import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
+import { createdAtColumn, projectIdColumn } from "./shared.js";
 
 /**
  * Enrolled second factors, one row per device (PROJECT.md 4.5).
@@ -80,7 +80,6 @@ export const mfaFactors = classifiedTable(
     uniqueIndex("mfa_factors_user_type_key")
       .on(t.projectId, t.userId, t.type)
       .where(sql`verified_at is not null`),
-    tenantIsolationPolicy("mfa_factors"),
   ],
   {
     subject: {
@@ -88,7 +87,7 @@ export const mfaFactors = classifiedTable(
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);
 
 /**
  * The codes that stand in for a factor the user cannot reach (PROJECT.md 4.5).
@@ -125,7 +124,6 @@ export const mfaRecoveryCodes = classifiedTable(
   (t) => [
     uniqueIndex("mfa_recovery_codes_hash_key").on(t.projectId, t.codeHash),
     index("mfa_recovery_codes_user_idx").on(t.projectId, t.userId),
-    tenantIsolationPolicy("mfa_recovery_codes"),
   ],
   {
     subject: {
@@ -133,7 +131,7 @@ export const mfaRecoveryCodes = classifiedTable(
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);
 
 /**
  * A proved first factor waiting on a second (PROJECT.md 4.5).
@@ -193,11 +191,8 @@ export const mfaChallenges = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    index("mfa_challenges_expiry_idx").on(t.expiresAt),
-    tenantIsolationPolicy("mfa_challenges"),
-  ],
-).enableRLS();
+  (t) => [index("mfa_challenges_expiry_idx").on(t.expiresAt)],
+);
 
 /**
  * WebAuthn credentials.
@@ -261,7 +256,6 @@ export const webauthnCredentials = classifiedTable(
   (t) => [
     uniqueIndex("webauthn_credentials_credential_key").on(t.projectId, t.credentialId),
     index("webauthn_credentials_user_idx").on(t.userId),
-    tenantIsolationPolicy("webauthn_credentials"),
   ],
   {
     subject: {
@@ -269,4 +263,4 @@ export const webauthnCredentials = classifiedTable(
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);

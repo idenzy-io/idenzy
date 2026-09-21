@@ -14,7 +14,7 @@ import { index, integer, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/
 import { users } from "./identity.js";
 import { config, credential, ephemeralChallenge } from "./presets.js";
 import { projects } from "./projects.js";
-import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
+import { createdAtColumn, projectIdColumn } from "./shared.js";
 
 /**
  * OTP challenges, the default passwordless path (PROJECT.md 4.7).
@@ -74,7 +74,6 @@ export const otpChallenges = classifiedTable(
   (t) => [
     index("otp_challenges_project_target_idx").on(t.projectId, t.targetHash),
     index("otp_challenges_expiry_idx").on(t.expiresAt),
-    tenantIsolationPolicy("otp_challenges"),
   ],
   {
     subject: {
@@ -83,7 +82,7 @@ export const otpChallenges = classifiedTable(
       note: "Holds a hash of the address rather than the address, so a subject is reached by hashing their identifier the same way rather than by a lookup. Short-lived besides: the retention sweep clears these well inside any statutory deadline.",
     },
   },
-).enableRLS();
+);
 
 /**
  * The nonce a WebAuthn ceremony has to sign over (PROJECT.md 4.7).
@@ -135,9 +134,8 @@ export const webauthnChallenges = classifiedTable(
   (t) => [
     uniqueIndex("webauthn_challenges_hash_key").on(t.challengeHash),
     index("webauthn_challenges_expiry_idx").on(t.expiresAt),
-    tenantIsolationPolicy("webauthn_challenges"),
   ],
-).enableRLS();
+);
 
 /**
  * Magic link tokens.
@@ -188,17 +186,14 @@ export const magicLinkTokens = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash),
-    tenantIsolationPolicy("magic_link_tokens"),
-  ],
+  (t) => [uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash)],
   {
     subject: {
       population: SubjectPopulation.EndUser,
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);
 
 /**
  * In-flight OAuth authorizations: the PKCE verifier, state and nonce (PROJECT.md 4.6).
@@ -262,9 +257,8 @@ export const oauthFlows = classifiedTable(
   (t) => [
     uniqueIndex("oauth_flows_project_state_key").on(t.projectId, t.state),
     index("oauth_flows_expiry_idx").on(t.expiresAt),
-    tenantIsolationPolicy("oauth_flows"),
   ],
-).enableRLS();
+);
 
 /**
  * Single-use tokens for email verification and password reset.
@@ -309,9 +303,8 @@ export const verificationTokens = classifiedTable(
     uniqueIndex("verification_tokens_hash_key").on(t.tokenHash),
     index("verification_tokens_user_purpose_idx").on(t.projectId, t.userId, t.purpose),
     index("verification_tokens_expiry_idx").on(t.expiresAt),
-    tenantIsolationPolicy("verification_tokens"),
   ],
-).enableRLS();
+);
 
 /**
  * A pending email change, which is two confirmations and not one (PROJECT.md 4.5).
@@ -382,7 +375,6 @@ export const emailChangeRequests = classifiedTable(
     uniqueIndex("email_change_requests_old_token_key").on(t.oldTokenHash),
     uniqueIndex("email_change_requests_new_token_key").on(t.newTokenHash),
     index("email_change_requests_user_idx").on(t.projectId, t.userId),
-    tenantIsolationPolicy("email_change_requests"),
   ],
   {
     subject: {
@@ -390,7 +382,7 @@ export const emailChangeRequests = classifiedTable(
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);
 
 /**
  * The single-use code a redirect carries back to the customer's own route
@@ -451,6 +443,5 @@ export const authCodes = classifiedTable(
   (t) => [
     uniqueIndex("auth_codes_hash_key").on(t.codeHash),
     index("auth_codes_expiry_idx").on(t.expiresAt),
-    tenantIsolationPolicy("auth_codes"),
   ],
-).enableRLS();
+);

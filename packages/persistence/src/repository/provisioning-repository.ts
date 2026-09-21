@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ResourceConflictError } from "@idenzy/core/errors";
 import { MemberRole } from "@idenzy/protocol/enums/tenancy";
-import { orgs } from "../schema/control-plane.js";
-import { onboardingResponses, orgMembers } from "../schema/organisation.js";
+import { onboardingResponses, orgMembers, orgs } from "../schema/organisation.js";
 import { projects } from "../schema/projects.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 import { AbstractRepository } from "./abstract-repository.js";
@@ -11,7 +10,6 @@ export interface NewOrganisation {
   readonly orgName: string;
   readonly ownerUserId: string;
   readonly projectName: string;
-  readonly cellId: string;
   readonly complianceTier: string;
 }
 
@@ -55,7 +53,7 @@ export class ProvisioningRepository extends AbstractRepository {
     return await this.guard(async () => {
       const [org] = await this.tx
         .insert(orgs)
-        .values({ id: this.orgId, name: input.orgName, cellId: input.cellId })
+        .values({ id: this.orgId, name: input.orgName })
         .returning({ id: orgs.id });
       if (org === undefined) throw new ResourceConflictError({ detail: { reason: "org" } });
 
@@ -81,7 +79,6 @@ export class ProvisioningRepository extends AbstractRepository {
           id: projectId,
           orgId: this.orgId,
           name: input.projectName,
-          cellId: input.cellId,
           complianceTier: input.complianceTier,
           // Derived rather than stored arbitrarily, so it is already right when the KMS
           // issuer lands. Nothing creates the key this names yet (PROJECT.md 4.2), which

@@ -1,24 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { InternalError } from "@idenzy/core/errors";
 import { hashToken } from "@idenzy/crypto/tokens/random";
-import { ApiKeyKind, Jurisdiction } from "@idenzy/protocol/enums/tenancy";
+import { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
 import { ApiKeyPrefix } from "@idenzy/protocol/schemas/common";
-import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { orgs, regionCells } from "./schema/control-plane.js";
+import { orgs } from "./schema/organisation.js";
 import { apiKeys, projects } from "./schema/projects.js";
 
 /**
  * What a local database needs before anything can happen in it.
  *
- * Two things, and both stand in for infrastructure that does not exist on a laptop. The
- * region cells are real regional stacks with their own Cloud SQL, KMS key ring and
- * endpoint, created by Terraform when the stack is; a migration that inserted one would be
- * claiming infrastructure exists because a row does. And Idenzy's own dashboard project is
- * the bootstrap: we run the panel on our own product (PROJECT.md 9.5), so the panel cannot
- * sign anybody in until the project it signs them in to already exists, and that project
- * cannot be created through the panel.
+ * One thing: Idenzy's own dashboard project, which is the bootstrap. We run the panel on our
+ * own product (PROJECT.md 9.5), so the panel cannot sign anybody in until the project it
+ * signs them in to already exists, and that project cannot be created through the panel.
  *
  * **Development only, and it refuses to run anywhere else.** The ids below are fixed so
  * `.env.example` can carry them, and a fixed identifier is exactly what must never reach a
@@ -26,7 +20,7 @@ import { apiKeys, projects } from "./schema/projects.js";
  * ids and the origin and auth domain that go with them:
  *
  *   orgs                Idenzy
- *   projects            Dashboard, pinned to the cell the panel is served from
+ *   projects            Dashboard
  *   api_keys            one publishable key, shown once
  *   project_domains     auth.idenzy.io, type `auth`, verified — cookie mode needs it
  *   project_origins     https://app.idenzy.io
@@ -45,24 +39,9 @@ import { apiKeys, projects } from "./schema/projects.js";
  *
  * Runs from `dist` rather than from source, unlike `migrate.ts`. That one imports nothing
  * of ours, so Node's type stripping never has to resolve a relative specifier; this one
- * uses the schema, and `./schema/control-plane.js` does not exist until `tsc` has written
- * it. Build first — `pnpm turbo run build --filter @idenzy/persistence`.
+ * uses the schema, and `./schema/organisation.js` does not exist until `tsc` has written it.
+ * Build first — `pnpm turbo run build --filter @idenzy/persistence`.
  */
-
-const CELLS = [
-  {
-    code: "us1",
-    jurisdiction: Jurisdiction.Us,
-    endpoint: "https://us.idenzy.io",
-    kmsKeyRing: "idenzy-us1-ring",
-  },
-  {
-    code: "eu1",
-    jurisdiction: Jurisdiction.Eu,
-    endpoint: "https://eu.idenzy.io",
-    kmsKeyRing: "idenzy-eu1-ring",
-  },
-] as const;
 
 /**
  * Fixed so `.env.example` can name them, and obviously a fixture rather than something
@@ -70,15 +49,6 @@ const CELLS = [
  */
 const IDENZY_ORG_ID = "00000000-0000-4000-8000-000000000001";
 const DASHBOARD_PROJECT_ID = "00000000-0000-4000-8000-000000000002";
-
-/**
- * The cell the panel itself is served from.
- *
- * `us1`, and not just any of them: `cell_id` is immutable once set (PROJECT.md 4.13.5), so a
- * fixture pinned to a cell nobody provisions is a row that could never be corrected. It has to
- * name the cell the Terraform environment actually declares.
- */
-const DASHBOARD_CELL = "us1";
 
 async function main(): Promise<void> {
   const environment = process.env["IDENZY_ENV"] ?? "development";
@@ -103,17 +73,6 @@ async function main(): Promise<void> {
     await client.query("SET ROLE idenzy_app");
     const db = drizzle(client);
 
-    for (const cell of CELLS) {
-      const existing = await db
-        .select({ id: regionCells.id })
-        .from(regionCells)
-        .where(eq(regionCells.code, cell.code))
-        .limit(1);
-      if (existing.length > 0) continue;
-      await db.insert(regionCells).values(cell);
-      process.stdout.write(`seeded region cell ${cell.code}\n`);
-    }
-
     await seedDashboard(client, db);
     process.stdout.write("seed complete\n");
   } finally {
@@ -135,19 +94,9 @@ async function seedDashboard(client: pg.Client, db: NodePgDatabase): Promise<voi
     await client.query("SELECT set_config('app.org_id', $1, true)", [IDENZY_ORG_ID]);
     await client.query("SELECT set_config('app.project_id', $1, true)", [DASHBOARD_PROJECT_ID]);
 
-    const cell = await db
-      .select({ id: regionCells.id })
-      .from(regionCells)
-      .where(eq(regionCells.code, DASHBOARD_CELL))
-      .limit(1);
-    const cellId = cell[0]?.id;
-    if (cellId === undefined) {
-      throw new InternalError({ detail: { reason: `region cell ${DASHBOARD_CELL} is missing` } });
-    }
-
     const org = await db.select({ id: orgs.id }).from(orgs).limit(1);
     if (org.length === 0) {
-      await db.insert(orgs).values({ id: IDENZY_ORG_ID, name: "Idenzy", cellId });
+      await db.insert(orgs).values({ id: IDENZY_ORG_ID, name: "Idenzy" });
       process.stdout.write("seeded organisation Idenzy\n");
     }
 
@@ -157,7 +106,6 @@ async function seedDashboard(client: pg.Client, db: NodePgDatabase): Promise<voi
         id: DASHBOARD_PROJECT_ID,
         orgId: IDENZY_ORG_ID,
         name: "Dashboard",
-        cellId,
         kmsKeyName: `projects/${DASHBOARD_PROJECT_ID}/keys/signing`,
       });
       process.stdout.write("seeded project Dashboard\n");
@@ -192,11 +140,10 @@ async function mintPublishableKey(db: NodePgDatabase): Promise<void> {
     return;
   }
 
-  // `pk_`, the cell, and 32 random bytes — the same shape the management API mints, because a
-  // dev key that parsed differently from a real one would hide exactly the bugs this seed is for
-  // (PROJECT.md 4.13.5). The prefix column keeps enough to identify a key in a log line without
-  // being enough to use it.
-  const head = `${ApiKeyPrefix.Publishable}${DASHBOARD_CELL}_`;
+  // `pk_` and 32 random bytes — the same shape the management API mints, because a dev key
+  // that parsed differently from a real one would hide exactly the bugs this seed is for. The
+  // prefix column keeps enough to identify a key in a log line without being enough to use it.
+  const head = ApiKeyPrefix.Publishable;
   const key = `${head}${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
   await db.insert(apiKeys).values({
     projectId: DASHBOARD_PROJECT_ID,

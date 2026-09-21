@@ -10,22 +10,12 @@ import {
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  index,
-  jsonb,
-  pgPolicy,
-  text,
-  timestamp,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
-import { orgs, regionCells } from "./control-plane.js";
+import { boolean, index, jsonb, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { orgs } from "./organisation.js";
 import { config, credential } from "./presets.js";
-import { appRole } from "./roles.js";
-import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
+import { createdAtColumn, projectIdColumn } from "./shared.js";
 
-/** A customer project. The unit of tenancy, key isolation and residency. */
+/** A customer project. The unit of tenancy and of key isolation. */
 export const projects = classifiedTable(
   "projects",
   {
@@ -37,12 +27,6 @@ export const projects = classifiedTable(
       config,
     ),
     name: classified(text("name").notNull(), config),
-    cellId: classified(
-      uuid("cell_id")
-        .notNull()
-        .references(() => regionCells.id),
-      { ...config, note: "Immutable after creation. Moving a project is an audited migration." },
-    ),
     plan: classified(text("plan").notNull().default("free"), config),
     complianceTier: classified(text("compliance_tier").notNull().default("standard"), {
       ...config,
@@ -74,24 +58,10 @@ export const projects = classifiedTable(
     // have yet. The second is also what lets an organisation create another project:
     // WITH CHECK ties the new row's `org_id` to the bound organisation, so a project can
     // only ever be added to the one the caller was authorised for (ADR-0011).
-    pgPolicy("projects_org_isolation", {
-      as: "permissive",
-      for: "all",
-      to: appRole,
-      using: sql`org_id = nullif(current_setting('app.org_id', true), '')::uuid`,
-      withCheck: sql`org_id = nullif(current_setting('app.org_id', true), '')::uuid`,
-    }),
     // The tenant key of this table is its own id, not a project_id column, so the
     // shared policy does not fit. Without this, a tenant could read every project row.
-    pgPolicy("projects_tenant_isolation", {
-      as: "permissive",
-      for: "all",
-      to: appRole,
-      using: sql`id = nullif(current_setting('app.project_id', true), '')::uuid`,
-      withCheck: sql`id = nullif(current_setting('app.project_id', true), '')::uuid`,
-    }),
   ],
-).enableRLS();
+);
 
 /** Custom auth and email domains, with their DNS verification state. */
 export const projectDomains = classifiedTable(
@@ -115,9 +85,8 @@ export const projectDomains = classifiedTable(
     // routing is ambiguous, and `resolve_project_by_host` would have two answers.
     uniqueIndex("project_domains_domain_key").on(t.domain),
     index("project_domains_project_idx").on(t.projectId),
-    tenantIsolationPolicy("project_domains"),
   ],
-).enableRLS();
+);
 
 /**
  * Exact-match redirect allowlist (PROJECT.md 4.6, 4.7).
@@ -135,11 +104,8 @@ export const redirectUris = classifiedTable(
     kind: classified(text("kind").notNull(), config),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    uniqueIndex("redirect_uris_project_uri_kind_key").on(t.projectId, t.uri, t.kind),
-    tenantIsolationPolicy("redirect_uris"),
-  ],
-).enableRLS();
+  (t) => [uniqueIndex("redirect_uris_project_uri_kind_key").on(t.projectId, t.uri, t.kind)],
+);
 
 /**
  * Browser origins allowed to call the API with credentials (PROJECT.md 4.3).
@@ -172,11 +138,8 @@ export const projectOrigins = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    uniqueIndex("project_origins_project_origin_key").on(t.projectId, t.origin),
-    tenantIsolationPolicy("project_origins"),
-  ],
-).enableRLS();
+  (t) => [uniqueIndex("project_origins_project_origin_key").on(t.projectId, t.origin)],
+);
 
 /**
  * The WebAuthn relying party a project's passkeys belong to (PROJECT.md 4.7).
@@ -209,11 +172,8 @@ export const webauthnRelyingParties = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    uniqueIndex("webauthn_relying_parties_project_key").on(t.projectId),
-    tenantIsolationPolicy("webauthn_relying_parties"),
-  ],
-).enableRLS();
+  (t) => [uniqueIndex("webauthn_relying_parties_project_key").on(t.projectId)],
+);
 
 /** Publishable and secret API keys. Only the hash and a display prefix are stored. */
 export const apiKeys = classifiedTable(
@@ -236,9 +196,8 @@ export const apiKeys = classifiedTable(
   (t) => [
     uniqueIndex("api_keys_hash_key").on(t.hash),
     index("api_keys_project_idx").on(t.projectId),
-    tenantIsolationPolicy("api_keys"),
   ],
-).enableRLS();
+);
 
 /** Per-project OAuth provider credentials. Secrets are envelope encrypted. */
 export const oauthProviders = classifiedTable(
@@ -266,11 +225,8 @@ export const oauthProviders = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    uniqueIndex("oauth_providers_project_provider_key").on(t.projectId, t.provider),
-    tenantIsolationPolicy("oauth_providers"),
-  ],
-).enableRLS();
+  (t) => [uniqueIndex("oauth_providers_project_provider_key").on(t.projectId, t.provider)],
+);
 
 /**
  * The ES256 key pairs a project's access tokens are signed with (PROJECT.md 4.2, ADR-0017).
@@ -331,6 +287,5 @@ export const projectSigningKeys = classifiedTable(
     // one tokens are signed with, and which won would depend on row order.
     uniqueIndex("project_signing_keys_primary_key").on(t.projectId).where(sql`is_primary`),
     index("project_signing_keys_live_idx").on(t.projectId, t.retiredAt),
-    tenantIsolationPolicy("project_signing_keys"),
   ],
-).enableRLS();
+);

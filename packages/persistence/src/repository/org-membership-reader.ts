@@ -1,6 +1,7 @@
 import type { MemberRole } from "@idenzy/protocol/enums/tenancy";
-import { sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { orgMembers, orgs } from "../schema/organisation.js";
 
 export interface Membership {
   readonly memberId: string;
@@ -9,8 +10,8 @@ export interface Membership {
    * When this member was last seen, or null for one who has never been.
    *
    * Returned by the check rather than read separately because the caller's only use for
-   * it is deciding whether to write it again, and the read that would answer that
-   * question runs under the policy this lookup exists to get in front of.
+   * it is deciding whether to write it again, and a second query to answer that would be
+   * a second round trip on the busiest path in the dashboard.
    */
   readonly lastActiveAt: Date | null;
 }
@@ -33,57 +34,59 @@ export interface OrgSummaryRow {
 }
 
 /**
- * Which organisations a person belongs to, before any of them is bound (ADR-0011).
+ * Which organisations a person belongs to, before any of them is chosen (ADR-0011).
  *
  * Not an `OrgRepository` and it cannot be one: those are org-scoped by construction, and
- * this is the code that works out which organisation to scope to. `org_members` is
- * protected by a policy keyed on `app.org_id`, so under it this lookup would correctly
- * return nothing — the same shape of problem `AuditEventReader` has, and solved the same
- * way, through the SECURITY DEFINER functions from migration 0036.
+ * this is the code that works out which organisation to scope to. It is the one reader in
+ * the package whose input is a user rather than a tenant, so it takes the pool directly.
  *
- * It lives here rather than in `management-api` because this is the only layer that talks
- * to the database. An application service asks a repository; it does not write a
- * statement. `ProjectResolver` in auth-api predates that rule and is the odd one out.
+ * These were two SECURITY DEFINER functions, `resolve_org_membership` and `orgs_for_user`,
+ * added in migration 0036. They existed for one reason: `org_members` carried a row policy
+ * keyed on `app.org_id`, and this is the lookup that decides *which* organisation to bind,
+ * so under the policy it correctly returned nothing. With the policies gone there is
+ * nothing to step around and they are ordinary selects — which is better, because a
+ * definer-rights function is a standing privilege whether or not anything needs it.
  *
- * The subject is always a user id from a verified access token, and neither function
- * takes an argument that could name a different one. That is what makes bypassing the
- * policy a narrow authorized read rather than a hole in it.
+ * The safety property is unchanged and is worth restating: the subject is always a user id
+ * from a verified access token, and neither query takes an argument that could name a
+ * different one. `orgs.name` comes back from the list, and that is an authorized read
+ * rather than a leak — it is the name of an organisation the caller is a member of.
  */
 export class OrgMembershipReader {
   constructor(private readonly db: NodePgDatabase) {}
 
   /** The membership, or null where the person is not on this organisation's team. */
   async membership(userId: string, orgId: string): Promise<Membership | null> {
-    const rows = await this.db.execute<{
-      member_id: string;
-      role: string;
-      last_active_at: Date | null;
-    }>(sql`select * from resolve_org_membership(${userId}::uuid, ${orgId}::uuid)`);
-    const row = rows.rows[0];
+    const rows = await this.db
+      .select({
+        memberId: orgMembers.id,
+        role: orgMembers.role,
+        lastActiveAt: orgMembers.lastActiveAt,
+      })
+      .from(orgMembers)
+      .where(and(eq(orgMembers.userId, userId), eq(orgMembers.orgId, orgId)))
+      .limit(1);
+    const row = rows[0];
     if (row === undefined) return null;
     // Safe: the column is written only from MemberRole.
-    return {
-      memberId: row.member_id,
-      role: row.role as MemberRole,
-      lastActiveAt: row.last_active_at === null ? null : new Date(row.last_active_at),
-    };
+    return { ...row, role: row.role as MemberRole };
   }
 
   /** Everything the person belongs to, oldest membership first. The switcher's list. */
   async organisations(userId: string): Promise<OrgSummaryRow[]> {
-    const rows = await this.db.execute<{
-      org_id: string;
-      name: string;
-      member_id: string;
-      role: string;
-      joined_at: Date;
-    }>(sql`select * from orgs_for_user(${userId}::uuid)`);
-    return rows.rows.map((row) => ({
-      orgId: row.org_id,
-      name: row.name,
-      memberId: row.member_id,
-      role: row.role as MemberRole,
-      joinedAt: new Date(row.joined_at),
-    }));
+    const rows = await this.db
+      .select({
+        orgId: orgs.id,
+        name: orgs.name,
+        memberId: orgMembers.id,
+        role: orgMembers.role,
+        joinedAt: orgMembers.createdAt,
+      })
+      .from(orgMembers)
+      .innerJoin(orgs, eq(orgs.id, orgMembers.orgId))
+      .where(eq(orgMembers.userId, userId))
+      .orderBy(asc(orgMembers.createdAt), asc(orgMembers.id));
+    // Safe: the column is written only from MemberRole.
+    return rows.map((row) => ({ ...row, role: row.role as MemberRole }));
   }
 }

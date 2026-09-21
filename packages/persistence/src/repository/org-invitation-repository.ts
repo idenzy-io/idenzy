@@ -3,7 +3,7 @@ import type { MemberRole } from "@idenzy/protocol/enums/tenancy";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { orgInvitations } from "../schema/organisation.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { ControlTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface OrgInvitationRow {
@@ -50,7 +50,7 @@ const isOpen = and(isNull(orgInvitations.acceptedAt), isNull(orgInvitations.revo
  * on an unscoped lookup would be a way into somebody else's organisation.
  */
 export class OrgInvitationRepository extends OrgRepository<typeof orgInvitations> {
-  constructor(tx: ControlTx, context: OrgContext) {
+  constructor(tx: Transaction, context: OrgContext) {
     super(tx, context, orgInvitations);
   }
 
@@ -130,7 +130,7 @@ export class OrgInvitationRepository extends OrgRepository<typeof orgInvitations
    * takes a hash and returns routing, the shape `resolve_project_by_key_hash` has.
    */
   static async findByTokenHash(
-    tx: ControlTx,
+    tx: Transaction,
     tokenHash: string,
     now: Date,
   ): Promise<OrgInvitationRow | null> {

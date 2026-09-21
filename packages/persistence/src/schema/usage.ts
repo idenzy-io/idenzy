@@ -18,7 +18,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 import { projects } from "./projects.js";
-import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
+import { createdAtColumn, projectIdColumn } from "./shared.js";
 
 /** HyperLogLog sketch, so monthly active users are counted without storing who. */
 const hll = customType<{ data: Buffer; driverData: Buffer }>({
@@ -103,12 +103,8 @@ export const usageDaily = classifiedTable(
       dailyBilling,
     ),
   },
-  (t) => [
-    primaryKey({ columns: [t.projectId, t.day] }),
-    index("usage_daily_day_idx").on(t.day),
-    tenantIsolationPolicy("usage_daily"),
-  ],
-).enableRLS();
+  (t) => [primaryKey({ columns: [t.projectId, t.day] }), index("usage_daily_day_idx").on(t.day)],
+);
 
 /**
  * The finest rollup: one row per project per hour, and deliberately no sketch.
@@ -159,9 +155,8 @@ export const usageHourly = classifiedTable(
   (t) => [
     primaryKey({ columns: [t.projectId, t.hour] }),
     index("usage_hourly_hour_idx").on(t.hour),
-    tenantIsolationPolicy("usage_hourly"),
   ],
-).enableRLS();
+);
 
 /**
  * One closed billing period per project: the figure an invoice is raised from.
@@ -206,9 +201,8 @@ export const usagePeriods = classifiedTable(
   (t) => [
     primaryKey({ columns: [t.projectId, t.period] }),
     index("usage_periods_period_idx").on(t.period),
-    tenantIsolationPolicy("usage_periods"),
   ],
-).enableRLS();
+);
 
 /**
  * Whether an organisation may still spend on a project's behalf, kept in the project's own cell
@@ -252,5 +246,5 @@ export const projectSpendState = classifiedTable(
       note: "After this the row is ignored and sending continues. A gate nobody refreshed is not a decision.",
     }),
   },
-  (t) => [primaryKey({ columns: [t.projectId] }), tenantIsolationPolicy("project_spend_state")],
-).enableRLS();
+  (t) => [primaryKey({ columns: [t.projectId] })],
+);

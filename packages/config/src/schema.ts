@@ -21,8 +21,7 @@ export const configSchema = z.object({
    * (`PORT`, set by the platform) and makes `pnpm dev` work side by side.
    */
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-  AUTH_API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
-  MANAGEMENT_API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
+  API_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   WORKERS_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 
@@ -56,19 +55,18 @@ export const configSchema = z.object({
    * The project our own dashboard signs in through, in its public `prj_` form.
    *
    * We run the panel on our own product (PROJECT.md 9.5), so a dashboard access token is
-   * an ordinary Idenzy token and `aud` names this project. `management-api` verifies
+   * an ordinary Idenzy token and `aud` names this project. The dashboard surface verifies
    * against it and refuses anything minted for a customer's project, which is the same
    * check a customer's own server makes.
    *
-   * Optional here and required at boot by the one service that needs it: making it
-   * mandatory for every process would stop `auth-api` and `workers` starting without a
-   * value neither of them reads.
+   * Optional here and required at boot by `DashboardTenancyModule`: making it mandatory
+   * for every process would stop `workers` starting without a value it never reads.
    */
   DASHBOARD_PROJECT_ID: z.string().min(1).optional(),
 
   /**
-   * The origin our own dashboard is served from, and the only one `management-api` answers
-   * a browser at.
+   * The origin our own dashboard is served from, and the only one the dashboard surface
+   * answers a browser at.
    *
    * One value rather than a list: this API is addressed by our panel and by nothing else,
    * so an allowlist would be a list of one with room for a mistake. Loopback is permitted
@@ -76,10 +74,6 @@ export const configSchema = z.object({
    * cannot be talked into trusting `http://localhost` by setting a variable.
    */
   DASHBOARD_ORIGIN: z.url().default("https://app.idenzy.io"),
-
-  /** Region cell this process serves. Cross-cell requests are refused (4.13.5). */
-  CELL_CODE: z.string().min(1),
-  KMS_KEY_RING: z.string().min(1),
 
   /**
    * The retry queue for webhook deliveries, and the endpoint it calls back (ADR-0012).

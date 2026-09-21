@@ -1,8 +1,4 @@
-import {
-  classified,
-  classifiedTable,
-  controlTable,
-} from "@idenzy/compliance/classification/classified";
+import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
@@ -17,7 +13,6 @@ import {
   index,
   integer,
   jsonb,
-  pgPolicy,
   text,
   timestamp,
   uniqueIndex,
@@ -25,13 +20,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { auditRecord, config } from "./presets.js";
 import { projects } from "./projects.js";
-import { appRole } from "./roles.js";
-import {
-  createdAtColumn,
-  projectIdColumn,
-  tenantIsolationPolicy,
-  unreferencedProjectIdColumn,
-} from "./shared.js";
+import { createdAtColumn, projectIdColumn, unreferencedProjectIdColumn } from "./shared.js";
 
 /**
  * The audit trail (PROJECT.md 4.13.3).
@@ -110,13 +99,6 @@ export const auditEvents = classifiedTable(
     // stable and the conflict is detected inside the one partition it belongs to.
     uniqueIndex("audit_events_outbox_seq_key").on(t.createdAt, t.outboxSeq),
     // Read is tenant-scoped; write permission is controlled by grants, not by policy.
-    pgPolicy("audit_events_tenant_isolation", {
-      as: "permissive",
-      for: "all",
-      to: appRole,
-      using: sql`project_id = current_setting('app.project_id', true)::uuid`,
-      withCheck: sql`project_id = current_setting('app.project_id', true)::uuid`,
-    }),
   ],
   {
     subject: {
@@ -125,7 +107,7 @@ export const auditEvents = classifiedTable(
       note: "Export only. Erasure must not remove these: the trail keeps the pseudonymous id precisely so an erasure stays provable, which is Art. 17(3)(b) against Art. 17(1).",
     },
   },
-).enableRLS();
+);
 
 /**
  * Data-subject requests (PROJECT.md 4.13.6).
@@ -133,11 +115,11 @@ export const auditEvents = classifiedTable(
  * `dueAt` is computed at intake from `deadlineRule`, and an overdue row pages someone. That is the
  * difference between a control and an intention.
  *
- * **The rule is stored beside the date, and per request.** A cell's jurisdiction cannot supply it:
- * GDPR governs a person rather than a server, so a cell in Iowa answers a European on Art. 12(3)'s
- * one month the moment a customer there has European users. Which rule applies is the controller's
- * determination, so it arrives with the request — and it is kept, because "was this answered on
- * the right clock" is a question the date on its own cannot answer (`DsrDeadline`).
+ * **The rule is stored beside the date, and per request.** Where the data is kept cannot supply
+ * it: GDPR governs a person rather than a server, so a customer anywhere answers a European on
+ * Art. 12(3)'s one month the moment they have European users. Which rule applies is the
+ * controller's determination, so it arrives with the request — and it is kept, because "was this
+ * answered on the right clock" is a question the date on its own cannot answer (`DsrDeadline`).
  */
 export const dataSubjectRequests = classifiedTable(
   "data_subject_requests",
@@ -178,12 +160,8 @@ export const dataSubjectRequests = classifiedTable(
     }),
     requestedBy: classified(text("requested_by"), config),
   },
-  (t) => [
-    index("dsr_due_idx").on(t.status, t.dueAt),
-    index("dsr_project_idx").on(t.projectId),
-    tenantIsolationPolicy("data_subject_requests"),
-  ],
-).enableRLS();
+  (t) => [index("dsr_due_idx").on(t.status, t.dueAt), index("dsr_project_idx").on(t.projectId)],
+);
 
 /** Retention rules the purge worker enforces. Retention no job applies is not retention. */
 export const retentionPolicies = classifiedTable(
@@ -205,9 +183,8 @@ export const retentionPolicies = classifiedTable(
     // conflict target, and without this a save could leave two rows for one subject with the
     // sweeper picking whichever its subquery reached first.
     uniqueIndex("retention_policies_project_subject_key").on(t.projectId, t.subject),
-    tenantIsolationPolicy("retention_policies"),
   ],
-).enableRLS();
+);
 
 /**
  * Time-boxed staff access to production data (PROJECT.md 4.13.7).
@@ -216,7 +193,7 @@ export const retentionPolicies = classifiedTable(
  * customer's. Deny by default: absence of a live row means no access. The quarterly
  * access review SOC 2 asks for is a query over this table.
  */
-export const staffAccessGrants = controlTable("staff_access_grants", {
+export const staffAccessGrants = classifiedTable("staff_access_grants", {
   id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
   staffId: classified(text("staff_id").notNull(), {
     class: DataClass.Pii,
@@ -279,7 +256,7 @@ const disposalRecord = {
  * and a timestamp. It belongs to the control plane and moves there when the planes separate
  * (PROJECT.md 4.13.5).
  */
-export const projectPurges = controlTable("project_purges", {
+export const projectPurges = classifiedTable("project_purges", {
   id: classified(uuid("id").primaryKey().defaultRandom(), {
     ...disposalRecord,
     loggable: true,

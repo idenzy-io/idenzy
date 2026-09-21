@@ -22,12 +22,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { accountOperational, config, credential, identifyingPii } from "./presets.js";
 import { projects } from "./projects.js";
-import {
-  createdAtColumn,
-  projectIdColumn,
-  tenantIsolationPolicy,
-  updatedAtColumn,
-} from "./shared.js";
+import { createdAtColumn, projectIdColumn, updatedAtColumn } from "./shared.js";
 
 /**
  * An end user of a customer's application.
@@ -94,7 +89,6 @@ export const users = classifiedTable(
     uniqueIndex("users_project_email_key").on(t.projectId, t.email),
     uniqueIndex("users_project_phone_key").on(t.projectId, t.phone),
     index("users_project_created_idx").on(t.projectId, t.createdAt),
-    tenantIsolationPolicy("users"),
   ],
   {
     subject: {
@@ -102,7 +96,7 @@ export const users = classifiedTable(
       locatedBy: "id",
     },
   },
-).enableRLS();
+);
 
 /** A federated identity linked to a user. One row per provider account. */
 export const identities = classifiedTable(
@@ -142,7 +136,6 @@ export const identities = classifiedTable(
       t.providerUserId,
     ),
     index("identities_user_idx").on(t.userId),
-    tenantIsolationPolicy("identities"),
   ],
   {
     subject: {
@@ -150,4 +143,4 @@ export const identities = classifiedTable(
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);

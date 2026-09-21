@@ -10,7 +10,7 @@ import { index, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./identity.js";
 import { config, credential, ephemeralChallenge, securitySignal } from "./presets.js";
 import { projects } from "./projects.js";
-import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
+import { createdAtColumn, projectIdColumn } from "./shared.js";
 
 /** A server-side session. Revocable individually or in bulk (PROJECT.md 4.2). */
 export const sessions = classifiedTable(
@@ -67,7 +67,6 @@ export const sessions = classifiedTable(
   (t) => [
     index("sessions_project_user_idx").on(t.projectId, t.userId),
     index("sessions_absolute_expiry_idx").on(t.absoluteExpiresAt),
-    tenantIsolationPolicy("sessions"),
   ],
   {
     subject: {
@@ -75,7 +74,7 @@ export const sessions = classifiedTable(
       locatedBy: "user_id",
     },
   },
-).enableRLS();
+);
 
 /**
  * Rotating refresh tokens with family-based reuse detection (PROJECT.md 4.2).
@@ -118,9 +117,8 @@ export const refreshTokens = classifiedTable(
     uniqueIndex("refresh_tokens_hash_key").on(t.tokenHash),
     index("refresh_tokens_family_idx").on(t.familyId),
     index("refresh_tokens_session_idx").on(t.sessionId),
-    tenantIsolationPolicy("refresh_tokens"),
   ],
-).enableRLS();
+);
 
 /** Idempotency and replay protection for mutating management endpoints. */
 export const idempotencyKeys = classifiedTable(
@@ -139,8 +137,5 @@ export const idempotencyKeys = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [
-    uniqueIndex("idempotency_keys_project_key").on(t.projectId, t.key),
-    tenantIsolationPolicy("idempotency_keys"),
-  ],
-).enableRLS();
+  (t) => [uniqueIndex("idempotency_keys_project_key").on(t.projectId, t.key)],
+);

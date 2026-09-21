@@ -76,26 +76,6 @@ export class SecretKeyNotPermittedError extends ForbiddenError {
   }
 }
 
-/**
- * The key or host names a project in another region cell (PROJECT.md 4.13.5).
- *
- * Routing refuses cross-cell access rather than proxying it, so data cannot transit a
- * jurisdiction by accident. A proxy would have been the friendlier behaviour and is exactly what
- * residency cannot allow: the request would be served, and the bytes would have crossed a border
- * to do it.
- *
- * 403 rather than 400, for the same reason `SecretKeyNotPermittedError` is: the credential is
- * well-formed and identity is not in question, the placement is. Presented to the customer with
- * the endpoint they should have called, because that is the only actionable half — and never with
- * the key itself, which belongs in `detail` at display length if anywhere.
- */
-export class WrongRegionError extends ForbiddenError {
-  override readonly code = ErrorCode.WrongRegion;
-  constructor(options: ErrorOptions = {}) {
-    super(options.message ?? "This key belongs to another region.", options);
-  }
-}
-
 /** The request's Origin is not on the project's allowlist (PROJECT.md 4.3). */
 export class OriginNotAllowedError extends ForbiddenError {
   override readonly code = ErrorCode.OriginNotAllowed;

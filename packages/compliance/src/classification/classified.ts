@@ -77,8 +77,17 @@ export function classifiedTable<
 
 export interface ClassifiedTableOptions {
   /**
-   * Qualifies the registry key only, never the Postgres table name. Defaults to none, so a cell
-   * table — which is almost all of them — is recorded under its bare name as it always was.
+   * Qualifies the registry key only, never the Postgres table name. Defaults to none.
+   *
+   * `classifiedAnalyticsTable` is the one caller that sets it, with `analytics.`, because two
+   * stores cannot collide in one flat name-keyed map and a reader of the generated data map has
+   * to be able to tell which store an answer came from. Postgres is one store and one database,
+   * so every table in it is recorded under its bare name.
+   *
+   * `controlTable` was the other caller and is gone with the control plane. It qualified the
+   * org-keyed and registry tables with `control.` on the argument that "which plane is this
+   * table in" was the same question as "which jurisdiction does this column live in" — which
+   * was true only while a cell was an independent stack.
    */
   readonly registryPrefix?: string;
   /**
@@ -89,45 +98,6 @@ export interface ClassifiedTableOptions {
    * see the pair. Omit it for a table holding nobody's personal data, which is most of them.
    */
   readonly subject?: TableSubject;
-}
-
-/**
- * The registry prefix a control-plane table is recorded under.
- *
- * The Postgres table is still `orgs`; only the key in the classification registry is qualified.
- * `classifiedAnalyticsTable` already does exactly this with `analytics.`, for two reasons that
- * apply here word for word: two stores cannot collide in one flat name-keyed map, and a reader of
- * the generated data map can tell which store an answer came from.
- *
- * The second reason is the one that matters for residency. A cell is an independent stack per
- * PROJECT.md 4.13.5, so "which plane is this table in" is the same question as "which
- * jurisdiction does this column live in" — and the data map had no way to express it. The
- * generators need no change to gain the axis: `data-map.ts` sorts by registry key, so prefixed
- * tables group themselves.
- */
-const CONTROL_PLANE_PREFIX = "control.";
-
-/**
- * `classifiedTable`, for a table that lives in the global control plane rather than in a cell.
- *
- * Org-keyed tables and the two registries that are keyed on nothing: billing, the organisation
- * and its members, `region_cells`, `staff_access_grants`. What separates them from everything
- * else is that they do **not** move when a second cell is provisioned, which is why they are the
- * ones that must be identifiable as a group before that happens.
- */
-export function controlTable<
-  TName extends string,
-  TColumns extends Record<string, ClassifiedBuilder>,
->(
-  name: TName,
-  columns: TColumns,
-  extraConfig?: (self: BuildExtraConfigColumns<TName, TColumns, "pg">) => PgTableExtraConfigValue[],
-  subject?: TableSubject,
-) {
-  return classifiedTable(name, columns, extraConfig, {
-    registryPrefix: CONTROL_PLANE_PREFIX,
-    ...(subject === undefined ? {} : { subject }),
-  });
 }
 
 /**

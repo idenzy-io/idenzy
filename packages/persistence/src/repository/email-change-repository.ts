@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { emailChangeRequests } from "../schema/challenges.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** Which address a confirmation token was mailed to. */
@@ -40,7 +40,7 @@ export interface MatchedEmailChange extends EmailChangeRow {
  * control is the only warning that person gets.
  */
 export class EmailChangeRepository extends BaseRepository<typeof emailChangeRequests> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, emailChangeRequests);
   }
 

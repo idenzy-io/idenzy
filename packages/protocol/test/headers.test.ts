@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { IDENZY_HEADERS, IdenzyCookie, IdenzyHeader } from "../src/http/headers.js";
-import { isApiKey, isPublishableKey, isSecretKey, parseApiKey } from "../src/schemas/common.js";
+import {
+  displayableKey,
+  isApiKey,
+  isPublishableKey,
+  isSecretKey,
+  KEY_DISPLAY_LENGTH,
+} from "../src/schemas/common.js";
 
 /**
  * Structural tests, which is the only kind these constants can have.
@@ -54,51 +60,40 @@ describe("key prefixes", () => {
   });
 });
 
-describe("parsing a key into its cell", () => {
-  it("takes it apart into kind, cell and body", () => {
-    expect(parseApiKey("pk_us1_3f9a2b8c")).toEqual({
-      kind: "pk_",
-      cell: "us1",
-      body: "3f9a2b8c",
-    });
-    expect(parseApiKey("sk_eu1_abc")?.kind).toBe("sk_");
+describe("what a key shows of itself", () => {
+  it("shows the kind and eight characters of the body, and no more", () => {
+    expect(displayableKey("pk_3f9a2b8cDEADBEEF")).toBe("pk_3f9a2b8c");
+    expect(displayableKey("sk_3f9a2b8cDEADBEEF")).toBe("sk_3f9a2b8c");
   });
 
   /**
-   * The trap worth a test of its own. `generateOpaqueToken` is base64url, so `_` is a legal
-   * character in the body and `split("_")[2]` would hand back a truncated secret that still
-   * looked plausible — and would hash to nothing, so the symptom would be an unresolvable key
-   * rather than an obvious bug.
+   * The figure is a promise, not a convenience. `api_keys.prefix` stores the same eleven
+   * characters, so what a refusal quotes back is what the dashboard lists beside the key —
+   * and shortening either without the other would leave a customer comparing two strings
+   * that name the same key and do not match.
    */
-  it("keeps a body containing underscores whole", () => {
-    expect(parseApiKey("pk_us1_3f9a_2b8c_xY")?.body).toBe("3f9a_2b8c_xY");
+  it("is the length api-keys-service stores in the prefix column", () => {
+    expect(KEY_DISPLAY_LENGTH).toBe(11);
+    expect(displayableKey("pk_3f9a2b8cDEADBEEF")).toHaveLength(KEY_DISPLAY_LENGTH);
   });
 
-  it("refuses anything that names no cell", () => {
-    // A kind and a body and nothing between them: malformed, not misdirected.
-    expect(parseApiKey("pk_abc")).toBeNull();
-    // A cell and no body is not a key either.
-    expect(parseApiKey("pk_us1_")).toBeNull();
-    expect(parseApiKey("pk_")).toBeNull();
-    // Not a key at all.
-    expect(parseApiKey("eyJhbGciOiJFUzI1NiJ9.payload.sig")).toBeNull();
+  it("truncates rather than throwing on something that is not a key", () => {
+    expect(displayableKey("eyJhbGciOiJFUzI1NiJ9.payload.sig")).toBe("eyJhbGciOiJ");
+    expect(displayableKey("")).toBe("");
   });
 
-  it("refuses a cell segment that could not be a cell code", () => {
-    // Uppercase, punctuation and over-long segments are all out, which is what keeps the
-    // segment unambiguous against a base64url body.
-    expect(parseApiKey("pk_US1_abc")).toBeNull();
-    expect(parseApiKey("pk_us-1_abc")).toBeNull();
-    expect(parseApiKey("pk_1us_abc")).toBeNull();
-    expect(parseApiKey("pk_verylongcell_abc")).toBeNull();
-  });
-
-  it("agrees with the prefix predicates, so nothing can classify one way and parse another", () => {
-    for (const key of ["pk_us1_abc", "sk_us1_abc"]) {
-      const parsed = parseApiKey(key);
-      expect(parsed).not.toBeNull();
-      expect(isPublishableKey(key)).toBe(parsed?.kind === "pk_");
-      expect(isSecretKey(key)).toBe(parsed?.kind === "sk_");
-    }
+  /**
+   * A key carries its kind in the clear and nothing else. It used to carry a region cell
+   * between the two — `pk_us1_3f9a…` — which a guard refused on before any lookup. With one
+   * deployment there is no cell to name, so the prefix predicates are the whole of what can
+   * be told from a key's text.
+   */
+  it("agrees with the prefix predicates", () => {
+    expect(isPublishableKey("pk_3f9a2b8c")).toBe(true);
+    expect(isSecretKey("pk_3f9a2b8c")).toBe(false);
+    expect(isSecretKey("sk_3f9a2b8c")).toBe(true);
+    expect(isPublishableKey("sk_3f9a2b8c")).toBe(false);
+    expect(isApiKey("pk_3f9a2b8c")).toBe(true);
+    expect(isApiKey("whsec_3f9a2b8c")).toBe(false);
   });
 });

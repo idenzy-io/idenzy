@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { webhooks } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { CellTx } from "../tenancy/unit-of-work.js";
+import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** Why an endpoint is off. `paused` is a person's doing; `failing` is the breaker's. */
@@ -82,7 +82,7 @@ function toRow(row: typeof webhooks.$inferSelect): WebhookRow {
  * cheaper half of a trade against a function that could read every customer's endpoints.
  */
 export class WebhookRepository extends BaseRepository<typeof webhooks> {
-  constructor(tx: CellTx, context: TenantContext) {
+  constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, webhooks);
   }
 

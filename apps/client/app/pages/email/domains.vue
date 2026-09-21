@@ -398,6 +398,36 @@ const GUIDES_URL = "https://idenzy.io/docs/email";
             @remove="askRemoval(domain.id)"
           />
         </template>
+
+        <!--
+          The table had no empty state at all, so a list that came back with nothing in it
+          drew a header row over blank space — which reads as a table that failed rather
+          than as a list with nothing in it.
+
+          It is reachable, and what it says is deliberately narrow. The shared sender is
+          meant to be the one row that is always there and cannot be removed, so an empty
+          list is not "no domains yet": it is the shared row missing too, which is a state
+          the screen cannot explain from here. The store behind this is still the
+          placeholder and seeds two demo projects by id, so every real project lands here.
+        -->
+        <template #empty>
+          <div
+            v-if="!store.loading && domains.length === 0"
+            class="flex flex-col items-center gap-1.5 px-4 py-12 text-center"
+          >
+            <Icon
+              aria-hidden="true"
+              class="mb-1 text-2xl text-ink/25"
+              name="material-symbols:mail-outline"
+            />
+            <p class="m-0 text-sm font-medium text-ink">No sending domain listed</p>
+            <p class="m-0 max-w-lg text-xs leading-5 text-ink/55">
+              Our shared sender belongs here and cannot be removed, so an empty list means
+              this project's domains have not been read rather than that it has none. Mail
+              still leaves from our shared domain meanwhile.
+            </p>
+          </div>
+        </template>
       </RecordTable>
 
       <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">

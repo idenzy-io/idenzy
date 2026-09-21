@@ -15,8 +15,10 @@ export interface SegmentedOption {
 /**
  * A row of choices where exactly one is on: the period a chart covers, or which of two
  * views of it is showing. The chosen segment is lifted onto the surface and the rest sit
- * in the track, and the whole thing is the height of a small control so it lines up with
- * a button beside it.
+ * in the track, and the track is the height of the row it belongs to — the one over a
+ * table, where it sits beside the search and the Filter and Columns menus. That is
+ * `--idenzy-toolbar-height`, and taking it from there rather than restating it is what
+ * keeps the four of them on one line.
  *
  * A radio group, in ARIA's terms and the keyboard's: one tab stop, arrows to move, which
  * is what tells a screen reader these are one choice rather than three buttons, and what
@@ -84,7 +86,7 @@ function move(event: KeyboardEvent, from: number) {
     :aria-disabled="disabled || undefined"
     :aria-label="label"
     :class="[disabled ? 'opacity-50' : '', stretch ? 'flex w-full' : 'inline-flex']"
-    class="segmented h-7 items-center gap-0.5 rounded-(--idenzy-radius-x-small) bg-ink/5 p-0.5 transition-opacity duration-150"
+    class="segmented items-center gap-0.5 rounded-(--idenzy-radius) bg-ink/5 p-0.5 transition-opacity duration-150"
     role="radiogroup"
   >
     <button
@@ -94,12 +96,12 @@ function move(event: KeyboardEvent, from: number) {
       :aria-label="option.title"
       :class="[
         option.value === model ? 'text-ink' : 'text-ink/60 hover:text-ink',
-        option.label ? 'px-2' : 'w-6',
+        option.label ? 'px-3' : 'w-8',
         stretch ? 'min-w-0 flex-1' : '',
       ]"
       :disabled="disabled || option.disabled"
       :tabindex="option.value === model ? 0 : -1"
-      class="segmented__option relative inline-flex h-6 items-center justify-center gap-1 rounded-[6px] text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:text-ink/30"
+      class="segmented__option relative inline-flex items-center justify-center gap-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:text-ink/30"
       role="radio"
       type="button"
       @click="model = option.value"
@@ -119,6 +121,33 @@ function move(event: KeyboardEvent, from: number) {
 </template>
 
 <style scoped>
+/* The track is the height of the row it sits in, taken from the token the search field
+   and the two menu buttons beside it read. */
+.segmented {
+  height: var(--idenzy-toolbar-height);
+}
+
+/*
+ * The segment fills the track, and turns concentrically with it.
+ *
+ * Both come off the track less its two pixels of padding: the height less two of them, the
+ * corner less one. Any other corner leaves a wedge of track showing where the raised segment
+ * turns while its edges sit flush, which reads as a segment that does not quite fit.
+ *
+ * The track is on `--idenzy-radius` now, the same corner every button and field in the panel
+ * takes, so the row over a table turns at one radius across the segmented control, the search
+ * box and the two menu buttons rather than the control alone sitting a step tighter. The
+ * segment follows it down: the one corner here that is not a token, because it is not a
+ * choice — it is whatever the track is, less the padding between them.
+ *
+ * Both are calculations rather than answers, so the pair stays true the next time the row's
+ * height or the radius ladder moves.
+ */
+.segmented__option {
+  border-radius: calc(var(--idenzy-radius) - 2px);
+  height: calc(var(--idenzy-toolbar-height) - 4px);
+}
+
 /*
  * The chosen segment is raised: the surface, a hairline of the theme's line, and a
  * shadow light enough to read as a lift rather than a smudge. In the dark theme the

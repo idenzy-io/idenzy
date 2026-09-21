@@ -30,7 +30,7 @@ class StubResolver extends ProjectResolver {
   }
 
   override byApiKey(key: string): Promise<ResolvedProject> {
-    if (!key.startsWith("pk_us1_live")) {
+    if (!key.startsWith("pk_live")) {
       return Promise.reject(new UnknownProjectError({ detail: { key } }));
     }
     return Promise.resolve(project());
@@ -88,7 +88,7 @@ afterAll(async () => {
   await app.close();
 });
 
-const key = { [IdenzyHeader.PublishableKey]: "pk_us1_live_abc" };
+const key = { [IdenzyHeader.PublishableKey]: "pk_live_abc" };
 
 describe("the actual response is where the browser's gate is", () => {
   it("lets an allowlisted origin read a credentialed response", async () => {
@@ -116,7 +116,7 @@ describe("the actual response is where the browser's gate is", () => {
 
   it("still carries CORS on an error, so the SDK can read our error code", async () => {
     const response = await fetch(`${base}/test/tenant`, {
-      headers: { [IdenzyHeader.PublishableKey]: "pk_us1_nope", origin: EVIL },
+      headers: { [IdenzyHeader.PublishableKey]: "pk_nope", origin: EVIL },
     });
     expect(response.status).toBe(404);
     // The one place an unvetted origin is echoed. The body is our own error contract, and

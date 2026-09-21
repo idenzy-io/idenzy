@@ -82,12 +82,13 @@ export const KEY_FORMAT = {
   encoding: "base64url",
   digest: "SHA-256",
   /**
-   * Characters of the random body kept in the clear, on top of the kind prefix and the cell.
+   * Characters of the random body kept in the clear, on top of the kind prefix.
    *
-   * A key is `pk_<cell>_<body>`, so the stored display prefix is that head plus this many
-   * characters of randomness — `pk_us1_3f9a2b8c`. Enough to pick a row out of a log or an
-   * `.env`, far too few to be worth guessing the rest of. This used to be a count of the whole
-   * key, which stopped meaning the same thing once the cell moved into the middle of it.
+   * A key is `pk_<body>`, so the stored display prefix is that head plus this many characters
+   * of randomness — `pk_3f9a2b8c`. Enough to pick a row out of a log or an `.env`, far too few
+   * to be worth guessing the rest of. Eleven characters in total, which is what
+   * `KEY_DISPLAY_LENGTH` promises and what `api_keys.prefix` stores: shortening either without
+   * the other leaves a customer comparing two strings that name the same key and do not match.
    */
   bodyPrefixLength: 8,
 } as const;
@@ -391,7 +392,7 @@ export function maskedKey(key: ProjectApiKey): string {
   return `${key.prefix}${KEY_MASK}`;
 }
 
-/** The key as the middle of a sentence names it: "secret key sk_us1_4fQ2x9a…". */
+/** The key as the middle of a sentence names it: "secret key sk_4fQ2x9a…". */
 export function keyName(key: ProjectApiKey): string {
   return `${KEY_KIND_LABELS[key.kind].toLowerCase()} ${key.prefix}…`;
 }

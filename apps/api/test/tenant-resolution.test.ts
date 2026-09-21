@@ -132,7 +132,7 @@ describe("the publishable key header", () => {
 
   it("answers a real secret key exactly as it answers a fabricated one", async () => {
     const real = await get({ [IdenzyHeader.PublishableKey]: "sk_live_abc" });
-    const fake = await get({ [IdenzyHeader.PublishableKey]: "sk_us1_deadbeef" });
+    const fake = await get({ [IdenzyHeader.PublishableKey]: "sk_deadbeef" });
     expect(real).toEqual(fake);
   });
 
@@ -147,7 +147,7 @@ describe("the publishable key header", () => {
 describe("resolution order is first-present-wins, not a fallback chain", () => {
   it("does not fall through to Host when the header is present but unresolvable", async () => {
     const answer = await get({
-      [IdenzyHeader.PublishableKey]: "pk_us1_unknown",
+      [IdenzyHeader.PublishableKey]: "pk_unknown",
       host: "acme.auth.test",
     });
     // The failure that would be silent is resolving BY_HOST here: a request that named one

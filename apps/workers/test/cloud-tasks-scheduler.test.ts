@@ -93,7 +93,7 @@ let baseUrl = "";
 const settings = {
   project: "idenzy-dev",
   location: "europe-west4",
-  queuePrefix: "idenzy-eu1-webhooks",
+  queuePrefix: "idenzy-webhooks",
   shards: 8,
   serviceAccount: "webhooks@idenzy-dev.iam.gserviceaccount.com",
   url: "https://workers-abc.a.run.app/internal/webhooks/dispatch",
@@ -136,7 +136,7 @@ describe("arming a retry as a Cloud Task", () => {
     const [request] = api.captured;
     expect(request?.authorization).toBe("Bearer ya29.fake");
     expect(request?.path).toBe(
-      `/v2/projects/idenzy-dev/locations/europe-west4/queues/idenzy-eu1-webhooks-${shardOf(ENDPOINT, 8)}/tasks`,
+      `/v2/projects/idenzy-dev/locations/europe-west4/queues/idenzy-webhooks-${shardOf(ENDPOINT, 8)}/tasks`,
     );
 
     const task = taskIn(request);
@@ -218,7 +218,7 @@ describe("reading the queue out of the environment", () => {
           ...environment,
           GCP_PROJECT_ID: "idenzy-dev",
           WEBHOOK_TASKS_LOCATION: "europe-west4",
-          WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-eu1-webhooks",
+          WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-webhooks",
           WEBHOOK_TASKS_SERVICE_ACCOUNT: "webhooks@idenzy-dev.iam.gserviceaccount.com",
         }),
       ),
@@ -231,7 +231,7 @@ describe("reading the queue out of the environment", () => {
         ...environment,
         GCP_PROJECT_ID: "idenzy-dev",
         WEBHOOK_TASKS_LOCATION: "europe-west4",
-        WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-eu1-webhooks",
+        WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-webhooks",
         WEBHOOK_TASKS_SERVICE_ACCOUNT: "webhooks@idenzy-dev.iam.gserviceaccount.com",
         WEBHOOK_DISPATCH_URL: settings.url,
       }),

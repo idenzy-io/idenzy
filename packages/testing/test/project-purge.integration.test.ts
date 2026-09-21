@@ -48,7 +48,7 @@ async function seedRows(projectId: string): Promise<void> {
   );
   await harness.owner.query(
     `INSERT INTO api_keys (project_id, kind, prefix, hash)
-     VALUES ($1, 'publishable', 'pk_us1_abc', $2)`,
+     VALUES ($1, 'publishable', 'pk_abc', $2)`,
     // The hash is globally unique, as a credential digest should be.
     [projectId, `hashed-${projectId}`],
   );

@@ -13,7 +13,7 @@ import { KmsKeyEncryption } from "../src/kms-key-encryption.js";
  * ciphertext is key material that can never be unwrapped again, found at the moment a project stops
  * being able to mint a token.
  */
-const KEY = "projects/idenzy-dev/locations/us-central1/keyRings/idenzy-us1-ring/cryptoKeys/dek";
+const KEY = "projects/idenzy-dev/locations/us-central1/keyRings/idenzy-ring/cryptoKeys/dek";
 const PLAINTEXT = new TextEncoder().encode("a signing key, pretend");
 const CIPHERTEXT = Buffer.from("wrapped-bytes");
 

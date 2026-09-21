@@ -91,7 +91,7 @@ Related: [Shared experience](shared-experience.md), [dialog rules](dialogs.md).
   acknowledgement, so the urgent path never passes through the rotation.
 - **Placement guidance is not on the page or in the reveal,** at the user's request: the page is
   the keys and their rotation, and the reveal is the value and its Copy. A key's detail keeps the
-  variable names for its kind, copying the name rather than `pk_us1_4fQ2x9a…`, which would be a
+  variable names for its kind, copying the name rather than `pk_4fQ2x9a…`, which would be a
   shortened value (layout blueprint, rule 7).
 - **The create dialog's footer leads with Rotate on the newest live key of the kind,** in place
   of a paragraph saying a second key does not replace the first. The tooltip carries that

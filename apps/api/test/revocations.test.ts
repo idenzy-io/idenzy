@@ -84,7 +84,7 @@ beforeEach(() => {
 });
 
 function withSecretKey(headers: Record<string, string> = {}): RequestInit {
-  return { headers: { authorization: "Bearer sk_us1_test_abcdef", ...headers } };
+  return { headers: { authorization: "Bearer sk_test_abcdef", ...headers } };
 }
 
 async function claims(body: string): Promise<unknown> {
@@ -104,7 +104,7 @@ describe("who may read the set", () => {
    */
   it("refuses a publishable key, which is the one that reaches a browser", async () => {
     const response = await fetch(`${base}/v1/revocations`, {
-      headers: { [IdenzyHeader.PublishableKey]: "pk_us1_test_abc" },
+      headers: { [IdenzyHeader.PublishableKey]: "pk_test_abc" },
     });
 
     expect(response.status).toBe(403);

@@ -114,7 +114,7 @@ const RECORD_MARKS: Record<string, { icon: string; tone: string }> = {
 
 const SDK_SNIPPET = computed(
   () => `const idenzy = new Idenzy({
-  publishableKey: "pk_us1_…",
+  publishableKey: "pk_…",
   apiBaseUrl: "${baseUrl.value}",
 });`,
 );

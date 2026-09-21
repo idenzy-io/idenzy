@@ -1164,7 +1164,7 @@ await signIn.verifyOtp({ code });              // completes; session cookie is s
 
 ```dart
 // Flutter
-await Idenzy.init(publishableKey: 'pk_us1_...');
+await Idenzy.init(publishableKey: 'pk_...');
 final user = await Idenzy.signInWithOAuth(Provider.google);
 ```
 

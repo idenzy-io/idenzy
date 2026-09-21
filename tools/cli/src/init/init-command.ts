@@ -9,15 +9,15 @@ import { resolveTemplate, TEMPLATES, templateById } from "./template-registry.js
 /** What the shared API host answers on until a customer points their own domain at us. */
 export const DEFAULT_API_URL = "https://auth.idenzy.io";
 
-/** Obviously not a key, so a run without one leaves something a developer notices. */
 /**
  * What the CLI writes for a key it does not have.
  *
- * `us1` is a real cell code rather than a word like `test`, because a key is `pk_<cell>_<body>`
- * now and a placeholder that parsed its cell as "test" would teach the wrong shape to the one
- * reader guaranteed to copy it. The body still says what to do with it.
+ * Carries the real `pk_` prefix and an obviously fake body, so it teaches the right shape to the
+ * one reader guaranteed to copy it while staying something a developer notices. It used to name
+ * a region cell in the middle — `pk_us1_replace_me` — because a key was `pk_<cell>_<body>`; with
+ * one deployment a key is its kind and its body and there is no cell to stand in for.
  */
-export const PLACEHOLDER_KEY = "pk_us1_replace_me";
+export const PLACEHOLDER_KEY = "pk_replace_me";
 
 export interface InitOptions {
   readonly dir: string;

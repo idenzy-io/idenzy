@@ -9,8 +9,9 @@
  * key wears its own colour, because that is the one list where the two kinds sit together. The
  * tab lives in the query, replaced rather than pushed, as on the one-time codes screen.
  *
- * Show revoked, beside the tabs, adds the revoked keys to All keys and the kind tabs. It is a
- * reading preference and remembered per viewer, where the tab is an address and shared.
+ * The revoked keys are reached through their own tab and nowhere else. A Show revoked
+ * checkbox sat beside the tabs and folded them into All keys and the kind tabs as well,
+ * which gave the same key two places to be and the count beside a tab two meanings.
  *
  * A rotation is explicit. It starts from a key's menu, the replacement names the key it
  * replaces, and the card that follows shows what has been observed of both rather than
@@ -57,13 +58,9 @@ const keys = computed(() => store.keysFor(project.value));
 watch(project, (id) => void store.load(id), { immediate: true });
 const rotations = computed(() => rotationsOf(keys.value));
 
-/**
- * Whether revoked keys join All keys and the kind tabs. Remembered per viewer, like a table's
- * columns: it is how somebody likes to read the list, not a fact about the project.
- */
-const showRevoked = useLocalStorage("idenzy.keys.show-revoked", false);
-
-const counts = computed(() => tabCounts(keys.value, showRevoked.value));
+/* Live keys only on every tab but Revoked, which `tabCounts` and `keysOnTab` already do
+   without being asked: the Revoked tab is the one place a revoked key is listed. */
+const counts = computed(() => tabCounts(keys.value));
 
 /*
  * The tab, in the URL. All keys is the page's own address and carries no query.
@@ -88,7 +85,7 @@ const tabOptions = computed<SegmentedOption[]>(() =>
   })),
 );
 
-const shown = computed(() => keysOnTab(keys.value, tabKey.value, showRevoked.value));
+const shown = computed(() => keysOnTab(keys.value, tabKey.value));
 
 /** The one kind the tab shows, or null for the two tabs that mix them. */
 const kindOnTab = computed<ApiKeyKind | null>(() =>
@@ -136,8 +133,8 @@ const listDescription = computed(() => {
 
 const emptyWords = computed(() => {
   if (tabKey.value === "all") {
-    return counts.value.revoked > 0 && !showRevoked.value
-      ? "No live key on this project. Nothing can reach it until one is made and deployed; the revoked ones are under Show revoked."
+    return counts.value.revoked > 0
+      ? "No live key on this project. Nothing can reach it until one is made and deployed; the revoked ones are on the Revoked tab."
       : "This project has no keys yet. Nothing can reach it until one is made and deployed.";
   }
   if (kindOnTab.value === "publishable") {
@@ -321,26 +318,23 @@ watch(project, () => {
         publishable key for code anybody can read, and a secret key for your servers.
       </template>
       <template #actions>
-        <FancyButton @click="openCreate">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Create key
-        </FancyButton>
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:add"
+          size="small"
+          variant="text"
+          @click="openCreate"
+        >
+          Create Key
+        </v-btn>
       </template>
     </PageHeader>
 
-    <!-- The tabs and the one filter beside them. Show revoked means nothing on the Revoked
-         tab, which is all revoked keys, so it is not offered there. -->
-    <div class="-mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div class="max-w-full overflow-x-auto">
-        <SegmentedControl v-model="tab" :options="tabOptions" label="Key type" />
-      </div>
-      <label
-        v-if="tabKey !== 'revoked'"
-        class="flex h-7 cursor-pointer items-center gap-1 rounded-(--idenzy-radius-x-small) pr-2 text-xs text-ink transition-colors duration-150 hover:bg-ink/4"
-      >
-        <v-checkbox-btn v-model="showRevoked" class="flex-none" color="primary" density="compact" />
-        Show revoked
-      </label>
+    <!-- The tabs, and nothing beside them: Revoked is one of them, so a checkbox that put
+         revoked keys back into the other three narrowed the same list twice. -->
+    <div class="-mt-1 max-w-full overflow-x-auto">
+      <SegmentedControl v-model="tab" :options="tabOptions" label="Key type" />
     </div>
 
     <section class="flex flex-col gap-3">

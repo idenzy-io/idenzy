@@ -31,30 +31,42 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
 - **App tests import from `dist`.** Vitest 4 transforms with Rolldown, which does not
   apply the legacy decorator semantics NestJS needs, so decorated classes fail to parse
   from source. Compiling first also means tests exercise the artifact that ships.
-- **`drizzle-kit` does not generate roles, grants or partitioning.** Those are
+- **`drizzle-kit` does not generate grants, functions or partitioning.** Those are
   hand-authored migrations made with `pnpm db:custom`, in the same numbered sequence. Read
   them as SQL. It used to not generate `FORCE ROW LEVEL SECURITY` either; there is no RLS
-  to force since `0069_remove_rls_and_cells.sql` (PROJECT.md 4.10).
-- **A new tenant table needs its own grant migration.** Migration 0001 granted by looping
-  over the tables that existed when it ran, and it ran once. A table added later gets its
-  DDL from `drizzle-kit` and no grant, which means `idenzy_app` cannot read it at all —
-  a permission error on a route nobody has called yet. `tenancy.integration.test.ts` fails
-  if you forget.
-  **Name the table; do not copy the dynamic blocks from `0004_nasty_catseye.sql`.** They
-  grant all four verbs on every table except `audit_events`, and three tables now
-  deliberately refuse one: every `audit_events_*` partition (append-only, narrowed in 0030)
-  and `payment_provider_events` (no `DELETE`). Copying them re-grants what those migrations
-  withheld, which is how `0042` was first written and what the append-only tests caught.
-  One named statement is the whole migration:
-  `GRANT SELECT, INSERT, UPDATE, DELETE ON public.x TO idenzy_app;`
-- **Default privileges outrank your migration's intent, and did so twice.** Migration
-  0001 ends with `ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE, DELETE`, so
-  for three migrations every `audit_events` partition was created holding all four:
-  `DELETE FROM audit_events` was refused and `DELETE FROM audit_events_2026_09` was not.
-  0030 revoked the two dangerous verbs from the defaults and made
-  `ensure_audit_partition` revoke them itself. If you add a table that must refuse a
-  privilege, revoke it explicitly and assert the *absence* in a test — the grants test
-  only checks that privileges are present, so it cannot see this class of bug.
+  to force any more (PROJECT.md 4.10).
+- **There are two migrations, and the second holds everything unusual.**
+  `0000_baseline.sql` is generated output: every table, index and foreign key in
+  `src/schema`. `0001_grants_functions_and_partitions.sql` is hand-authored and holds what
+  a schema declaration cannot express — the grants, the twenty-six SECURITY DEFINER
+  functions, and `audit_events` itself, which is partitioned and so is created there rather
+  than in the baseline. The baseline carries two edits a regeneration would silently lose;
+  they are named in its header, which is the reason to read it before running
+  `pnpm db:generate` against a schema change that touches `audit_events`.
+  The sixty-nine migrations these replace are in git history at `280b3cb`. A comment that
+  cites *migration 0057* means one of those, and what it did is folded into `0001`.
+- **A new tenant table needs its own grant migration.** `0001` grants by name, and it ran
+  once. A table added later gets its DDL from `drizzle-kit` and nothing but what the
+  default privileges give it — `SELECT` and `INSERT` — so the first `UPDATE` or `DELETE`
+  its repository runs is a permission error on a route nobody has called yet.
+  `tenancy.integration.test.ts` fails if you forget. One named statement is the whole
+  migration: `GRANT SELECT, INSERT, UPDATE, DELETE ON public.x TO idenzy_app;`
+  **Name the table; do not grant by looping over `pg_class`.** `0001` grants in three
+  shapes and the narrow two are the point: `audit_events` and its partitions,
+  `usage_charges` and `usage_periods` are append-only; six tables hold no `DELETE`; and
+  `project_purges` is granted nothing at all, because only a SECURITY DEFINER function
+  writes it. A loop hands all four verbs to everything and quietly undoes each of those —
+  which is how the audit trail was writable for twenty-nine migrations.
+- **Default privileges outrank your migration's intent, and once did.** The defaults grant
+  `SELECT, INSERT` and deliberately stop there. They used to grant all four, and because
+  `audit_events` is partitioned, every partition was created holding all four the moment it
+  came into existence: `DELETE FROM audit_events` was refused and
+  `DELETE FROM audit_events_2026_09` was not. A default privilege cannot be narrowed per
+  table — only revoked afterwards by somebody who remembered — so the verbs a table might
+  need to withhold are kept out of the default and granted by name instead. If you add a
+  table that must refuse a privilege, revoke it explicitly and assert the *absence* in a
+  test: the grants test only checks that privileges are present, so it cannot see this
+  class of bug.
 - **There are two tenant scopes, not one.** `projectId` scopes a project's data and
   `orgId` scopes the organisation's — the team, the wallet, the cards, the invoices
   (ADR-0011). They were two RLS keys, and a repository built on the wrong base read nothing
@@ -93,7 +105,7 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
 - **`CREATE OR REPLACE FUNCTION` cannot change a return type.** Adding an output column to
   `resolve_project_by_host` or `resolve_project_by_key_hash` means `DROP` then `CREATE`, and
   privileges do **not** survive the drop, so the `REVOKE ... FROM PUBLIC` and `GRANT EXECUTE
-  ... TO idenzy_app` from migration 0002 must be repeated in the same migration. Forgetting
+  ... TO idenzy_app` that `0001` pairs with it must be repeated in the same migration. Forgetting
   them fails in one way only: the function looks healthy, `idenzy_app` loses its only
   Host-to-project lookup, and every request answers `unknown_project`.
 - **Throwing inside `uow.run` rolls back what the transaction already did.** That is usually
@@ -123,10 +135,10 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
    question with `orgId` and `orgScope()` (ADR-0011) — an organisation is not a project.
    **There is no policy underneath any more** (PROJECT.md 4.10), so a query that forgets
    its scope is answered rather than refused.
-5. If it is a *new* table, add the grant block in a `pnpm db:custom` migration. The `DO`
-   block is dynamic and covers every table, so it needs no edit — but a table added after
-   it last ran has no grants until one runs again, which shows up as a permission error on
-   a route nobody has called yet. `tenancy.integration.test.ts` is what notices.
+5. If it is a *new* table, grant it by name in a `pnpm db:custom` migration. `0001` granted
+   the tables that existed when it ran; yours gets `SELECT` and `INSERT` from the default
+   privileges and nothing else, which shows up as a permission error on the first update or
+   delete, on a route nobody has called yet. `tenancy.integration.test.ts` is what notices.
 
 ## Adding an error
 

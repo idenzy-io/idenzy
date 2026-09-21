@@ -1,6 +1,6 @@
 {
-  "id": "06592246-678b-444b-ac27-b0b58b37f0be",
-  "prevId": "8680ff13-f784-447b-8183-ed848051b936",
+  "id": "7f8604be-e2e1-4b2a-a741-bcd89be8907f",
+  "prevId": "e340ff81-9d4b-4016-a312-ffc1cea1a982",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -93,25 +93,14 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "billing_settings_org_isolation": {
-          "name": "billing_settings_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "billing_settings_auto_top_up_ck": {
           "name": "billing_settings_auto_top_up_ck",
           "value": "not auto_top_up_enabled or auto_top_up_amount_cents >= auto_top_up_threshold_cents"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.credit_grants": {
       "name": "credit_grants",
@@ -208,18 +197,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "credit_grants_org_isolation": {
-          "name": "credit_grants_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "credit_grants_amount_ck": {
           "name": "credit_grants_amount_ck",
@@ -230,7 +208,7 @@
           "value": "remaining_cents between 0 and amount_cents"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.invoice_lines": {
       "name": "invoice_lines",
@@ -349,20 +327,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "invoice_lines_org_isolation": {
-          "name": "invoice_lines_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.invoices": {
       "name": "invoices",
@@ -557,20 +524,47 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "invoices_org_isolation": {
-          "name": "invoices_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.org_debts": {
+      "name": "org_debts",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "debt_cents": {
+          "name": "debt_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "checkConstraints": {},
-      "isRLSEnabled": true
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "org_debts_not_negative": {
+          "name": "org_debts_not_negative",
+          "value": "debt_cents >= 0"
+        }
+      },
+      "isRLSEnabled": false
     },
     "public.payment_methods": {
       "name": "payment_methods",
@@ -703,25 +697,14 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "payment_methods_org_isolation": {
-          "name": "payment_methods_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "payment_methods_expiry_month_ck": {
           "name": "payment_methods_expiry_month_ck",
           "value": "expiry_month between 1 and 12"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.payment_provider_events": {
       "name": "payment_provider_events",
@@ -915,6 +898,13 @@
           "notNull": true,
           "default": "now()"
         },
+        "settled_debt_cents": {
+          "name": "settled_debt_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "settled_at": {
           "name": "settled_at",
           "type": "timestamp with time zone",
@@ -969,25 +959,196 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "top_ups_org_isolation": {
-          "name": "top_ups_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "top_ups_amount_ck": {
           "name": "top_ups_amount_ck",
           "value": "amount_cents > 0"
+        },
+        "top_ups_settled_debt_ck": {
+          "name": "top_ups_settled_debt_ck",
+          "value": "settled_debt_cents between 0 and amount_cents"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
+    },
+    "public.usage_billing_state": {
+      "name": "usage_billing_state",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period": {
+          "name": "period",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "billed_mau": {
+          "name": "billed_mau",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "billed_cents": {
+          "name": "billed_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "usage_billing_state_org_id_period_pk": {
+          "name": "usage_billing_state_org_id_period_pk",
+          "columns": [
+            "org_id",
+            "period"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "usage_billing_state_not_negative": {
+          "name": "usage_billing_state_not_negative",
+          "value": "billed_mau >= 0 and billed_cents >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.usage_charges": {
+      "name": "usage_charges",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period": {
+          "name": "period",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item": {
+          "name": "item",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "charged_cents": {
+          "name": "charged_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_credit_cents": {
+          "name": "from_credit_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "to_debt_cents": {
+          "name": "to_debt_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "usage_charges_org_period_idx": {
+          "name": "usage_charges_org_period_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "period",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "usage_charges_org_recent_idx": {
+          "name": "usage_charges_org_recent_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "usage_charges_covered": {
+          "name": "usage_charges_covered",
+          "value": "from_credit_cents + to_debt_cents = charged_cents and charged_cents >= 0"
+        }
+      },
+      "isRLSEnabled": false
     },
     "public.auth_codes": {
       "name": "auth_codes",
@@ -1090,6 +1251,19 @@
         }
       },
       "foreignKeys": {
+        "auth_codes_project_id_projects_id_fk": {
+          "name": "auth_codes_project_id_projects_id_fk",
+          "tableFrom": "auth_codes",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "auth_codes_user_id_users_id_fk": {
           "name": "auth_codes_user_id_users_id_fk",
           "tableFrom": "auth_codes",
@@ -1106,20 +1280,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "auth_codes_tenant_isolation": {
-          "name": "auth_codes_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.email_change_requests": {
       "name": "email_change_requests",
@@ -1248,6 +1411,19 @@
         }
       },
       "foreignKeys": {
+        "email_change_requests_project_id_projects_id_fk": {
+          "name": "email_change_requests_project_id_projects_id_fk",
+          "tableFrom": "email_change_requests",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "email_change_requests_user_id_users_id_fk": {
           "name": "email_change_requests_user_id_users_id_fk",
           "tableFrom": "email_change_requests",
@@ -1264,20 +1440,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "email_change_requests_tenant_isolation": {
-          "name": "email_change_requests_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.magic_link_tokens": {
       "name": "magic_link_tokens",
@@ -1357,23 +1522,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "magic_link_tokens_tenant_isolation": {
-          "name": "magic_link_tokens_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "magic_link_tokens_project_id_projects_id_fk": {
+          "name": "magic_link_tokens_project_id_projects_id_fk",
+          "tableFrom": "magic_link_tokens",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.oauth_flows": {
       "name": "oauth_flows",
@@ -1492,23 +1660,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "oauth_flows_tenant_isolation": {
-          "name": "oauth_flows_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "oauth_flows_project_id_projects_id_fk": {
+          "name": "oauth_flows_project_id_projects_id_fk",
+          "tableFrom": "oauth_flows",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.otp_challenges": {
       "name": "otp_challenges",
@@ -1622,23 +1793,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "otp_challenges_tenant_isolation": {
-          "name": "otp_challenges_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "otp_challenges_project_id_projects_id_fk": {
+          "name": "otp_challenges_project_id_projects_id_fk",
+          "tableFrom": "otp_challenges",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.verification_tokens": {
       "name": "verification_tokens",
@@ -1755,6 +1929,19 @@
         }
       },
       "foreignKeys": {
+        "verification_tokens_project_id_projects_id_fk": {
+          "name": "verification_tokens_project_id_projects_id_fk",
+          "tableFrom": "verification_tokens",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "verification_tokens_user_id_users_id_fk": {
           "name": "verification_tokens_user_id_users_id_fk",
           "tableFrom": "verification_tokens",
@@ -1771,20 +1958,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "verification_tokens_tenant_isolation": {
-          "name": "verification_tokens_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.webauthn_challenges": {
       "name": "webauthn_challenges",
@@ -1874,6 +2050,19 @@
         }
       },
       "foreignKeys": {
+        "webauthn_challenges_project_id_projects_id_fk": {
+          "name": "webauthn_challenges_project_id_projects_id_fk",
+          "tableFrom": "webauthn_challenges",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "webauthn_challenges_user_id_users_id_fk": {
           "name": "webauthn_challenges_user_id_users_id_fk",
           "tableFrom": "webauthn_challenges",
@@ -1890,20 +2079,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "webauthn_challenges_tenant_isolation": {
-          "name": "webauthn_challenges_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.claim_templates": {
       "name": "claim_templates",
@@ -1944,7 +2122,21 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "claim_templates_project_id_projects_id_fk": {
+          "name": "claim_templates_project_id_projects_id_fk",
+          "tableFrom": "claim_templates",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
       "compositePrimaryKeys": {
         "claim_templates_project_id_pk": {
           "name": "claim_templates_project_id_pk",
@@ -1954,20 +2146,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "claim_templates_tenant_isolation": {
-          "name": "claim_templates_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.audit_events": {
       "name": "audit_events",
@@ -2048,6 +2229,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "outbox_seq": {
+          "name": "outbox_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2119,25 +2306,35 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "audit_events_outbox_seq_key": {
+          "name": "audit_events_outbox_seq_key",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "outbox_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "audit_events_tenant_isolation": {
-          "name": "audit_events_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = current_setting('app.project_id', true)::uuid",
-          "withCheck": "project_id = current_setting('app.project_id', true)::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.data_subject_requests": {
       "name": "data_subject_requests",
@@ -2181,6 +2378,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "deadline_rule": {
+          "name": "deadline_rule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'gdpr'"
         },
         "due_at": {
           "name": "due_at",
@@ -2245,23 +2449,77 @@
           "concurrently": false
         }
       },
+      "foreignKeys": {
+        "data_subject_requests_project_id_projects_id_fk": {
+          "name": "data_subject_requests_project_id_projects_id_fk",
+          "tableFrom": "data_subject_requests",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.project_purges": {
+      "name": "project_purges",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "audit_rows_deleted": {
+          "name": "audit_rows_deleted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purged_by": {
+          "name": "purged_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purged_at": {
+          "name": "purged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "data_subject_requests_tenant_isolation": {
-          "name": "data_subject_requests_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.relay_offsets": {
       "name": "relay_offsets",
@@ -2273,9 +2531,9 @@
           "primaryKey": true,
           "notNull": true
         },
-        "position": {
-          "name": "position",
-          "type": "timestamp with time zone",
+        "position_seq": {
+          "name": "position_seq",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
@@ -2353,25 +2611,49 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "retention_policies_project_subject_key": {
+          "name": "retention_policies_project_subject_key",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "retention_policies_project_id_projects_id_fk": {
+          "name": "retention_policies_project_id_projects_id_fk",
+          "tableFrom": "retention_policies",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "retention_policies_tenant_isolation": {
-          "name": "retention_policies_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.staff_access_grants": {
       "name": "staff_access_grants",
@@ -2432,142 +2714,6 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.orgs": {
-      "name": "orgs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cell_id": {
-          "name": "cell_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "billing_customer_id": {
-          "name": "billing_customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "orgs_cell_id_region_cells_id_fk": {
-          "name": "orgs_cell_id_region_cells_id_fk",
-          "tableFrom": "orgs",
-          "columnsFrom": [
-            "cell_id"
-          ],
-          "tableTo": "region_cells",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "orgs_org_isolation": {
-          "name": "orgs_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "public.region_cells": {
-      "name": "region_cells",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "jurisdiction": {
-          "name": "jurisdiction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "endpoint": {
-          "name": "endpoint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kms_key_ring": {
-          "name": "kms_key_ring",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "region_cells_code_unique": {
-          "name": "region_cells_code_unique",
-          "columns": [
-            "code"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2679,6 +2825,19 @@
         }
       },
       "foreignKeys": {
+        "identities_project_id_projects_id_fk": {
+          "name": "identities_project_id_projects_id_fk",
+          "tableFrom": "identities",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "identities_user_id_users_id_fk": {
           "name": "identities_user_id_users_id_fk",
           "tableFrom": "identities",
@@ -2695,20 +2854,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "identities_tenant_isolation": {
-          "name": "identities_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.users": {
       "name": "users",
@@ -2889,23 +3037,378 @@
           "concurrently": false
         }
       },
+      "foreignKeys": {
+        "users_project_id_projects_id_fk": {
+          "name": "users_project_id_projects_id_fk",
+          "tableFrom": "users",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_delivery_stats": {
+      "name": "email_delivery_stats",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent": {
+          "name": "sent",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "delivered": {
+          "name": "delivered",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "bounced_hard": {
+          "name": "bounced_hard",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "bounced_soft": {
+          "name": "bounced_soft",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "complained": {
+          "name": "complained",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "rejected": {
+          "name": "rejected",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "email_delivery_stats_day_idx": {
+          "name": "email_delivery_stats_day_idx",
+          "columns": [
+            {
+              "expression": "day",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "email_delivery_stats_project_id_projects_id_fk": {
+          "name": "email_delivery_stats_project_id_projects_id_fk",
+          "tableFrom": "email_delivery_stats",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "email_delivery_stats_project_id_day_pk": {
+          "name": "email_delivery_stats_project_id_day_pk",
+          "columns": [
+            "project_id",
+            "day"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_provider_events": {
+      "name": "email_provider_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_event_id": {
+          "name": "provider_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bounce_type": {
+          "name": "bounce_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bounce_sub_type": {
+          "name": "bounce_sub_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "email_provider_events_provider_event_key": {
+          "name": "email_provider_events_provider_event_key",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "email_provider_events_unprocessed_idx": {
+          "name": "email_provider_events_unprocessed_idx",
+          "columns": [
+            {
+              "expression": "received_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "processed_at is null",
+          "concurrently": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "users_tenant_isolation": {
-          "name": "users_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_sending_holds": {
+      "name": "email_sending_holds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bounce_rate_ppm": {
+          "name": "bounce_rate_ppm",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "complaint_rate_ppm": {
+          "name": "complaint_rate_ppm",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "observed_sends": {
+          "name": "observed_sends",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "released_by": {
+          "name": "released_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "released_reason": {
+          "name": "released_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
+      "indexes": {
+        "email_sending_holds_open_key": {
+          "name": "email_sending_holds_open_key",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "released_at is null",
+          "concurrently": false
+        },
+        "email_sending_holds_project_opened_idx": {
+          "name": "email_sending_holds_project_opened_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "opened_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "email_sending_holds_project_id_projects_id_fk": {
+          "name": "email_sending_holds_project_id_projects_id_fk",
+          "tableFrom": "email_sending_holds",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.email_templates": {
       "name": "email_templates",
@@ -3017,23 +3520,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "email_templates_tenant_isolation": {
-          "name": "email_templates_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "email_templates_project_id_projects_id_fk": {
+          "name": "email_templates_project_id_projects_id_fk",
+          "tableFrom": "email_templates",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.outbox": {
       "name": "outbox",
@@ -3083,6 +3589,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nextval('outbox_seq')"
         }
       },
       "indexes": {
@@ -3106,25 +3619,49 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "outbox_topic_seq_idx": {
+          "name": "outbox_topic_seq_idx",
+          "columns": [
+            {
+              "expression": "topic",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "outbox_project_id_projects_id_fk": {
+          "name": "outbox_project_id_projects_id_fk",
+          "tableFrom": "outbox",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "outbox_tenant_isolation": {
-          "name": "outbox_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.sms_policies": {
       "name": "sms_policies",
@@ -3207,7 +3744,21 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "sms_policies_project_id_projects_id_fk": {
+          "name": "sms_policies_project_id_projects_id_fk",
+          "tableFrom": "sms_policies",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
       "compositePrimaryKeys": {
         "sms_policies_project_id_pk": {
           "name": "sms_policies_project_id_pk",
@@ -3217,20 +3768,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "sms_policies_tenant_isolation": {
-          "name": "sms_policies_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.suppressions": {
       "name": "suppressions",
@@ -3304,23 +3844,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "suppressions_tenant_isolation": {
-          "name": "suppressions_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "suppressions_project_id_projects_id_fk": {
+          "name": "suppressions_project_id_projects_id_fk",
+          "tableFrom": "suppressions",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.webhook_deliveries": {
       "name": "webhook_deliveries",
@@ -3351,30 +3894,64 @@
           "primaryKey": false,
           "notNull": true
         },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
         "payload": {
           "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
-        },
-        "status_code": {
-          "name": "status_code",
-          "type": "integer",
-          "primaryKey": false,
           "notNull": false
         },
-        "attempts": {
-          "name": "attempts",
+        "attempt_count": {
+          "name": "attempt_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "attempt_log": {
+          "name": "attempt_log",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "delivered_at": {
           "name": "delivered_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "test": {
+          "name": "test",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -3393,15 +3970,71 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "webhook_deliveries_due_idx": {
+          "name": "webhook_deliveries_due_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"webhook_deliveries\".\"next_attempt_at\" is not null",
+          "concurrently": false
+        },
+        "webhook_deliveries_webhook_sequence_key": {
+          "name": "webhook_deliveries_webhook_sequence_key",
+          "columns": [
+            {
+              "expression": "webhook_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
       "foreignKeys": {
+        "webhook_deliveries_project_id_projects_id_fk": {
+          "name": "webhook_deliveries_project_id_projects_id_fk",
+          "tableFrom": "webhook_deliveries",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "webhook_deliveries_webhook_id_webhooks_id_fk": {
           "name": "webhook_deliveries_webhook_id_webhooks_id_fk",
           "tableFrom": "webhook_deliveries",
@@ -3418,20 +4051,108 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "webhook_deliveries_tenant_isolation": {
-          "name": "webhook_deliveries_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.webhook_endpoint_stats": {
+      "name": "webhook_endpoint_stats",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "webhook_id": {
+          "name": "webhook_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delivered": {
+          "name": "delivered",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failed": {
+          "name": "failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_delivered_at": {
+          "name": "last_delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_failed_at": {
+          "name": "last_failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
+      "indexes": {},
+      "foreignKeys": {
+        "webhook_endpoint_stats_project_id_projects_id_fk": {
+          "name": "webhook_endpoint_stats_project_id_projects_id_fk",
+          "tableFrom": "webhook_endpoint_stats",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "webhook_endpoint_stats_webhook_id_webhooks_id_fk": {
+          "name": "webhook_endpoint_stats_webhook_id_webhooks_id_fk",
+          "tableFrom": "webhook_endpoint_stats",
+          "columnsFrom": [
+            "webhook_id"
+          ],
+          "tableTo": "webhooks",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "webhook_endpoint_stats_webhook_id_day_pk": {
+          "name": "webhook_endpoint_stats_webhook_id_day_pk",
+          "columns": [
+            "webhook_id",
+            "day"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.webhooks": {
       "name": "webhooks",
@@ -3456,11 +4177,36 @@
           "primaryKey": false,
           "notNull": true
         },
-        "secret_hash": {
-          "name": "secret_hash",
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "secret_ciphertext": {
+          "name": "secret_ciphertext",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "previous_secret_ciphertext": {
+          "name": "previous_secret_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "previous_secret_until": {
+          "name": "previous_secret_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rolled_at": {
+          "name": "rolled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "events": {
           "name": "events",
@@ -3469,12 +4215,44 @@
           "notNull": true,
           "default": "'{}'"
         },
+        "all_events": {
+          "name": "all_events",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "enabled": {
           "name": "enabled",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": true
+          "default": false
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disabled_reason": {
+          "name": "disabled_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disabled_by": {
+          "name": "disabled_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consecutive_failures": {
+          "name": "consecutive_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -3482,14 +4260,27 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
-        "webhooks_project_idx": {
-          "name": "webhooks_project_idx",
+        "webhooks_project_enabled_idx": {
+          "name": "webhooks_project_enabled_idx",
           "columns": [
             {
               "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "enabled",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3501,23 +4292,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "webhooks_tenant_isolation": {
-          "name": "webhooks_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "webhooks_project_id_projects_id_fk": {
+          "name": "webhooks_project_id_projects_id_fk",
+          "tableFrom": "webhooks",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.mfa_challenges": {
       "name": "mfa_challenges",
@@ -3606,6 +4400,19 @@
         }
       },
       "foreignKeys": {
+        "mfa_challenges_project_id_projects_id_fk": {
+          "name": "mfa_challenges_project_id_projects_id_fk",
+          "tableFrom": "mfa_challenges",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "mfa_challenges_user_id_users_id_fk": {
           "name": "mfa_challenges_user_id_users_id_fk",
           "tableFrom": "mfa_challenges",
@@ -3635,20 +4442,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "mfa_challenges_tenant_isolation": {
-          "name": "mfa_challenges_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.mfa_factors": {
       "name": "mfa_factors",
@@ -3770,6 +4566,19 @@
         }
       },
       "foreignKeys": {
+        "mfa_factors_project_id_projects_id_fk": {
+          "name": "mfa_factors_project_id_projects_id_fk",
+          "tableFrom": "mfa_factors",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "mfa_factors_user_id_users_id_fk": {
           "name": "mfa_factors_user_id_users_id_fk",
           "tableFrom": "mfa_factors",
@@ -3786,20 +4595,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "mfa_factors_tenant_isolation": {
-          "name": "mfa_factors_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.mfa_recovery_codes": {
       "name": "mfa_recovery_codes",
@@ -3889,6 +4687,19 @@
         }
       },
       "foreignKeys": {
+        "mfa_recovery_codes_project_id_projects_id_fk": {
+          "name": "mfa_recovery_codes_project_id_projects_id_fk",
+          "tableFrom": "mfa_recovery_codes",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "mfa_recovery_codes_user_id_users_id_fk": {
           "name": "mfa_recovery_codes_user_id_users_id_fk",
           "tableFrom": "mfa_recovery_codes",
@@ -3905,20 +4716,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "mfa_recovery_codes_tenant_isolation": {
-          "name": "mfa_recovery_codes_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.webauthn_credentials": {
       "name": "webauthn_credentials",
@@ -4048,6 +4848,19 @@
         }
       },
       "foreignKeys": {
+        "webauthn_credentials_project_id_projects_id_fk": {
+          "name": "webauthn_credentials_project_id_projects_id_fk",
+          "tableFrom": "webauthn_credentials",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "webauthn_credentials_user_id_users_id_fk": {
           "name": "webauthn_credentials_user_id_users_id_fk",
           "tableFrom": "webauthn_credentials",
@@ -4064,20 +4877,60 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "webauthn_credentials_tenant_isolation": {
-          "name": "webauthn_credentials_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.onboarding_responses": {
+      "name": "onboarding_responses",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "submitted_by": {
+          "name": "submitted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "use_case": {
+          "name": "use_case",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "heard_from": {
+          "name": "heard_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "onboarding_responses_org_id_pk": {
+          "name": "onboarding_responses_org_id_pk",
+          "columns": [
+            "org_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.org_invitations": {
       "name": "org_invitations",
@@ -4196,20 +5049,9 @@
           "nullsNotDistinct": false
         }
       },
-      "policies": {
-        "org_invitations_org_isolation": {
-          "name": "org_invitations_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.org_members": {
       "name": "org_members",
@@ -4317,20 +5159,9 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "org_members_org_isolation": {
-          "name": "org_members_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.org_security_settings": {
       "name": "org_security_settings",
@@ -4374,20 +5205,48 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "org_security_settings_org_isolation": {
-          "name": "org_security_settings_org_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "org_id = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "org_id = nullif(current_setting('app.org_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.orgs": {
+      "name": "orgs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "billing_customer_id": {
+          "name": "billing_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.api_keys": {
       "name": "api_keys",
@@ -4483,23 +5342,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "api_keys_tenant_isolation": {
-          "name": "api_keys_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "api_keys_project_id_projects_id_fk": {
+          "name": "api_keys_project_id_projects_id_fk",
+          "tableFrom": "api_keys",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.oauth_providers": {
       "name": "oauth_providers",
@@ -4595,23 +5457,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "oauth_providers_tenant_isolation": {
-          "name": "oauth_providers_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "oauth_providers_project_id_projects_id_fk": {
+          "name": "oauth_providers_project_id_projects_id_fk",
+          "tableFrom": "oauth_providers",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.project_domains": {
       "name": "project_domains",
@@ -4656,6 +5521,12 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4696,23 +5567,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "project_domains_tenant_isolation": {
-          "name": "project_domains_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "project_domains_project_id_projects_id_fk": {
+          "name": "project_domains_project_id_projects_id_fk",
+          "tableFrom": "project_domains",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.project_origins": {
       "name": "project_origins",
@@ -4768,23 +5642,170 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "project_origins_tenant_isolation": {
-          "name": "project_origins_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "project_origins_project_id_projects_id_fk": {
+          "name": "project_origins_project_id_projects_id_fk",
+          "tableFrom": "project_origins",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
+    },
+    "public.project_signing_keys": {
+      "name": "project_signing_keys",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kid": {
+          "name": "kid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "algorithm": {
+          "name": "algorithm",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ES256'"
+        },
+        "public_jwk": {
+          "name": "public_jwk",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "private_key_wrapped": {
+          "name": "private_key_wrapped",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "project_signing_keys_kid_key": {
+          "name": "project_signing_keys_kid_key",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "project_signing_keys_primary_key": {
+          "name": "project_signing_keys_primary_key",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "is_primary",
+          "concurrently": false
+        },
+        "project_signing_keys_live_idx": {
+          "name": "project_signing_keys_live_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "retired_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "project_signing_keys_project_id_projects_id_fk": {
+          "name": "project_signing_keys_project_id_projects_id_fk",
+          "tableFrom": "project_signing_keys",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     },
     "public.projects": {
       "name": "projects",
@@ -4806,12 +5827,6 @@
         "name": {
           "name": "name",
           "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cell_id": {
-          "name": "cell_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -4886,37 +5901,13 @@
           ],
           "onUpdate": "no action",
           "onDelete": "no action"
-        },
-        "projects_cell_id_region_cells_id_fk": {
-          "name": "projects_cell_id_region_cells_id_fk",
-          "tableFrom": "projects",
-          "columnsFrom": [
-            "cell_id"
-          ],
-          "tableTo": "region_cells",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "projects_tenant_isolation": {
-          "name": "projects_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.redirect_uris": {
       "name": "redirect_uris",
@@ -4984,23 +5975,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "redirect_uris_tenant_isolation": {
-          "name": "redirect_uris_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "redirect_uris_project_id_projects_id_fk": {
+          "name": "redirect_uris_project_id_projects_id_fk",
+          "tableFrom": "redirect_uris",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.webauthn_relying_parties": {
       "name": "webauthn_relying_parties",
@@ -5063,23 +6057,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "webauthn_relying_parties_tenant_isolation": {
-          "name": "webauthn_relying_parties_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "webauthn_relying_parties_project_id_projects_id_fk": {
+          "name": "webauthn_relying_parties_project_id_projects_id_fk",
+          "tableFrom": "webauthn_relying_parties",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.idempotency_keys": {
       "name": "idempotency_keys",
@@ -5153,23 +6150,26 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "idempotency_keys_tenant_isolation": {
-          "name": "idempotency_keys_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
+      "foreignKeys": {
+        "idempotency_keys_project_id_projects_id_fk": {
+          "name": "idempotency_keys_project_id_projects_id_fk",
+          "tableFrom": "idempotency_keys",
+          "columnsFrom": [
+            "project_id"
           ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.refresh_tokens": {
       "name": "refresh_tokens",
@@ -5292,6 +6292,19 @@
         }
       },
       "foreignKeys": {
+        "refresh_tokens_project_id_projects_id_fk": {
+          "name": "refresh_tokens_project_id_projects_id_fk",
+          "tableFrom": "refresh_tokens",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "refresh_tokens_session_id_sessions_id_fk": {
           "name": "refresh_tokens_session_id_sessions_id_fk",
           "tableFrom": "refresh_tokens",
@@ -5308,20 +6321,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "refresh_tokens_tenant_isolation": {
-          "name": "refresh_tokens_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.sessions": {
       "name": "sessions",
@@ -5461,6 +6463,19 @@
         }
       },
       "foreignKeys": {
+        "sessions_project_id_projects_id_fk": {
+          "name": "sessions_project_id_projects_id_fk",
+          "tableFrom": "sessions",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "sessions_user_id_users_id_fk": {
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
@@ -5477,20 +6492,74 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "sessions_tenant_isolation": {
-          "name": "sessions_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.project_spend_state": {
+      "name": "project_spend_state",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spendable": {
+          "name": "spendable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stale_after": {
+          "name": "stale_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
         }
       },
+      "indexes": {},
+      "foreignKeys": {
+        "project_spend_state_project_id_projects_id_fk": {
+          "name": "project_spend_state_project_id_projects_id_fk",
+          "tableFrom": "project_spend_state",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_spend_state_project_id_pk": {
+          "name": "project_spend_state_project_id_pk",
+          "columns": [
+            "project_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.usage_daily": {
       "name": "usage_daily",
@@ -5511,6 +6580,18 @@
         "mau_hll": {
           "name": "mau_hll",
           "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mau": {
+          "name": "mau",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mau_to_date": {
+          "name": "mau_to_date",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -5560,7 +6641,21 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "usage_daily_project_id_projects_id_fk": {
+          "name": "usage_daily_project_id_projects_id_fk",
+          "tableFrom": "usage_daily",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
       "compositePrimaryKeys": {
         "usage_daily_project_id_day_pk": {
           "name": "usage_daily_project_id_day_pk",
@@ -5571,20 +6666,220 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "usage_daily_tenant_isolation": {
-          "name": "usage_daily_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "idenzy_app"
-          ],
-          "using": "project_id = nullif(current_setting('app.project_id', true), '')::uuid",
-          "withCheck": "project_id = nullif(current_setting('app.project_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.usage_hourly": {
+      "name": "usage_hourly",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hour": {
+          "name": "hour",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mau_to_date": {
+          "name": "mau_to_date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "emails_sent": {
+          "name": "emails_sent",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sms_sent": {
+          "name": "sms_sent",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sms_verified": {
+          "name": "sms_verified",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sms_cost": {
+          "name": "sms_cost",
+          "type": "numeric(12, 6)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
+      "indexes": {
+        "usage_hourly_hour_idx": {
+          "name": "usage_hourly_hour_idx",
+          "columns": [
+            {
+              "expression": "hour",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "usage_hourly_project_id_projects_id_fk": {
+          "name": "usage_hourly_project_id_projects_id_fk",
+          "tableFrom": "usage_hourly",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "usage_hourly_project_id_hour_pk": {
+          "name": "usage_hourly_project_id_hour_pk",
+          "columns": [
+            "project_id",
+            "hour"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
+    },
+    "public.usage_periods": {
+      "name": "usage_periods",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period": {
+          "name": "period",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active_users": {
+          "name": "active_users",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emails_sent": {
+          "name": "emails_sent",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sms_sent": {
+          "name": "sms_sent",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sms_verified": {
+          "name": "sms_verified",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sms_cost": {
+          "name": "sms_cost",
+          "type": "numeric(12, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "usage_periods_period_idx": {
+          "name": "usage_periods_period_idx",
+          "columns": [
+            {
+              "expression": "period",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "usage_periods_project_id_projects_id_fk": {
+          "name": "usage_periods_project_id_projects_id_fk",
+          "tableFrom": "usage_periods",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "tableTo": "projects",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "usage_periods_project_id_period_pk": {
+          "name": "usage_periods_project_id_period_pk",
+          "columns": [
+            "project_id",
+            "period"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {},

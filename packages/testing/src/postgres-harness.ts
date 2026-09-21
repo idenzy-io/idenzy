@@ -10,12 +10,12 @@ import pg from "pg";
  * A real Postgres for integration tests (PROJECT.md 7.4).
  *
  * Real, not mocked, because the properties worth testing here are database properties:
- * RLS isolation and the append-only privilege shape of audit_events. A mock would
- * assert that our code calls what we think it calls, which is precisely not the
- * question.
+ * the grant shapes, the append-only privilege shape of audit_events, and what the
+ * SECURITY DEFINER functions will and will not do. A mock would assert that our code
+ * calls what we think it calls, which is precisely not the question.
  *
  * The container is created exactly as production is: roles first (they are cluster-level
- * objects, and migration 0000 references idenzy_app), then migrations.
+ * objects, and `0001` grants to idenzy_app by name), then migrations.
  */
 export class PostgresHarness {
   private container: StartedPostgreSqlContainer | null = null;

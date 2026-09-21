@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Erasure } from "@idenzy/compliance/classification/vocabulary";
@@ -67,21 +67,21 @@ describe("a pass that fails", () => {
 describe("what a tombstone clears", () => {
   it("is exactly what classified() marks for erasure on users", async () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const sql = await readFile(
-      join(
-        here,
-        "..",
-        "..",
-        "..",
-        "packages",
-        "persistence",
-        "drizzle",
-        "0052_retention_sweep.sql",
-      ),
-      "utf8",
-    );
+    const drizzle = join(here, "..", "..", "..", "packages", "persistence", "drizzle");
 
-    const body = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION retention_tombstone_users"));
+    // Found rather than named. This test read `0052_retention_sweep.sql` by hand until the
+    // squash to one baseline deleted it, and a test that fails because a migration was
+    // renumbered says nothing about the classification it exists to check. The last file
+    // that defines the function is the one that wins at runtime, so it is the one to read.
+    const files = (await readdir(drizzle)).filter((name) => name.endsWith(".sql")).sort();
+    const marker = /CREATE (?:OR REPLACE )?FUNCTION (?:public\.)?retention_tombstone_users/;
+    let body = "";
+    for (const file of files) {
+      const sql = await readFile(join(drizzle, file), "utf8");
+      const at = sql.search(marker);
+      if (at !== -1) body = sql.slice(at);
+    }
+    expect(body, "retention_tombstone_users is defined by no migration").not.toBe("");
     const assignments = body.slice(body.indexOf("UPDATE users u SET"), body.indexOf("FROM doomed"));
     const cleared = new Set(
       [...assignments.matchAll(/^\s{4}(\w+) =/gm)].map((match) => match[1] ?? ""),

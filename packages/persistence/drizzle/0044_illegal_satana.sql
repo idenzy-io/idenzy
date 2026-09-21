@@ -1,1 +1,0 @@
-ALTER TABLE "webhook_deliveries" ADD COLUMN "occurred_at" timestamp with time zone DEFAULT now() NOT NULL;

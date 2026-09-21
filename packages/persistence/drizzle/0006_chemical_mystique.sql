@@ -1,1 +1,0 @@
-ALTER TABLE "magic_link_tokens" ADD COLUMN "target_encrypted" text NOT NULL;

@@ -1,1 +1,0 @@
-ALTER TABLE "otp_challenges" ADD COLUMN "target_encrypted" text NOT NULL;

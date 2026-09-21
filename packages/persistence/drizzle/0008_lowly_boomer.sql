@@ -1,1 +1,0 @@
-ALTER TABLE "oauth_flows" DROP COLUMN "code_verifier_hash";

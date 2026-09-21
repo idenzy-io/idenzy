@@ -1,1 +1,0 @@
-ALTER TABLE "project_domains" ADD COLUMN "checked_at" timestamp with time zone;

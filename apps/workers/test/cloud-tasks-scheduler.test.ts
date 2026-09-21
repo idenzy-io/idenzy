@@ -202,8 +202,6 @@ describe("reading the queue out of the environment", () => {
     IDENZY_ENV: "development",
     DATABASE_URL: "postgres://localhost/idenzy",
     VALKEY_URL: "redis://localhost:6379",
-    CELL_CODE: "eu1",
-    KMS_KEY_RING: "ring",
     ISSUER_BASE_URL: "https://auth.idenzy.io",
   };
 

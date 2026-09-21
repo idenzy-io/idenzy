@@ -86,7 +86,7 @@ export class WebhookSweeper {
   private async sweepProject(projectId: string, now: Date): Promise<number> {
     const tenant = new TenantContext(projectId, "webhook-sweeper", "system");
     try {
-      const claimed = await this.uow.run(tenant, (tx) =>
+      const claimed = await this.uow.transaction((tx) =>
         new WebhookDeliveryRepository(tx, tenant).claimDue(
           now,
           this.options.deliveriesPerProject ?? DEFAULT_DELIVERIES,
@@ -129,7 +129,7 @@ export class WebhookSweeper {
     for (const projectId of projects) {
       const tenant = new TenantContext(projectId, "webhook-sweeper", "system");
       try {
-        const cleared = await this.uow.run(tenant, (tx) =>
+        const cleared = await this.uow.transaction((tx) =>
           new WebhookRepository(tx, tenant).clearExpiredPreviousSecrets(now),
         );
         if (cleared > 0) {

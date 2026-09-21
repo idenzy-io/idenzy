@@ -4,15 +4,14 @@
  * notes/settings.md).
  *
  * Most of this screen is not settings, and that is the shape of the table rather than a gap
- * in the page. A project is the unit of tenancy, of key custody and of residency, and three
- * of the things somebody arrives expecting to edit are decisions taken once at creation:
- * the cell is immutable because moving a project is an audited migration and never an
- * `UPDATE`, the tier is the technical half of a signed agreement, and key custody is meant to
- * sit in KMS where nothing in a dashboard could reach it.
+ * in the page. A project is the unit of tenancy and of key custody, and the things somebody
+ * arrives expecting to edit are mostly decisions taken once at creation: the tier is the
+ * technical half of a signed agreement, and key custody is meant to sit in KMS where nothing
+ * in a dashboard could reach it.
  *
  * "Meant to" is load-bearing. The folded reference at the foot of this page used to assert ten
- * infrastructure facts and five were untrue of the code — keys in KMS, cross-cell access
- * refused, key administrators separated. They now render from `ControlCapability` declarations
+ * infrastructure facts and five were untrue of the code — keys in KMS, key administrators
+ * separated. They now render from `ControlCapability` declarations
  * that say what runs here, because a security reference a customer reads is the worst place to
  * describe a design in the present tense (notes/settings.md P1).
  *
@@ -45,7 +44,6 @@ import { ORG_KIND_LABELS, ORG_PROJECTS_NOTE, orgKindOf } from "~/utils/organisat
 import {
   AUDIT_RETENTION_ENFORCEMENT,
   type ControlCapability,
-  CROSS_CELL_REFUSAL,
   DELETE_EFFECTS,
   KEY_ADMIN_SEPARATION,
   KMS_SIGNING,
@@ -74,15 +72,6 @@ const users = useUsersStore();
 const sessions = useSessionsStore();
 const keys = useKeysStore();
 const audit = useAuditStore();
-const regions = useRegionsStore();
-
-// The cell registry, asked for once when the page opens. The region a project is pinned
-// to is read from the server rather than from a constant in this bundle, so a renamed or
-// drained cell cannot render as a plausible-looking place name.
-onMounted(() => {
-  void regions.load();
-});
-
 const now = useNow({ interval: 60_000 });
 
 const org = computed(() => projects.currentOrg);
@@ -90,7 +79,6 @@ const kind = computed(() => orgKindOf(members.forOrg(org.value.id).length));
 const siblings = computed(() => projects.projectsOf(org.value.id));
 
 const facts = computed(() => store.factsFor(projects.current.id, projects.current.name));
-const cell = computed(() => regions.byCode(facts.value.cellCode));
 const saved = computed(() => store.retentionFor(projects.current.id, facts.value.tier));
 
 /** What is in the project, for the dialog that ends it. */
@@ -147,26 +135,11 @@ const identity = computed<Fact[]>(() => [
     info: "What this project is metered and billed against. The plan and the wallet are the organisation's, so changing either changes it for every project under it.",
   },
   {
-    key: "region",
-    label: "Region",
-    value: cell.value?.label ?? "Not recorded",
-    note: cell.value?.jurisdiction ?? "",
-    info: "A cell is its own database, cache, key ring and compute. Moving a project between them is an explicit, audited migration and never an update, which is what lets this be described as residency rather than as a preference.",
-  },
-  {
-    key: "endpoint",
-    label: "API endpoint",
-    value: cell.value?.endpoint ?? "Not recorded",
-    mono: true,
-    copy: cell.value?.endpoint ?? "",
-    info: "The host your SDKs call, unless you have put a custom auth domain in front of it. A project in another cell answers on a different one.",
-  },
-  {
     key: "created",
     label: "Created",
     value: formatDate(facts.value.createdAt),
     note: formatDateTime(facts.value.createdAt),
-    info: "Everything about this project except its name and the retention ages was settled at that moment: the cell, the keys and the tier.",
+    info: "Everything about this project except its name and the retention ages was settled at that moment: the keys and the tier.",
   },
 ]);
 
@@ -189,7 +162,6 @@ function controlFact(key: string, label: string, control: ControlCapability): Fa
 
 const controls = computed<ControlCapability[]>(() => [
   AUDIT_RETENTION_ENFORCEMENT,
-  CROSS_CELL_REFUSAL,
   KMS_SIGNING,
   WRAPPED_DEK,
   KEY_ADMIN_SEPARATION,
@@ -230,14 +202,6 @@ const infrastructure = computed<Fact[]>(() => [
     value: "With your agreement",
     info: TIER_CHANGE_NOTE,
   },
-  controlFact("cross-cell", "Cross-cell access", CROSS_CELL_REFUSAL),
-  {
-    key: "control-plane",
-    label: "Global control plane",
-    value: "None of your users",
-    info: "Billing identifiers and a pointer to this cell, and nothing of your users. That is the property an EU-resident claim rests on: there is no end-user personal data outside the cell to be resident anywhere else. It does hold your own team's — an organisation name, an invitation address — which is why this says none of your users rather than no personal data.",
-    dot: "bg-success",
-  },
   controlFact("signing-key", "Token signing key", KMS_SIGNING),
   controlFact("dek", "Data encryption key", WRAPPED_DEK),
   controlFact("key-admins", "Who may use a key", KEY_ADMIN_SEPARATION),
@@ -257,7 +221,6 @@ const referenceOpen = ref(false);
 const referenceSummary = computed(() => {
   const inEffect = controls.value.filter((control) => control.running).length;
   return [
-    cell.value?.jurisdiction ?? "Unknown",
     `${TIER_LABELS[facts.value.tier]} tier`,
     `audit kept ${auditYears.value}`,
     `${inEffect} of ${controls.value.length} controls in effect`,
@@ -379,7 +342,7 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
         <StatusBadge :detail="TIER_LABELS[facts.tier]" :label="planLabel" tone="neutral" />
       </template>
       <template #description>
-        The boundary for tenancy, keys and residency. The label is the part you own.
+        The boundary for tenancy and keys. The label is the part you own.
       </template>
       <template #actions>
         <v-btn
@@ -414,7 +377,7 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
     </PageHeader>
 
     <!-- Three across rather than six: the settings rail takes 228px off the content, and
-         six tracks put an endpoint and a region label into an ellipsis each. -->
+         six tracks put a long value into an ellipsis. -->
     <FactGrid :columns="3" :facts="identity" label="Project facts" />
 
     <!-- A rename, a delete or a retention age the API refused. -->
@@ -573,9 +536,9 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
       :description="TIER_NOTES[facts.tier]"
       :summary="referenceSummary"
       foldable
-      title="Residency, tier and keys"
+      title="Tier and key custody"
     >
-      <FactGrid :columns="4" :facts="infrastructure" label="Residency and key custody" />
+      <FactGrid :columns="4" :facts="infrastructure" label="Tier and key custody" />
 
       <InfoNote>
         The architecture is built for SOC 2, ISO 27001, GDPR and HIPAA. No certification is

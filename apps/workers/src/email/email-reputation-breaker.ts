@@ -144,7 +144,7 @@ export class EmailReputationBreaker {
   private async judge(projectId: string, since: string): Promise<boolean> {
     const tenant = new TenantContext(projectId, "email-reputation", "system");
 
-    return await this.uow.run(tenant, async (tx) => {
+    return await this.uow.transaction(async (tx) => {
       const window = await new EmailDeliveryStatsRepository(tx, tenant).since(since);
       const verdict = this.verdict(window);
       const holds = new EmailSendingHoldRepository(tx, tenant);

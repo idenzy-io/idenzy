@@ -61,7 +61,7 @@ interface Repos {
 
 function inTenant<T>(work: (repos: Repos) => Promise<T>): Promise<T> {
   const tenant = new TenantContext(PROJECT, "req_test", "system");
-  return uow.run(tenant, (tx) =>
+  return uow.transaction((tx) =>
     work({
       usage: new UsageRepository(tx, tenant),
       hourly: new UsageHourlyRepository(tx, tenant),
@@ -80,18 +80,14 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
 
-  await harness.owner.query(
-    `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
-  );
   const { rows } = await harness.owner.query<{ id: string }>(
-    `INSERT INTO orgs (id, name, cell_id)
-     VALUES (gen_random_uuid(), 'Acme', (SELECT id FROM region_cells LIMIT 1)) RETURNING id`,
+    `INSERT INTO orgs (id, name)
+     VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
   await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
-    `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
-     VALUES ($1, $2, 'p', (SELECT id FROM region_cells LIMIT 1), 'k')`,
+    `INSERT INTO projects (id, org_id, name, kms_key_name)
+     VALUES ($1, $2, 'p', 'k')`,
     [PROJECT, rows[0]?.id],
   );
 }, 180_000);

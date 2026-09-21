@@ -94,7 +94,7 @@ export class WebhookDispatcher {
     lane: DeliveryLane,
   ): Promise<DispatchResult | null> {
     const tenant = this.tenantFor(projectId);
-    const endpoint = await this.uow.run(tenant, (tx) =>
+    const endpoint = await this.uow.transaction((tx) =>
       new WebhookRepository(tx, tenant).findById(delivery.webhookId),
     );
     // The cascade means this should not happen; a delivery whose endpoint went in the same moment
@@ -234,7 +234,7 @@ export class WebhookDispatcher {
     delivery: WebhookDeliveryRow,
     outcome: AttemptOutcome,
   ): Promise<void> {
-    await this.uow.run(tenant, (tx) =>
+    await this.uow.transaction((tx) =>
       new WebhookDeliveryRepository(tx, tenant).recordAttempt(delivery.id, outcome),
     );
   }
@@ -266,7 +266,7 @@ export class WebhookDispatcher {
     const day = statsDay(when);
 
     if (status === "delivered") {
-      await this.uow.run(tenant, async (tx) => {
+      await this.uow.transaction(async (tx) => {
         await new WebhookRepository(tx, tenant).clearFailures(endpoint.id, when);
         await new WebhookStatsRepository(tx, tenant).add(endpoint.id, day, {
           delivered: 1,
@@ -278,7 +278,7 @@ export class WebhookDispatcher {
     }
 
     const terminal = status === "failed";
-    return await this.uow.run(tenant, async (tx) => {
+    return await this.uow.transaction(async (tx) => {
       const endpoints = new WebhookRepository(tx, tenant);
       await new WebhookStatsRepository(tx, tenant).add(endpoint.id, day, {
         attempts: 1,

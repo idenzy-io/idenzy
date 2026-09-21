@@ -254,7 +254,7 @@ export function integrationStateOf(polledAt: string | null, now: Date): Integrat
  */
 
 /** Which configuration the host came from, so the panel can say rather than imply. */
-export type EndpointSource = "auth-domain" | "deployment" | "region";
+export type EndpointSource = "auth-domain" | "deployment";
 
 export interface SnapshotEndpoint {
   /** The origin a verifier is pointed at, with no trailing slash. */
@@ -269,14 +269,16 @@ export interface EndpointInputs {
   authDomain: string | null;
   /** `authApiBaseUrl` from runtime configuration, empty on a deployment that sets none. */
   deploymentBase: string;
-  /** The API host of the region cell the project lives in, which General also shows. */
-  regionEndpoint: string;
 }
 
 /**
  * The host in precedence order: the project's own auth domain, then whatever this
- * deployment is configured with, then the region cell it lives in. A custom domain wins
- * because a project that has one is being called on it.
+ * deployment is configured with. A custom domain wins because a project that has one is
+ * being called on it.
+ *
+ * There used to be a third fallback — the endpoint of the region cell the project lived in
+ * — which is gone with the cells. A deployment that configures no base has nothing left to
+ * fall back to, which is the honest answer: it would have been guessing before.
  */
 export function snapshotEndpoint(inputs: EndpointInputs): SnapshotEndpoint {
   if (inputs.authDomain !== null && inputs.authDomain !== "") {
@@ -286,17 +288,10 @@ export function snapshotEndpoint(inputs: EndpointInputs): SnapshotEndpoint {
       note: "This project's verified auth domain.",
     };
   }
-  if (inputs.deploymentBase !== "") {
-    return {
-      issuerUrl: inputs.deploymentBase.replace(/\/+$/, ""),
-      source: "deployment",
-      note: "The API host this dashboard is configured against.",
-    };
-  }
   return {
-    issuerUrl: inputs.regionEndpoint.replace(/\/+$/, ""),
-    source: "region",
-    note: "The API host of the region this project lives in.",
+    issuerUrl: inputs.deploymentBase.replace(/\/+$/, ""),
+    source: "deployment",
+    note: "The API host this dashboard is configured against.",
   };
 }
 

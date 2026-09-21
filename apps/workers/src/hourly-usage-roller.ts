@@ -97,7 +97,7 @@ export class HourlyUsageRoller {
   private async rollOne(projectId: string, hour: Date): Promise<boolean> {
     const tenant = new TenantContext(projectId, "usage-hourly", "system");
     try {
-      return await this.uow.run(tenant, async (tx) => {
+      return await this.uow.transaction(async (tx) => {
         const hourly = new UsageHourlyRepository(tx, tenant);
         if ((await hourly.at(hour)) !== null) return false;
 

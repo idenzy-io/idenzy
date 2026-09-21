@@ -1,6 +1,6 @@
 /**
  * What a project decides about passkeys, which is one thing: the relying party. The
- * rest of WebAuthn is fixed by the server on purpose (apps/auth-api/src/passkey), and the
+ * rest of WebAuthn is fixed by the server on purpose (apps/api/src/passkey), and the
  * facts are listed here so the screen states them rather than hiding them.
  *
  * The relying party matters more than any switch. The RP ID decides which credentials an

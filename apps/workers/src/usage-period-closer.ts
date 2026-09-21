@@ -107,7 +107,7 @@ export class UsagePeriodCloser {
   private async closeOne(projectId: string, period: string, now: Date): Promise<boolean> {
     const tenant = new TenantContext(projectId, "usage-close", "system");
     try {
-      return await this.uow.run(tenant, async (tx) => {
+      return await this.uow.transaction(async (tx) => {
         const usage = new UsageRepository(tx, tenant);
         const days = await usage.dailyBetween(period, monthEnd(period));
         if (days.length === 0) return false;

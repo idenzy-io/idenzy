@@ -11,61 +11,14 @@
  * already has projects, and asking them to make another would be asking them to solve a
  * problem they do not have.
  *
- * The split between the two steps is the whole design. The first asks the two things that
- * are written into rows nobody can change afterwards; the second asks what helps us build
- * the right thing next and is skippable in one click. Mixing them would make every field
- * look equally binding, and the region is the one on the page that genuinely is.
+ * The split between the two steps is the whole design. The first asks the one thing the
+ * project cannot be created without; the second asks what helps us build the right thing
+ * next and is skippable in one click. Mixing them would make an optional survey look like
+ * part of creating the project.
  *
  * `POST /v1/onboarding` takes the lot in one call and creates the organisation, its owner
  * and its first project in one transaction, so leaving halfway writes nothing at all.
  */
-
-/*
- * Where a project lives.
- */
-
-/**
- * The region question, in the words it is actually asked in.
- *
- * Not "which country are you in", which is a question about the customer, but "where
- * should this data live", which is a question about the project. A company in one country
- * routinely wants residency in another, and a form that conflated the two would answer
- * neither: the billing country is the organisation's and is asked for on the invoice.
- */
-export const REGION_QUESTION = "Where should this project's data live?";
-
-/**
- * Said out loud on the step rather than left for somebody to discover afterwards.
- *
- * A cell is pinned at creation and moving a project between them is an audited migration,
- * not a setting (PROJECT.md 4.13.5). That is the one irreversible thing on this page, and
- * a choice somebody cannot undo has to be a choice they knew they were making.
- */
-export const REGION_WARNING =
-  "Pinned when the project is created. Moving a project to another region later is a migration we run for you, not a setting you can change.";
-
-/**
- * The flag beside each region, keyed on `region_cells.code`.
- *
- * Presentation and nothing more: the server sends a code and a jurisdiction, and a flag is
- * what makes a list of two place names scannable at a glance rather than read word by
- * word. Written out in full so `@nuxt/icon` bundles them — `provider: "none"` and
- * `fallbackToApi: false` mean a name assembled at runtime draws nothing at all.
- *
- * A cell we have not styled falls back to a globe rather than to an empty slot. Cells are
- * added by provisioning and not by this bundle, so a new one must render before anybody
- * gets round to picking its flag.
- */
-const REGION_FLAGS: Record<string, string> = {
-  us1: "circle-flags:us",
-  eu1: "circle-flags:eu",
-};
-
-export const REGION_FLAG_FALLBACK = "material-symbols:public";
-
-export function regionFlag(code: string): string {
-  return REGION_FLAGS[code] ?? REGION_FLAG_FALLBACK;
-}
 
 /*
  * What the answers have to satisfy.
@@ -98,8 +51,8 @@ export function projectNameIssue(value: string): ProjectNameIssue | null {
 }
 
 /** Everything the first step needs before it can hand over to the second. */
-export function requiredAnswered(projectName: string, region: string | null): boolean {
-  return projectNameIssue(projectName) === null && region !== null;
+export function requiredAnswered(projectName: string): boolean {
+  return projectNameIssue(projectName) === null;
 }
 
 /*
@@ -206,8 +159,6 @@ export const OPTIONAL_NOTE =
 
 export interface OnboardingDraft {
   projectName: string;
-  /** `region_cells.code`. Null until somebody chooses, because a default is not a choice. */
-  region: string | null;
   organisationName: string;
   useCase: string;
   heardFrom: string;
@@ -215,7 +166,6 @@ export interface OnboardingDraft {
 
 export const EMPTY_DRAFT: OnboardingDraft = {
   projectName: "",
-  region: null,
   organisationName: "",
   useCase: "",
   heardFrom: "",
@@ -223,7 +173,6 @@ export const EMPTY_DRAFT: OnboardingDraft = {
 
 export interface OnboardingSubmission {
   projectName: string;
-  region: string;
   organisationName?: string;
   useCase?: string;
   heardFrom?: string;
@@ -238,7 +187,7 @@ export interface OnboardingSubmission {
  */
 export function toSubmission(draft: OnboardingDraft): OnboardingSubmission | null {
   const projectName = draft.projectName.trim();
-  if (draft.region === null || projectNameIssue(projectName) !== null) return null;
+  if (projectNameIssue(projectName) !== null) return null;
 
   const optional = (value: string) => {
     const trimmed = value.trim();
@@ -247,7 +196,6 @@ export function toSubmission(draft: OnboardingDraft): OnboardingSubmission | nul
 
   return {
     projectName,
-    region: draft.region,
     ...(optional(draft.organisationName) === undefined
       ? {}
       : { organisationName: optional(draft.organisationName) }),

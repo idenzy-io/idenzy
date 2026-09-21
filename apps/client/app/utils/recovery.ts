@@ -3,7 +3,7 @@
  * the screen does over them.
  *
  * A set is ten single-use codes, issued when the account confirms its first second factor
- * and deleted when the last one is removed (`apps/auth-api/src/mfa`). Almost nothing here
+ * and deleted when the last one is removed (`apps/api/src/mfa`). Almost nothing here
  * is configurable, and that is the point: the length is what makes a SHA-256 digest
  * defensible, the count is what makes losing a few survivable, and both are decisions the
  * server has already taken. The screen states them rather than offering them, in the same

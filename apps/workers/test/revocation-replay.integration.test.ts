@@ -35,18 +35,14 @@ beforeAll(async () => {
   await harness.start();
   reader = new RevocationEventReader(harness.db);
 
-  await harness.owner.query(
-    `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
-  );
   const { rows } = await harness.owner.query<{ id: string }>(
-    `INSERT INTO orgs (id, name, cell_id)
-     VALUES (gen_random_uuid(), 'Acme', (SELECT id FROM region_cells LIMIT 1)) RETURNING id`,
+    `INSERT INTO orgs (id, name)
+     VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
   for (const projectId of [ONE, TWO]) {
     await harness.owner.query(
-      `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
-       VALUES ($1, $2, 'p', (SELECT id FROM region_cells LIMIT 1), 'k')`,
+      `INSERT INTO projects (id, org_id, name, kms_key_name)
+       VALUES ($1, $2, 'p', 'k')`,
       [projectId, rows[0]?.id],
     );
   }

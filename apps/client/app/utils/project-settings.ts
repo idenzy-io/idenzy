@@ -7,17 +7,15 @@ import {
 } from "@idenzy/protocol/enums/compliance";
 
 /**
- * What a project *is*, as the `projects` row and the cell registry define it, and the very
+ * What a project *is*, as the `projects` row defines it, and the very
  * short list of it a customer gets to change (PROJECT.md 4.13).
  *
  * Most of this screen is not settings, and that is the honest shape of the table rather
- * than a gap. A project is the unit of tenancy, of key custody and of residency: its cell
- * is immutable after creation because moving it is an audited migration and never an
- * `UPDATE` — enforced by a trigger since 0063, not merely intended — its tier is a contract
- * before it is a column, and its key custody is meant to sit in KMS where nothing in a dashboard
- * could reach it. Three of the five fields a customer might expect to edit are decisions taken
- * once, and a screen that offered them as controls would be offering to do something the
- * platform refuses.
+ * than a gap. A project is the unit of tenancy and of key custody: its tier is a contract
+ * before it is a column, and its key custody is meant to sit in KMS where nothing in a
+ * dashboard could reach it. Several of the fields a customer might expect to edit are
+ * decisions taken once, and a screen that offered them as controls would be offering to do
+ * something the platform refuses.
  *
  * Which of those are *deployed* rather than designed is the business of the `ControlCapability`
  * declarations below, because this screen spent a while asserting several that were not.
@@ -86,8 +84,8 @@ export const TIER_CHANGE_NOTE =
  * What this deployment can actually do.
  *
  * The same shape `data-requests.ts` uses for the same reason. This screen used to assert ten
- * infrastructure facts in the present tense — keys in KMS, cross-cell access refused, key
- * administrators separated from key users — and five of them were not true of the code. A
+ * infrastructure facts in the present tense — keys in KMS, key administrators separated
+ * from key users — and five of them were not true of the code. A
  * customer reading a security reference is the last person who should be shown a design as
  * though it were a deployment, and `notes/settings.md` P1 says so directly: show actual
  * environment capability, and do not use a fixture tier as a compliance attestation.
@@ -116,7 +114,7 @@ export const WRAPPED_DEK: ControlCapability = {
   running: false,
   value: "Not wrapped yet",
   reason:
-    "The design is a per-project data encryption key wrapped by this cell's key ring, so a key compromise reaches one tenant rather than one region. Nothing populates it: the column exists and is empty, and field-level encryption currently runs under a key derived from the cell code in development only.",
+    "The design is a per-project data encryption key wrapped by a KMS key ring, so a key compromise reaches one tenant rather than one region. Nothing populates it: the column exists and is empty, and field-level encryption currently runs under a key derived from the cell code in development only.",
 };
 
 export const KEY_ADMIN_SEPARATION: ControlCapability = {
@@ -124,13 +122,6 @@ export const KEY_ADMIN_SEPARATION: ControlCapability = {
   value: "Not yet separated",
   reason:
     "The design is that key administrators are not key users and every signing call is recorded in the cloud audit log. There is no KMS here yet, so there are no key administrators to separate and no such log.",
-};
-
-export const CROSS_CELL_REFUSAL: ControlCapability = {
-  running: true,
-  value: "Refused",
-  reason:
-    "A request resolving to a project in another cell is refused rather than proxied, so data cannot transit a jurisdiction by accident. Your keys carry the region they belong to, so one presented to the wrong endpoint is refused on the key itself before anything is looked up — and the refusal names the endpoint to use instead. A request arriving on a custom domain carries no key, so that one is checked once the project is known.",
 };
 
 export const AUDIT_RETENTION_ENFORCEMENT: ControlCapability = {
@@ -156,7 +147,6 @@ export interface ProjectFacts {
   /** The public id, `prj_` and an opaque body, as every API surface names a project. */
   id: string;
   name: string;
-  cellCode: string;
   tier: ProjectTier;
   plan: string;
   createdAt: string;

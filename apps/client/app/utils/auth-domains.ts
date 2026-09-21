@@ -1,6 +1,6 @@
 /**
  * A custom auth domain: the host a customer's own pages send their API calls to
- * (PROJECT.md 4.3, `apps/auth-api/src/session/session-transport.guard.ts`).
+ * (PROJECT.md 4.3, `apps/api/src/session/session-transport.guard.ts`).
  *
  * The sentence this whole screen exists to say is that an auth domain is an API host and
  * never a page. `auth.customer.com` is a CNAME at our load balancer that a customer's

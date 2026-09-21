@@ -130,7 +130,7 @@ export class EmailEventEndpoint {
     const digests = suppresses(event) ? event.recipients.map(suppressionDigest) : [];
     const reason = this.reasonFor(event);
 
-    await this.uow.run(tenant, async (tx) => {
+    await this.uow.transaction(async (tx) => {
       await new EmailDeliveryStatsRepository(tx, tenant).increment(day, counter);
       // One transaction with the counter, so a crash cannot leave a bounce counted and the
       // address still sendable — which is the half of the pair that costs us reputation.

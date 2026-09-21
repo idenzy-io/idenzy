@@ -27,8 +27,8 @@
  * Two numbers belong to other screens and are read from them: the retention comes from the
  * access-token lifetime that `/tokens/lifetimes` owns, and whether anything is polling is
  * the same observation that screen makes. The endpoint in every sample is derived from this
- * project's own auth domain, this deployment, or its region cell, in that order, because a
- * sample naming a host the project does not answer on fails at the first request.
+ * project's own auth domain or this deployment, in that order, because a sample naming a
+ * host the project does not answer on fails at the first request.
  */
 import type { SegmentedOption } from "~/components/SegmentedControl.vue";
 import type { BadgeTone } from "~/components/StatusBadge.vue";
@@ -77,14 +77,6 @@ const lifetimes = useLifetimesStore();
 const sessions = useSessionsStore();
 const authDomains = useAuthDomainsStore();
 const settings = useProjectSettingsStore();
-const regions = useRegionsStore();
-
-// The cell registry, asked for once when the page opens. The region a project is pinned
-// to is read from the server rather than from a constant in this bundle, so a renamed or
-// drained cell cannot render as a plausible-looking place name.
-onMounted(() => {
-  void regions.load();
-});
 
 const { copy } = useClipboard({ legacy: true });
 
@@ -199,7 +191,6 @@ const endpoint = computed(() => {
   return snapshotEndpoint({
     authDomain: domain,
     deploymentBase: authApiBase.value,
-    regionEndpoint: regions.byCode(facts.cellCode)?.endpoint ?? "",
   });
 });
 

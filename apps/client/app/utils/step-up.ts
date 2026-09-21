@@ -2,7 +2,7 @@
  * What a project decides about additional verification, and what it cannot.
  *
  * A step-up is proving a factor again inside a session that already exists, in front of
- * something sensitive (PROJECT.md 4.5, apps/auth-api/src/mfa/step-up-service.ts). The
+ * something sensitive (PROJECT.md 4.5, apps/api/src/mfa/step-up-service.ts). The
  * decidable part is one number: how recent a proof has to be. Everything else is the
  * server's, and most of what this file holds exists so the screen can state two things
  * the number alone hides.

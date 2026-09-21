@@ -2,7 +2,7 @@
  * The social providers this deployment implements, and what a project decides about
  * each one.
  *
- * Eighteen adapters are registered in `apps/auth-api/src/oauth/oauth.module.ts` and the
+ * Eighteen adapters are registered in `apps/api/src/oauth/oauth.module.ts` and the
  * nineteenth name in the enum, generic OIDC, is the enterprise connector and is not
  * built yet. What a project supplies is small: the mode, its own client credentials, the
  * scopes it wants instead of the defaults, and the handful of extras a provider needs to

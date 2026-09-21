@@ -241,8 +241,7 @@ describe("integrationStateOf", () => {
 describe("snapshotEndpoint", () => {
   const inputs = {
     authDomain: null,
-    deploymentBase: "",
-    regionEndpoint: "https://eu.idenzy.io",
+    deploymentBase: "https://api.idenzy.io",
   };
 
   it("prefers the project's own auth domain, because that is what it is called on", () => {
@@ -251,12 +250,11 @@ describe("snapshotEndpoint", () => {
     expect(endpoint.source).toBe("auth-domain");
   });
 
-  it("falls to the deployment's host and then to the region cell", () => {
+  it("falls to the deployment's own host when the project has no auth domain", () => {
     expect(snapshotEndpoint({ ...inputs, deploymentBase: "https://api.local" }).issuerUrl).toBe(
       "https://api.local",
     );
-    expect(snapshotEndpoint(inputs).issuerUrl).toBe("https://eu.idenzy.io");
-    expect(snapshotEndpoint(inputs).source).toBe("region");
+    expect(snapshotEndpoint(inputs).source).toBe("deployment");
   });
 
   it("never leaves a trailing slash on a host a path is appended to", () => {

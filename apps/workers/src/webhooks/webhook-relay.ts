@@ -151,7 +151,7 @@ export class WebhookRelay {
     if (type === undefined) return [];
     const tenant = new TenantContext(event.projectId, "webhook-relay", "system");
 
-    return await this.uow.run(tenant, async (tx) => {
+    return await this.uow.transaction(async (tx) => {
       const endpoints = await new WebhookRepository(tx, tenant).enabledFor(type);
       if (endpoints.length === 0) return [];
       // Projected once, here, rather than at send time: the row holds what a customer will see, so
@@ -206,7 +206,7 @@ export class WebhookRelay {
   private async attempt(projectId: string, row: WebhookDeliveryRow): Promise<void> {
     const tenant = new TenantContext(projectId, "webhook-relay", "system");
     try {
-      const claimed = await this.uow.run(tenant, (tx) =>
+      const claimed = await this.uow.transaction((tx) =>
         new WebhookDeliveryRepository(tx, tenant).claim(row.id, this.clock.now()),
       );
       if (claimed === null) return;

@@ -3,7 +3,7 @@
  *
  * The decidable part is two things: whether the method exists on the project, and the
  * name an app files the account under. Everything about the code is fixed by the server
- * on purpose (apps/auth-api/src/mfa, packages/crypto/src/mfa/totp.ts) and is listed
+ * on purpose (apps/api/src/mfa, packages/crypto/src/mfa/totp.ts) and is listed
  * here so the screen states it: RFC 6238 at its defaults, because several authenticator
  * apps ignore the parameters in the URI and anything else enrols a factor whose codes we
  * would refuse.

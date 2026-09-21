@@ -88,13 +88,13 @@ function sketchOf(count: number, offset = 0): HyperLogLog {
 
 async function seedUsage(projectId: string, day: string, sketch: HyperLogLog): Promise<void> {
   const tenant = new TenantContext(projectId, "req_test", "system");
-  await uow.run(tenant, (tx) =>
+  await uow.transaction((tx) =>
     new UsageRepository(tx, tenant).mergeActiveUsers(new Date(`${day}T06:00:00Z`), sketch),
   );
 }
 
 async function grant(cents: number): Promise<void> {
-  await uow.runForOrg(context, (tx) =>
+  await uow.transaction((tx) =>
     new CreditGrantRepository(tx, context).grant({
       kind: CreditKind.Purchased,
       amountCents: cents,
@@ -107,7 +107,7 @@ async function grant(cents: number): Promise<void> {
 }
 
 async function wallet(): Promise<{ credit: number; debt: number; billed: number }> {
-  return await uow.runForOrg(context, async (tx) => ({
+  return await uow.transaction(async (tx) => ({
     credit: await new CreditGrantRepository(tx, context).balanceCents(clock.now()),
     debt: await new UsageDrawdownRepository(tx, context).debtCents(),
     billed: (await new UsageDrawdownRepository(tx, context).stateFor(PERIOD)).billedCents,
@@ -132,14 +132,10 @@ beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
 
-  await harness.owner.query(
-    `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
-  );
   for (const org of [ORG, OTHER_ORG]) {
     await harness.owner.query(
-      `INSERT INTO orgs (id, name, cell_id)
-       VALUES ($1, 'Acme', (SELECT id FROM region_cells LIMIT 1))`,
+      `INSERT INTO orgs (id, name)
+       VALUES ($1, 'Acme')`,
       [org],
     );
   }
@@ -150,8 +146,8 @@ beforeAll(async () => {
   ] as const) {
     await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
-      `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
-       VALUES ($1, $2, 'p', (SELECT id FROM region_cells LIMIT 1), 'k')`,
+      `INSERT INTO projects (id, org_id, name, kms_key_name)
+       VALUES ($1, $2, 'p', 'k')`,
       [project, org],
     );
   }
@@ -235,7 +231,7 @@ describe("charging a month's active users", () => {
     await grant(100_000);
     const expected = 0;
 
-    const first = uow.runForOrg(context, async (tx) => {
+    const first = uow.transaction(async (tx) => {
       const repository = new UsageDrawdownRepository(tx, context);
       const state = await repository.stateFor(PERIOD);
       expect(state.billedMau).toBe(expected);
@@ -243,7 +239,7 @@ describe("charging a month's active users", () => {
       return await repository.advance(PERIOD, expected, 60_000, 3000);
     });
 
-    const second = uow.runForOrg(context, async (tx) => {
+    const second = uow.transaction(async (tx) => {
       const repository = new UsageDrawdownRepository(tx, context);
       const state = await repository.stateFor(PERIOD);
       expect(state.billedMau).toBe(expected);
@@ -256,7 +252,7 @@ describe("charging a month's active users", () => {
     expect(results.filter(Boolean)).toHaveLength(1);
 
     // And the watermark is one of the two, never a mixture of both.
-    const settled = await uow.runForOrg(context, (tx) =>
+    const settled = await uow.transaction((tx) =>
       new UsageDrawdownRepository(tx, context).stateFor(PERIOD),
     );
     expect([3000, 3300]).toContain(settled.billedCents);
@@ -318,7 +314,7 @@ describe("publishing the spend gate into each cell", () => {
   });
 
   it("refuses in the cell once the debt passes the tolerance", async () => {
-    await uow.runForOrg(context, (tx) =>
+    await uow.transaction((tx) =>
       new UsageDrawdownRepository(tx, context).adjustDebt(TOLERANCE_FLOOR_CENTS + 100_000),
     );
     await drawdown().runOnce();
@@ -355,7 +351,7 @@ describe("when the credit runs out", () => {
     expect(after.credit).toBe(0);
     expect(after.debt).toBe(after.billed - 1000);
 
-    const charges = await uow.runForOrg(context, (tx) =>
+    const charges = await uow.transaction((tx) =>
       new UsageDrawdownRepository(tx, context).recentCharges(),
     );
     const charge = charges[0];
@@ -394,7 +390,7 @@ describe("keeping one organisation out of another's wallet", () => {
     expect(mine.credit).toBe(100_000);
 
     const theirs = new OrgContext(OTHER_ORG, "req_test", "system");
-    const theirState = await uow.runForOrg(theirs, (tx) =>
+    const theirState = await uow.transaction((tx) =>
       new UsageDrawdownRepository(tx, theirs).stateFor(PERIOD),
     );
     expect(theirState.billedCents).toBeGreaterThan(0);

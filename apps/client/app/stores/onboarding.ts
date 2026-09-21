@@ -15,21 +15,9 @@ import type { OnboardingResult } from "@idenzy/protocol/schemas/management";
 import type { OnboardingSubmission } from "~/utils/onboarding";
 import { managementMessage } from "~/utils/sign-in-errors";
 
-export interface OnboardingRegion {
-  /** `region_cells.code`, which is what the submission carries. */
-  code: string;
-  label: string;
-  jurisdiction: string;
-}
-
 export const useOnboardingStore = defineStore("onboarding", () => {
   const bootstrap = useBootstrapStore();
 
-  const registry = useRegionsStore();
-
-  /** The cells we actually run, named for the picker. Owned by the regions store. */
-  const regions = computed<OnboardingRegion[]>(() => registry.cells);
-  const loading = computed(() => registry.loading);
   const submitting = ref(false);
   /** The refusal the server gave, in the reader's words. Null while nothing was refused. */
   const refusal = ref<string | null>(null);
@@ -44,18 +32,6 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   const required = computed(
     () => bootstrap.status === "ready" && bootstrap.organisations.length === 0,
   );
-
-  /**
-   * Loads the cells the form may offer.
-   *
-   * A pass-through, so the picker keeps one call site while the registry keeps one copy. A
-   * refusal is surfaced here as well as there: this form cannot be completed without the list,
-   * so its failure is the form's failure and not a detail of somebody else's store.
-   */
-  async function loadRegions(): Promise<void> {
-    await registry.load();
-    if (registry.refusal !== null) refusal.value = registry.refusal;
-  }
 
   /**
    * Creates the organisation and its first project, and answers whether it worked.
@@ -87,5 +63,5 @@ export const useOnboardingStore = defineStore("onboarding", () => {
     }
   }
 
-  return { loading, submitting, refusal, regions, required, loadRegions, create };
+  return { submitting, refusal, required, create };
 });

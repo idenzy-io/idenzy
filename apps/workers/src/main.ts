@@ -90,7 +90,7 @@ async function bootstrap(): Promise<void> {
   const logger = createLogger({
     level: config.get("LOG_LEVEL"),
     service: "workers",
-    base: { cell: config.get("CELL_CODE"), env: config.get("IDENZY_ENV") },
+    base: { env: config.get("IDENZY_ENV") },
   });
   const clock = new SystemClock();
   const retentionSeconds = config.get("ACCESS_TOKEN_TTL_SECONDS") + SKEW_SECONDS;
@@ -288,7 +288,7 @@ async function bootstrap(): Promise<void> {
   const dispatcher = new WebhookDispatcher(
     uow,
     new Sha256WebhookSigner(),
-    new FieldEncryptor(developmentDataKey(config.get("CELL_CODE"))),
+    new FieldEncryptor(developmentDataKey(config.get("IDENZY_ENV"))),
     // Loopback over plain http is allowed here for the same reason cookie mode is: a developer
     // running their own receiver on localhost has no other way to try this, and a production
     // deployment calling loopback would be calling itself.

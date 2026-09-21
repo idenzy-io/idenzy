@@ -136,7 +136,7 @@ export class UsageDrawdown {
     const mau = await this.organisationMau(context, period);
     const priced = mauCents(mau);
 
-    return await this.uow.runForOrg(context, async (tx) => {
+    return await this.uow.transaction(async (tx) => {
       const drawdown = new UsageDrawdownRepository(tx, context);
       const state = await drawdown.stateFor(period);
       const owed = priced - state.billedCents;
@@ -191,7 +191,7 @@ export class UsageDrawdown {
   private async publishSpendState(orgId: string, now: Date): Promise<void> {
     const context = new OrgContext(orgId, "usage-drawdown", "system");
 
-    const decision = await this.uow.runForOrg(context, async (tx) => {
+    const decision = await this.uow.transaction(async (tx) => {
       const drawdown = new UsageDrawdownRepository(tx, context);
       const since = new Date(now.getTime() - TOLERANCE_WINDOW_DAYS * DAY_MS);
       return new SpendTolerance().decide({
@@ -201,14 +201,14 @@ export class UsageDrawdown {
       });
     });
 
-    const projects = await this.uow.runForOrg(context, (tx) =>
+    const projects = await this.uow.transaction((tx) =>
       new OrgProjectRepository(tx, context).list(),
     );
     const staleAfter = new Date(now.getTime() + (this.options.spendStateTtlMs ?? DEFAULT_TTL_MS));
 
     for (const project of projects) {
       const tenant = new TenantContext(project.id, "usage-drawdown", "system");
-      await this.uow.run(tenant, (tx) =>
+      await this.uow.transaction((tx) =>
         new ProjectSpendStateRepository(tx, tenant).publish({
           spendable: decision.spendable,
           reason: decision.reason,
@@ -233,14 +233,14 @@ export class UsageDrawdown {
    * serialises itself, not a Postgres `hll` type.
    */
   private async organisationMau(context: OrgContext, period: string): Promise<number> {
-    const projects = await this.uow.runForOrg(context, (tx) =>
+    const projects = await this.uow.transaction((tx) =>
       new OrgProjectRepository(tx, context).list(),
     );
 
     let total = 0;
     for (const project of projects) {
       const tenant = new TenantContext(project.id, "usage-drawdown", "system");
-      const days = await this.uow.run(tenant, (tx) =>
+      const days = await this.uow.transaction((tx) =>
         new UsageRepository(tx, tenant).dailyBetween(period, monthEnd(period)),
       );
       const running = HyperLogLog.empty();

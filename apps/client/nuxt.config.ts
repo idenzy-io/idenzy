@@ -59,16 +59,6 @@ export default defineNuxtConfig({
     apiUrl: "http://localhost:3001",
   },
 
-  /**
-   * Where the panel asks for its own data, as opposed to where it signs in.
-   *
-   * Its own key rather than part of the `idenzy` block above, because the SDK never talks
-   * to this service: `@idenzy/nuxt` owns that block and would have no use for this. Public
-   * by construction, like the other two — a URL is not a secret, and the credential that
-   * reaches it is a token the SDK mints per request.
-   */
-  runtimeConfig: { public: { managementApiUrl: "http://localhost:3002" } },
-
   modules: [
     "@idenzy/nuxt",
     "vuetify-nuxt-module",

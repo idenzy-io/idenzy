@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * The first screen of an account that owns nothing yet: name a project, say where it
- * lives, and optionally tell us what it is for.
+ * The first screen of an account that owns nothing yet: name a project, and optionally
+ * tell us what it is for.
  *
- * Two steps, and the split is the design rather than decoration. The first asks the two
- * things written into rows nobody can change afterwards — a project's name is editable,
- * its region is not — and the second asks what helps us build the right thing next. On one
- * page every field would look equally binding, and the region is the only one that is.
+ * Two steps, and the split is the design rather than decoration. The first asks the one
+ * thing the project cannot be created without; the second asks what helps us build the
+ * right thing next. On one page the optional survey would look like part of creating the
+ * project.
  *
  * Nothing is written until the last button. `POST /v1/onboarding` creates the
  * organisation, its owner and the project in one transaction, so somebody who leaves
@@ -27,9 +27,6 @@ import {
   PROJECT_NAME_ISSUE_LABELS,
   PROJECT_NAME_MAX,
   projectNameIssue,
-  REGION_QUESTION,
-  REGION_WARNING,
-  regionFlag,
   requiredAnswered,
   toSubmission,
   USE_CASE_MAX,
@@ -39,12 +36,6 @@ import {
 definePageMeta({ layout: "onboarding" });
 
 const store = useOnboardingStore();
-
-// The cells we actually run, asked for once when the page opens. A region offered from a
-// constant in this bundle could name a stack we are draining (notes/getting-started.md).
-onMounted(() => {
-  void store.loadRegions();
-});
 
 type StepId = "project" | "about";
 
@@ -79,16 +70,7 @@ const nameHelp = computed(
     "A label for this dashboard. Nobody signing in to your application ever sees it, and you can change it later.",
 );
 
-const canContinue = computed(() => requiredAnswered(draft.value.projectName, draft.value.region));
-
-const regionOptions = computed(() =>
-  store.regions.map((region) => ({
-    value: region.code,
-    label: region.label,
-    note: `Data for this project stays under ${region.jurisdiction} law.`,
-    icon: regionFlag(region.code),
-  })),
-);
+const canContinue = computed(() => requiredAnswered(draft.value.projectName));
 
 /** What the organisation will be called, said out loud before it is created. */
 const organisationName = computed(() => organisationNameFor(draft.value));
@@ -135,8 +117,7 @@ async function finish() {
 
     <v-divider />
 
-    <!-- The required half. Both answers are written into rows on submit, and only one of
-         them can be changed afterwards. -->
+    <!-- The required half: the one answer a project cannot be created without. -->
     <form v-if="step === 'project'" class="flex flex-col gap-7" @submit.prevent="advance">
       <div class="flex flex-col gap-2">
         <label class="text-xs font-medium opacity-70" for="project-name">Project name</label>
@@ -164,16 +145,6 @@ async function finish() {
         >
           {{ nameHelp }}
         </p>
-      </div>
-
-      <div class="flex flex-col gap-3">
-        <span class="text-xs font-medium opacity-70">{{ REGION_QUESTION }}</span>
-        <ChoiceList
-          v-model="draft.region"
-          :label="REGION_QUESTION"
-          :options="regionOptions"
-        />
-        <InfoNote icon="material-symbols:lock-outline" :text="REGION_WARNING" />
       </div>
 
       <div class="flex justify-end">

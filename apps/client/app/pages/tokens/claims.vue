@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Claim templates: what this project's access tokens carry beyond the claims we assemble
- * (PROJECT.md 4.2, apps/auth-api/src/claims), arranged the way `notes/tokens-claims.md`
+ * (PROJECT.md 4.2, apps/api/src/claims), arranged the way `notes/tokens-claims.md`
  * asks. An editor pane and the token it produces, side by side from the desktop
  * breakpoint and behind two tabs below it, because a template is abstract until it meets
  * a user and the place to be surprised by what a token says is here.

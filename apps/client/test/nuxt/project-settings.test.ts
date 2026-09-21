@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIT_RETENTION_ENFORCEMENT,
   type ControlCapability,
-  CROSS_CELL_REFUSAL,
   DELETE_EFFECTS,
   KEY_ADMIN_SEPARATION,
   KMS_SIGNING,
@@ -14,13 +13,12 @@ import {
  * The settings screen's compliance reference, which had no test and needed one.
  *
  * It asserted ten infrastructure facts in the present tense and five were untrue of the code:
- * keys in KMS, cross-cell access refused, key administrators separated from key users, a wrapped
- * per-project DEK, audit partitions dropped on a schedule. Nothing caught it because nothing
- * looked, which is the same reason the missing project-delete cascade survived.
+ * keys in KMS, key administrators separated from key users, a wrapped per-project DEK, audit
+ * partitions dropped on a schedule. Nothing caught it because nothing looked, which is the same
+ * reason the missing project-delete cascade survived.
  */
 const CONTROLS: Record<string, ControlCapability> = {
   AUDIT_RETENTION_ENFORCEMENT,
-  CROSS_CELL_REFUSAL,
   KMS_SIGNING,
   WRAPPED_DEK,
   KEY_ADMIN_SEPARATION,
@@ -40,10 +38,10 @@ describe("the controls this deployment declares", () => {
       .filter(([, control]) => control.running)
       .map(([name]) => name)
       .sort();
-    // CROSS_CELL_REFUSAL joined TENANT_ISOLATION when the guard learned to compare cells and a
-    // trigger made cell_id immutable. Each arrival is meant to fail this line, so that whoever
-    // lands the control also reads the sentence beside it.
-    expect(running).toEqual(["CROSS_CELL_REFUSAL", "TENANT_ISOLATION"]);
+    // CROSS_CELL_REFUSAL was here until the region cells were removed, and left with them.
+    // Each arrival is meant to fail this line, so that whoever lands the control also reads
+    // the sentence beside it.
+    expect(running).toEqual(["TENANT_ISOLATION"]);
   });
 
   it("gives every control a value short enough for a grid cell and a reason worth reading", () => {

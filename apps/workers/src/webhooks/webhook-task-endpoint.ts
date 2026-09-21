@@ -43,7 +43,7 @@ export class WebhookTaskEndpoint {
     const task = WebhookTaskBody.parse(body);
     const tenant = new TenantContext(task.projectId, "webhook-task", "system");
 
-    const claimed = await this.uow.run(tenant, (tx) =>
+    const claimed = await this.uow.transaction((tx) =>
       new WebhookDeliveryRepository(tx, tenant).claimIfDue(task.deliveryId, this.clock.now()),
     );
     if (claimed === null) {

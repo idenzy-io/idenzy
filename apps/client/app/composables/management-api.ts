@@ -1,3 +1,4 @@
+import { RUNTIME_CONFIG_KEY } from "@idenzy/nuxt/runtime/options";
 import { createFetch } from "@vueuse/core";
 import { refusalIn } from "~/utils/sign-in-errors";
 
@@ -15,10 +16,16 @@ import { refusalIn } from "~/utils/sign-in-errors";
  * that knows whether somebody is signed in.
  *
  * **The token and not the session cookie, and the reason is not preference.** The
- * `__Host-` cookies the auth API sets are locked to its own hostname: one written by
- * `auth.idenzy.io` is never sent to `api.idenzy.io`, by construction. A Bearer token is
- * the only credential that can cross, which is also why this service allows no credentials
- * in its CORS policy — there are none to allow.
+ * `__Host-` cookies the auth API sets are locked to the hostname that wrote them, so a
+ * cookie set on a customer's auth domain never reaches a management route. A Bearer token
+ * is the only credential that can, which is why the dashboard surface allows no
+ * credentials in its CORS policy — there are none to allow.
+ *
+ * **One host now.** The management API was its own deployment on its own port and this
+ * read `NUXT_PUBLIC_MANAGEMENT_API_URL`; the two services are one, so this reads the same
+ * base the SDK authenticates against. Keeping a second variable would have meant a
+ * deployment could point the two halves of the panel at different hosts, which is a
+ * misconfiguration with no symptom until a screen fails.
  */
 
 /**
@@ -39,11 +46,11 @@ export function useManagementApi() {
   const inContext = <T>(resolve: () => T): T => nuxt.vueApp.runWithContext(resolve);
 
   const idenzy = inContext(() => useIdenzy());
-  const configured = inContext(() => useRuntimeConfig().public.managementApiUrl);
-  const baseUrl =
-    typeof configured === "string" && configured.length > 0
-      ? configured.replace(/\/$/, "")
-      : "http://localhost:3002";
+  const configured = inContext(() => {
+    const block = useRuntimeConfig().public[RUNTIME_CONFIG_KEY] as { apiUrl?: string } | undefined;
+    return block?.apiUrl ?? "";
+  });
+  const baseUrl = configured.length > 0 ? configured.replace(/\/$/, "") : "http://localhost:3001";
 
   return createFetch({
     baseUrl,

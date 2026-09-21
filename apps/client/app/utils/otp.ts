@@ -4,7 +4,7 @@
  * The decidable part is per channel and small: whether the channel exists on the
  * project, whether a code may create an account, and for magic links the routes a click
  * may land on. Everything about the code itself is fixed by the server on purpose
- * (apps/auth-api/src/otp) and listed here so the screen states it rather than hiding it:
+ * (apps/api/src/otp) and listed here so the screen states it rather than hiding it:
  * six digits, five attempts, a lifetime set for the deployment, one live code per
  * address, a memory-hard hash at rest.
  *

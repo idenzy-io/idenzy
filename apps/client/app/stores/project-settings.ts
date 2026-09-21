@@ -7,14 +7,14 @@
  * cannot change, plus the retention ages, which are the only settings on the page.
  *
  * The facts come from the bootstrap rather than from a read of their own, and that is the
- * decision rather than a shortcut. `GET /v1/me` already answers with each project's region,
+ * decision rather than a shortcut. `GET /v1/me` already answers with each project's tier,
  * plan, compliance tier and creation date — the same four columns
  * `GET /v1/orgs/:orgId/projects/:projectId` reads — so a request here would fetch bytes the
  * panel is already holding, which is the bug `useSettingsDocumentStore` was written to fix one
  * screen over. The endpoint exists and is what a rename answers with; this screen simply has
  * no reason to ask it a second time.
  *
- * What has gone is the generator. `cellCode`, `tier`, `plan` and `createdAt` used to be seeded
+ * What has gone is the generator. `tier`, `plan` and `createdAt` used to be seeded
  * off a hash of the project id, so a project running in `us-east-1` could describe itself as
  * Europe and a free one as enterprise — a residency claim invented by a PRNG.
  *
@@ -63,7 +63,7 @@ export const useProjectSettingsStore = defineStore("project-settings", () => {
    *
    * The fallbacks are for the tick before the bootstrap answers and for nothing else — the
    * route guard holds every screen in the panel behind a loaded one — so they are empty rather
-   * than plausible. A blank region reads as "Not recorded" on the screen, which is true for
+   * than plausible. A blank value reads as "Not recorded" on the screen, which is true for
    * that tick; an invented one would not be.
    */
   function factsFor(projectId: string, name: string): ProjectFacts {
@@ -71,7 +71,6 @@ export const useProjectSettingsStore = defineStore("project-settings", () => {
     return {
       id: projectId,
       name,
-      cellCode: summary?.region ?? "",
       tier: projectTierOf(summary?.complianceTier),
       plan: summary?.plan ?? "",
       createdAt: summary?.createdAt ?? new Date(0).toISOString(),

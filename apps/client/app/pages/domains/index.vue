@@ -327,14 +327,10 @@ const GUIDES_URL = "https://idenzy.io/docs/domains/auth";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Domain guides
+          Domain Guides
         </v-btn>
-        <FancyButton :disabled="isBusy('add')" @click="openAdd()">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Add domain
-        </FancyButton>
       </template>
     </PageHeader>
 
@@ -478,7 +474,7 @@ const GUIDES_URL = "https://idenzy.io/docs/domains/auth";
           color="neutral"
           prepend-icon="material-symbols:refresh"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="reload()"
         >
           Try again
@@ -553,10 +549,16 @@ const GUIDES_URL = "https://idenzy.io/docs/domains/auth";
               <span class="font-mono text-ink/70">{{ SHARED_API_HOST }}</span> in header mode,
               so this is a choice rather than a setup step.
             </p>
-            <FancyButton class="mt-2" @click="openAdd()">
-              <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+            <v-btn
+              class="mt-2 text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:add"
+              size="small"
+              variant="text"
+              @click="openAdd()"
+            >
               Add domain
-            </FancyButton>
+            </v-btn>
           </div>
         </template>
       </RecordTable>

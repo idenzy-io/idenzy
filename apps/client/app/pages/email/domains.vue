@@ -255,14 +255,10 @@ const GUIDES_URL = "https://idenzy.io/docs/email";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Email guides
+          Email Guides
         </v-btn>
-        <FancyButton @click="addOpen = true">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Add domain
-        </FancyButton>
       </template>
     </PageHeader>
 
@@ -295,7 +291,7 @@ const GUIDES_URL = "https://idenzy.io/docs/email";
           color="neutral"
           prepend-icon="material-symbols:swap-horiz"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="askSender"
         >
           Change sender

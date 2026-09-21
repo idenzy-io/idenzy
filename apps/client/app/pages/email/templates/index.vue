@@ -9,12 +9,13 @@
  * an operator nothing about what their users receive. Every type is a row, and the row
  * says which copy a send would use.
  *
- * Which copy that is depends on the reader's language, so the reader's language is a
- * control. The renderer tries the project's whole fallback chain before any built-in of
- * ours, and moving that control shows it happening across every row at once: a project
- * with Turkish for one message and nothing for the rest sends their Turkish for that one
- * and their English, not our Turkish, for the others. That rule is easy to state and hard
- * to picture, which is why it is wired to a control instead of written in a paragraph.
+ * Which copy that is depends on the reader's language, and the catalogue answers for the
+ * default one. The renderer tries the project's whole fallback chain before any built-in
+ * of ours, so a project with Turkish for one message and nothing for the rest sends their
+ * Turkish for that one and their English, not our Turkish, for the others. The row says
+ * which language actually supplied its copy, which is where that rule shows; it was a
+ * picker in the header until asking the reader to pick a language before reading a
+ * catalogue turned out to be a question nobody arrived with.
  *
  * **Saved and sending are different states and the table says which.** A body is compiled
  * off the request path, and until that has happened the renderer reads the row as absent
@@ -59,25 +60,14 @@ const now = useNow({ interval: 30_000 });
 const expanded = reactive({ language: false, rules: false });
 
 /**
- * The language a preview is resolved for. Not a project setting: it is whatever the
- * caller's `Accept-Language` said on the request that triggered the mail, so this control
- * asks a question rather than changing anything. Named for what it does after the note's
- * finding that "Reader's language" was read as a setting somebody had chosen.
+ * The language a preview is resolved for. Not a project setting and not a choice made
+ * here: it is whatever the caller's `Accept-Language` said on the request that triggered
+ * the mail, and the default is the one language every project is answered in. It was a
+ * control in the header and is a constant now, because a picker on a catalogue asked the
+ * reader to set something before reading it, and the column it moved answers the same
+ * question row by row.
  */
-const reader = ref(DEFAULT_LOCALE);
-
-const readerOptions = computed(() => {
-  const held = new Set([
-    DEFAULT_LOCALE,
-    ...store.forProject(projects.current.id).map((row) => row.locale),
-  ]);
-  return [...held].sort((a, b) => a.localeCompare(b)).map((value) => ({ value, label: value }));
-});
-
-/* A language that was on the list and is not any more must not leave the control unset. */
-watch([readerOptions, () => projects.current.id], ([options]) => {
-  if (!options.some((option) => option.value === reader.value)) reader.value = DEFAULT_LOCALE;
-});
+const reader = DEFAULT_LOCALE;
 
 const expiresInSeconds = CODE.lifetimeSeconds;
 const expiresInLabel = humanizeSeconds(expiresInSeconds);
@@ -116,7 +106,7 @@ const rows = computed<TemplateRow[]>(() => {
     const sending = locales.filter(
       (locale) => store.find(projects.current.id, entry.type, locale)?.compiled === true,
     );
-    const resolution = resolve(reader.value, sending);
+    const resolution = resolve(reader, sending);
     const stored =
       resolution.source === "yours"
         ? store.find(projects.current.id, entry.type, resolution.locale)
@@ -268,8 +258,7 @@ watch([query, filterTab, () => projects.current.id], () => {
  * has to carry it.
  */
 function editHref(row: TemplateRow): string {
-  const locale =
-    row.locales.length > 0 ? row.from : (localeChain(reader.value)[0] ?? DEFAULT_LOCALE);
+  const locale = row.locales.length > 0 ? row.from : (localeChain(reader)[0] ?? DEFAULT_LOCALE);
   return `/email/templates/${row.type}?lang=${locale}`;
 }
 
@@ -319,7 +308,7 @@ function showTab(tab: string) {
 }
 
 /* What the language on the control actually resolves to, spelled out under the table. */
-const chain = computed(() => localeChain(reader.value));
+const chain = computed(() => localeChain(reader));
 
 const GUIDES = [
   {
@@ -358,16 +347,6 @@ const GUIDES = [
         message has copy behind it from the start, so this is a catalogue rather than a
         list of what you have written, and each row says whose words a reader actually
         gets.
-      </template>
-      <template #actions>
-        <div class="flex items-center gap-2">
-          <span class="text-xs whitespace-nowrap text-ink/55">Preview recipient language</span>
-          <SegmentedControl
-            v-model="reader"
-            :options="readerOptions"
-            label="Preview recipient language"
-          />
-        </div>
       </template>
     </PageHeader>
 
@@ -744,11 +723,16 @@ const GUIDES = [
 </template>
 
 <style scoped>
-/* A search box at the height of the control beside it, in the toolbar's small type and on
-   the small radius, so the row reads as one set. */
-.templates__search :deep(.v-field) {
-  --v-input-control-height: 32px;
+/* A search box at the height of the controls beside it, in the toolbar's small type and
+   on the small radius, so the row reads as one set. The same rule the users list carries,
+   because it is the same toolbar.
 
+   The height is the `comfortable` density's own 36px and is not pinned here. It was: a
+   32px `--v-input-control-height` on `.v-field` left the 36px control box the input root
+   sizes untouched and shrank only the field inside it, so the text rode low against a
+   border it no longer filled. The variable has to reach the input root to mean a height,
+   and theme.css is the only place that can set it there. */
+.templates__search :deep(.v-field) {
   border-radius: var(--idenzy-radius-small);
   font-size: 0.75rem;
 }
@@ -756,7 +740,6 @@ const GUIDES = [
 .templates__search :deep(.v-field__input),
 .templates__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .templates__search :deep(.v-field__prepend-inner > .v-icon),

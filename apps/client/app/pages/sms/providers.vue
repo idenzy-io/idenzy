@@ -325,9 +325,9 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          SMS guides
+          SMS Guides
         </v-btn>
       </template>
     </PageHeader>
@@ -398,14 +398,16 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
         </p>
       </header>
 
+      <!--
+        Neither card is ringed for being the one in use. The badge in its heading says so
+        in a word, and a coloured edge around a whole card is the loudest mark on the page
+        for a fact its own first line already carries — next to every other card here,
+        which carries the same hairline whatever state it is in, the ring read as a
+        different kind of object rather than as a selection.
+      -->
       <div class="grid items-stretch gap-4 lg:grid-cols-2">
         <!-- Ours -->
-        <v-card
-          :class="managed ? 'ring-1 ring-primary/40' : ''"
-          border
-          class="flex flex-col"
-          flat
-        >
+        <v-card border class="flex flex-col" flat>
           <div class="flex flex-wrap items-start justify-between gap-3 p-4">
             <div class="flex min-w-0 flex-col gap-1">
               <div class="flex flex-wrap items-center gap-2">
@@ -470,7 +472,7 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
               color="neutral"
               prepend-icon="material-symbols:swap-horiz"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="useManaged"
             >
               Use our routing
@@ -482,12 +484,7 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
         </v-card>
 
         <!-- Theirs -->
-        <v-card
-          :class="!managed ? 'ring-1 ring-primary/40' : ''"
-          border
-          class="flex flex-col"
-          flat
-        >
+        <v-card border class="flex flex-col" flat>
           <div class="flex flex-wrap items-start justify-between gap-3 p-4">
             <div class="flex min-w-0 flex-col gap-1">
               <div class="flex flex-wrap items-center gap-2">
@@ -538,13 +535,16 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
           <div
             class="mt-auto flex flex-wrap items-center gap-2 border-t border-line px-4 py-3"
           >
+            <!-- Ghost, like the button in the other card's foot: these two cards are one
+                 decision read side by side, and a filled button under one of them makes it
+                 the recommendation rather than the half that happens to be yours. -->
             <v-btn
               v-if="account === null"
               class="text-xs font-medium"
-              color="primary"
+              color="neutral"
               prepend-icon="material-symbols:key-outline"
               size="small"
-              variant="flat"
+              variant="text"
               @click="accountOpen = true"
             >
               Connect account
@@ -554,10 +554,10 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
                 v-if="managed"
                 :loading="isBusy('mode')"
                 class="text-xs font-medium"
-                color="primary"
+                color="neutral"
                 prepend-icon="material-symbols:swap-horiz"
                 size="small"
-                variant="flat"
+                variant="text"
                 @click="useOwn"
               >
                 Use this account
@@ -567,7 +567,7 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
                 color="neutral"
                 prepend-icon="material-symbols:key-outline"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="accountOpen = true"
               >
                 Manage
@@ -627,7 +627,7 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
             <v-text-field
               v-model="search"
               aria-label="Search countries"
-              class="routes__search"
+              class="routes__search w-full sm:w-72"
               clearable
               density="comfortable"
               hide-details
@@ -899,13 +899,10 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
 </template>
 
 <style scoped>
-.routes__search {
-  min-width: 200px;
-}
-
-/* The height is the `comfortable` density's own 32px rather than a pin here, because the
+/* The height is the `comfortable` density's own rather than a pin here, because the
    control box around the field takes it from the input root and not from `.v-field`. The
-   same rule the users and members lists carry, because it is the same toolbar. */
+   same rule the users and members lists carry, because it is the same toolbar, and the
+   width is theirs too: full on a phone, 18rem once the row can hold it. */
 .routes__search :deep(.v-field) {
   border-radius: var(--idenzy-radius-small);
   font-size: 0.75rem;

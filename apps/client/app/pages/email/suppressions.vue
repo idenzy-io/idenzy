@@ -338,9 +338,9 @@ const GUIDES_URL = "https://idenzy.io/docs/email/suppressions";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Delivery guide
+          Delivery Guide
         </v-btn>
       </template>
     </PageHeader>
@@ -354,35 +354,60 @@ const GUIDES_URL = "https://idenzy.io/docs/email/suppressions";
     <form class="flex flex-col gap-2" @submit.prevent="check">
       <label :for="fieldId" class="text-sm font-medium text-ink">Email address</label>
 
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
-        <div class="flex min-w-0 flex-1 flex-col gap-1">
-          <v-text-field
-            :id="fieldId"
-            ref="field"
-            v-model="address"
-            :aria-describedby="issue ? issueId : helpId"
-            :error="issue !== null"
-            autocomplete="off"
-            class="suppressions__field font-mono"
-            density="comfortable"
-            hide-details
-            placeholder="someone@example.com"
-            prepend-inner-icon="material-symbols:alternate-email"
-            spellcheck="false"
-            variant="outlined"
-          />
-        </div>
-        <!-- Beside the field on a desktop, under it and full width on a phone. -->
-        <FancyButton :disabled="checking" class="w-full sm:w-auto" type="submit">
-          <Icon
-            :class="checking ? 'animate-spin' : ''"
-            :name="checking ? 'material-symbols:progress-activity' : 'material-symbols:search'"
-            aria-hidden="true"
-            class="text-sm"
-          />
-          Check address
-        </FancyButton>
-      </div>
+      <v-text-field
+        :id="fieldId"
+        ref="field"
+        v-model="address"
+        :aria-describedby="issue ? issueId : helpId"
+        :error="issue !== null"
+        autocomplete="off"
+        class="suppressions__field font-mono"
+        density="comfortable"
+        hide-details
+        placeholder="someone@example.com"
+        prepend-inner-icon="material-symbols:alternate-email"
+        spellcheck="false"
+        variant="outlined"
+      >
+        <!--
+          Inside the field and against its right edge, rather than a control beside it.
+          The lookup acts on nothing but what is in this box, and a button outside the
+          border read as the next step in a form: on a phone it sat under the field at
+          full width, which is the shape of a Continue. Inside, it is the field's own way
+          of being asked, it needs no second row at any width, and the address and the way
+          to check it cannot be separated by a wrap.
+        -->
+        <!--
+          `type="button"` and its own handler, not a submit. `VField` calls
+          `preventDefault()` on every click inside it that did not land on the input, which
+          is how it keeps focus on the value while the field is clicked around — and a
+          submit button's submission is that click's default action, so one placed in here
+          is pressed, looks pressed, and does nothing. The form keeps its own handler for
+          the Enter key, which never goes through that click.
+        -->
+        <template #append-inner>
+          <v-btn
+            :disabled="checking"
+            class="-mr-2 text-xs font-medium text-ink/70 hover:text-ink"
+            size="x-small"
+            type="button"
+            variant="text"
+            @click="check"
+          >
+            <template #prepend>
+              <Icon
+                :class="checking ? 'animate-spin' : ''"
+                :name="
+                  checking ? 'material-symbols:progress-activity' : 'material-symbols:search'
+                "
+                aria-hidden="true"
+                class="text-sm"
+              />
+            </template>
+            Check address
+          </v-btn>
+        </template>
+      </v-text-field>
 
       <p v-if="issue" :id="issueId" class="m-0 text-xs leading-5 text-error" role="alert">
         {{ LOOKUP_ISSUE_LABELS[issue] }}
@@ -705,9 +730,9 @@ const GUIDES_URL = "https://idenzy.io/docs/email/suppressions";
 
 <style scoped>
 /*
- * The lookup field is the page's one input. Only the corner and the glyph are set here:
- * comfortable density is already 32px and 13px, which is the height of the button beside
- * it and the type of every other field in the panel.
+ * The lookup field is the page's one input, and it carries its own button. Only the
+ * corner, the glyph and the two inner ends are set here: comfortable density is already
+ * the toolbar's height and 13px, which is the type of every other field in the panel.
  *
  * A height stated on the field alone is what this looked like before. theme.css sets
  * `--v-input-control-height` on the input root and on the field because Vuetify
@@ -721,5 +746,29 @@ const GUIDES_URL = "https://idenzy.io/docs/email/suppressions";
 
 .suppressions__field :deep(.v-field__prepend-inner > .v-icon) {
   font-size: 1rem;
+}
+
+/*
+ * Both inner ends centre on the field's own line rather than hanging from its top.
+ * Vuetify aligns them to `flex-start` and pads them down by a floating label's height,
+ * which this panel does not use: left alone the glyph and the button sit a few pixels
+ * high in a box whose text is centred, and on a 24px button inside a 36px field that
+ * reads as a control that has slipped rather than one that is small.
+ */
+.suppressions__field :deep(.v-field__append-inner),
+.suppressions__field :deep(.v-field__prepend-inner) {
+  align-items: center;
+  padding-top: 0;
+}
+
+/*
+ * No ground under the button on hover. Vuetify answers a pointer with a tinted overlay
+ * across the whole control, which inside a field draws a second box against the one the
+ * border already makes and reads as a control sitting on the value rather than in the
+ * same box as it. The label going to full strength is the whole answer, which is what
+ * every other quiet button in the panel does.
+ */
+.suppressions__field :deep(.v-field__append-inner .v-btn__overlay) {
+  opacity: 0;
 }
 </style>

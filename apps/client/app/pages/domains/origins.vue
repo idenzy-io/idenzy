@@ -291,14 +291,10 @@ const GUIDES_URL = "https://idenzy.io/docs/origins";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          CORS guide
+          CORS Guide
         </v-btn>
-        <FancyButton :disabled="isBusy('add')" @click="openAdd()">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Allow origin
-        </FancyButton>
       </template>
     </PageHeader>
 
@@ -374,7 +370,7 @@ const GUIDES_URL = "https://idenzy.io/docs/origins";
           color="neutral"
           prepend-icon="material-symbols:refresh"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="reload()"
         >
           Try again
@@ -441,10 +437,16 @@ const GUIDES_URL = "https://idenzy.io/docs/origins";
               localhost is allowed by the deployment while it runs in development. This list is
               for the browser origins you deploy to.
             </p>
-            <FancyButton class="mt-2" @click="openAdd()">
-              <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+            <v-btn
+              class="mt-2 text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:add"
+              size="small"
+              variant="text"
+              @click="openAdd()"
+            >
               Allow origin
-            </FancyButton>
+            </v-btn>
           </div>
         </template>
       </RecordTable>
@@ -505,7 +507,7 @@ const GUIDES_URL = "https://idenzy.io/docs/origins";
               class="text-xs font-medium"
               color="neutral"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="accept(suggestion.origin, suggestion.source)"
             >
               Allow
@@ -531,34 +533,49 @@ const GUIDES_URL = "https://idenzy.io/docs/origins";
 
       <v-card border flat>
         <form class="flex flex-col gap-3 p-4" @submit.prevent="check">
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
-            <div class="flex min-w-0 flex-1 flex-col gap-1">
-              <label class="text-xs font-medium text-ink" for="origin-check">
-                Application URL
-              </label>
-              <v-text-field
-                id="origin-check"
-                v-model="typed"
-                autocomplete="off"
-                class="font-mono"
-                density="comfortable"
-                hide-details
-                placeholder="https://app.example.com/sign-in"
-                variant="filled"
-              />
-            </div>
-            <v-btn
-              :disabled="typed.trim() === ''"
-              :loading="checking"
-              class="text-xs font-medium sm:mt-[1.375rem]"
-              color="primary"
-              prepend-icon="material-symbols:search"
-              size="small"
-              type="submit"
-              variant="flat"
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-ink" for="origin-check">
+              Application URL
+            </label>
+            <!--
+              The same lookup the blocked-address page runs, so it is built the same way:
+              an outlined field with its button inside it, against the right edge. Asking
+              a question about a URL changes nothing, so the button is a ghost; the fill
+              belongs to the answer's own button below, which allows the origin.
+            -->
+            <v-text-field
+              id="origin-check"
+              v-model="typed"
+              autocomplete="off"
+              class="origins__check font-mono"
+              density="comfortable"
+              hide-details
+              placeholder="https://app.example.com/sign-in"
+              variant="outlined"
             >
-              Check
-            </v-btn>
+              <!--
+                `type="button"` and its own handler, not a submit. `VField` calls
+                `preventDefault()` on every click inside it that did not land on the
+                input, which is how it keeps focus on the value — and a submit button's
+                submission is that click's default action, so one placed in here is
+                pressed, looks pressed, and does nothing. The form keeps its own handler
+                for the Enter key, which never goes through that click.
+              -->
+              <template #append-inner>
+                <v-btn
+                  :disabled="typed.trim() === ''"
+                  :loading="checking"
+                  class="-mr-2 text-xs font-medium text-ink/70 hover:text-ink"
+                  prepend-icon="material-symbols:search"
+                  size="x-small"
+                  type="button"
+                  variant="text"
+                  @click="check"
+                >
+                  Check
+                </v-btn>
+              </template>
+            </v-text-field>
           </div>
 
           <p v-if="answer === null" class="m-0 text-[11px] leading-4 text-ink/50">
@@ -706,3 +723,29 @@ const GUIDES_URL = "https://idenzy.io/docs/origins";
     />
   </div>
 </template>
+
+<style scoped>
+/*
+ * The lookup field carries its own button, so it is built like the one on
+ * /email/suppressions: the small corner, and both inner ends centred on the field's line.
+ * Vuetify aligns those ends to `flex-start` and pads them down by a floating label's
+ * height, which this panel does not use, so left alone a 24px button inside a 36px field
+ * sits high in a box whose text is centred.
+ */
+.origins__check :deep(.v-field) {
+  border-radius: var(--idenzy-radius-small);
+}
+
+.origins__check :deep(.v-field__append-inner),
+.origins__check :deep(.v-field__prepend-inner) {
+  align-items: center;
+  padding-top: 0;
+}
+
+/* No ground under the button on hover, as on /email/suppressions: a tinted overlay across
+   the control draws a second box inside the one the border already makes. The label going
+   to full strength is the whole answer. */
+.origins__check :deep(.v-field__append-inner .v-btn__overlay) {
+  opacity: 0;
+}
+</style>

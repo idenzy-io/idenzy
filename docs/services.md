@@ -22,12 +22,12 @@ never been given credentials.
 ## Infrastructure (Google Cloud)
 
 One cloud, on purpose: running two would double the key-management story for no customer
-benefit
-(PROJECT.md 4.13.5, 6.2).
+benefit (PROJECT.md 6.2). One region too — residency is not offered (4.13.5), so there is no
+second stack and no customer-facing choice of where any of this runs.
 
 | Service | Purpose | Status |
 |---|---|---|
-| Cloud Run | Every app: `auth-api`, `management-api`, `workers`, `landing` | Not started |
+| Cloud Run | Every app: `api`, `workers`, `landing` | Not started |
 | Cloud SQL for PostgreSQL 17 | The only durable store. Regional HA, private IP, PITR | Built against Postgres 17; the managed instance is not provisioned |
 | Memorystore for Valkey | Rate-limit counters, the revocation set, OTP state | Built (`@idenzy/cache`, `docker compose` locally) |
 | Cloud KMS | Per-project ES256 signing keys and the envelope KEK | Not started. `TokenIssuer` and `FieldEncryptor` both refuse to boot outside development rather than sign or encrypt under a key we control in process |

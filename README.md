@@ -31,7 +31,7 @@ apps/          deployables. Thin, never imported by anything
   client             Nuxt, SPA   customer dashboard
   admin              Nuxt, SPA   internal operator console
 packages/      all reusable logic; apps consume packages, packages never consume apps
-infra/         Terraform (region cells) and container images
+infra/         Terraform (one stack, one region) and container images
 tools/         shared lint config, CLI, codegen
 docs/          architecture decision records and compliance registers
 ```

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   SQL-driven access control, so users, roles and row policies are created by the init script in
-  the same language they are created in a real cell — rather than half here in XML and half in
+  the same language they are created in a real deployment — rather than half here in XML and half in
   SQL, which is two places for the tenant policy to be wrong.
 -->
 <clickhouse>

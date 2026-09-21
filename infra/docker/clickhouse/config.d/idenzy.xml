@@ -19,7 +19,7 @@
   -->
   <listen_host>0.0.0.0</listen_host>
 
-  <!-- A developer laptop, not a cell. Keeps the container out of the way of everything else. -->
+  <!-- A developer laptop, not a deployment. Keeps the container out of the way of everything else. -->
   <max_server_memory_usage_to_ram_ratio>0.3</max_server_memory_usage_to_ram_ratio>
   <mark_cache_size>268435456</mark_cache_size>
   <logger>

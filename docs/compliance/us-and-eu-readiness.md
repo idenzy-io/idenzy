@@ -37,12 +37,15 @@ Two consequences, neither of them architectural, recorded so they are not discov
   designate a representative in the Union unless the processing is occasional, low risk and free
   of special categories. An authentication provider at any scale is none of those three. This is a
   service somebody is paid for, not something to build.
-- **Transfers, with us as the importer.** Today every EEA customer's data reaches a US cell, which
-  is a transfer needing a mechanism — see the Transfers section of
+- **Transfers, with us as the importer.** There is one deployment in one region, so unless it
+  sits in the customer's own jurisdiction their data reaching Idenzy is a transfer needing a
+  mechanism — and one deployment cannot sit in every customer's. See the Transfers section of
   [subprocessors.md](./subprocessors.md). As a US entity there are two paths: self-certify to the
   EU-US Data Privacy Framework, or sign Standard Contractual Clauses with each customer and carry
   out a transfer impact assessment. The first is markedly cheaper to operate; neither is built, and
-  our subprocessors' own certifications do not cover us.
+  our subprocessors' own certifications do not cover us. This is now contractual work with no
+  architectural half available, which is a simplification of the problem rather than a worsening
+  of it: there is one answer to give every customer instead of one per cell.
 
 ## What the architecture already satisfies
 
@@ -54,19 +57,29 @@ Not a claim that the programme is done — a list of the things that will not ne
 - **Hash-chained, append-only audit** (4.13.3), which is what "evidence over time" means to a SOC 2
   examiner, and which no application code path can rewrite. The one deliberate exception is a
   project purge, and it records itself.
-- **Residency by topology** (4.13.5): independent cells, `cell_id` immutable behind a trigger,
-  cross-cell access refused on the key before any lookup, and a cell's transactional email unable
-  to leave its own jurisdiction.
-- **Disposal on demand** (Art. 28(3)(g), CCPA §1798.105): a project delete cascades 37 tables and
-  purges the audit trail, leaving a `project_purges` row as the only evidence — which is the
-  evidence the obligation actually requires.
+- **Disposal on demand** (Art. 28(3)(g), CCPA §1798.105): `purge_project` deletes the trail and
+  cascades 39 tables in one transaction, leaving a `project_purges` row as the only evidence —
+  which is the evidence the obligation actually requires. It re-checks inside the function body
+  that the project belongs to the organisation naming it, which is now the only thing enforcing
+  that rather than the second of two.
 - **Retention enforced by a job** rather than by a document, per subject, with the ages the panel
   shows being the ages the sweeper uses.
-- **Deadlines per request, not per cell.** The correction worth naming: GDPR governs a *person*, so
-  a cell in Iowa answers a European on Art. 12(3)'s one calendar month the moment a customer there
-  has European users. `DsrDeadline` is therefore a family selected per request from the
-  controller's determination, defaulting to the stricter rule. Adding a US state whose clock
-  differs is a subclass, not a migration.
+- **Deadlines per request.** The correction worth naming: GDPR governs a *person*, not a server,
+  so where the deployment sits says nothing about which clock a given request runs on — a US
+  deployment answers a European on Art. 12(3)'s one calendar month the moment a customer there has
+  European users. `DsrDeadline` is therefore a family selected per request from the controller's
+  determination, defaulting to the stricter rule. Adding a US state whose clock differs is a
+  subclass, not a migration. This was true when there were cells and is unchanged by their
+  removal, which is the point: it never depended on topology.
+
+One thing left this list on 2026-09-21 and should be named rather than quietly dropped.
+**Tenant isolation is no longer enforced by the database.** Row-level security — a forced policy
+on every tenant table, with the runtime role unable to bypass it — was removed with the regional
+architecture. Repository predicates are now the only line, and they are application code. The
+grant shapes still bound what the runtime role may *do*, and the audit trail is still append-only
+by privilege rather than by policy, so the integrity controls an examiner asks about are intact.
+The confidentiality control that used to sit underneath the application is not, and
+`controls.md` records it as not in effect.
 
 ## The gaps, ordered by what they would cost to fix later
 
@@ -92,10 +105,18 @@ hash of the address, so it is reachable only by hashing the identifier the same 
 `audit_events` is export-only because the trail keeps a pseudonymous id precisely so an erasure
 stays provable (Art. 17(3)(b) against Art. 17(1)).
 
-**Access and portability are separately blocked, which is worth knowing before promising them.**
-An export has to land somewhere and there is no object storage anywhere in the estate — no bucket,
-no storage port, no configuration for one. `data_subject_requests.artifact_uri` has nothing to
-point at. Erasure has no such dependency: it acts in place.
+**Access and portability were separately blocked and are now blocked one step later.** An export
+has to land somewhere, and until recently there was no object storage anywhere in the estate — no
+bucket, no port, no configuration for one — so `data_subject_requests.artifact_uri` had nothing it
+could point at and the handlers could not have been written whatever else was in place.
+
+That part is done. `SubjectExportStore` is an abstract port in the domain that owns the link
+lifetime itself rather than letting a subclass choose it, there is a conformance suite, and
+`infra/terraform` declares the bucket with versioning off, public access prevention enforced and a
+lifecycle rule that makes the thirty-day classification on `artifact_uri` true rather than
+aspirational. What is missing is narrower than it was: a Cloud Storage implementation of the port —
+only the in-memory one exists — and nothing is wired into any application yet. Erasure has no such
+dependency: it acts in place.
 
 **2. Nothing pages anybody when a request goes overdue.** 4.13.6 says an overdue request pages
 someone, and the clock is monitored by nothing. A missed statutory deadline is the finding an

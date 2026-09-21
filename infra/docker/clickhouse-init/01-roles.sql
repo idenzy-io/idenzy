@@ -1,5 +1,5 @@
 -- Users and roles are server-level objects, not schema, so they are created by provisioning
--- rather than by a migration — this script locally, Terraform in a real cell. Exactly the shape
+-- rather than by a migration — this script locally, Terraform in a real deployment. Exactly the shape
 -- `infra/docker/postgres-init/01-roles.sql` has, and for the same reason: a migration that
 -- assumes a user exists cannot run on a fresh server.
 

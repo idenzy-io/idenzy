@@ -90,16 +90,10 @@ function submit() {
               product does not serve are exactly the ones an attacker sends to.
             </p>
           </div>
-          <v-text-field
+          <SearchField
             v-model="query"
-            aria-label="Search countries"
-            class="countries__search"
-            clearable
-            density="comfortable"
-            hide-details
+            label="Search countries"
             placeholder="Search a country"
-            prepend-inner-icon="material-symbols:search"
-            variant="outlined"
           />
         </header>
 
@@ -175,20 +169,4 @@ function submit() {
 </template>
 
 <style scoped>
-.countries__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.countries__search :deep(.v-field__input),
-.countries__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.countries__search :deep(.v-field__prepend-inner > .v-icon),
-.countries__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

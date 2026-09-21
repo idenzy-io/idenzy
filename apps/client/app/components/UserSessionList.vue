@@ -111,17 +111,11 @@ function endedLabel(session: SessionRow): string {
       <span v-if="!loading" class="session-list__count" role="status">
         {{ shown.length }} {{ shown.length === 1 ? "session" : "sessions" }}
       </span>
-      <v-text-field
+      <SearchField
         v-model="search"
-        aria-label="Search sessions"
-        class="session-list__search w-full grow-0 sm:w-72"
-        clearable
-        density="comfortable"
-        hide-details
+        label="Search sessions"
         placeholder="Search devices, addresses or IDs"
-        prepend-inner-icon="material-symbols:search"
-        rounded="pill"
-        variant="outlined"
+        class="w-full grow-0 sm:w-72"
       />
     </div>
 
@@ -239,19 +233,6 @@ function endedLabel(session: SessionRow): string {
 
 /* Filled at a twentieth of the ink so the pill reads on a ground it shares with the page.
    Sized like the search on every other screen: 12px text in a 32px field. */
-.session-list__search :deep(.v-field) {
-  background: rgba(var(--v-theme-on-surface), 0.05);
-}
-
-.session-list__search :deep(.v-field__input),
-.session-list__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.session-list__search :deep(.v-field__prepend-inner > .v-icon),
-.session-list__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 
 /* Two lines, like the device beside it, so the column carries the address instead of
    air and the two tall cells set one row height. */

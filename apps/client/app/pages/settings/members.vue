@@ -424,16 +424,11 @@ const matrixColumns = computed<ColumnState>({
           <SegmentedControl v-model="tab" :options="tabs" label="Team list" />
 
           <div class="flex flex-wrap items-center gap-2">
-            <v-text-field
+            <SearchField
               v-model="query"
-              :placeholder="view === 'members' ? 'Search name or email' : 'Search address'"
-              aria-label="Search the team"
-              class="members__search w-full sm:w-64"
-              clearable
-              density="comfortable"
-              hide-details
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              label="Search the team"
+              placeholder="view === 'members' ? 'Search name or email' : 'Search address'"
+              class="w-full sm:w-64"
             />
             <DataTableColumnsMenu
               v-if="view === 'members'"
@@ -798,24 +793,6 @@ const matrixColumns = computed<ColumnState>({
 </template>
 
 <style scoped>
-/* A search box at the height of the buttons beside it, in the toolbar's small type and on
-   the small radius, so the controls in the row read as one set. The same rule the users
-   list carries, because it is the same toolbar. */
-.members__search :deep(.v-field) {
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.members__search :deep(.v-field__input),
-.members__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.members__search :deep(.v-field__prepend-inner > .v-icon),
-.members__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
-
 /* Outranks the nav list's own ink, which is three classes deep in theme.css. The scoped
    attribute survives the teleport into the overlay, so the rule reaches the item. */
 .v-list--nav .v-list-item.members__danger,

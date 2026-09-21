@@ -229,16 +229,10 @@ function exportCsv() {
       say about a view is what it leaves out.
     -->
     <div class="flex flex-col gap-3">
-      <v-text-field
+      <SearchField
         v-model="filters.text"
-        aria-label="Search the record"
-        class="audit__search"
-        clearable
-        density="comfortable"
-        hide-details
+        label="Search the record"
         placeholder="Search an actor, a resource or a request ID"
-        prepend-inner-icon="material-symbols:search"
-        variant="outlined"
       />
 
       <div class="flex flex-wrap items-center gap-2">
@@ -653,23 +647,4 @@ function exportCsv() {
 </template>
 
 <style scoped>
-/* A search box at the height of the buttons beside it, in the toolbar's small type and on
-   the small radius, so the row reads as one set. The same block the users and sessions
-   toolbars carry: three toolbars that looked like three products is what this avoids. */
-.audit__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.audit__search :deep(.v-field__input),
-.audit__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.audit__search :deep(.v-field__prepend-inner > .v-icon),
-.audit__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

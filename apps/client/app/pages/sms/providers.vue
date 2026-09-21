@@ -624,16 +624,11 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
         >
           <SegmentedControl v-model="filter" :options="DESTINATION_FILTERS" label="Destinations" />
           <div class="flex items-center gap-2">
-            <v-text-field
+            <SearchField
               v-model="search"
-              aria-label="Search countries"
-              class="routes__search w-full sm:w-72"
-              clearable
-              density="comfortable"
-              hide-details
+              label="Search countries"
               placeholder="Search a country"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              class="w-full sm:w-72"
             />
             <DataTableColumnsMenu v-model="routeColumnState" :columns="routeColumns" />
           </div>
@@ -899,22 +894,4 @@ const GUIDES_URL = "https://idenzy.io/docs/sms";
 </template>
 
 <style scoped>
-/* The height is the `comfortable` density's own rather than a pin here, because the
-   control box around the field takes it from the input root and not from `.v-field`. The
-   same rule the users and members lists carry, because it is the same toolbar, and the
-   width is theirs too: full on a phone, 18rem once the row can hold it. */
-.routes__search :deep(.v-field) {
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.routes__search :deep(.v-field__input),
-.routes__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.routes__search :deep(.v-field__prepend-inner > .v-icon),
-.routes__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

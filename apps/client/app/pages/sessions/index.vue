@@ -576,16 +576,11 @@ const endings = computed<Ending[]>(() => {
           <SegmentedControl v-model="statusTab" :options="statusOptions" label="Status" />
 
           <div class="flex flex-wrap items-center gap-2">
-            <v-text-field
+            <SearchField
               v-model="query"
-              aria-label="Search sessions"
-              class="sessions__search w-full sm:w-80"
-              clearable
-              density="comfortable"
-              hide-details
+              label="Search sessions"
               placeholder="Search device, user, IP or ID"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              class="w-full sm:w-80"
             />
             <SessionsFilterMenu v-model="filters" :countries="countries" />
             <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
@@ -888,23 +883,4 @@ const endings = computed<Ending[]>(() => {
 </template>
 
 <style scoped>
-/* A search box at the height of the buttons beside it, in the toolbar's small type and
-   on the small radius, so the three controls in the row read as one set. The outline's
-   colours are the theme's, in theme.css, and are what every outlined field gets. */
-.sessions__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.sessions__search :deep(.v-field__input),
-.sessions__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.sessions__search :deep(.v-field__prepend-inner > .v-icon),
-.sessions__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

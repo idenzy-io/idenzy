@@ -418,16 +418,11 @@ const GUIDES = [
           <SegmentedControl v-model="filterTab" :options="filterOptions" label="Messages" />
 
           <div class="flex flex-wrap items-center gap-2">
-            <v-text-field
+            <SearchField
               v-model="query"
-              aria-label="Search messages"
-              class="templates__search w-full sm:w-72"
-              clearable
-              density="comfortable"
-              hide-details
+              label="Search messages"
               placeholder="Search a message or subject"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              class="w-full sm:w-72"
             />
             <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
           </div>
@@ -723,27 +718,4 @@ const GUIDES = [
 </template>
 
 <style scoped>
-/* A search box at the height of the controls beside it, in the toolbar's small type and
-   on the small radius, so the row reads as one set. The same rule the users list carries,
-   because it is the same toolbar.
-
-   The height is the `comfortable` density's own 36px and is not pinned here. It was: a
-   32px `--v-input-control-height` on `.v-field` left the 36px control box the input root
-   sizes untouched and shrank only the field inside it, so the text rode low against a
-   border it no longer filled. The variable has to reach the input root to mean a height,
-   and theme.css is the only place that can set it there. */
-.templates__search :deep(.v-field) {
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.templates__search :deep(.v-field__input),
-.templates__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.templates__search :deep(.v-field__prepend-inner > .v-icon),
-.templates__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

@@ -656,16 +656,11 @@ const expanded = ref(false);
 
       <v-card border flat>
         <div class="flex flex-col gap-2 border-b border-line p-3 sm:flex-row sm:items-center">
-          <v-text-field
+          <SearchField
             v-model="searchModel"
-            aria-label="Search requests"
-            class="data-requests__search w-full sm:max-w-sm"
-            clearable
-            density="comfortable"
-            hide-details
+            label="Search requests"
             placeholder="Search a person, a reference or an id"
-            prepend-inner-icon="material-symbols:search"
-            variant="outlined"
+            class="w-full sm:max-w-sm"
           />
 
           <div class="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -1080,25 +1075,6 @@ const expanded = ref(false);
 </template>
 
 <style scoped>
-/* The toolbar search, at the height of the buttons beside it and on the small radius, the
-   same block the users and sessions toolbars carry. */
-.data-requests__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.data-requests__search :deep(.v-field__input),
-.data-requests__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.data-requests__search :deep(.v-field__prepend-inner > .v-icon),
-.data-requests__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
-
 :deep(.v-selection-control) {
   --v-selection-control-size: 28px;
 

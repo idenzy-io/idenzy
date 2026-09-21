@@ -115,14 +115,7 @@ const filterOptions = computed<SegmentedOption[]>(() => [
   { value: "all", label: `All enrolled accounts · ${counts.value.all}` },
 ]);
 
-/* `clearable` hands back null, which reads as nothing typed. */
 const search = ref("");
-const query = computed<string | null>({
-  get: () => search.value,
-  set: (value) => {
-    search.value = value ?? "";
-  },
-});
 
 /** By name, for a tie in codes: two accounts on their last code order the same way twice. */
 function byName(a: CodeRow, b: CodeRow): number {
@@ -355,16 +348,11 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/recovery";
           <SegmentedControl v-model="filterTab" :options="filterOptions" label="Accounts" />
 
           <div class="flex flex-wrap items-center gap-2">
-            <v-text-field
-              v-model="query"
-              aria-label="Search accounts"
-              class="recovery__search w-full sm:w-64"
-              clearable
-              density="comfortable"
-              hide-details
+            <SearchField
+              v-model="search"
+              label="Search accounts"
               placeholder="Search name, email, phone or ID"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              class="w-full sm:w-64"
             />
             <!-- Secondary, at the list's top right, and named as the dashboard preference
                  it is: the server has no opinion about a set until the last code is spent. -->
@@ -830,20 +818,5 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/recovery";
 <style scoped>
 /* The toolbar's search, at the height of the small controls beside it. Same block as the
    users and sessions lists, because it is the same field on the same kind of screen. */
-.recovery__search :deep(.v-field) {
-  --v-input-control-height: 32px;
 
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.recovery__search :deep(.v-field__input),
-.recovery__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.recovery__search :deep(.v-field__prepend-inner > .v-icon),
-.recovery__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

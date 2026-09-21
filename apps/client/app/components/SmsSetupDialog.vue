@@ -179,16 +179,10 @@ const summary = computed(() =>
               </p>
             </div>
 
-            <v-text-field
+            <SearchField
               v-model="query"
-              aria-label="Search countries"
-              class="sms-setup__search"
-              clearable
-              density="comfortable"
-              hide-details
+              label="Search countries"
               placeholder="Search a country"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
             />
 
             <div
@@ -461,20 +455,4 @@ const summary = computed(() =>
 </template>
 
 <style scoped>
-.sms-setup__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.sms-setup__search :deep(.v-field__input),
-.sms-setup__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.sms-setup__search :deep(.v-field__prepend-inner > .v-icon),
-.sms-setup__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

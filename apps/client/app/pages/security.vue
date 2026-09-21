@@ -640,16 +640,11 @@ const GUIDES = [
       </div>
 
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <v-text-field
+        <SearchField
           v-model="search"
-          aria-label="Search the queue"
-          class="security__search w-full lg:max-w-md"
-          clearable
-          density="comfortable"
-          hide-details
+          label="Search the queue"
           placeholder="Search a signal, an account or an address"
-          prepend-inner-icon="material-symbols:search"
-          variant="outlined"
+          class="w-full lg:max-w-md"
         />
         <div class="flex flex-wrap items-center gap-2">
           <SegmentedControl v-model="filterTab" :options="filterOptions" label="Signals" />
@@ -809,7 +804,6 @@ const GUIDES = [
           Every decision here is written to the audit log.
         </p>
       </v-card>
-
 
         <MetricCard
           :categories="refusals.categories"
@@ -1202,7 +1196,6 @@ const GUIDES = [
 
         </LayerCard>
 
-
       <!--
         The one example a developer copies. Mirrored from the protocol's own union rather
         than written from memory: it said `status: "challenge"`, which is not a value the
@@ -1376,22 +1369,4 @@ const GUIDES = [
 </template>
 
 <style scoped>
-/* A search box at the height of the buttons beside it, in the toolbar's small type and on
-   the small radius, so the row reads as one set. */
-.security__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.security__search :deep(.v-field__input),
-.security__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.security__search :deep(.v-field__prepend-inner > .v-icon),
-.security__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

@@ -139,17 +139,11 @@ function timestamp(iso: string): string {
          the eye lands on the table's left edge and not on a search box. -->
     <div class="mb-3 flex flex-wrap items-center justify-end gap-2">
       <span class="activity-feed__count" role="status">{{ ordered.length }} {{ ordered.length === 1 ? 'event' : 'events' }}</span>
-      <v-text-field
+      <SearchField
         v-model="search"
-        aria-label="Search account activity"
-        class="activity-feed__search w-full grow-0 sm:w-72"
-        clearable
-        density="comfortable"
-        hide-details
+        label="Search account activity"
         placeholder="Search events, actors or IP addresses"
-        prepend-inner-icon="material-symbols:search"
-        rounded="pill"
-        variant="outlined"
+        class="w-full grow-0 sm:w-72"
       />
     </div>
 
@@ -222,9 +216,6 @@ function timestamp(iso: string): string {
 /* Filled at a twentieth of the ink so the pill reads on a ground it shares with the page,
    which is white on the dark theme and black on the light one. Sized like the search on
    every other screen: 12px text in a field the height of the row it sits in. */
-.activity-feed__search :deep(.v-field) { background: rgba(var(--v-theme-on-surface), .05); }
-.activity-feed__search :deep(.v-field__input), .activity-feed__search :deep(.v-field__input::placeholder) { font-size: .75rem; }
-.activity-feed__search :deep(.v-field__prepend-inner > .v-icon), .activity-feed__search :deep(.v-field__clearable > .v-icon) { font-size: 1rem; }
 .activity-feed__columns, .activity-feed__entry :deep(button[aria-expanded]) { display: grid; grid-template-columns: 16px 190px minmax(0, 1fr) 180px 110px; gap: 12px; align-items: center; padding: 12px 14px; }
 .activity-feed__columns { padding-block: 9px; background: rgba(var(--v-theme-on-surface), .025); font-size: 11px; color: rgba(var(--v-theme-on-surface), .55); }
 .activity-feed__list { list-style: none; padding: 0; margin: 0; }

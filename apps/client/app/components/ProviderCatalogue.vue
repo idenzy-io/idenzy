@@ -86,16 +86,11 @@ const openCount = computed(
 <template>
   <div class="flex flex-col gap-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <v-text-field
+      <SearchField
         v-model="query"
-        aria-label="Search providers"
-        class="provider-catalogue__search w-full sm:w-64"
-        clearable
-        density="comfortable"
-        hide-details
+        label="Search providers"
         placeholder="Search providers"
-        prepend-inner-icon="material-symbols:search"
-        variant="outlined"
+        class="w-full sm:w-64"
       />
       <p class="m-0 text-[11px] text-ink/50">
         {{ openCount }} available &middot; {{ configured.length }} already set up
@@ -172,7 +167,4 @@ const openCount = computed(
 <style scoped>
 /* The search sits in a dialog's own rhythm rather than a toolbar's, so it is the height
    of the small controls beside it. */
-.provider-catalogue__search :deep(.v-field) {
-  font-size: 0.8125rem;
-}
 </style>

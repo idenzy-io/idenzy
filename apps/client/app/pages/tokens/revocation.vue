@@ -598,16 +598,11 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
           <SegmentedControl v-model="shapeTab" :options="tabOptions" label="Published state" />
 
           <div class="flex flex-wrap items-center gap-2">
-            <v-text-field
+            <SearchField
               v-model="query"
-              aria-label="Search revocations"
-              class="revocation__search w-full sm:w-72"
-              clearable
-              density="comfortable"
-              hide-details
+              label="Search revocations"
               placeholder="Search account, session or user ID"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              class="w-full sm:w-72"
             />
             <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
           </div>
@@ -902,7 +897,6 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
       </div>
     </LayerCard>
 
-
     <LayerCard
       v-model:open="open.path"
       description="From the revocation to a verifier refusing the token. Three of the four stages are ours; the last is yours to run and is drawn as such."
@@ -1045,23 +1039,4 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
 </template>
 
 <style scoped>
-/* A search box at the height of the control beside it, in the toolbar's small type and on
-   the small radius, so the row reads as one set. The same block the sessions and users
-   screens carry, because the toolbars must not be a size apart. */
-.revocation__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.revocation__search :deep(.v-field__input),
-.revocation__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.revocation__search :deep(.v-field__prepend-inner > .v-icon),
-.revocation__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

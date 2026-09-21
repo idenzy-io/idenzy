@@ -490,16 +490,11 @@ function statusDetail(user: ProjectUser): string {
           <SegmentedControl v-model="statusTab" :options="statusOptions" label="Status" />
 
           <div class="flex flex-wrap items-center gap-2">
-            <v-text-field
+            <SearchField
               v-model="query"
-              aria-label="Search users"
-              class="users__search w-full sm:w-72"
-              clearable
-              density="comfortable"
-              hide-details
+              label="Search users"
               placeholder="Search name, email, phone or ID"
-              prepend-inner-icon="material-symbols:search"
-              variant="outlined"
+              class="w-full sm:w-72"
             />
             <UsersFilterMenu v-model="filters" />
             <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
@@ -786,23 +781,4 @@ function statusDetail(user: ProjectUser): string {
 </template>
 
 <style scoped>
-/* A search box at the height of the buttons beside it, in the toolbar's small type and
-   on the small radius, so the three controls in the row read as one set. The outline's
-   colours are the theme's, in theme.css, and are what every outlined field gets. The
-   height is the `comfortable` density's own 32px: pinned here it would reach the field
-   and not the control box around it, which takes the variable off the input root. */
-.users__search :deep(.v-field) {
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.users__search :deep(.v-field__input),
-.users__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.users__search :deep(.v-field__prepend-inner > .v-icon),
-.users__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

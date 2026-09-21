@@ -288,16 +288,11 @@ const sourcesOpen = ref(false);
               <SegmentedControl v-model="kindTab" :options="kindOptions" label="Kind" />
 
               <div class="flex flex-wrap items-center gap-2">
-                <v-text-field
+                <SearchField
                   v-model="query"
-                  aria-label="Search imports"
-                  class="imports__search w-full sm:w-72"
-                  clearable
-                  density="comfortable"
-                  hide-details
+                  label="Search imports"
                   placeholder="Search file, who ran it or ID"
-                  prepend-inner-icon="material-symbols:search"
-                  variant="outlined"
+                  class="w-full sm:w-72"
                 />
                 <ImportsFilterMenu v-model="filters" />
                 <DataTableColumnsMenu v-model="columnState" :columns="COLUMNS" />
@@ -533,23 +528,4 @@ const sourcesOpen = ref(false);
 </template>
 
 <style scoped>
-/* A search box at the height of the buttons beside it, in the toolbar's small type and
-   on the small radius, so the three controls in the row read as one set. The same block
-   the users and sessions toolbars carry, because it is the same control. */
-.imports__search :deep(.v-field) {
-  --v-input-control-height: 32px;
-
-  border-radius: var(--idenzy-radius-small);
-  font-size: 0.75rem;
-}
-
-.imports__search :deep(.v-field__input),
-.imports__search :deep(.v-field__input::placeholder) {
-  font-size: 0.75rem;
-}
-
-.imports__search :deep(.v-field__prepend-inner > .v-icon),
-.imports__search :deep(.v-field__clearable > .v-icon) {
-  font-size: 1rem;
-}
 </style>

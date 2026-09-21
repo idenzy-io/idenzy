@@ -376,10 +376,17 @@ const matrixColumns = computed<ColumnState>({
         them may do. A member reaches every project under it, never one of them.
       </template>
       <template #actions>
-        <FancyButton :disabled="!canManage" @click="inviteOpen = true">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:person-add-outline" />
+        <v-btn
+          :disabled="!canManage"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:person-add-outline"
+          size="small"
+          variant="text"
+          @click="inviteOpen = true"
+        >
           Invite
-        </FancyButton>
+        </v-btn>
       </template>
     </PageHeader>
 
@@ -505,7 +512,7 @@ const matrixColumns = computed<ColumnState>({
                   class="text-xs font-medium"
                   color="neutral"
                   size="small"
-                  variant="outlined"
+                  variant="text"
                 >
                   {{ roleInfo(item.role).label }}
                 </v-btn>
@@ -685,7 +692,7 @@ const matrixColumns = computed<ColumnState>({
             class="text-xs font-medium"
             color="neutral"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="mfaOpen = true"
           >
             Review change

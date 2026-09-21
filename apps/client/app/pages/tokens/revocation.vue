@@ -489,23 +489,31 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
           color="neutral"
           prepend-icon="material-symbols:refresh"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="refreshStatus"
         >
-          Refresh status
+          Refresh Status
         </v-btn>
-        <FancyButton @click="openSetup">
-          <Icon
-            aria-hidden="true"
-            class="text-sm"
-            :name="
-              confirmedAt === null
-                ? 'material-symbols:play-arrow-outline'
-                : 'material-symbols:visibility-outline'
-            "
-          />
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          size="small"
+          variant="text"
+          @click="openSetup"
+        >
+          <template #prepend>
+            <Icon
+              aria-hidden="true"
+              class="text-sm"
+              :name="
+                confirmedAt === null
+                  ? 'material-symbols:play-arrow-outline'
+                  : 'material-symbols:visibility-outline'
+              "
+            />
+          </template>
           {{ confirmedAt === null ? "Set up verification" : "View integration" }}
-        </FancyButton>
+        </v-btn>
       </template>
     </PageHeader>
 
@@ -1050,7 +1058,6 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
 .revocation__search :deep(.v-field__input),
 .revocation__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .revocation__search :deep(.v-field__prepend-inner > .v-icon),

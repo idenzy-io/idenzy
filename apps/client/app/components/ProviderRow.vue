@@ -216,7 +216,7 @@ const summary = computed(() => {
         class="text-xs font-medium"
         color="neutral"
         size="small"
-        variant="outlined"
+        variant="text"
         @click="emit('manage')"
       >
         {{ look.action }}

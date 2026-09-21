@@ -592,9 +592,9 @@ const GUIDES = [
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Security guides
+          Security Guides
         </v-btn>
       </template>
     </PageHeader>
@@ -659,7 +659,7 @@ const GUIDES = [
             color="neutral"
             prepend-icon="material-symbols:download"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="exportCsv"
           >
             Export view
@@ -1388,7 +1388,6 @@ const GUIDES = [
 .security__search :deep(.v-field__input),
 .security__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .security__search :deep(.v-field__prepend-inner > .v-icon),

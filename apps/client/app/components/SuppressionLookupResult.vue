@@ -236,7 +236,7 @@ const facts = computed(() => {
           color="neutral"
           prepend-icon="material-symbols:receipt-long-outline"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="$emit('evidence')"
         >
           View delivery evidence
@@ -286,7 +286,7 @@ const facts = computed(() => {
             color="neutral"
             prepend-icon="material-symbols:refresh"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="$emit('recheck')"
           >
             Ask again
@@ -321,7 +321,7 @@ const facts = computed(() => {
           color="neutral"
           prepend-icon="material-symbols:search"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="$emit('another')"
         >
           Check another address

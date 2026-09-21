@@ -267,10 +267,10 @@ const saving = computed(() => busy.value.size > 0);
           color="neutral"
           prepend-icon="material-symbols:edit-outline"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="nameOpen = true"
         >
-          Edit name
+          Edit Name
         </v-btn>
       </template>
     </PageHeader>
@@ -473,7 +473,7 @@ const saving = computed(() => busy.value.size > 0);
           class="text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="signOutOthers"
         >
           Sign out the others

@@ -339,9 +339,9 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Integration guide
+          Integration Guide
         </v-btn>
       </template>
     </PageHeader>
@@ -357,28 +357,14 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
         <StatusBadge v-if="!loading" :label="state.label" :tone="state.tone" />
       </template>
       <template v-if="info.available && current.enabled && repair" #actions>
-        <v-btn
-          v-if="repair?.fix"
-          :to="repair.fix.to"
-          class="text-xs font-medium"
-          color="neutral"
-          prepend-icon="material-symbols:build-outline"
-          size="small"
-          variant="outlined"
-        >
+        <ActionButton v-if="repair?.fix" :to="repair.fix.to">
+          <Icon aria-hidden="true" class="text-sm" name="material-symbols:build-outline" />
           Complete setup
-        </v-btn>
-        <v-btn
-          v-else
-          class="text-xs font-medium"
-          color="neutral"
-          prepend-icon="material-symbols:add"
-          size="small"
-          variant="outlined"
-          @click="returnUrlDialog = true"
-        >
+        </ActionButton>
+        <ActionButton v-else @click="returnUrlDialog = true">
+          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           Complete setup
-        </v-btn>
+        </ActionButton>
       </template>
 
       <!-- WhatsApp: named, unavailable, and honest about what to use instead. -->
@@ -394,7 +380,7 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
             color="neutral"
             prepend-icon="material-symbols:sms-outline"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="tab = 'sms'"
           >
             Set up SMS codes
@@ -524,6 +510,8 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
                   {{ smsLength.segments }}
                   {{ smsLength.segments === 1 ? "segment" : "segments" }}
                 </span>
+                <!-- A link and not the card's action: a sample panel's meta strip sits on
+                     one line of 11px type, and a control would set the strip's height. -->
                 <NuxtLink
                   v-else
                   class="font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
@@ -631,6 +619,8 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
               </span>
               <span class="col-start-2 flex min-w-0 flex-col gap-1 sm:col-start-3">
                 <span class="text-xs leading-5 text-ink/60">{{ check.finding }}</span>
+                <!-- The quiet link `SetupCheckCard` draws in this same row, and not the
+                     card's action: a fix belongs to the check beside it. -->
                 <NuxtLink
                   v-if="check.fix"
                   :to="check.fix.to"
@@ -659,6 +649,8 @@ const CHANNEL_GUIDES: Record<ChannelId, string> = {
           class="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-t border-line px-5 py-4"
         >
           <p class="m-0 min-w-0 flex-1 text-xs leading-5 text-ink/60">{{ summary }}</p>
+          <!-- Ghost buttons: a card's foot is its content, and the underlined action
+               belongs to the header strip above. -->
           <div class="flex flex-none flex-wrap items-center gap-2">
             <v-btn
               v-if="channel !== 'sms'"

@@ -407,27 +407,51 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
               Run again
             </v-btn>
 
-            <FancyButton v-if="step === 'configure'" @click="forward">
+            <v-btn
+              v-if="step === 'configure'"
+              append-icon="material-symbols:chevron-right"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="forward"
+            >
               Continue
-              <Icon aria-hidden="true" class="text-sm" name="material-symbols:chevron-right" />
-            </FancyButton>
-            <FancyButton v-else-if="step === 'test' && !observed" :disabled="probing" @click="runTest">
+            </v-btn>
+            <v-btn
+              v-else-if="step === 'test' && !observed"
+              :disabled="probing"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="runTest"
+            >
               {{ probe === null ? "Run test" : "Run test again" }}
-              <Icon
-                :class="probing ? 'animate-spin' : ''"
-                :name="
-                  probing
-                    ? 'material-symbols:progress-activity'
-                    : 'material-symbols:play-arrow-outline'
-                "
-                aria-hidden="true"
-                class="text-sm"
-              />
-            </FancyButton>
-            <FancyButton v-else-if="step === 'test'" @click="forward">
+              <template #append>
+                <Icon
+                  :class="probing ? 'animate-spin' : ''"
+                  :name="
+                    probing
+                      ? 'material-symbols:progress-activity'
+                      : 'material-symbols:play-arrow-outline'
+                  "
+                  aria-hidden="true"
+                  class="text-sm"
+                />
+              </template>
+            </v-btn>
+            <v-btn
+              v-else-if="step === 'test'"
+              append-icon="material-symbols:chevron-right"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="forward"
+            >
               Continue
-              <Icon aria-hidden="true" class="text-sm" name="material-symbols:chevron-right" />
-            </FancyButton>
+            </v-btn>
 
             <!-- The last step records a statement rather than saving a form, so it stays
                  up once made: the reader sees it land, may make it again after the next
@@ -443,14 +467,29 @@ const GUIDE_URL = "https://idenzy.io/docs/tokens/revocation";
               >
                 Confirm again
               </v-btn>
-              <FancyButton v-if="confirmedAt === null" :disabled="!observed" @click="confirmEnforcement">
+              <v-btn
+                v-if="confirmedAt === null"
+                :disabled="!observed"
+                append-icon="material-symbols:check"
+                class="text-xs font-medium"
+                color="neutral"
+                size="small"
+                variant="text"
+                @click="confirmEnforcement"
+              >
                 Confirm enforcement
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:check" />
-              </FancyButton>
-              <FancyButton v-else @click="open = false">
+              </v-btn>
+              <v-btn
+                v-else
+                append-icon="material-symbols:check"
+                class="text-xs font-medium"
+                color="neutral"
+                size="small"
+                variant="text"
+                @click="open = false"
+              >
                 Done
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:check" />
-              </FancyButton>
+              </v-btn>
             </template>
           </div>
         </footer>

@@ -565,10 +565,16 @@ const expanded = ref(false);
         data, and how long is left to answer each.
       </template>
       <template #actions>
-        <FancyButton @click="logOpen = true">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Log request
-        </FancyButton>
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:add"
+          size="small"
+          variant="text"
+          @click="logOpen = true"
+        >
+          Log Request
+        </v-btn>
       </template>
     </PageHeader>
 
@@ -667,11 +673,11 @@ const expanded = ref(false);
               <template #activator="{ props: activator }">
                 <v-btn
                   v-bind="activator"
-                  class="text-xs font-medium"
+                  class="idenzy-toolbar-control text-xs font-medium"
                   color="neutral"
                   prepend-icon="material-symbols:filter-list"
                   size="small"
-                  variant="outlined"
+                  variant="text"
                 >
                   Type
                   <span
@@ -732,7 +738,7 @@ const expanded = ref(false);
                   color="neutral"
                   prepend-icon="material-symbols:assignment-ind-outline"
                   size="small"
-                  variant="outlined"
+                  variant="text"
                 >
                   {{ ownerLabel }}
                   <Icon
@@ -906,7 +912,7 @@ const expanded = ref(false);
                 class="mt-2 text-xs font-medium"
                 color="neutral"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="clearFilters"
               >
                 Clear filters
@@ -917,7 +923,7 @@ const expanded = ref(false);
                 color="neutral"
                 prepend-icon="material-symbols:add"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="logOpen = true"
               >
                 Log request
@@ -927,7 +933,7 @@ const expanded = ref(false);
                 class="mt-2 text-xs font-medium"
                 color="neutral"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="patch({ view: 'all' })"
               >
                 Show every request
@@ -1086,7 +1092,6 @@ const expanded = ref(false);
 .data-requests__search :deep(.v-field__input),
 .data-requests__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .data-requests__search :deep(.v-field__prepend-inner > .v-icon),

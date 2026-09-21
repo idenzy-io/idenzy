@@ -407,15 +407,24 @@ function statusDetail(user: ProjectUser): string {
           color="neutral"
           prepend-icon="material-symbols:download"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="exportCsv(filtered)"
         >
           Export CSV
         </v-btn>
-        <FancyButton @click="adding = true">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:person-add-outline" />
-          Add user
-        </FancyButton>
+        <!-- Text and rippled, like the links in the signed-out bar. `ripple` is spelled out
+             because the panel turns it off globally and a text button has no fill of its own
+             to answer a press with. -->
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:person-add-outline"
+          size="small"
+          variant="text"
+          @click="adding = true"
+        >
+          Add User
+        </v-btn>
       </template>
     </PageHeader>
 
@@ -747,7 +756,7 @@ function statusDetail(user: ProjectUser): string {
                 class="mt-2 text-xs font-medium"
                 color="neutral"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="resetFilters"
               >
                 Clear filters

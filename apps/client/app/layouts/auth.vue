@@ -53,31 +53,13 @@ watch(
 </script>
 
 <template>
-  <!-- Two classes and not one. `flow-shell` is the square corner these screens share with
-       onboarding, which is the other place a person has one column and one thing to do;
-       `auth-shell` is what is true of the signed-out screens alone — the ink accent and
-       the control language built on it. See both blocks in theme.css. -->
+  <!-- Two classes and not one. `flow-shell` is what these screens share with onboarding,
+       which is the other place a person has one column and one thing to do: the size a
+       control is labelled at, and nothing else now that the corners are the product's.
+       `auth-shell` is what is true of the signed-out screens alone — the ink accent and the
+       control language built on it. See both blocks in theme.css. -->
   <v-app class="auth-shell flow-shell">
-    <!--
-      Ripple, back on for these screens alone.
-
-      It is off across the panel (nuxt.config.ts), and for a good reason there: a screen
-      of twenty dense controls shows the animation more often than it shows the thing the
-      animation was meant to confirm. That argument does not survive the move to this
-      shell, where there are seven controls on the busiest page, each is at least 44px,
-      and the two that matter are a black rectangle and a bordered one with no fill of
-      their own to change under a finger.
-
-      A provider is the case that decides it: pressing one hands the tab to somebody
-      else's domain, and between the press and the redirect there is nothing on the
-      screen saying the press landed.
-
-      Through a defaults provider rather than `ripple` on each button, so the next screen
-      added to this layout does not have to remember. It renders no element of its own,
-      which is what lets it sit between `v-app` and the layout components it owns.
-    -->
-    <v-defaults-provider :defaults="{ global: { ripple: true } }">
-      <v-app-bar color="transparent" flat>
+    <v-app-bar color="transparent" flat>
       <!--
         The bar's own gutter, because it no longer borrows one. theme.css strips the
         padding off every `v-toolbar__content` in the panel, where the bar's contents are
@@ -93,36 +75,35 @@ watch(
         screens, and theme.css gives it the capitals and the track it shares with the
         button at the foot of the form.
       -->
-        <div class="flex w-full items-center px-6">
-          <v-btn
-            v-if="returnable"
-            prepend-icon="material-symbols:chevron-left"
-            variant="text"
-            @click="router.back()"
-          >
-            Back
-          </v-btn>
+      <div class="flex w-full items-center px-6">
+        <v-btn
+          v-if="returnable"
+          prepend-icon="material-symbols:chevron-left"
+          variant="text"
+          @click="router.back()"
+        >
+          Back
+        </v-btn>
 
-          <v-spacer />
+        <v-spacer />
 
-          <v-btn :to="alternative.to" variant="text">
-            {{ alternative.label }}
-          </v-btn>
-        </div>
-      </v-app-bar>
+        <v-btn :to="alternative.to" variant="text">
+          {{ alternative.label }}
+        </v-btn>
+      </div>
+    </v-app-bar>
 
-      <!--
-        Centred in what is left below the app bar, not in the viewport. `v-main` already
-        stretches (`flex: 1 0 auto` inside a wrap of `min-height: 100dvh`) and carries the
-        bar's height as its own padding, so centring its contents lands the card in the
-        middle of the space a visitor can actually see. A `100dvh` of our own would measure
-        past the bar and sit everything slightly low.
-      -->
-      <v-main class="flex flex-col justify-center">
-        <div class="mx-auto w-full max-w-4xl px-6 py-16">
-          <slot />
-        </div>
-      </v-main>
-    </v-defaults-provider>
+    <!--
+      Centred in what is left below the app bar, not in the viewport. `v-main` already
+      stretches (`flex: 1 0 auto` inside a wrap of `min-height: 100dvh`) and carries the
+      bar's height as its own padding, so centring its contents lands the card in the
+      middle of the space a visitor can actually see. A `100dvh` of our own would measure
+      past the bar and sit everything slightly low.
+    -->
+    <v-main class="flex flex-col justify-center">
+      <div class="mx-auto w-full max-w-4xl px-6 py-16">
+        <slot />
+      </div>
+    </v-main>
   </v-app>
 </template>

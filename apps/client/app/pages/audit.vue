@@ -215,10 +215,10 @@ function exportCsv() {
           color="neutral"
           prepend-icon="material-symbols:download"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="exportOpen = true"
         >
-          Export filtered view
+          Export Filtered View
         </v-btn>
       </template>
     </PageHeader>
@@ -257,7 +257,7 @@ function exportCsv() {
               color="neutral"
               prepend-icon="material-symbols:badge-outline"
               size="small"
-              variant="outlined"
+              variant="text"
             >
               Actor
               <span v-if="filters.actors.length > 0" class="ml-1.5 font-mono text-primary">
@@ -286,7 +286,7 @@ function exportCsv() {
               color="neutral"
               prepend-icon="material-symbols:category-outline"
               size="small"
-              variant="outlined"
+              variant="text"
             >
               Action
               <span v-if="filters.categories.length > 0" class="ml-1.5 font-mono text-primary">
@@ -436,7 +436,7 @@ function exportCsv() {
                 class="text-xs font-medium"
                 color="neutral"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="clear"
               >
                 Clear filters
@@ -476,7 +476,7 @@ function exportCsv() {
               class="text-xs font-medium"
               color="neutral"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="drawn += PAGE"
             >
               Show {{ Math.min(PAGE, shown.length - visible.length) }} more
@@ -666,7 +666,6 @@ function exportCsv() {
 .audit__search :deep(.v-field__input),
 .audit__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .audit__search :deep(.v-field__prepend-inner > .v-icon),

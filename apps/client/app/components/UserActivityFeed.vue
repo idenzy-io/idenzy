@@ -221,9 +221,9 @@ function timestamp(iso: string): string {
 .activity-feed__count { font-size: 11px; color: rgba(var(--v-theme-on-surface), .5); white-space: nowrap; }
 /* Filled at a twentieth of the ink so the pill reads on a ground it shares with the page,
    which is white on the dark theme and black on the light one. Sized like the search on
-   every other screen: 12px text in a 32px field. */
+   every other screen: 12px text in a field the height of the row it sits in. */
 .activity-feed__search :deep(.v-field) { background: rgba(var(--v-theme-on-surface), .05); }
-.activity-feed__search :deep(.v-field__input), .activity-feed__search :deep(.v-field__input::placeholder) { font-size: .75rem; min-height: 32px; }
+.activity-feed__search :deep(.v-field__input), .activity-feed__search :deep(.v-field__input::placeholder) { font-size: .75rem; }
 .activity-feed__search :deep(.v-field__prepend-inner > .v-icon), .activity-feed__search :deep(.v-field__clearable > .v-icon) { font-size: 1rem; }
 .activity-feed__columns, .activity-feed__entry :deep(button[aria-expanded]) { display: grid; grid-template-columns: 16px 190px minmax(0, 1fr) 180px 110px; gap: 12px; align-items: center; padding: 12px 14px; }
 .activity-feed__columns { padding-block: 9px; background: rgba(var(--v-theme-on-surface), .025); font-size: 11px; color: rgba(var(--v-theme-on-surface), .55); }

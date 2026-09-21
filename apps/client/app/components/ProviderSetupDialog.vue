@@ -752,7 +752,7 @@ const missing = computed(() =>
                 color="neutral"
                 prepend-icon="material-symbols:add"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="returnUrlDialog = true"
               >
                 Add return URL
@@ -919,7 +919,7 @@ const missing = computed(() =>
                         : 'material-symbols:content-copy-outline'
                     "
                     size="small"
-                    variant="outlined"
+                    variant="text"
                     @click="copy(sdkCall)"
                   >
                     {{ copied ? "Copied" : "Copy the call" }}
@@ -989,19 +989,29 @@ const missing = computed(() =>
             >
               {{ last ? "Done" : "Cancel" }}
             </v-btn>
-            <FancyButton v-if="!last" :disabled="!canContinue || saving" @click="advance">
+            <v-btn
+              v-if="!last"
+              :disabled="!canContinue || saving"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="advance"
+            >
               {{ step === "return" ? (saved ? "Save changes" : `Add ${info?.label}`) : "Continue" }}
-              <Icon
-                :class="saving ? 'animate-spin' : ''"
-                :name="
-                  saving
-                    ? 'material-symbols:progress-activity'
-                    : 'material-symbols:chevron-right'
-                "
-                aria-hidden="true"
-                class="text-sm"
-              />
-            </FancyButton>
+              <template #append>
+                <Icon
+                  :class="saving ? 'animate-spin' : ''"
+                  :name="
+                    saving
+                      ? 'material-symbols:progress-activity'
+                      : 'material-symbols:chevron-right'
+                  "
+                  aria-hidden="true"
+                  class="text-sm"
+                />
+              </template>
+            </v-btn>
           </div>
         </footer>
       </form>

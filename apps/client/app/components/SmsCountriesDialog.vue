@@ -185,7 +185,6 @@ function submit() {
 .countries__search :deep(.v-field__input),
 .countries__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .countries__search :deep(.v-field__prepend-inner > .v-icon),

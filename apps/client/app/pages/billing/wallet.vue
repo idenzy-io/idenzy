@@ -319,7 +319,7 @@ const ZERO_SUMMARY = "Sign-in keeps working · SMS stops · metered use above th
               color="neutral"
               prepend-icon="material-symbols:tune"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="autoOpen = true"
             >
               Configure
@@ -345,7 +345,7 @@ const ZERO_SUMMARY = "Sign-in keeps working · SMS stops · metered use above th
               color="neutral"
               prepend-icon="material-symbols:edit-outline"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="alertOpen = true"
             >
               <span class="font-mono">{{ formatCents(alert.thresholdCents) }}</span>

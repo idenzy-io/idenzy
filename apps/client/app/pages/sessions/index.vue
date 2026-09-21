@@ -498,7 +498,7 @@ const endings = computed<Ending[]>(() => {
           color="neutral"
           prepend-icon="material-symbols:download"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="exportCsv(filtered)"
         >
           Export CSV
@@ -829,7 +829,7 @@ const endings = computed<Ending[]>(() => {
                 class="mt-2 text-xs font-medium"
                 color="neutral"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="resetFilters"
               >
                 Clear filters
@@ -901,7 +901,6 @@ const endings = computed<Ending[]>(() => {
 .sessions__search :deep(.v-field__input),
 .sessions__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .sessions__search :deep(.v-field__prepend-inner > .v-icon),

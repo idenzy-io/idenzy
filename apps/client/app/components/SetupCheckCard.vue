@@ -38,17 +38,10 @@ defineEmits<{ test: [] }>();
       <!-- A screen with its own control for the strip passes one; the rest get the
            re-read, which is what a check card is normally for. -->
       <slot name="actions">
-        <v-btn
-          :loading="testing"
-          class="text-xs font-medium"
-          color="neutral"
-          prepend-icon="material-symbols:play-arrow-outline"
-          size="small"
-          variant="outlined"
-          @click="$emit('test')"
-        >
+        <ActionButton :loading="testing" @click="$emit('test')">
+          <Icon aria-hidden="true" class="text-sm" name="material-symbols:play-arrow-outline" />
           Test setup
-        </v-btn>
+        </ActionButton>
       </slot>
     </template>
 

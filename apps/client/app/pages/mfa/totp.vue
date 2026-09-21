@@ -281,9 +281,9 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/totp";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Authenticator guides
+          Authenticator Guides
         </v-btn>
       </template>
     </PageHeader>

@@ -555,17 +555,26 @@ const GUIDES = [
             >
               Cancel changes
             </v-btn>
-            <FancyButton :disabled="!canSave" @click="save">
-              <Icon
-                :class="saving ? 'animate-spin' : ''"
-                :name="
-                  saving ? 'material-symbols:progress-activity' : 'material-symbols:save-outline'
-                "
-                aria-hidden="true"
-                class="text-sm"
-              />
+            <v-btn
+              :disabled="!canSave"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="save"
+            >
+              <template #prepend>
+                <Icon
+                  :class="saving ? 'animate-spin' : ''"
+                  :name="
+                    saving ? 'material-symbols:progress-activity' : 'material-symbols:save-outline'
+                  "
+                  aria-hidden="true"
+                  class="text-sm"
+                />
+              </template>
               Save policy
-            </FancyButton>
+            </v-btn>
           </div>
         </div>
       </div>

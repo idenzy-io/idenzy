@@ -39,12 +39,31 @@
   --idenzy-control-height-large: 48px;
   --idenzy-control-height-x-large: 56px;
 
-  /* Radius tracks the height, so a taller control keeps the same corner proportion. */
-  --idenzy-radius-x-small: 8px;
-  --idenzy-radius-small: 10px;
-  --idenzy-radius: 12px;
-  --idenzy-radius-large: 14px;
-  --idenzy-radius-x-large: 16px;
+  /*
+   * The row of controls that sits over a table: a search, a period, Filter, Columns.
+   *
+   * Off the ladder on purpose, and the one height here that is. It is the table head's own
+   * height (`--v-table-header-height` in DataTable.vue), so the controls for a table and the
+   * head of that table are the same band. A small control is right in a dialog footer or a
+   * row of settings, where it is one of several things on a line; alone above a table it
+   * reads as an afterthought rather than as the controls for what is below, and the default
+   * forty is a second header.
+   *
+   * One token for all four, because the whole point of the row is that a field, a segmented
+   * control and two buttons of three different component families end up the same height.
+   * Four numbers in four files is four chances for one of them to drift.
+   */
+  --idenzy-toolbar-height: 36px;
+
+  /* A scale of corners, for the things that nest: a menu inside a card, a row inside a
+     menu, a segment inside its track. Controls no longer climb it — a button and a field
+     both take `--idenzy-radius` whatever their size, because they sit beside each other and
+     a pair that turns differently reads as a pair that does not match. */
+  --idenzy-radius-x-small: 4px;
+  --idenzy-radius-small: 6px;
+  --idenzy-radius: 8px;
+  --idenzy-radius-large: 10px;
+  --idenzy-radius-x-large: 12px;
 
   --idenzy-icon-size-x-small: 0.75rem;
   --idenzy-icon-size-small: 0.875rem;
@@ -195,9 +214,14 @@
   --v-input-control-height: var(--idenzy-control-height);
 }
 
+/* Comfortable is the toolbar's density rather than a rung of its own: every search field
+   in the panel is one, and each of them sits in the row over a table beside the segmented
+   control and the two menu buttons. So it takes that row's height and not the ladder's.
+   The one field on this density that is not in such a row — the combobox in
+   AuthDomainSetupDialog — grows four pixels with it, which a dialog has room for. */
 .v-input--density-comfortable,
 .v-input--density-comfortable .v-field {
-  --v-input-control-height: var(--idenzy-control-height-small);
+  --v-input-control-height: var(--idenzy-toolbar-height);
 }
 
 .v-input--density-compact,
@@ -403,38 +427,57 @@
 }
 
 /*
- * Buttons. Height and radius per size rather than one value on `.v-btn`, so `size="large"`
- * still means something; `--v-btn-height` is Vuetify's own hook and the padding it derives
- * follows it.
+ * Buttons. Height per size, corner shared.
+ *
+ * `--v-btn-height` is Vuetify's own hook and the padding it derives follows it, so the
+ * ladder still makes `size="large"` mean something.
+ *
+ * The corner does not climb that ladder, and it used to. A button's neighbour is a field —
+ * a search with a button beside it, a form with a save under it — and `.v-field` takes
+ * `--idenzy-radius` at every density rather than one per size. A 32px button turning at six
+ * beside a 36px field turning at eight is the pair not quite agreeing, which is more
+ * visible than the two heights being different, because the heights are meant to be.
  */
+.v-btn {
+  border-radius: var(--idenzy-radius);
+}
+
 .v-btn--size-x-small {
   --v-btn-height: var(--idenzy-control-height-x-small);
-
-  border-radius: var(--idenzy-radius-x-small);
 }
 
 .v-btn--size-small {
   --v-btn-height: var(--idenzy-control-height-small);
-
-  border-radius: var(--idenzy-radius-small);
 }
 
 .v-btn--size-default {
   --v-btn-height: var(--idenzy-control-height);
-
-  border-radius: var(--idenzy-radius);
 }
 
 .v-btn--size-large {
   --v-btn-height: var(--idenzy-control-height-large);
-
-  border-radius: var(--idenzy-radius-large);
 }
 
 .v-btn--size-x-large {
   --v-btn-height: var(--idenzy-control-height-x-large);
+}
 
-  border-radius: var(--idenzy-radius-x-large);
+/*
+ * A button in the row over a table: Filter, Columns, and the Type menu on data requests.
+ *
+ * `size="small"` is still true of everything else about it — the type, the icon and the
+ * padding Vuetify derives are that size — and only the height is the row's. Given a rung of
+ * its own instead, every small button in the panel would have grown with it, which is four
+ * pixels onto every dialog footer to line up four controls on one screen.
+ *
+ * Each of them also asks for `ripple` at the call site, which is a prop and not something
+ * this rule can carry. The panel turns the ripple off globally (nuxt.config.ts) and the
+ * signed-out screens turn it back on for the reason that applies here too: a text button has
+ * no fill of its own to change under a finger, so without it a press on a touch screen
+ * leaves only the hover overlay, which outlives the finger that caused it.
+ */
+.idenzy-toolbar-control {
+  --v-btn-height: var(--idenzy-toolbar-height);
 }
 
 /*
@@ -544,46 +587,33 @@
 /*
  * An icon button is square at its size's height, so it lines up with the text button
  * beside it. Vuetify makes it twelve pixels bigger than that in both directions, which
- * beside a 32px "Docs" is a 44px bell. Its radius comes off the same ladder as its width.
+ * beside a 32px "Docs" is a 44px bell.
+ *
+ * Nothing here restores the corner. Vuetify draws an icon button as a circle, in its own
+ * layer, and the unlayered `.v-btn` above beats a layer whatever the specificity — so the
+ * corner is already the one every other button takes, and a rule saying so again would be
+ * a second copy of a value to keep true.
  */
 .v-btn--icon {
   height: var(--v-btn-height);
   width: var(--v-btn-height);
 }
 
-.v-btn--icon.v-btn--size-default {
-  border-radius: var(--idenzy-radius);
-}
-
 /*
- * Square corners, for the shells that are one column and one task.
+ * What both flow shells carry, whatever else is true of each.
  *
- * Signing in and creating a first project are not the workspace. The panel is a dense
- * grid of rounded controls a person lives in; these are a handful of pages seen once,
- * each a single column with one thing to do, and they are drawn square to say so.
+ * These screens used to zero the radius ladder: signing in and creating a first project
+ * are not the workspace, so they were drawn square to say so. They are not any more. The
+ * panel's controls all turn at `--idenzy-radius` now, fields and buttons alike, and a
+ * person meets the sign-in a minute before the dashboard — a square commit followed by a
+ * rounded one reads as two products rather than as two moods of one.
  *
- * Done by zeroing the ladder rather than by a `border-radius` on each thing, and that is
- * the whole point of this rule. `ChoiceList` and `InfoNote` round themselves with
- * `rounded-(--idenzy-radius-small)`, and between them they are on fourteen screens — so a
- * radius removed in either component would square a dialog in the panel that nobody asked
- * to change. Read from the shell instead, both go square here and stay rounded there, and
- * neither component learns that these two pages exist. Anything else that rounds itself
- * from the ladder is carried along for free, which is what a ladder is for.
- *
- * The round things that are not controls keep their shape: `rounded-full` on the step
- * numerals and the radio's dot is a literal, not a token, because a circle is what those
- * are rather than a corner they happen to have.
- *
- * Both flow layouts carry this. `auth-shell` below is the narrower class and carries only
- * what is true of the signed-out screens alone.
+ * What is left is the type. The corners come from `:root` like everywhere else, which is
+ * also what `ChoiceList` and `InfoNote` wanted all along: they round themselves off the
+ * ladder and are on fourteen screens between them, so neither has ever had to learn that
+ * these two pages exist.
  */
 .flow-shell {
-  --idenzy-radius-x-small: 0px;
-  --idenzy-radius-small: 0px;
-  --idenzy-radius: 0px;
-  --idenzy-radius-large: 0px;
-  --idenzy-radius-x-large: 0px;
-
   /* The type a control is labelled at in a flow: twelve pixels, against the panel's
      thirteen. One size for both shells, because the button that commits a flow is the
      same button whether it says LOG IN or Continue, and a screen a person meets in the
@@ -613,8 +643,9 @@
  * it and fields that are a value over a hairline. It is a different language from the
  * panel's — the panel is a workspace of 40px controls at 13px, and these are five pages a
  * person sees once — so it is scoped to `.auth-shell` rather than changed on the ladder
- * above, and the ladder is left alone for every screen behind the sign-in. The corners
- * are not here: they come from `.flow-shell`, which the onboarding shell shares.
+ * above, and the ladder is left alone for every screen behind the sign-in. The corners are
+ * not here and are not `.flow-shell`'s either: every control in the product turns at
+ * `--idenzy-radius`, and these are controls.
  *
  * Written against the *variant* rather than the size, because on these screens the
  * variant already carries the meaning: flat is the one thing the form commits, outlined
@@ -634,15 +665,15 @@
  * — are the properties restated for dark at the end.
  */
 .auth-shell {
-  /* The commit. 44px is the reference's, and it is deliberately shorter than the
-     provider buttons beside it: the form is one field-width column and the button
-     closing it reads as the end of that column, not as a sixth way in. */
-  --idenzy-auth-commit-height: 44px;
+  /* The commit. It was 44px, the reference's, and the provider buttons beside it were 55,
+     so the commit read as the end of the column rather than a sixth way in. Both are the
+     product's control height now; what still parts them is the type — capitals and a track
+     on the commit, a sentence at reading size on a provider — and the inline padding below,
+     which is why these two are separate values and not one. */
   --idenzy-auth-commit-inline: 16px;
 
-  /* A way in. Taller than the commit and set at reading size rather than in capitals,
-     because the label is a sentence ("Continue with Google") and not a verb. */
-  --idenzy-auth-provider-height: 55px;
+  /* A way in. Set at reading size rather than in capitals, because the label is a sentence
+     ("Continue with Google") and not a verb. */
   --idenzy-auth-provider-inline: 22px;
   --idenzy-auth-provider-icon: 18px;
 
@@ -686,12 +717,13 @@
  * The commit.
  *
  * `--v-btn-height` is Vuetify's own hook, so the height is stated once and the padding,
- * the icon box and the loader all follow it. The corner comes off the ladder, which
- * `.flow-shell` has already flattened.
+ * the icon box and the loader all follow it. The height and the corner are both the
+ * product's now — `--idenzy-control-height` and the ladder at `:root` — so the button that
+ * commits a sign-in is the size of the buttons on the screen it opens.
  */
 .auth-shell .v-btn--variant-flat,
 .auth-shell .v-btn--variant-elevated {
-  --v-btn-height: var(--idenzy-auth-commit-height);
+  --v-btn-height: var(--idenzy-control-height);
 
   font-size: var(--idenzy-flow-control-size);
   font-weight: 500;
@@ -711,7 +743,7 @@
  * full-strength border reads as a second, paler button inside the first.
  */
 .auth-shell .v-btn--variant-outlined {
-  --v-btn-height: var(--idenzy-auth-provider-height);
+  --v-btn-height: var(--idenzy-control-height);
   --idenzy-outlined-fill: 0%;
   --idenzy-outlined-fill-pressed: var(--idenzy-auth-provider-fill-pressed);
   --idenzy-outlined-line: var(--idenzy-auth-provider-line);
@@ -901,9 +933,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Surfaces sit one step above the controls they hold, which is what keeps a 12px control
-   from looking pinned to the corner of the card it is in. A menu holds 8px items and
-   takes the step above those. */
+/* Surfaces sit one step above the controls they hold, which is what keeps a control
+   from looking pinned to the corner of the card it is in. A menu holds items off the
+   bottom of the ladder and takes the step above those. Every value is a step on the
+   ladder rather than a number, so the whole panel is retuned from one place. */
 .v-card,
 .v-sheet.v-sheet--border {
   border-radius: var(--idenzy-radius-x-large);
@@ -954,6 +987,49 @@
    order the two are in. */
 .v-menu > .v-overlay__content > .v-list {
   padding: var(--idenzy-menu-inset);
+}
+
+/*
+ * A dropdown is Vuetify's own list, and none of the above.
+ *
+ * Everything a menu is given here — the corner, the gutter, the rounded row — is drawn
+ * for the menus the panel opens off a button: a handful of items, floating over a page
+ * of rounded surfaces, where an inset row reads as a thing to point at. A select's menu
+ * is a different object. It belongs to the field it drops out of, it is exactly that
+ * field's width, and it can run to a scrolling list of options, so a corner and a gutter
+ * stop it being the field's continuation and make it a second, smaller box floating near
+ * one. The fields it opens under are `variant="underlined"`, which is a rule and two
+ * square ends, and nothing about that shape asks for a rounded tray beneath it.
+ *
+ * `revert-layer` rather than a zero, because the target named is Vuetify's default and
+ * not a number of ours. This file is unlayered and Vuetify ships inside
+ * `@layer vuetify-components`, so rolling the unlayered value back leaves exactly what
+ * Vuetify would have drawn: a 4px corner on the popup, square rows, and its own band
+ * above and below the list. A zero written out would be a third answer, agreeing with
+ * neither, and it would go stale the day Vuetify changes its mind.
+ *
+ * Three content classes because a select, a combobox and an autocomplete each label
+ * their own overlay, and the panel uses two of the three. Four classes deep so the rules
+ * above are outranked whatever order they end up in.
+ *
+ * The edge and the shadow are deliberately left alone: those separate the popup from the
+ * page behind it, which is a different question from its shape.
+ */
+.v-menu
+> .v-overlay__content:is(.v-select__content, .v-combobox__content, .v-autocomplete__content),
+.v-menu
+  > .v-overlay__content:is(.v-select__content, .v-combobox__content, .v-autocomplete__content)
+  > .v-list,
+.v-menu
+  > .v-overlay__content:is(.v-select__content, .v-combobox__content, .v-autocomplete__content)
+  .v-list-item {
+  border-radius: revert-layer;
+}
+
+.v-menu
+  > .v-overlay__content:is(.v-select__content, .v-combobox__content, .v-autocomplete__content)
+  > .v-list {
+  padding: revert-layer;
 }
 
 /*
@@ -1045,10 +1121,10 @@
 }
 
 /*
- * A navigation item: 36px tall, an 8px corner, a 16px glyph ten pixels from a 13px
- * label. Vuetify's nav preset has the type right and is a size up on everything else.
- * The two overlay weights are its own hooks, so hover and active stay one colour at two
- * strengths.
+ * A navigation item: 36px tall, the ladder's smallest corner, a 16px glyph ten pixels
+ * from a 13px label. Vuetify's nav preset has the type right and is a size up on
+ * everything else. The two overlay weights are its own hooks, so hover and active stay
+ * one colour at two strengths.
  *
  * The ink is the ladder above: a row rests at the inactive shade and goes to the
  * theme's ink when the pointer, the focus or the route is on it. A group's header goes

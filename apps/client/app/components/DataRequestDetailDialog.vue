@@ -585,7 +585,7 @@ function expiry(job: ExportJob): string {
               class="text-xs font-medium"
               color="neutral"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="open = false"
             >
               Close

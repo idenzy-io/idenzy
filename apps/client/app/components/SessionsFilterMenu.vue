@@ -146,11 +146,11 @@ function clear() {
     <template #activator="{ props: activator }">
       <v-btn
         v-bind="activator"
-        class="text-xs font-medium"
+        class="idenzy-toolbar-control text-xs font-medium"
         color="neutral"
         prepend-icon="material-symbols:filter-list"
         size="small"
-        variant="outlined"
+        variant="text"
       >
         Filter
         <span

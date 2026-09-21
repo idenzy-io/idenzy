@@ -28,10 +28,17 @@ defineEmits<{ click: [] }>();
   >
     <template #activator="{ props: tip }">
       <span v-bind="tip">
-        <FancyButton :disabled="!billing.running" @click="$emit('click')">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Add credit
-        </FancyButton>
+        <v-btn
+          :disabled="!billing.running"
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:add"
+          size="small"
+          variant="text"
+          @click="$emit('click')"
+        >
+          Add Credit
+        </v-btn>
       </span>
     </template>
   </v-tooltip>

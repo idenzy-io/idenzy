@@ -429,10 +429,16 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
         while a sign-in is happening, use <NuxtLink to="/hooks">Hooks</NuxtLink>.
       </template>
       <template #actions>
-        <FancyButton @click="addEndpoint">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Add endpoint
-        </FancyButton>
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:add"
+          size="small"
+          variant="text"
+          @click="addEndpoint"
+        >
+          Add Endpoint
+        </v-btn>
       </template>
     </PageHeader>
 
@@ -460,7 +466,7 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
         color="neutral"
         prepend-icon="material-symbols:refresh"
         size="small"
-        variant="outlined"
+        variant="text"
         @click="reload()"
       >
         Try again
@@ -566,7 +572,7 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
                 color="neutral"
                 prepend-icon="material-symbols:tune"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="editEndpoint(selected)"
               >
                 Edit
@@ -578,7 +584,7 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
                 color="neutral"
                 prepend-icon="material-symbols:bolt"
                 size="small"
-                variant="outlined"
+                variant="text"
                 @click="sendTest"
               >
                 Send test event
@@ -684,7 +690,7 @@ const retryHours = Math.round(retryWindowSeconds() / 3600);
                   color="neutral"
                   prepend-icon="material-symbols:key-outline"
                   size="small"
-                  variant="outlined"
+                  variant="text"
                   @click="askRotate"
                 >
                   Rotate secret

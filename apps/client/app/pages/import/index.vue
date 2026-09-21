@@ -247,14 +247,20 @@ const sourcesOpen = ref(false);
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Migration guides
+          Migration Guides
         </v-btn>
-        <FancyButton @click="wizardOpen = true">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          New import
-        </FancyButton>
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          prepend-icon="material-symbols:add"
+          size="small"
+          variant="text"
+          @click="wizardOpen = true"
+        >
+          New Import
+        </v-btn>
       </template>
     </PageHeader>
 
@@ -385,7 +391,7 @@ const sourcesOpen = ref(false);
                     class="mt-2 text-xs font-medium"
                     color="neutral"
                     size="small"
-                    variant="outlined"
+                    variant="text"
                     @click="resetFilters"
                   >
                     Clear filters
@@ -398,10 +404,16 @@ const sourcesOpen = ref(false);
                   title="No imports yet"
                 >
                   <template #actions>
-                    <FancyButton @click="wizardOpen = true">
-                      <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+                    <v-btn
+                      class="text-xs font-medium"
+                      color="neutral"
+                      prepend-icon="material-symbols:add"
+                      size="small"
+                      variant="text"
+                      @click="wizardOpen = true"
+                    >
                       Start an import
-                    </FancyButton>
+                    </v-btn>
                     <v-btn
                       :href="GUIDES_URL"
                       class="text-xs font-medium"
@@ -409,7 +421,7 @@ const sourcesOpen = ref(false);
                       rel="noopener"
                       size="small"
                       target="_blank"
-                      variant="outlined"
+                      variant="text"
                     >
                       Read the guides
                     </v-btn>
@@ -534,7 +546,6 @@ const sourcesOpen = ref(false);
 .imports__search :deep(.v-field__input),
 .imports__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .imports__search :deep(.v-field__prepend-inner > .v-icon),

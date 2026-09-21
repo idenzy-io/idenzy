@@ -228,17 +228,23 @@ const issues = computed(() =>
           <template v-if="job">
             <ImportRunCard :job="job">
               <template v-if="job.status === 'done'" #actions>
-                <FancyButton @click="begin">
-                  <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+                <v-btn
+                  class="text-xs font-medium"
+                  color="neutral"
+                  prepend-icon="material-symbols:add"
+                  size="small"
+                  variant="text"
+                  @click="begin"
+                >
                   Import another
-                </FancyButton>
+                </v-btn>
                 <v-btn
                   v-if="!job.dryRun"
                   class="text-xs font-medium"
                   color="neutral"
                   size="small"
                   to="/users"
-                  variant="outlined"
+                  variant="text"
                 >
                   View users
                 </v-btn>
@@ -247,7 +253,7 @@ const issues = computed(() =>
                   class="text-xs font-medium"
                   color="neutral"
                   size="small"
-                  variant="outlined"
+                  variant="text"
                   @click="run(false)"
                 >
                   Run it for real
@@ -513,18 +519,30 @@ const issues = computed(() =>
             <span v-if="step === 'review' && analysis" class="text-[11px] text-ink/50">
               Recorded in the audit log with who ran it and when.
             </span>
-            <FancyButton
+            <v-btn
               v-if="step === 'review'"
               :disabled="!ready.review"
+              class="text-xs font-medium"
+              color="neutral"
+              prepend-icon="material-symbols:play-arrow"
+              size="small"
+              variant="text"
               @click="run(options.dryRun)"
             >
-              <Icon aria-hidden="true" class="text-sm" name="material-symbols:play-arrow" />
               {{ options.dryRun ? "Run the dry run" : "Run the import" }}
-            </FancyButton>
-            <FancyButton v-else :disabled="!ready[step]" @click="next">
+            </v-btn>
+            <v-btn
+              v-else
+              :disabled="!ready[step]"
+              append-icon="material-symbols:chevron-right"
+              class="text-xs font-medium"
+              color="neutral"
+              size="small"
+              variant="text"
+              @click="next"
+            >
               Continue
-              <Icon aria-hidden="true" class="text-sm" name="material-symbols:chevron-right" />
-            </FancyButton>
+            </v-btn>
           </div>
         </footer>
       </div>

@@ -176,7 +176,7 @@ async function finish() {
           id="use-case"
           v-model="draft.useCase"
           :items="USE_CASES"
-          :list-props="{ density: 'compact', nav: true, class: 'onboarding-menu' }"
+          :list-props="{ density: 'compact' }"
           :maxlength="USE_CASE_MAX"
           :return-object="false"
           hide-details
@@ -195,7 +195,7 @@ async function finish() {
           id="heard-from"
           v-model="draft.heardFrom"
           :items="HEARD_FROM"
-          :list-props="{ density: 'compact', nav: true, class: 'onboarding-menu' }"
+          :list-props="{ density: 'compact' }"
           :maxlength="HEARD_FROM_MAX"
           :return-object="false"
           hide-details
@@ -251,22 +251,3 @@ async function finish() {
     </form>
   </div>
 </template>
-
-<style>
-/*
- * Colour only, and only on the title.
- *
- * `.v-list--nav` paints a resting item with `--idenzy-nav-inactive`, which is right in the
- * drawer — one place is current and the rest are elsewhere — and wrong in a menu of
- * answers, where nothing is elsewhere and the title is the thing being read. The subtitle
- * is left exactly as the theme draws it, so the ladder is the title's ink over the
- * subtitle's, and nothing about the size, weight or shape of the row changes.
- *
- * Unscoped because the list is teleported into an overlay Vuetify renders, so this
- * component's scope attribute never reaches it. Namespaced on a class nothing else uses,
- * which is what keeps an unscoped rule from being a global one.
- */
-.onboarding-menu .v-list-item-title {
-  color: rgb(var(--v-theme-on-surface));
-}
-</style>

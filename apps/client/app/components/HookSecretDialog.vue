@@ -84,7 +84,7 @@ function finish() {
                 :prepend-icon="copied ? 'material-symbols:check' : 'material-symbols:content-copy-outline'"
                 class="h-auto! flex-none text-xs font-medium"
                 color="neutral"
-                variant="outlined"
+                variant="text"
                 @click="copySecret"
               >
                 {{ copied ? "Copied" : "Copy secret" }}

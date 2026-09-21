@@ -44,7 +44,7 @@ defineEmits<{ settle: [] }>();
       class="flex-none text-xs font-medium"
       color="error"
       size="small"
-      variant="outlined"
+      variant="text"
       @click="$emit('settle')"
     >
       Open billing portal

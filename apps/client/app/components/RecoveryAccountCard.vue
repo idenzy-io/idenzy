@@ -104,7 +104,7 @@ watch(
           class="text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
         >
           Open user
         </v-btn>
@@ -162,7 +162,7 @@ watch(
           class="text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="copy(replacementText())"
         >
           {{ copied ? "Copied" : "Copy instructions" }}
@@ -239,7 +239,7 @@ watch(
           :color="set.remaining > 0 ? 'error' : 'neutral'"
           prepend-icon="material-symbols:key-off-outline"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="emit('clear')"
         >
           {{ set.remaining > 0 ? `Invalidate ${set.remaining} codes` : "Clear spent codes" }}

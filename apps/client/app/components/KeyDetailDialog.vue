@@ -164,7 +164,7 @@ const facts = computed(() => {
             color="neutral"
             prepend-icon="material-symbols:swap-horiz"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="emit('rotate')"
           >
             Rotate

@@ -298,9 +298,9 @@ const GUIDES_URL = "https://idenzy.io/docs/sms/policy";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          SMS guides
+          SMS Guides
         </v-btn>
       </template>
     </PageHeader>
@@ -319,10 +319,10 @@ const GUIDES_URL = "https://idenzy.io/docs/sms/policy";
       @test="runTest"
     >
       <template v-if="!store.loading && policy === null" #actions>
-        <FancyButton :disabled="isBusy('setup')" @click="setupOpen = true">
+        <ActionButton :disabled="isBusy('setup')" @click="setupOpen = true">
           <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           Set up SMS
-        </FancyButton>
+        </ActionButton>
       </template>
     </SetupCheckCard>
 
@@ -430,7 +430,7 @@ const GUIDES_URL = "https://idenzy.io/docs/sms/policy";
               prepend-icon="material-symbols:troubleshoot"
               size="small"
               to="/sms/providers"
-              variant="outlined"
+              variant="text"
             >
               Open delivery diagnostics
             </v-btn>
@@ -571,10 +571,16 @@ const GUIDES_URL = "https://idenzy.io/docs/sms/policy";
             title="No country is allowed"
           >
             <template #actions>
-              <FancyButton @click="countriesOpen = true">
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+              <v-btn
+                class="text-xs font-medium"
+                color="neutral"
+                prepend-icon="material-symbols:add"
+                size="small"
+                variant="text"
+                @click="countriesOpen = true"
+              >
                 Choose countries
-              </FancyButton>
+              </v-btn>
             </template>
           </EmptyState>
 

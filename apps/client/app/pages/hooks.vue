@@ -338,9 +338,9 @@ const GUIDE_URL = "https://idenzy.io/docs/hooks";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Integration guide
+          Integration Guide
         </v-btn>
       </template>
     </PageHeader>
@@ -488,7 +488,7 @@ const GUIDE_URL = "https://idenzy.io/docs/hooks";
               color="neutral"
               prepend-icon="material-symbols:key-outline"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="ask('rotate')"
             >
               Rotate secret

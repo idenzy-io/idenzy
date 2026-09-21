@@ -471,7 +471,6 @@ const summary = computed(() =>
 .sms-setup__search :deep(.v-field__input),
 .sms-setup__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .sms-setup__search :deep(.v-field__prepend-inner > .v-icon),

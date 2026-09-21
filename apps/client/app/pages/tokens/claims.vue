@@ -511,17 +511,26 @@ const GUIDES = [
           >
             Discard
           </v-btn>
-          <FancyButton :disabled="!canPublish" @click="publish">
-            <Icon
-              :class="saving ? 'animate-spin' : ''"
-              :name="
-                saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
-              "
-              aria-hidden="true"
-              class="text-sm"
-            />
+          <v-btn
+            :disabled="!canPublish"
+            class="text-xs font-medium"
+            color="neutral"
+            size="small"
+            variant="text"
+            @click="publish"
+          >
+            <template #prepend>
+              <Icon
+                :class="saving ? 'animate-spin' : ''"
+                :name="
+                  saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
+                "
+                aria-hidden="true"
+                class="text-sm"
+              />
+            </template>
             Publish template
-          </FancyButton>
+          </v-btn>
         </div>
       </div>
     </div>
@@ -600,10 +609,16 @@ const GUIDES = [
             title="Tokens carry only what we assemble"
           >
             <template #actions>
-              <FancyButton @click="openAdd">
-                <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+              <v-btn
+                class="text-xs font-medium"
+                color="neutral"
+                prepend-icon="material-symbols:add"
+                size="small"
+                variant="text"
+                @click="openAdd"
+              >
                 Add claim
-              </FancyButton>
+              </v-btn>
             </template>
           </EmptyState>
 
@@ -980,17 +995,26 @@ const GUIDES = [
         >
           Discard
         </v-btn>
-        <FancyButton :disabled="!canPublish" @click="publish">
-          <Icon
-            :class="saving ? 'animate-spin' : ''"
-            :name="
-              saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
-            "
-            aria-hidden="true"
-            class="text-sm"
-          />
+        <v-btn
+          :disabled="!canPublish"
+          class="text-xs font-medium"
+          color="neutral"
+          size="small"
+          variant="text"
+          @click="publish"
+        >
+          <template #prepend>
+            <Icon
+              :class="saving ? 'animate-spin' : ''"
+              :name="
+                saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
+              "
+              aria-hidden="true"
+              class="text-sm"
+            />
+          </template>
           Publish template
-        </FancyButton>
+        </v-btn>
       </span>
     </div>
 

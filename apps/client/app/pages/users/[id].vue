@@ -400,7 +400,15 @@ function suspensionDetail(account: ProjectUser): string {
         >. Switch to it to open the account.
       </template>
       <template #actions>
-        <FancyButton @click="openElsewhere">Switch to {{ elsewhere.name }}</FancyButton>
+        <v-btn
+          class="text-xs font-medium"
+          color="neutral"
+          size="small"
+          variant="text"
+          @click="openElsewhere"
+        >
+          Switch to {{ elsewhere.name }}
+        </v-btn>
       </template>
     </EmptyState>
 
@@ -422,7 +430,7 @@ function suspensionDetail(account: ProjectUser): string {
           class="text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
         >
           Back to users
         </v-btn>
@@ -515,10 +523,10 @@ function suspensionDetail(account: ProjectUser): string {
             color="neutral"
             prepend-icon="material-symbols:lock-open-outline"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="restore"
           >
-            Lift suspension
+            Lift Suspension
           </v-btn>
           <v-btn
             v-else
@@ -526,7 +534,7 @@ function suspensionDetail(account: ProjectUser): string {
             color="neutral"
             prepend-icon="material-symbols:block"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="suspendOpen = true"
           >
             Suspend
@@ -538,10 +546,10 @@ function suspensionDetail(account: ProjectUser): string {
             color="neutral"
             prepend-icon="material-symbols:logout"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="signOutEverywhere"
           >
-            Sign out everywhere
+            Sign Out Everywhere
           </v-btn>
 
           <v-menu :offset="4" location="bottom end">
@@ -553,7 +561,7 @@ function suspensionDetail(account: ProjectUser): string {
                 color="neutral"
                 icon="material-symbols:more-horiz"
                 size="small"
-                variant="outlined"
+                variant="text"
               />
             </template>
             <v-list density="compact" min-width="208" nav>

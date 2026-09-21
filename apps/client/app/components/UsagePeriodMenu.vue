@@ -35,7 +35,7 @@ function subtitle(period: UsagePeriod): string {
     color="neutral"
     prepend-icon="material-symbols:calendar-month-outline"
     size="small"
-    variant="outlined"
+    variant="text"
   >
     {{ label }}
 

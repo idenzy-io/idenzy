@@ -31,8 +31,8 @@ async function signOut() {
 </script>
 
 <template>
-  <!-- `flow-shell` for the square corners, shared with the signed-out screens: this is the
-       other shell that is one column with one thing to do, and it is drawn to match.
+  <!-- `flow-shell`, shared with the signed-out screens: this is the other shell that is one
+       column with one thing to do, and it is set to match.
        Deliberately not `auth-shell`, which would also repaint `color="primary"` as ink —
        right where the only accent is the sign-in button, wrong on the first screen behind
        it, where the panel's own blue is what the rest of the product uses. -->

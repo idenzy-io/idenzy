@@ -263,9 +263,9 @@ const GUIDES_URL = "https://idenzy.io/docs/passwords";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Password guides
+          Password Guides
         </v-btn>
       </template>
     </PageHeader>

@@ -303,21 +303,30 @@ async function submit() {
           >
             Cancel
           </v-btn>
-          <FancyButton :disabled="busy || (touched && !valid)" type="submit">
-            <Icon
-              v-if="busy"
-              aria-hidden="true"
-              class="animate-spin text-sm"
-              name="material-symbols:progress-activity"
-            />
-            <Icon
-              v-else
-              aria-hidden="true"
-              class="text-sm"
-              name="material-symbols:person-add-outline"
-            />
+          <v-btn
+            :disabled="busy || (touched && !valid)"
+            class="text-xs font-medium"
+            color="neutral"
+            size="small"
+            type="submit"
+            variant="text"
+          >
+            <template #prepend>
+              <Icon
+                v-if="busy"
+                aria-hidden="true"
+                class="animate-spin text-sm"
+                name="material-symbols:progress-activity"
+              />
+              <Icon
+                v-else
+                aria-hidden="true"
+                class="text-sm"
+                name="material-symbols:person-add-outline"
+              />
+            </template>
             {{ busy ? "Creating…" : "Create account" }}
-          </FancyButton>
+          </v-btn>
         </footer>
       </form>
     </v-card>

@@ -171,9 +171,9 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/step-up";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Step-up guide
+          Step-up Guide
         </v-btn>
       </template>
     </PageHeader>

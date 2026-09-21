@@ -353,9 +353,9 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Project guide
+          Project Guide
         </v-btn>
         <v-tooltip :text="NAME_NOTE" location="bottom" max-width="300">
           <template #activator="{ props: tip }">
@@ -366,7 +366,7 @@ const GUIDES_URL = "https://idenzy.io/docs/projects";
               color="neutral"
               prepend-icon="material-symbols:edit-outline"
               size="small"
-              variant="outlined"
+              variant="text"
               @click="nameOpen = true"
             >
               Rename

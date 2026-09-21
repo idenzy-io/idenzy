@@ -324,9 +324,9 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/recovery";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Recovery guide
+          Recovery Guide
         </v-btn>
       </template>
     </PageHeader>
@@ -381,7 +381,7 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/recovery";
                   color="neutral"
                   prepend-icon="material-symbols:flag-outline"
                   size="small"
-                  variant="outlined"
+                  variant="text"
                   @click="thresholdDialog = true"
                 >
                   Warning threshold: {{ settings.lowThreshold }}
@@ -840,7 +840,6 @@ const GUIDES_URL = "https://idenzy.io/docs/mfa/recovery";
 .recovery__search :deep(.v-field__input),
 .recovery__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .recovery__search :deep(.v-field__prepend-inner > .v-icon),

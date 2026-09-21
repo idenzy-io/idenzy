@@ -473,7 +473,7 @@ const chain = computed(() => localeChain(locale.value));
             color="neutral"
             size="small"
             to="/email/templates"
-            variant="outlined"
+            variant="text"
           >
             Back to templates
           </v-btn>
@@ -597,17 +597,26 @@ const chain = computed(() => localeChain(locale.value));
           >
             Revert {{ locale }}
           </v-btn>
-          <FancyButton :disabled="!canPublish" @click="publish">
-            <Icon
-              :class="saving ? 'animate-spin' : ''"
-              :name="
-                saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
-              "
-              aria-hidden="true"
-              class="text-sm"
-            />
+          <v-btn
+            :disabled="!canPublish"
+            class="text-xs font-medium"
+            color="neutral"
+            size="small"
+            variant="text"
+            @click="publish"
+          >
+            <template #prepend>
+              <Icon
+                :class="saving ? 'animate-spin' : ''"
+                :name="
+                  saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
+                "
+                aria-hidden="true"
+                class="text-sm"
+              />
+            </template>
             {{ publishLabel }}
-          </FancyButton>
+          </v-btn>
         </div>
       </div>
     </div>
@@ -637,7 +646,7 @@ const chain = computed(() => localeChain(locale.value));
         class="flex-none text-xs font-medium"
         color="neutral"
         size="small"
-        variant="outlined"
+        variant="text"
         @click="locale = elsewhere[0]?.locale ?? locale"
       >
         Open {{ elsewhere[0]?.locale }}
@@ -934,17 +943,26 @@ const chain = computed(() => localeChain(locale.value));
         >
           Discard
         </v-btn>
-        <FancyButton :disabled="!canPublish" @click="publish">
-          <Icon
-            :class="saving ? 'animate-spin' : ''"
-            :name="
-              saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
-            "
-            aria-hidden="true"
-            class="text-sm"
-          />
+        <v-btn
+          :disabled="!canPublish"
+          class="text-xs font-medium"
+          color="neutral"
+          size="small"
+          variant="text"
+          @click="publish"
+        >
+          <template #prepend>
+            <Icon
+              :class="saving ? 'animate-spin' : ''"
+              :name="
+                saving ? 'material-symbols:progress-activity' : 'material-symbols:publish-outline'
+              "
+              aria-hidden="true"
+              class="text-sm"
+            />
+          </template>
           {{ publishLabel }}
-        </FancyButton>
+        </v-btn>
       </span>
     </div>
 

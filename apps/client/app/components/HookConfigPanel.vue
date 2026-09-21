@@ -308,7 +308,7 @@ const VERDICT_WORDS: Record<FindingVerdict, string> = {
           color="neutral"
           prepend-icon="material-symbols:fact-check-outline"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="emit('validate')"
         >
           Validate configuration
@@ -318,7 +318,7 @@ const VERDICT_WORDS: Record<FindingVerdict, string> = {
           class="ml-auto text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="emit('disable')"
         >
           Turn off {{ KIND_NOUNS[kind] }}

@@ -327,9 +327,9 @@ watch(project, () => {
           rel="noreferrer"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Integration guide
+          Integration Guide
         </v-btn>
       </template>
     </PageHeader>
@@ -410,6 +410,8 @@ watch(project, () => {
             <span class="text-xs leading-4 text-ink/55">{{ step.detail }}</span>
           </span>
 
+          <!-- A link and not the card's action: one of these sits in every row, and the
+               card's own action is the one in the header strip. -->
           <NuxtLink
             :to="step.to"
             class="flex h-5 items-center gap-1 text-xs font-medium whitespace-nowrap text-ink no-underline transition-colors hover:text-ink/60"

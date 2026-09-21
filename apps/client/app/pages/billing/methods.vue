@@ -119,10 +119,10 @@ const portalFacts = computed<Fact[]>(() => [
           class="text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="screen.openPortal()"
         >
-          Add a method
+          Add a Method
         </v-btn>
       </template>
     </PageHeader>
@@ -210,9 +210,9 @@ const portalFacts = computed<Fact[]>(() => [
             <v-btn
               append-icon="material-symbols:open-in-new"
               class="text-xs font-medium"
-              color="primary"
+              color="neutral"
               size="small"
-              variant="flat"
+              variant="text"
               @click="screen.openPortal()"
             >
               Add a method
@@ -237,7 +237,7 @@ const portalFacts = computed<Fact[]>(() => [
           class="text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="screen.openPortal()"
         >
           Open the billing portal

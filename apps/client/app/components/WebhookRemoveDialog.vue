@@ -77,7 +77,7 @@ function confirm() {
             class="mr-auto text-xs font-medium"
             color="neutral"
             size="small"
-            variant="outlined"
+            variant="text"
             @click="emit('pause')"
           >
             Pause endpoint

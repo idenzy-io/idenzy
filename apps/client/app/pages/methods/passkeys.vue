@@ -250,9 +250,9 @@ const GUIDES_URL = "https://idenzy.io/docs/passkeys";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Passkey guides
+          Passkey Guides
         </v-btn>
       </template>
     </PageHeader>
@@ -265,20 +265,17 @@ const GUIDES_URL = "https://idenzy.io/docs/passkeys";
       description="Nobody can sign in with a passkey on this project until these are settled."
     >
       <template #actions>
-        <FancyButton
+        <ActionButton
           v-if="saved.relyingParty === null"
-          :disabled="isBusy('create')"
+          :loading="isBusy('create')"
           @click="partyDialog = true"
         >
-          <Icon
-            :class="isBusy('create') ? 'animate-spin' : ''"
-            :name="isBusy('create') ? 'material-symbols:progress-activity' : 'material-symbols:add'"
-            aria-hidden="true"
-            class="text-sm"
-          />
+          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           Complete setup
-        </FancyButton>
+        </ActionButton>
       </template>
+      <!-- Ghost and not the card's action: this one belongs to the row it sits in, and the
+           underlined action above is the card's. -->
       <template #action="{ blocker }">
         <v-btn
           v-if="blocker.id === 'disabled'"
@@ -286,7 +283,7 @@ const GUIDES_URL = "https://idenzy.io/docs/passkeys";
           class="-mt-1 text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="setEnabled(true)"
         >
           {{ blocker.action }}

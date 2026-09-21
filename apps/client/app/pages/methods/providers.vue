@@ -303,14 +303,10 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
           rel="noopener"
           size="small"
           target="_blank"
-          variant="outlined"
+          variant="text"
         >
-          Provider guides
+          Provider Guides
         </v-btn>
-        <FancyButton @click="addProvider">
-          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
-          Add provider
-        </FancyButton>
       </template>
     </PageHeader>
 
@@ -321,13 +317,15 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
       :blockers="blockers"
       description="Nobody can sign in with a provider on this project until these are settled."
     >
+      <!-- Ghost buttons and not the card's action: these sit in the rows the card holds,
+           one per blocker, and the underlined action belongs to the card itself. -->
       <template #action="{ blocker }">
         <v-btn
           v-if="blocker.id === 'none'"
           class="-mt-1 text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="addProvider"
         >
           {{ blocker.action }}
@@ -338,7 +336,7 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
           class="-mt-1 text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="returnUrlDialog = true"
         >
           {{ blocker.action }}
@@ -348,7 +346,7 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
           class="-mt-1 text-xs font-medium"
           color="neutral"
           size="small"
-          variant="outlined"
+          variant="text"
           @click="manageById(blocker.id)"
         >
           {{ blocker.action }}
@@ -381,10 +379,16 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
         title="No provider yet"
       >
         <template #actions>
-          <FancyButton @click="addProvider">
-            <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
+          <v-btn
+            class="text-xs font-medium"
+            color="neutral"
+            prepend-icon="material-symbols:add"
+            size="small"
+            variant="text"
+            @click="addProvider"
+          >
             Add provider
-          </FancyButton>
+          </v-btn>
           <v-btn
             :href="GUIDES_URL"
             class="text-xs font-medium"
@@ -392,7 +396,7 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
             rel="noopener"
             size="small"
             target="_blank"
-            variant="outlined"
+            variant="text"
           >
             Read the guides
           </v-btn>
@@ -445,17 +449,10 @@ const GUIDES_URL = "https://idenzy.io/docs/providers";
         />
       </template>
       <template #actions>
-        <v-btn
-          :loading="isBusy('return')"
-          class="text-xs font-medium"
-          color="neutral"
-          prepend-icon="material-symbols:add"
-          size="small"
-          variant="outlined"
-          @click="returnUrlDialog = true"
-        >
+        <ActionButton :loading="isBusy('return')" @click="returnUrlDialog = true">
+          <Icon aria-hidden="true" class="text-sm" name="material-symbols:add" />
           Add return URL
-        </v-btn>
+        </ActionButton>
       </template>
 
       <!--

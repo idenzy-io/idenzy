@@ -246,7 +246,6 @@ function endedLabel(session: SessionRow): string {
 .session-list__search :deep(.v-field__input),
 .session-list__search :deep(.v-field__input::placeholder) {
   font-size: 0.75rem;
-  min-height: 32px;
 }
 
 .session-list__search :deep(.v-field__prepend-inner > .v-icon),

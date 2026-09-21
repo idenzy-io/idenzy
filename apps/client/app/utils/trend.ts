@@ -16,6 +16,13 @@ export interface Trend {
   tone: TrendTone;
   /** "+4.1%", or a dash when there was nothing to compare against. */
   text: string;
+  /**
+   * Whether the last period gave anything to measure against. False where it was zero and
+   * a percentage has no answer, which is a different statement from a change of nothing
+   * and is why the two cannot share a rendering: "0%" says the figure held still, and a
+   * flat arrow beside a dash says only that the question could not be asked.
+   */
+  comparable: boolean;
 }
 
 /* Written out in full so @nuxt/icon's scan finds them; a name assembled at runtime
@@ -39,11 +46,11 @@ export const TREND_TONES: Record<TrendTone, string> = {
  */
 export function trendOf(value: number, previous: number, positive: "up" | "down" = "up"): Trend {
   const change = relativeChange(value, previous);
-  if (change === null) return { direction: "flat", tone: "neutral", text: "–" };
+  if (change === null) return { direction: "flat", tone: "neutral", text: "–", comparable: false };
 
   const written = Math.round(change * 1000) / 1000;
   const direction: TrendDirection = written === 0 ? "flat" : written > 0 ? "up" : "down";
   const tone: TrendTone =
     direction === "flat" ? "neutral" : direction === positive ? "good" : "bad";
-  return { direction, tone, text: formatChange(change) };
+  return { direction, tone, text: formatChange(change), comparable: true };
 }

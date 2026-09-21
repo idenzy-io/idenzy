@@ -173,7 +173,33 @@ const legend = computed(() =>
       })),
 );
 
-const empty = computed(() => props.series.length === 0 || props.categories.length === 0);
+/**
+ * Whether there is a picture to draw.
+ *
+ * Not only "were any series handed over": a card given a week of days that were all null
+ * has a shape and nothing in it, which is the usual state of a meter on a project that has
+ * not sent anything yet. That draws as a flat line along the axis, and a flat line at zero
+ * is a measurement — it says the figure was taken and came back nothing, which is a
+ * different claim from never having been taken at all. So a card whose every point is
+ * absent says so in words instead.
+ *
+ * A zero that was actually recorded is data and is drawn. Only `null`, the point no row
+ * was written for, counts as missing.
+ */
+const empty = computed(() => {
+  if (props.series.length === 0 || props.categories.length === 0) return true;
+  return props.series.every((entry) => entry.data.every((point) => point === null));
+});
+
+/* The watermark's wave is seeded so it holds still between visits and differs between
+   neighbours, which is what stops a row of empty cards reading as one picture repeated.
+   Off the heading, because that is the one thing a card has that its neighbours do not. */
+const seed = computed(() => {
+  const name = heading.value ?? "";
+  let total = 0;
+  for (let index = 0; index < name.length; index += 1) total += name.charCodeAt(index);
+  return (total % 8) + 1;
+});
 
 /* One announcement per card, and it names the card: several of these load at once and
    "Loading" three times says nothing about which of them the reader is waiting on. The
@@ -230,12 +256,14 @@ const chartLabel = computed(() => {
           <span v-else class="metric-card__figure font-mono text-ink">
             <span v-if="prefix" class="metric-card__affix text-ink/55">{{ prefix }}</span>
             <span>{{ figure.digits }}{{ figure.magnitude }}</span>
-            <span v-if="figure.unit" class="metric-card__affix ml-[0.25em] text-ink/55">
+            <span v-if="figure.unit" class="metric-card__affix text-ink/55">
               {{ figure.unit }}
             </span>
           </span>
 
-          <p v-if="trend && !loading" class="flex items-center gap-1.5 text-xs">
+          <!-- Only where the last period gave something to measure against; the tile does
+               the same, and for the same reason. -->
+          <p v-if="trend?.comparable && !loading" class="flex items-center gap-1.5 text-xs">
             <span
               :class="TREND_TONES[trend.tone]"
               class="inline-flex items-center gap-0.5 font-mono font-medium tabular-nums"
@@ -275,13 +303,11 @@ const chartLabel = computed(() => {
         </ul>
 
         <MetricSkeleton v-if="loading" :height="height" :label="loadingLabel" />
-        <div
-          v-else-if="empty"
-          :style="{ height: `${height}px` }"
-          class="flex items-center justify-center rounded-(--idenzy-radius-small) border border-dashed border-line text-xs text-ink/55"
-        >
-          Nothing to show yet.
-        </div>
+        <!-- The same band the usage tiles draw, at the chart's own height: a watermark of
+             the line that will be there and a pill saying there is none yet. A dashed box
+             with a sentence in it was the one thing on these screens that looked like a
+             control that had failed to load rather than a meter with nothing to report. -->
+        <NoDataPlaceholder v-else-if="empty" :height="height" :seed="seed" label="No data yet" />
         <MetricChart
           v-else-if="view === 'chart'"
           :categories="categories"
@@ -315,8 +341,12 @@ const chartLabel = computed(() => {
    display size. The affixes sit at half size. MetricSkeleton draws the loading figure
    at this size and leading, so the two move together. */
 .metric-card__figure {
-  align-items: baseline;
+  /* Centred and gapped like the statistic tile's, and for the same reasons: an affix at
+     half the size sits in the middle of the digits it qualifies rather than at their foot,
+     and one gap serves both ends. */
+  align-items: center;
   display: inline-flex;
+  gap: 0.2em;
   font-size: 1.75rem;
   font-weight: 500;
   letter-spacing: -0.02em;

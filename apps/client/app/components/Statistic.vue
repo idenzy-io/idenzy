@@ -144,13 +144,23 @@ useResizeObserver([row, run, aside], fit);
           >
             <span v-if="prefix" class="statistic__affix text-ink/55">{{ prefix }}</span>
             <span>{{ figure.digits }}{{ figure.magnitude }}</span>
-            <span v-if="figure.unit" class="statistic__affix ml-[0.25em] text-ink/55">
+            <span v-if="figure.unit" class="statistic__affix text-ink/55">
               {{ figure.unit }}
             </span>
           </span>
         </div>
 
-        <p v-if="trend && !loading" ref="aside" class="flex items-center gap-1.5 text-xs">
+        <!-- Nothing where there was nothing to compare against. A flat arrow, a dash and
+             "vs Aug 21" beside a figure of zero is three marks that together say only
+             that the question could not be asked, and it reads as a fourth figure rather
+             than as an absence. The description under the tile still says what the number
+             is; what it stood at last month, when that was nothing, is not a fact worth
+             the row. -->
+        <p
+          v-if="trend?.comparable && !loading"
+          ref="aside"
+          class="flex items-center gap-1.5 text-xs"
+        >
           <span
             :class="TREND_TONES[trend.tone]"
             class="inline-flex items-center gap-0.5 font-mono font-medium tabular-nums"
@@ -193,8 +203,20 @@ useResizeObserver([row, run, aside], fit);
 .statistic__run {
   --statistic-scale: 1;
 
-  align-items: baseline;
+  /*
+   * The affixes centre on the figure rather than sitting on its baseline.
+   *
+   * They are drawn at half the size, so a shared baseline puts the currency mark down at
+   * the foot of a 24px number with its whole height above — which reads as a symbol that
+   * has slipped off the figure rather than one belonging to it. Centred, the mark sits in
+   * the middle of the digits it qualifies, and the unit on the other end sits at the same
+   * height as the mark on the front.
+   */
+  align-items: center;
   display: inline-flex;
+  /* One gap for both ends rather than a margin on the unit and nothing on the mark. It is
+     in `em`, so it holds its proportion as the figure shrinks to fit its row. */
+  gap: 0.2em;
   font-size: calc(var(--statistic-size) * var(--statistic-scale));
   font-weight: 500;
   letter-spacing: -0.02em;

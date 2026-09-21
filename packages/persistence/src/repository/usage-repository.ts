@@ -2,7 +2,7 @@ import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
 import { and, asc, between, eq, sql } from "drizzle-orm";
 import { usageDaily } from "../schema/usage.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** `YYYY-MM-DD` in UTC, which is what the `day` column stores. */
@@ -60,7 +60,7 @@ export interface FrozenDay {
  * undercounts is worse than billing that fails loudly.
  */
 export class UsageRepository extends BaseRepository<typeof usageDaily> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, usageDaily);
   }
 

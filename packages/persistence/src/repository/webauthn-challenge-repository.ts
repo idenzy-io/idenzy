@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNull } from "drizzle-orm";
 import { webauthnChallenges } from "../schema/challenges.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /**
@@ -47,7 +47,7 @@ export interface WebauthnChallengeRow {
 
 /** The nonce half of a WebAuthn ceremony. Single use, decided by the database. */
 export class WebauthnChallengeRepository extends BaseRepository<typeof webauthnChallenges> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, webauthnChallenges);
   }
 

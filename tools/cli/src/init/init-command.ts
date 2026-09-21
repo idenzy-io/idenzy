@@ -10,7 +10,14 @@ import { resolveTemplate, TEMPLATES, templateById } from "./template-registry.js
 export const DEFAULT_API_URL = "https://auth.idenzy.io";
 
 /** Obviously not a key, so a run without one leaves something a developer notices. */
-export const PLACEHOLDER_KEY = "pk_test_replace_me";
+/**
+ * What the CLI writes for a key it does not have.
+ *
+ * `us1` is a real cell code rather than a word like `test`, because a key is `pk_<cell>_<body>`
+ * now and a placeholder that parsed its cell as "test" would teach the wrong shape to the one
+ * reader guaranteed to copy it. The body still says what to do with it.
+ */
+export const PLACEHOLDER_KEY = "pk_us1_replace_me";
 
 export interface InitOptions {
   readonly dir: string;

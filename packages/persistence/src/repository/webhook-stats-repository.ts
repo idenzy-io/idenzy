@@ -2,7 +2,7 @@ import { InternalError } from "@idenzy/core/errors";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { webhookEndpointStats } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface WebhookDayStats {
@@ -56,7 +56,7 @@ export function statsDay(at: Date): string {
  * long as the project, because it names nobody.
  */
 export class WebhookStatsRepository extends BaseRepository<typeof webhookEndpointStats> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, webhookEndpointStats);
   }
 

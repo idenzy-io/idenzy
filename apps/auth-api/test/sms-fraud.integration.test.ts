@@ -140,7 +140,7 @@ beforeAll(async () => {
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
+     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
   );
   await harness.owner.query(
     `INSERT INTO orgs (id, name, cell_id)

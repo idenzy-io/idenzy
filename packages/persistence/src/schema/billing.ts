@@ -1,4 +1,4 @@
-import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
+import { classified, controlTable } from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
@@ -81,7 +81,7 @@ const billingConfig = {
  * gone — the charges it made are on `top_ups`, which holds its own copy of the four
  * digits precisely so the receipt survives the card.
  */
-export const paymentMethods = classifiedTable(
+export const paymentMethods = controlTable(
   "payment_methods",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...billingConfig, loggable: true }),
@@ -139,7 +139,7 @@ export const paymentMethods = classifiedTable(
  * constraint is what keeps it honest. A drawdown bug that overspent a grant would
  * otherwise show up as a balance nobody can reconcile against an invoice.
  */
-export const creditGrants = classifiedTable(
+export const creditGrants = controlTable(
   "credit_grants",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -200,7 +200,7 @@ export const creditGrants = classifiedTable(
  * refusing to authenticate somebody because an invoice is unpaid, which takes a
  * customer's own product down and takes their users with it. No amount owed is worth that.
  */
-export const billingSettings = classifiedTable(
+export const billingSettings = controlTable(
   "billing_settings",
   {
     orgId: orgIdColumn(),
@@ -271,7 +271,7 @@ export const billingSettings = classifiedTable(
  * `payment_method_id`, because a receipt has to keep saying which card paid after the
  * card is removed.
  */
-export const topUps = classifiedTable(
+export const topUps = controlTable(
   "top_ups",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -310,6 +310,14 @@ export const topUps = classifiedTable(
       note: "Null on an automatic top-up, which nobody asked for personally.",
     }),
     createdAt: createdAtColumn(),
+    settledDebtCents: classified(
+      bigint("settled_debt_cents", { mode: "number" }).notNull().default(0),
+      {
+        ...financialRecord,
+        loggable: true,
+        note: "How much of this top-up cleared outstanding debt before the rest became spendable credit (ADR-0014). Answers where the difference went when a customer asks why $1,000 added $700.",
+      },
+    ),
     settledAt: classified(timestamp("settled_at", { withTimezone: true }), {
       ...financialRecord,
       loggable: true,
@@ -320,6 +328,7 @@ export const topUps = classifiedTable(
     uniqueIndex("top_ups_provider_intent_key").on(t.provider, t.providerIntentId),
     index("top_ups_org_created_idx").on(t.orgId, t.createdAt),
     check("top_ups_amount_ck", sql`amount_cents > 0`),
+    check("top_ups_settled_debt_ck", sql`settled_debt_cents between 0 and amount_cents`),
     orgIsolationPolicy("top_ups"),
   ],
 ).enableRLS();
@@ -335,7 +344,7 @@ export const topUps = classifiedTable(
  * to keep correct in two tax jurisdictions, and the one the customer downloads has to be
  * the one the provider's records agree with.
  */
-export const invoices = classifiedTable(
+export const invoices = controlTable(
   "invoices",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -389,7 +398,7 @@ export const invoices = classifiedTable(
  * independent stacks (PROJECT.md 4.13.5) — the same reason `org_members.user_id` has none.
  * `org_id` is repeated so the isolation policy applies without a join to the invoice.
  */
-export const invoiceLines = classifiedTable(
+export const invoiceLines = controlTable(
   "invoice_lines",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), financialRecord),
@@ -447,7 +456,7 @@ export const invoiceLines = classifiedTable(
  * `payload` is the provider's own body, kept verbatim. It is what a disputed charge is
  * reconciled against, and a re-serialised copy is not evidence of anything.
  */
-export const paymentProviderEvents = classifiedTable(
+export const paymentProviderEvents = controlTable(
   "payment_provider_events",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
@@ -499,7 +508,7 @@ export const paymentProviderEvents = classifiedTable(
  * the organisation's (ADR-0014). A project's own MAU is still readable from `usage_daily`;
  * it just is not what anybody is charged for.
  */
-export const usageBillingState = classifiedTable(
+export const usageBillingState = controlTable(
   "usage_billing_state",
   {
     orgId: orgIdColumn(),
@@ -536,7 +545,7 @@ export const usageBillingState = classifiedTable(
  * One row per organisation, created on first need. The balance a screen shows is spendable
  * credit less this.
  */
-export const orgDebts = classifiedTable(
+export const orgDebts = controlTable(
   "org_debts",
   {
     orgId: classified(uuid("org_id").primaryKey(), {
@@ -568,7 +577,7 @@ export const orgDebts = classifiedTable(
  * `payment_provider_events` withholds DELETE: a charge somebody could amend afterwards is
  * not evidence of anything.
  */
-export const usageCharges = classifiedTable(
+export const usageCharges = controlTable(
   "usage_charges",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),

@@ -494,3 +494,69 @@ this is what the code will surprise you with.
 - **The breaker counts consecutive failed attempts, not dead deliveries.** A delivery dies after
   eight attempts over a day, so twenty of those is a month of calling an endpoint that has never
   answered.
+
+## Working on the email feedback loop
+
+What bounces and complaints do when SES tells us about them (PROJECT.md 11.2 item 4,
+[ADR-0015](../adr/0015-email-reputation-is-a-per-project-hold.md), risks.md 2 and 2b). Read the
+ADR first: two of these look arbitrary until you know what they are avoiding.
+
+- **The message tag is the only tenant key an event has.** A notification arrives hours after the
+  request that caused it, over a channel that knows nothing about it. The shared sender is one
+  address for every project with no verified domain, so `mail.source` resolves nothing; no table
+  maps a provider message id to a project; and the recipient belongs to the customer. So
+  `dispatch` takes the project id and `SesEmailProvider` stamps `idenzy_project` on every send.
+  An event without one is recorded and counted against nobody — guessing would suppress an
+  address on the wrong project's list.
+- **The topic ARN is the check the signature does not make.** A valid signature proves a message
+  came from *an* SNS topic. Anybody can create one, subscribe our URL to it, and publish through
+  it, and every one of those carries a real AWS signature. The ARN is checked first because it is
+  free and because fetching a certificate to verify something we were going to refuse is an
+  outbound request a stranger gets to trigger.
+- **The signing certificate URL is validated before it is fetched**, anchored at both ends.
+  Unvalidated, verification becomes "fetch a key from whoever sent this and confirm they signed
+  their own message", which every forgery passes — and `sns.eu-west-1.amazonaws.com.evil.test`
+  contains the host you wanted. There is a test for each of those, because this is the check whose
+  absence looks exactly like its presence.
+- **Confirming a subscription is not part of verifying one.** Confirming an unverified message
+  subscribes us to a stranger's topic, after which everything they publish passes every check
+  above. `SnsSubscriptionConfirmer` is a separate class so the ordering cannot be lost in an edit.
+- **The event ledger keeps no payload, unlike the payment one.** A disputed charge is reconciled
+  against Stripe's verbatim body; a bounce is not evidence anybody will dispute, and its payload
+  carries the recipient address and a diagnostic code that repeats it. What is kept is the
+  verdict — `bounce_type`, `bounce_sub_type` — which is all the suppression decision and the
+  breaker read. Storing the rest would be personal data with a retention somebody then has to
+  honour, for no purpose that survives being asked what it is.
+- **The unique index is what makes a redelivery free, and the counters are why it matters.** SNS
+  delivers at least once. Suppressing an address twice is harmless; counting a bounce twice moves
+  a rate, and a rate is what stops a project sending. `record` returning false is the signal to do
+  nothing, not a lookup done before one.
+- **Only a permanent bounce suppresses; every bounce counts.** `Transient` is a full mailbox and
+  `Undetermined` is SES declining to say, so suppressing on either blocks a deliverable address on
+  a guess. Both still go in the rate, because AWS counts both towards ours.
+- **The suppression digest has two sides now and they must agree exactly.** `suppressionDigest` in
+  `@idenzy/crypto` is the one function: the send path hashes a recipient to ask, the receiver
+  hashes a bounced recipient to write. Two spellings of that normalisation is a failure with no
+  symptom — every lookup misses, the list reads as empty, and mail keeps going to addresses that
+  hard-bounced.
+- **The breaker is evaluated in `apps/workers` and only read on the send path.** A windowed
+  aggregate per message would put a seven-day sum on the hot path, and a refusal computed there
+  can only quote whatever the figure is now rather than what stopped the project. A hold is also a
+  row a person can release, which an arithmetic result is not.
+- **It reads the projects it is holding, not only the ones sending.** A held project sends
+  nothing, so it produces no events, so it drops out of "recent activity" within a window — and a
+  breaker that only read that set could open a hold it would never see again to release. Held
+  forever. `projects_for_email_reputation` returns the union, and the release path is the bad days
+  ageing out rather than anything improving.
+- **Neither carve-out in `assertWithinQuota` exempts a project from the hold, and the check sits
+  above both.** A verified domain and our own dashboard are exemptions from the sandbox
+  *allowance*. Mail leaves through one SES account whatever domain it is from, AWS reviews rates
+  per account, and a review takes mail down for everybody at once.
+- **The thresholds are AWS's at-risk lines, not its suspension ones**, and there is a volume floor
+  under them. By 10% bounces the review has already happened and it happened to everybody; and two
+  bounces out of five is 40% and means nothing, so without the floor the breaker's first act on a
+  new project would be to close it over one undeliverable test address.
+- **The sweeper shipped with the tables.** `EmailRetentionSweeper` prunes both through the
+  SECURITY DEFINER functions in migration 0057, because neither table grants DELETE to the app
+  role and a sweeper has no tenant to be scoped to. A declared retention with nothing behind it is
+  the bug this file already records against the usage rollups.

@@ -83,6 +83,47 @@ export function isSecretKey(token: string): boolean {
   return token.startsWith(ApiKeyPrefix.Secret);
 }
 
+/**
+ * What a cell code may look like where it rides inside a key (PROJECT.md 4.13.5).
+ *
+ * Lowercase alphanumeric and nothing else, which is the constraint that lets the cell sit in the
+ * key at all: the body is base64url, so `_` is a legal character in it, and a cell code that
+ * could contain one would make the two halves ambiguous.
+ */
+export const CELL_CODE_PATTERN = /^[a-z][a-z0-9]{1,7}$/;
+
+export interface ParsedApiKey {
+  readonly kind: ApiKeyPrefix;
+  /** `region_cells.code`, which is what the serving cell compares against. */
+  readonly cell: string;
+  readonly body: string;
+}
+
+/**
+ * Takes a key apart: `pk_us1_3f9a…` into its kind, its cell and the secret half.
+ *
+ * The cell travels in the key so a misdirected request is refused on the string, before any
+ * lookup — which is what §4.13.5 means by routing refusing cross-cell access rather than
+ * proxying it. It also makes a key found in a log or an `.env` file say which jurisdiction it
+ * belongs to, the same argument the kind prefix already rests on.
+ *
+ * **Split once and rejoin the rest.** `generateOpaqueToken` is base64url, so `pk_us1_3f9a_xY` is
+ * a perfectly legal key and `split("_")[2]` would silently truncate it to `3f9a`. `PublicId.parse`
+ * takes the same care for the same reason. Null rather than a throw: the caller is a guard
+ * deciding whether to refuse, and a malformed key is a refusal rather than an exception.
+ */
+export function parseApiKey(token: string): ParsedApiKey | null {
+  const kind = Object.values(ApiKeyPrefix).find((prefix) => token.startsWith(prefix));
+  if (kind === undefined) return null;
+
+  const [cell, ...rest] = token.slice(kind.length).split("_");
+  if (cell === undefined || !CELL_CODE_PATTERN.test(cell)) return null;
+
+  const body = rest.join("_");
+  if (body.length === 0) return null;
+  return { kind, cell, body };
+}
+
 /** Opaque, prefixed identifiers. Prefixes make a leaked id self-describing in a bug report. */
 export const projectIdSchema = z.string().regex(/^prj_[0-9a-zA-Z]{20,}$/);
 export const userIdSchema = z.string().regex(/^usr_[0-9a-zA-Z]{20,}$/);

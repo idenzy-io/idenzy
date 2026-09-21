@@ -17,12 +17,17 @@ import { ProjectScope } from "../tenancy/project-scope.js";
 const KEY_BYTES = 32;
 
 /**
- * Characters kept in the clear, kind prefix included.
+ * Characters of the random body kept in the clear.
  *
  * Enough to name a row in a log line or an `.env` file, far too few to narrow a guess: the
  * remaining body is still 256 bits of randomness.
+ *
+ * Counted from the body rather than from the whole key, which it used to be. A fixed 11 made
+ * sense while every key was `pk_` plus randomness; with the cell in the middle it would have
+ * silently shortened the useful part — `pk_us1_3f9a` leaves four characters where the old figure
+ * left eight, and a longer cell code would leave fewer still.
  */
-const PREFIX_LENGTH = 11;
+const BODY_PREFIX_LENGTH = 8;
 
 const KIND_PREFIXES: Record<ApiKeyKind, string> = {
   [ApiKeyKind.Publishable]: ApiKeyPrefix.Publishable,
@@ -64,13 +69,18 @@ export class ApiKeysService {
    * accident.
    */
   async create(context: OrgContext, projectId: string, kind: ApiKeyKind): Promise<CreatedApiKey> {
-    const tenant = await this.scope.of(context, projectId);
-    const secret = `${KIND_PREFIXES[kind]}${generateOpaqueToken(KEY_BYTES)}`;
+    const { tenant, cellCode } = await this.scope.resolve(context, projectId);
+
+    // The cell rides in the key, so a key presented to the wrong cell is refused on the string
+    // before it becomes a query, and a key found in a log says which jurisdiction it belongs to
+    // (PROJECT.md 4.13.5). The body stays 32 bytes of base64url either way.
+    const head = `${KIND_PREFIXES[kind]}${cellCode}_`;
+    const secret = `${head}${generateOpaqueToken(KEY_BYTES)}`;
 
     const row = await this.uow.run(tenant, (tx) =>
       new ApiKeyRepository(tx, tenant).create({
         kind,
-        prefix: secret.slice(0, PREFIX_LENGTH),
+        prefix: secret.slice(0, head.length + BODY_PREFIX_LENGTH),
         hash: hashToken(secret),
         scopes: [],
       }),

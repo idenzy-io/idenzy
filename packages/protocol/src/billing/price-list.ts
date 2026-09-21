@@ -112,3 +112,33 @@ export function toleranceCents(chargedInWindowCents: number): number {
   const share = Math.round(Math.max(0, chargedInWindowCents) * TOLERANCE_SHARE_OF_RECENT_CHARGES);
   return Math.max(TOLERANCE_FLOOR_CENTS, share);
 }
+
+/**
+ * The same idea for authentication, and deliberately a larger share (risks.md 1, 3).
+ *
+ * Authentication is the last thing to stop, because stopping it does not inconvenience the
+ * organisation that owes us money — it locks out every person who holds an account with them,
+ * none of whom is our customer or has any way to find out what happened. So the rope is half
+ * again as long: an organisation charged $1,000 over the window may owe $300 here against the
+ * $200 that stops its SMS.
+ *
+ * The floor is the metered one doubled, for the same reason the metered one has a floor at
+ * all — a new organisation's first overage should not be its first outage, and this outage is
+ * the expensive one.
+ *
+ * **Nothing calls this yet, and that is deliberate.** The control it parameterises must not
+ * ship before the three safeguards in risks.md 7 exist: a notification chain that has actually
+ * run, an explicit hold a person can set, and a floor a customer cannot fall through by
+ * accident. What is settled here is the arithmetic, so that when the control is built the
+ * number is not also a decision being made at the same time.
+ */
+export const AUTH_TOLERANCE_SHARE_OF_RECENT_CHARGES = 0.3;
+export const AUTH_TOLERANCE_FLOOR_CENTS = TOLERANCE_FLOOR_CENTS * 2;
+
+/** What an organisation may owe before authentication itself would refuse, in whole cents. */
+export function authToleranceCents(chargedInWindowCents: number): number {
+  const share = Math.round(
+    Math.max(0, chargedInWindowCents) * AUTH_TOLERANCE_SHARE_OF_RECENT_CHARGES,
+  );
+  return Math.max(AUTH_TOLERANCE_FLOOR_CENTS, share);
+}

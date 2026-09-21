@@ -3,7 +3,7 @@ import { and, desc, eq, gte, type SQL, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { orgDebts, usageBillingState, usageCharges } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface BillingStateRow {
@@ -30,7 +30,7 @@ export interface NewCharge {
  * safe to run twice and safe to run in parallel.
  */
 export class UsageDrawdownRepository extends OrgRepository<typeof usageBillingState> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, usageBillingState);
   }
 

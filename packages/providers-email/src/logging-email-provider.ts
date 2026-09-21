@@ -41,7 +41,7 @@ export class LoggingEmailProvider extends EmailProvider {
     }
   }
 
-  protected override dispatch(message: OutboundEmail): Promise<string> {
+  protected override dispatch(_projectId: string, message: OutboundEmail): Promise<string> {
     const messageId = `log_${randomUUID()}`;
     this.logger.info(
       [

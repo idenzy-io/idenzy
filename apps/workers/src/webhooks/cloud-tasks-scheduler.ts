@@ -1,7 +1,7 @@
 import type { AppConfig } from "@idenzy/config/app-config";
 import { InternalError, ValidationFailedError } from "@idenzy/core/errors";
 import type { Logger } from "@idenzy/core/logging/logger";
-import type { AccessTokenSource } from "../google/access-token-source.js";
+import type { AccessTokenSource } from "@idenzy/providers-gcp/access-token-source";
 import { DeliveryScheduler, type ScheduledDelivery } from "./delivery-scheduler.js";
 import { WebhookTaskBody } from "./webhook-task-body.js";
 

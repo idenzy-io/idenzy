@@ -12,11 +12,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IdenzyExceptionFilter } from "../dist/common/exception.filter.js";
 import { HealthController } from "../dist/health/health.controller.js";
 import { CorsPolicy } from "../dist/http/cors-policy.js";
+import { LocalCell } from "../dist/tenancy/local-cell.js";
 import { ProjectResolver, type ResolvedProject } from "../dist/tenancy/project-resolver.js";
 import { TenantResolutionGuard } from "../dist/tenancy/tenant-resolution.guard.js";
 import { FailingController } from "../dist/testing/failing.controller.js";
 import { WellKnownController } from "../dist/well-known/well-known.controller.js";
-import { SilentLogger, testConfig } from "./fixtures.js";
+import { SilentLogger, testCell, testConfig } from "./fixtures.js";
 
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const ALLOWED = "https://app.acme.test";
@@ -30,7 +31,7 @@ class StubResolver extends ProjectResolver {
   }
 
   override byApiKey(key: string): Promise<ResolvedProject> {
-    if (!key.startsWith("pk_live")) {
+    if (!key.startsWith("pk_us1_live")) {
       return Promise.reject(new UnknownProjectError({ detail: { key } }));
     }
     return Promise.resolve(project());
@@ -68,6 +69,7 @@ beforeAll(async () => {
     providers: [
       { provide: AppConfig, useValue: config },
       { provide: ProjectResolver, useValue: new StubResolver() },
+      { provide: LocalCell, useValue: testCell() },
       {
         provide: TokenIssuer,
         useFactory: () =>
@@ -89,7 +91,7 @@ afterAll(async () => {
   await app.close();
 });
 
-const key = { [IdenzyHeader.PublishableKey]: "pk_live_abc" };
+const key = { [IdenzyHeader.PublishableKey]: "pk_us1_live_abc" };
 
 describe("the actual response is where the browser's gate is", () => {
   it("lets an allowlisted origin read a credentialed response", async () => {
@@ -117,7 +119,7 @@ describe("the actual response is where the browser's gate is", () => {
 
   it("still carries CORS on an error, so the SDK can read our error code", async () => {
     const response = await fetch(`${base}/test/tenant`, {
-      headers: { [IdenzyHeader.PublishableKey]: "pk_nope", origin: EVIL },
+      headers: { [IdenzyHeader.PublishableKey]: "pk_us1_nope", origin: EVIL },
     });
     expect(response.status).toBe(404);
     // The one place an unvetted origin is echoed. The body is our own error contract, and

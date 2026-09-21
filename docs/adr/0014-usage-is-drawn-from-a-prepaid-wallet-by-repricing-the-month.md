@@ -159,3 +159,32 @@ authentication case, three things do, none of which is built.
 
 Invoices remain unbuilt and `invoices` remains empty. Enterprise customers wanting terms is a
 second model — postpaid, against the same meters — and the table is already shaped for it.
+
+## Amendments
+
+**The authentication tolerance is 30%**, against the 20% section 4 sets for the metered
+channels, over the same thirty-day window and keyed on charges for the same reason. An
+organisation charged $1,000 may owe $300 before authentication itself would be refused, where
+$200 already stops its SMS. The floor is doubled to $100 on the same argument section 4 makes
+for having one at all: a new organisation's first overage should not be its first outage, and
+this outage is the expensive one. `authToleranceCents` in `@idenzy/protocol/billing/price-list`
+is the arithmetic; **nothing calls it**, and nothing may until the three safeguards in
+risks.md 7 exist. This closes risks.md open decision 3.
+
+**Section 3's settlement rule was specified and not implemented, and now is.** The text says a
+top-up settles debt before it becomes spendable — *"An organisation $400 in debt that adds $500
+has $100 to spend"* — and `PaymentWebhookService.settleIntent` granted the whole amount and
+never touched `org_debts`. Repository-wide, `adjustDebt` had one production caller and it only
+ever added, so debt was write-only: an organisation $300 down that paid $1,000 ended with
+$1,000 to spend *and* $300 still owed, which nothing could ever collect. The settlement now
+happens in the same transaction as the grant, the remainder is what becomes credit, and a
+top-up wholly consumed by debt grants nothing at all rather than violating
+`credit_grants_amount_ck` and rolling back a payment the provider has already taken.
+`top_ups.settled_debt_cents` records how much went which way, because `org_debts` holds one
+moving total and cannot be asked what it was last Tuesday.
+
+**And the balance a screen reads now subtracts it.** `BillingService.wallet` summed the grants
+and never read `org_debts`, so the consequence above — *"the balance can go negative, and every
+screen that reads it has to expect that"* — was not something the wire could express: the
+wallet contract floored cents at zero. It is signed now, and `debtCents` travels beside it, so
+an organisation inside its tolerance reads as what it is rather than as empty.

@@ -1,5 +1,5 @@
 import { DeliverySuppressedError } from "@idenzy/core/errors";
-import { hashToken } from "@idenzy/crypto/tokens/random";
+import { suppressionDigest } from "@idenzy/crypto/delivery/suppression-digest";
 import type { SuppressionList } from "@idenzy/domain/ports/email-provider";
 import { SuppressionRepository } from "@idenzy/persistence/repository/suppression-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
@@ -23,16 +23,8 @@ export class DatabaseSuppressionList implements SuppressionList {
   async assertSendable(projectId: string, target: string): Promise<void> {
     const tenant = new TenantContext(projectId, "delivery", "system");
     const suppressed = await this.uow.run(tenant, (tx) =>
-      new SuppressionRepository(tx, tenant).isSuppressed(
-        Channel.Email,
-        hashToken(normalize(target)),
-      ),
+      new SuppressionRepository(tx, tenant).isSuppressed(Channel.Email, suppressionDigest(target)),
     );
     if (suppressed) throw new DeliverySuppressedError();
   }
-}
-
-/** Lowercased, so a suppression written for one casing covers the other. */
-function normalize(target: string): string {
-  return target.trim().toLowerCase();
 }

@@ -64,6 +64,129 @@ services:
       timeout: 3s
       retries: 30
 
+  # ---------------------------------------------------------------------------------------------
+  # The two Node services, in development form.
+  #
+  # Behind a profile, so `docker compose up -d` still brings up the datastores and nothing else and
+  # the bootstrap line in CLAUDE.md keeps meaning what it says. `docker compose --profile api up -d`
+  # is the one that adds these. **Run one or the other**: a service here and `pnpm dev` on the host
+  # both bind 3001/3002 and both write to `apps/*/dist`, so the pair collide on a port at best and
+  # on the compiler's output at worst.
+  #
+  # The source is mounted rather than built into an image, and there is no Dockerfile. What runs is
+  # `tools/dev/src/serve.ts` — the same compile-and-restart pair `pnpm dev` runs on the host — off
+  # the working tree, so an edit is picked up without rebuilding anything. That is the whole point
+  # of this shape, and it is why these are development services and not a deployment artefact.
+  #
+  # `node_modules` is mounted along with everything else. It holds darwin binaries that cannot run
+  # here, but nothing these two import reaches them: they belong to the panel's build tools
+  # (lightningcss, tailwind's oxide, rolldown, sharp), and the one native module the APIs do use is
+  # `argon2`, which ships a prebuild per platform in the same directory and picks the linux-arm64
+  # one at load. Verify before adding a third service here: a native dependency without a linux
+  # prebuild makes the mount unusable and forces a real image.
+  #
+  # The two share one network namespace, which is the part that looks strange and is doing real
+  # work. `management-api` verifies every dashboard token against the keys `auth-api` publishes,
+  # and it finds them at `ISSUER_BASE_URL` — `http://localhost:3001`. That value cannot be pointed
+  # at a service name to suit this file: it is the `iss` claim `auth-api` mints into every token
+  # and the base of the discovery document a browser reads, so the three have to agree and the
+  # browser's answer is the host's. In its own namespace `management-api` therefore fetched
+  # `localhost:3001`, reached itself, and answered `GET /v1/me` with a 500 whose only clue was
+  # `TypeError` — Node's `fetch` failing. Sharing the namespace makes `localhost` mean between
+  # these two what it means on the host, which is what every value in `.env` already assumes.
+  #
+  # The cost is that ports are published once, on `auth-api`, for both: a namespace has one set.
+  # ---------------------------------------------------------------------------------------------
+
+  auth-api:
+    image: node:26-slim
+    container_name: idenzy-auth-api
+    profiles: ["api"]
+    working_dir: /app/apps/auth-api
+    # `serve.ts` resolves the compiler from `process.cwd()/node_modules`, which is the app's own
+    # pnpm symlink, so the working directory above is load-bearing rather than cosmetic.
+    command: ["node", "../../tools/dev/src/serve.ts"]
+    env_file: .env
+    environment: &api-environment
+      # The three values in `.env` that name a host rather than a fact. Everything else — the cell,
+      # the issuer, the Stripe redirects — is read from `.env` unchanged, because it describes what
+      # a browser sees, and between these two `localhost` is the host's `localhost` by the shared
+      # namespace above.
+      #
+      # These win over the file, which is the part worth knowing: `serve.ts` passes
+      # `--env-file-if-exists=<root>/.env` to the service it starts, and Node does not let an env
+      # file overwrite a variable that is already set. Were that not so, every one of these would be
+      # quietly replaced by `localhost` inside a container where localhost is the container.
+      DATABASE_URL: postgres://idenzy:idenzy@postgres:5432/idenzy
+      VALKEY_URL: redis://valkey:6379
+      CLICKHOUSE_URL: http://clickhouse:8123
+      # File events do not cross a bind mount reliably on Docker Desktop, and a compiler that misses
+      # one is worse than a slow compiler: it serves the previous build and says nothing. Polling
+      # costs a little idle CPU and is the reason this works at all.
+      TSC_WATCHFILE: PriorityPollingInterval
+      TSC_WATCHDIRECTORY: DynamicPriorityPolling
+    volumes:
+      - .:/app
+    # Both services' ports, because both services are on this namespace. 3002 is published here
+    # and answered by `management-api`, which is why that one declares none of its own.
+    ports:
+      - "3001:3001"
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      # `start_period` rather than a long retry count: the first boot compiles the whole workspace,
+      # which takes far longer than anything this container does afterwards, and failures during it
+      # are expected rather than interesting.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 90s
+
+  management-api:
+    image: node:26-slim
+    container_name: idenzy-management-api
+    profiles: ["api"]
+    working_dir: /app/apps/management-api
+    command: ["node", "../../tools/dev/src/serve.ts"]
+    env_file: .env
+    environment: *api-environment
+    volumes:
+      - .:/app
+    # Onto `auth-api`'s network stack, for the reason given at the top of this block. It brings
+    # three consequences worth stating rather than discovering: this service publishes no ports of
+    # its own (3002 is on `auth-api`), it reaches the datastores by `auth-api`'s attachments rather
+    # than its own, and it cannot start before `auth-api` exists — which is why the datastore
+    # conditions below are `auth-api`'s to wait on and this one only waits for it to be healthy.
+    network_mode: "service:auth-api"
+    depends_on:
+      auth-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3002/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 90s
+
 volumes:
   idenzy-pgdata:
   idenzy-chdata:

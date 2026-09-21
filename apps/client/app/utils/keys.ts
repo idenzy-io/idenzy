@@ -82,10 +82,14 @@ export const KEY_FORMAT = {
   encoding: "base64url",
   digest: "SHA-256",
   /**
-   * Characters of the key kept in the clear, prefix included. Enough to pick a row out of a
-   * log or an `.env`, far too few to be worth guessing the rest of.
+   * Characters of the random body kept in the clear, on top of the kind prefix and the cell.
+   *
+   * A key is `pk_<cell>_<body>`, so the stored display prefix is that head plus this many
+   * characters of randomness — `pk_us1_3f9a2b8c`. Enough to pick a row out of a log or an
+   * `.env`, far too few to be worth guessing the rest of. This used to be a count of the whole
+   * key, which stopped meaning the same thing once the cell moved into the middle of it.
    */
-  prefixLength: 11,
+  bodyPrefixLength: 8,
 } as const;
 
 /** The environment variables the CLI writes, and the one it will not. */
@@ -105,7 +109,7 @@ export interface ProjectApiKey {
   /** The row's own id, which is what an audit entry names as the actor. */
   id: string;
   kind: ApiKeyKind;
-  /** First `KEY_FORMAT.prefixLength` characters, kind prefix included. */
+  /** The head — kind prefix and cell — plus `KEY_FORMAT.bodyPrefixLength` of the body. */
   prefix: string;
   /** Nothing reads these yet, and the screen says so rather than offering them. */
   scopes: readonly string[];
@@ -387,7 +391,7 @@ export function maskedKey(key: ProjectApiKey): string {
   return `${key.prefix}${KEY_MASK}`;
 }
 
-/** The key as the middle of a sentence names it: "secret key sk_4fQ2x9a…". */
+/** The key as the middle of a sentence names it: "secret key sk_us1_4fQ2x9a…". */
 export function keyName(key: ProjectApiKey): string {
   return `${KEY_KIND_LABELS[key.kind].toLowerCase()} ${key.prefix}…`;
 }

@@ -376,7 +376,8 @@ The scope of §4.13 is the **data architecture**. The organizational half of eve
 |---|---|---|
 | **SOC 2 Type II** (year 1) | Evidence *over time* for access control, change management, monitoring, and incident response | Hash-chained audit trail (§4.13.3), `staff_access_grants` (§4.13.7), signed images and CI-only publishing (§4.11, §7.6), evidence artifacts per release (§4.13.9) |
 | **ISO 27001** | An asset and data inventory, documented controls, a supplier register | Data map generated from the schema (§4.13.2), `docs/compliance/controls.md`, `docs/compliance/subprocessors.md` |
-| **GDPR** (DPA) | Lawful basis and purpose per field, Art.30 records, data-subject rights within 30 days, residency, sub-processor transparency, 72-hour breach notification | Column-level purpose tags generating the RoPA (§4.13.2), `data_subject_requests` with tracked due dates (§4.13.6), region cells (§4.13.5) |
+| **GDPR** (DPA) | Lawful basis and purpose per field, Art.30 records, data-subject rights within **one calendar month** (Art. 12(3) — not 30 days), residency, sub-processor transparency, 72-hour breach notification | Column-level purpose tags generating the RoPA (§4.13.2), `data_subject_requests` carrying its `deadline_rule` and a due date computed from it (§4.13.6), region cells (§4.13.5) |
+| **US state privacy** (CCPA/CPRA and the ~20 states that follow it) | Access, deletion and correction rights on a 45-day clock extendable by 45; service-provider contract terms; no sale or sharing of personal information | `DsrDeadline` is a per-request family rather than a per-cell setting, so a state whose clock differs is a subclass and not a migration (`docs/compliance/us-and-eu-readiness.md`) |
 | **HIPAA** (BAA, enterprise) | BAA scoping, PHI encryption, minimum necessary access, 6-year audit retention, no PHI in logs | `projects.compliance_tier`, field-level envelope encryption (§4.13.4), log allowlist (§4.13.8), tier-driven retention (§4.13.3) |
 
 An auth platform holds an unusually sensitive slice of personal data (identifiers, credentials, IP addresses, device fingerprints, login times and locations) while holding very little of it per user. That shape is why classification per column, rather than per table or per service, is the right granularity.
@@ -423,7 +424,7 @@ A generated document is regenerated in CI and the build fails if the committed c
 
 #### 4.13.3 Audit trail: append-only and tamper-evident
 
-- The runtime role `idenzy_app` is granted `INSERT` and `SELECT` on `audit_events` and **is granted no `UPDATE` or `DELETE` at all**. There is no application code path that can rewrite history, because the privilege to do so does not exist on the connection.
+- The runtime role `idenzy_app` is granted `INSERT` and `SELECT` on `audit_events` and **is granted no `UPDATE` or `DELETE` at all**. No application code path can rewrite a live project's history, because the privilege to do so does not exist on the connection. **One exception exists and is deliberate**: `purge_project` (migration 0062) is `SECURITY DEFINER` and does delete audit rows, because a processor has to be able to dispose of a controller's data at the end of service (GDPR Art. 28(3)(g)) and an orphaned trail nobody can reach is a storage-limitation breach rather than a safeguard. It is narrow in the way that matters — the only rows it can remove belong to a project it deletes in the same statement, so it cannot be used to edit the past of a tenant that still exists — and it writes a `project_purges` row, so the deletion is itself on the record.
 - Each project's audit stream is a **hash chain**: every row stores `prev_hash` and `entry_hash = H(prev_hash || canonical(entry))`. Tampering by anyone who does hold direct database access (an operator, a restored backup, an attacker with the owner role) is therefore detectable by verifying the chain, and a periodic verifier job does exactly that.
 - Partitioned by month, so retention is enforced by dropping partitions rather than by mass deletes.
 - Retention is driven by `projects.compliance_tier`: 1 year standard, **6 years for HIPAA**, configurable upward for enterprise.
@@ -586,10 +587,10 @@ Note what is absent compared to a competitor's diagram: there is no hosted-UI se
 | Edge | **Global external Application LB, Cloud Armor, Cloud CDN, Certificate Manager** | A single anycast IP for all customer CNAMEs, managed certs for thousands of custom domains, and WAF plus rate limiting before traffic costs us CPU. |
 | Front end | **Nuxt (latest)**: `landing` SSR on Cloud Run, `admin` and `client` prerendered SPA shells on CDN/GCS (§10) | SSR only where SEO and first paint are the product (marketing and docs). The two authenticated panels are pure SPAs, which removes an entire class of server-side session handling and costs nothing to serve. |
 | Async | **Pub/Sub**, **Cloud Tasks**, Cloud Run workers | Cheap, at-least-once delivery, dead-letter topics, per-task retry with backoff for webhooks. |
-| Analytics / billing | **BigQuery** (streaming inserts of `auth_event`), scheduled queries for MAU | Pay-per-query. MAU calculation is `COUNT(DISTINCT user_id)` per project per month. |
+| Analytics / billing | **ClickHouse** (`auth_events`, one instance per cell), queried for MAU | Isolation is a row policy plus a client that cannot exist without a tenant (ADR-0013). MAU is `COUNT(DISTINCT user_id)` per project per month. BigQuery was the first draft and was replaced; a cross-cell analytics store would have put two jurisdictions in one table. |
 | Observability | Cloud Logging/Monitoring/Trace, OpenTelemetry (Node SDK, auto-instrumentation for Fastify, pg and Valkey), alerting to PagerDuty/Slack | Included. Structured logs (Pino) with `project_id` for customer-facing log export, field-allowlisted per §4.13.8. |
-| IaC / CI | Terraform (google provider), Cloud Build to Artifact Registry to Cloud Deploy, Binary Authorization, pnpm workspace-aware build graph | Reproducible environments: dev, staging, prod-eu, prod-us. |
-| Regions | Launch: one cell (`europe-west4` or `europe-west1`) with regional HA. Then `us-east1`/`us-central1`, then `asia-southeast1`. A cell is an independent Cloud Run + Cloud SQL + Valkey + KMS ring; the control plane (dashboard, billing) is global. | Data residency, blast-radius isolation, simple pricing (§4.13.5). |
+| IaC / CI | Terraform (google provider), Cloud Build to Artifact Registry to Cloud Deploy, Binary Authorization, pnpm workspace-aware build graph | Reproducible environments: dev, staging, prod-us, and prod-eu when the second cell exists. Only `environments/dev` is written today and nothing has been applied. |
+| Regions | Launch: one cell, `us1` in `us-central1`, with regional HA (§16 resolved this; the earlier draft said `europe-west4` and is superseded). Then an EU cell in `europe-west4`, then `asia-southeast1`. A cell is an independent Cloud Run + Cloud SQL + Valkey + KMS ring; the control plane (dashboard, billing) is global. | Data residency, blast-radius isolation, simple pricing (§4.13.5). |
 
 ### 6.3 Reliability targets
 
@@ -599,7 +600,7 @@ Note what is absent compared to a competitor's diagram: there is no hosted-UI se
 - RPO of 5 minutes or better (PITR), RTO of 30 minutes or better, with a documented restore drill run quarterly. The drill record is itself compliance evidence (§4.13.9).
 - Graceful degradation: if Valkey is down, fall back to Postgres rate limiting; if SES is down, fail over to the secondary email provider automatically.
 
-### 6.4 Infra cost at launch (single EU cell, prod)
+### 6.4 Infra cost at launch (single cell, prod)
 
 | Item | Monthly |
 |---|---|
@@ -607,11 +608,27 @@ Note what is absent compared to a competitor's diagram: there is no hosted-UI se
 | Cloud SQL PG HA, 2 vCPU / 8 GB, 50 GB SSD, PITR | ~$220 |
 | Memorystore Valkey 1 GB basic | ~$35 |
 | Global LB, Cloud Armor (standard), Certificate Manager (first 100 certs) | ~$50 |
+| VPC, subnet, Private Service Access peering, data-subject export bucket | ~$0 — but only if two choices go the right way, below |
 | KMS (software keys, ~10K signs/day) | ~$5 |
 | Static hosting/CDN for `admin` and `client` SPA bundles | ~$5 |
 | Pub/Sub, Cloud Tasks, BigQuery, Logging (within free and low tiers) | ~$30 |
 | Staging (scale-to-zero, smallest SQL) | ~$60 |
 | **Total** | **around $500/mo** (trimmable to about $270 by running non-HA SQL in the first weeks) |
+
+**Stage one is one VPS, and it needs no VPC at all.** The APIs, Postgres, Valkey, ClickHouse and the workers all run on one high-end box, so nothing crosses a network between them. Google provides exactly two things, neither of them for cost: **KMS**, because key custody is the one property that cannot be rebuilt after a compromise and a signing key on the box is a signing key in every snapshot of it, and **Cloud Storage**, because a data-subject export needs retention that enforces itself. Both are outbound HTTPS calls. `infra/terraform` creates those two plus the service account the VPS authenticates as, and nothing else: everything managed sits behind `enable_managed_infrastructure`, off by default.
+
+The paragraph below applies to the **later** stage, when a managed database is worth its cost.
+
+**Cloud Run needs no VPC; a private Cloud SQL does.** Cloud Run's egress reaches the internet on its own, which is all SES, Twilio, Stripe and every OAuth provider need. What needs a VPC is the other direction: Cloud SQL is declared private-IP-only and Memorystore has no public endpoint at all, so private means "reachable from a VPC" and something has to be that VPC. The network, its subnet, the firewall rules and the Private Service Access peering are all free.
+
+Two decisions around it are not free, and both are made in `infra/terraform`:
+
+- **Direct VPC egress, not a Serverless VPC Access connector.** A connector bills per instance-hour with a minimum of two instances, whether or not a byte flows — standing cost for idle capacity. Direct egress has no such charge and draws addresses from the subnet instead, which is why it is sized /20.
+- **Egress restricted to private ranges, not all traffic.** Routing everything through the VPC means private-only workloads need a Cloud NAT gateway to reach the internet, billed hourly per gateway plus per gigabyte processed. Since only Postgres and Valkey are private and every third party is public, private-ranges-only skips NAT entirely.
+
+Taken the other way, those two add roughly the cost of the Memorystore line twice over, for nothing a customer would notice. The figures above are from §6.4's original estimate and want re-checking against the pricing calculator before anything is applied.
+
+One line the table still lacks: **ClickHouse**. ADR-0013 replaced the BigQuery row above, and a managed or self-hosted ClickHouse is not free. It is not in this estimate.
 
 ---
 
@@ -1143,7 +1160,7 @@ await signIn.verifyOtp({ code });              // completes; session cookie is s
 
 ```dart
 // Flutter
-await Idenzy.init(publishableKey: 'pk_live_...');
+await Idenzy.init(publishableKey: 'pk_us1_...');
 final user = await Idenzy.signInWithOAuth(Provider.google);
 ```
 
@@ -1223,6 +1240,8 @@ Still open, to resolve before Phase 0 ends:
 7. Whether magic links ship in Phase 1 at all, or wait until Phase 2 given that OTP covers the same need without a redirect (§4.7).
 8. Whether native SDKs (Swift, Kotlin, Dart) live in this repo or in separate repositories wired in as git submodules. SPM, Maven and pub.dev all expect a repository root, which argues for splitting them out at Phase 2.
 9. Node version policy: pin to the active LTS line, or track Current for the performance work. Related: TypeScript 7 is released, but the NestJS toolchain still targets TypeScript 6, so we are pinned to 6.0.x until that lands.
+10. **Whether we ever hold a user's age.** There is no date of birth, age band or minor flag anywhere in the schema. COPPA reaches under-13s and GDPR Art. 8 sets a digital consent age member states may place between 13 and 16, and an authentication provider is where age gating would have to live. Retrofitting it means a classified column with its own lawful basis, a verification flow, and a migration over live user rows — so this wants deciding before the first customer even if the answer is "never, and customers gate their own sign-up". See `docs/compliance/us-and-eu-readiness.md`.
+11. **How EEA data reaches a US entity lawfully**: self-certify to the EU-US Data Privacy Framework, or Standard Contractual Clauses plus a transfer impact assessment with each customer. Not architectural — it decides what the subprocessor register and the DPA say, and the first is far cheaper to operate. Our subprocessors' own certifications do not cover us as importer.
 
 ---
 

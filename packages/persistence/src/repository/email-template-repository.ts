@@ -2,7 +2,7 @@ import type { TemplateType } from "@idenzy/protocol/enums/delivery";
 import { and, eq } from "drizzle-orm";
 import { emailTemplates } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface StoredTemplateRow {
@@ -22,7 +22,7 @@ export interface StoredTemplateRow {
  * step yet, and the renderer treats it as absent rather than sending an empty mail.
  */
 export class EmailTemplateRepository extends BaseRepository<typeof emailTemplates> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, emailTemplates);
   }
 

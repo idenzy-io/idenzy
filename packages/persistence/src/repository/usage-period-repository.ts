@@ -1,7 +1,7 @@
 import { and, asc, between, desc } from "drizzle-orm";
 import { usagePeriods } from "../schema/usage.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** A month's figures, as an invoice reads them. */
@@ -27,7 +27,7 @@ export type UsagePeriodFigures = Omit<UsagePeriodRow, "closedAt">;
  * the app role, so a method that tried would fail at the database rather than at review.
  */
 export class UsagePeriodRepository extends BaseRepository<typeof usagePeriods> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, usagePeriods);
   }
 

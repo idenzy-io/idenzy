@@ -57,8 +57,8 @@ export const REGION_WARNING =
  * gets round to picking its flag.
  */
 const REGION_FLAGS: Record<string, string> = {
-  "eu-west-1": "circle-flags:eu",
-  "us-east-1": "circle-flags:us",
+  us1: "circle-flags:us",
+  eu1: "circle-flags:eu",
 };
 
 export const REGION_FLAG_FALLBACK = "material-symbols:public";

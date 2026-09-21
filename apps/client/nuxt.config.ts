@@ -239,6 +239,18 @@ export default defineNuxtConfig({
            * chart has a table view and no series is told apart by colour alone. The
            * outcome colours stay out of this list: a series that means good or bad
            * wears those, and a series that is merely fourth must not.
+           *
+           * `flow-primary`/`on-flow-primary` are neutral-950/neutral-50 (Tailwind's
+           * scale), swapped per theme so the pair is always near-black on near-white or
+           * the reverse. Nothing reads them by name: `.flow-shell` in theme.css points
+           * `--v-theme-primary` and `--v-theme-on-primary` at them, which is what makes
+           * a flow's one accent ink instead of the panel's blue without a second copy of
+           * every `color="primary"` on those screens.
+           *
+           * Named for the flow and not for the sign-in it started on. Two shells carry
+           * it now — signing in, and creating a first project — and a person meets both
+           * within a minute, so the ink is the identity of the whole first run rather
+           * than a property of being signed out.
            */
           light: {
             dark: false,
@@ -249,6 +261,8 @@ export default defineNuxtConfig({
               primary: "#2979ff",
               "primary-sharp": "#0162ec",
               neutral: "#212121",
+              "flow-primary": "#0a0a0a",
+              "on-flow-primary": "#fafafa",
               success: "#2e7d32",
               warning: "#ef6c00",
               error: "#c62828",
@@ -270,6 +284,8 @@ export default defineNuxtConfig({
               primary: "#448aff",
               "primary-sharp": "#0162ec",
               neutral: "#f5f5f5",
+              "flow-primary": "#fafafa",
+              "on-flow-primary": "#0a0a0a",
               success: "#66bb6a",
               warning: "#ffa726",
               error: "#ef5350",

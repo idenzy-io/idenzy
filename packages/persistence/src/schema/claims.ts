@@ -7,6 +7,7 @@ import {
 } from "@idenzy/compliance/classification/vocabulary";
 import { jsonb, primaryKey, timestamp } from "drizzle-orm/pg-core";
 import { config } from "./presets.js";
+import { projects } from "./projects.js";
 import {
   createdAtColumn,
   projectIdColumn,
@@ -28,7 +29,7 @@ import {
 export const claimTemplates = classifiedTable(
   "claim_templates",
   {
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     claims: classified(jsonb("claims").notNull().default([]), {
       ...config,
       loggable: true,

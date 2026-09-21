@@ -150,7 +150,7 @@ async function finish() {
           hide-details
           name="project-name"
           placeholder="My application"
-          variant="filled"
+          variant="underlined"
           @blur="nameTouched = true"
         />
         <!-- One line, and the error takes its place rather than sitting under it. The
@@ -212,7 +212,7 @@ async function finish() {
           item-props
           name="use-case"
           placeholder="Pick one, or write your own"
-          variant="filled"
+          variant="underlined"
         />
       </div>
 
@@ -231,7 +231,7 @@ async function finish() {
           item-props
           name="heard-from"
           placeholder="Pick one, or write your own"
-          variant="filled"
+          variant="underlined"
         />
       </div>
 
@@ -246,7 +246,7 @@ async function finish() {
           :placeholder="organisationName"
           hide-details
           name="org-name"
-          variant="filled"
+          variant="underlined"
         />
         <!-- The organisation is what the team, the wallet and the invoices belong to, and
              a reader meets the word here for the first time. Naming what it owns is

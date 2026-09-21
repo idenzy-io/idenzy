@@ -24,6 +24,16 @@ import { isoDateTimeSchema } from "./common.js";
  */
 
 const centsSchema = z.number().int().min(0);
+
+/**
+ * Money that may be owed as well as held.
+ *
+ * The wallet's balance is `spendable credit − debt` (ADR-0014), so it goes negative the
+ * moment an organisation is charged past its credit and inside its tolerance. That is not a
+ * failure state — it is the tolerance working — and a schema that floored it at zero would
+ * make the honest figure unrepresentable and the screen's only option a comfortable lie.
+ */
+const signedCentsSchema = z.number().int();
 const currencySchema = z.string().length(3).toUpperCase();
 
 /**
@@ -159,9 +169,19 @@ export type SpendAlert = z.infer<typeof spendAlertSchema>;
  */
 export const walletSchema = z.object({
   currency: currencySchema,
-  balanceCents: centsSchema,
+  /** Spendable credit less debt, so it is negative for an organisation inside its tolerance. */
+  balanceCents: signedCentsSchema,
   purchasedCents: centsSchema,
   promotionalCents: centsSchema,
+  /**
+   * What usage has cost beyond the credit that was there to cover it.
+   *
+   * Sent beside the balance rather than folded into it alone, because a screen showing
+   * −$42 has to be able to say whether that is one charge or a month of them, and because
+   * "you owe $42" and "your balance is −$42" are the same fact worded for two different
+   * readers.
+   */
+  debtCents: centsSchema,
   grants: z.array(creditGrantSchema),
   methods: z.array(paymentMethodSchema),
   topUps: z.array(topUpSchema),

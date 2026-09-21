@@ -260,6 +260,26 @@ export const configSchema = z.object({
   SES_CONFIGURATION_SET: z.string().min(1).optional(),
 
   /**
+   * Where SES delivery events reach us (PROJECT.md 11.2 item 4). Both or neither.
+   *
+   * `SES_EVENT_URL` is the receiver's own public URL, and the worker takes the route's path
+   * from it, so the address an SNS subscription is pointed at and the route that answers it
+   * cannot drift apart — the same arrangement `WEBHOOK_DISPATCH_URL` has with the retry lane.
+   *
+   * `SES_EVENT_TOPIC_ARN` is not optional alongside it, and it is the check that matters. A
+   * valid SNS signature proves a message came from *an* SNS topic, not from ours: anybody can
+   * create a topic, subscribe our URL to it, and publish whatever they like through it, and
+   * every one of those messages carries a genuine AWS signature. Without the ARN the receiver
+   * would accept a stranger's bounces and suppress addresses on their say-so.
+   *
+   * Absent means no route at all rather than an unauthenticated one, because an endpoint that
+   * writes to the suppression list is not something to leave listening on the chance it is
+   * wanted.
+   */
+  SES_EVENT_URL: z.url().optional(),
+  SES_EVENT_TOPIC_ARN: z.string().min(1).optional(),
+
+  /**
    * Stripe (PROJECT.md 5.1). All five or none, checked where the provider is built.
    *
    * A partial set is the failure worth naming: four of five would start, and the symptom

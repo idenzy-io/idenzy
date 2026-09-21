@@ -36,7 +36,7 @@ order is by what each costs us per unit:
 | SMS and WhatsApp | The tolerance | Money leaves before the message arrives. Nothing to reconcile afterwards. |
 | Email on the shared sender | A burst of 3/minute and 200 a day, always | Not a payment control. Pooled reputation: a sandbox to build against, never a production facility. |
 | Email on a verified domain | Not limited here | The reputation at stake is mostly the customer's own. |
-| Authentication | A much higher tolerance, and **it does stop** | Taking it down takes the customer's product down. Last resort, never the first. |
+| Authentication | 30% of recent charges, and **it does stop** | Taking it down takes the customer's product down. Last resort, never the first, and not built. |
 
 **Authentication stopping is a reversal**, and it should be recorded as one. The panel's
 `ZERO_KEEPS_WORKING` says it never stops, on the argument that refusing to authenticate
@@ -47,9 +47,16 @@ alone (5.2) on top of about $1,225 of unbilled revenue, for as long as it likes.
 with no ability to stop serving a non-payer has no commercial relationship, only a
 donation.
 
-So it stops — late, loudly, and never by surprise. The copy on the wallet and the
-`ZERO_KEEPS_WORKING` list both need rewriting to say this; today they promise something we
-are choosing not to honour.
+So it stops — late, loudly, and never by surprise, and **at 30% of the charges raised against
+it over the last thirty days** against the 20% the metered channels get (decision 3, closed).
+`authToleranceCents` is the arithmetic and nothing calls it: the control it parameterises must
+not ship before section 7's three safeguards exist.
+
+The copy has been rewritten. `ZERO_KEEPS_WORKING` no longer promises that authentication never
+stops — it says what is true today, which is that nothing refuses a sign-in over a balance and
+that we would say so well in advance if that changed. It does not promise the stop either,
+because there is no mechanism behind one. The third entry on that list was also simply wrong:
+it said email on the shared domain never stops, which the sandbox cap had already made false.
 
 ---
 
@@ -88,21 +95,40 @@ allowance and our sign-ups would stop at two hundred a day. The durable fix is t
 domain for it, which also makes us the first user of the feature. Until then the exemption
 is a named branch rather than a quiet one.
 
-**Still open: the account-level rate.** Mail on a customer's own domain still leaves through
-**our SES account**, and AWS tracks bounce and complaint rates per account as well as per
-domain. A bad enough account-wide rate is a review or a suspension that takes mail down for
-everyone at once. The control for that is a bounce-rate breaker per project, and it needs
-bounce data — which brings us to the next entry.
+**The account-level rate, which was the open half.** Mail on a customer's own domain still
+leaves through **our SES account**, and AWS tracks bounce and complaint rates per account as
+well as per domain. A bad enough account-wide rate is a review or a suspension that takes mail
+down for everyone at once.
 
-**Status: closed for the shared sender. The account-level rate is open.**
+That is bounded now. `EmailReputationBreaker` in `apps/workers` reads a seven-day window per
+project every five minutes and opens a row in `email_sending_holds` at **5% bounces or 0.1%
+complaints** — AWS's own at-risk thresholds, so we trip where it starts looking rather than
+where it acts, because what it reviews is the account and by then the damage is shared. Below
+**200 sends in the window** no rate is actionable: two bounces out of five is 40% and means
+nothing, and without that floor the breaker's first act on a new project would be to close it
+over an undeliverable test address.
+
+`assertWithinQuota` reads the hold and refuses with `sending_paused`, **above both carve-outs**.
+A verified sending domain and our own dashboard are exempt from the sandbox allowance and from
+nothing else — the account is shared whatever domain a message leaves from. A hold is released
+by the breaker when the bad days age out of the window, and by a person at any time; the row
+survives the release, so what was stopped and on what evidence outlives the block.
+
+**What this does not close** is the account's own figure. Each project's contribution to it is
+bounded; nothing yet reads SES's account-level reputation and reacts to it. That is the honest
+residue and it is smaller than what it replaces.
+
+**Status: closed. The account's own reputation figure is unread, which is a smaller gap.**
 
 ---
 
-## 2b. Nothing tells us when mail bounces
+## 2b. Nothing told us when mail bounced
 
 **Risk.** PROJECT.md 11.2 item 4 describes SES publishing send, delivery, bounce, complaint
 and reject events to SNS, into a webhook on our side, into the suppression list. The SNS
-receiver at our end was never built, so **no bounce or complaint data reaches us at all**.
+receiver at our end was never built, so for a long time **no bounce or complaint data reached
+us at all** — and `SuppressionRepository.suppress()` had exactly one caller in the repository,
+which was a test.
 
 **Exposure.** Three things depend on it and none can be built without it: the suppression
 list never learns about a hard bounce and we keep sending to it; the warm-up ladder
@@ -110,10 +136,21 @@ PROJECT.md 11.2 item 6 specifies has nothing to grow a ceiling on; and the accou
 breaker above has nothing to trip on. It is also how we would find out we have a problem
 *before* AWS tells us.
 
-**Today.** Nothing. The suppression list and its repository exist and are only ever written
-by hand.
+**Today.** Built. SES publishes to SNS, an `email-events` route on the workers' internal
+server receives it, and a permanent bounce or a complaint writes the suppression row on its own.
 
-**Status: open, and it blocks every remaining email control.**
+Three things in it are worth knowing before changing any of it, and all three are in
+[ADR-0015](./docs/adr/0015-email-reputation-is-a-per-project-hold.md). **A message carries its
+project as an SES message tag**, because nothing else in a notification can say whose it is —
+the shared sender is one address for many projects and no table maps a message id back to one.
+**The topic ARN is the check the signature does not make**: anybody can create an SNS topic,
+subscribe our URL to it, and publish messages carrying a genuine AWS signature. And **the
+ledger keeps no payload** — a bounce body carries the recipient address and a diagnostic code
+that repeats it, and the enumerated verdict is all anything here reads.
+
+The warm-up ladder (PROJECT.md 11.2 item 6) now has what it needs and is still not built.
+
+**Status: closed.**
 
 ---
 
@@ -198,7 +235,16 @@ than a silent one.
 notices that a `top_ups` row has sat `pending` for a week. A sweep over stale pending
 top-ups that asks Stripe directly would close it.
 
-**Status: partly open.**
+**A narrower version of this was worse and is fixed.** The event could arrive perfectly and
+still leave money uncollected: `settleIntent` granted the full amount as credit and never
+touched `org_debts`, whose only production caller adds to it. So debt was write-only. An
+organisation $300 down that paid $1,000 got $1,000 to spend *and* kept the $300 owing, for
+good. A top-up now settles debt inside the same transaction as the grant and only the
+remainder becomes spendable, which is what ADR-0014 section 3 always said it did. The wallet
+subtracts debt too, so a balance can read negative — which it has to, because an organisation
+inside its tolerance is exactly that.
+
+**Status: partly open.** The lost-event sweep is the remaining half.
 
 ---
 
@@ -225,7 +271,10 @@ being prevented.
    not warned about repeatedly, in advance, to a human being.
 2. **An explicit hold that a person can set**, so support can stop a suspension without a
    deploy. An automated control with no manual override is a control that will eventually be
-   wrong at the worst moment.
+   wrong at the worst moment. `email_sending_holds` is the same idea one floor down and is
+   **not** this: it holds a project's *mail* over a bounce rate, has nothing to do with money,
+   and satisfies none of this section. What it does show is the shape — a stored decision with
+   the evidence on it and a release a person can perform.
 3. **A floor that a customer cannot fall through by accident** — a suspension needs to be
    the end of a long, visible process rather than the arithmetic result of a card that
    expired.
@@ -235,6 +284,42 @@ than a job. The customers big enough to hurt us are also the ones where being wr
 unrecoverable.
 
 **Status: none of the three exists.**
+
+---
+
+## 7b. A customer can be permanently pinned to the wrong jurisdiction
+
+**Risk.** `projects.cell_id` is immutable by design (PROJECT.md 4.13.5), and one cell exists:
+`us1`, in the United States. Every project created before an EU cell is provisioned is US-resident
+forever, because the "explicit, audited migration operation" that 4.13.5 says moves a project
+between cells **does not exist** — there is no column, no route and no worker for it.
+
+This register held nothing about residency before, which is why it is worth writing down: the
+whole page is billing and delivery, and this is the one exposure that is neither.
+
+**Exposure.** Commercial, and it lands on exactly the customers worth most. An EU buyer who signs
+today and later needs EU residency cannot be given it without a migration nobody has built. The
+answer in that moment is "delete the project and start again", which for an authentication
+provider means every one of their end users re-registers. That is not a migration, it is a churn
+event with our name on it.
+
+Second order: the panel already shows a region picker fed by `GET /v1/regions`, and the seed
+offers two cells. A customer who picks EU in dev and reasons that production will offer the same
+has been misled by a fixture.
+
+**Today.** Nothing. The registry is real and validated at project creation, so a project cannot
+name a cell that has no row — but nothing stops a row existing for a cell nobody runs, and
+nothing moves a project afterwards.
+
+**What closes it.** Any one of three, in increasing order of cost:
+
+1. Only ever seed `region_cells` with cells that are actually provisioned, so the picker cannot
+   offer a jurisdiction we do not serve. Cheap, and it is the honest default.
+2. Build the migration operation before taking EU customers — the reverse saga of provisioning,
+   and the thing 4.13.5 already promises.
+3. Provision the EU cell before selling into the EEA.
+
+**Status: open.** Sharpened, not created, by the decision to launch US-first.
 
 ---
 
@@ -258,7 +343,14 @@ of the job's.
 conditional statement per send, and a project with no policy row sends nothing.
 
 **A grant going negative.** `credit_grants.remaining_cents` is constrained non-negative;
-overage lands on `org_debts` instead, and a top-up settles debt before becoming spendable.
+overage lands on `org_debts` instead, and a top-up settles debt before becoming spendable. That
+last clause described an intention rather than the code until recently — see section 6.
+
+**Nothing telling us an address bounced.** The SNS receiver is built (2b), so the suppression
+list has a writer that is not a test.
+
+**One project's bounce rate costing every customer their mail.** A per-project breaker bounds
+each project's contribution to the account-wide rate AWS reviews (2).
 
 ---
 
@@ -267,7 +359,10 @@ overage lands on `org_debts` instead, and a top-up settles debt before becoming 
 | # | Decision | Needed for |
 | --- | --- | --- |
 | 1 | Whether our own dashboard gets a verified sending domain, retiring its exemption | 2 |
-| 2 | The account-level bounce-rate breaker, once the SNS receiver exists | 2, 2b |
-| 3 | The authentication tolerance — how much larger than the metered one | 3 |
 | 4 | Whether suspension above some size requires a person | 3, 7 |
 | 5 | Email and SMS rates, which are placeholders in the price list pending a margin study | 5.1 |
+| 6 | Whether to read SES's account-level reputation directly, now that each project's share is bounded | 2 |
+
+Closed: **2**, the per-project bounce-rate breaker, built alongside the SNS receiver (section 2).
+**3**, the authentication tolerance, at 30% of charges over thirty days against the metered 20%
+(section 1) — the number is settled and the control it parameterises is not built.

@@ -6,24 +6,55 @@ import {
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
-import { pgPolicy, timestamp, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, pgPolicy, timestamp, uuid } from "drizzle-orm/pg-core";
 import { appRole } from "./roles.js";
 
+const projectIdClassification = {
+  class: DataClass.Operational,
+  purpose: Purpose.ServiceConfiguration,
+  retention: Retention.ProjectLifetime,
+  erasure: Erasure.NotApplicable,
+  loggable: true,
+  note: "Tenant discriminator. Enforced by RLS as well as by the repository layer.",
+} as const;
+
 /**
- * The tenant discriminator every tenant table carries.
+ * The tenant discriminator every tenant table carries, and the cascade that empties it.
  *
- * Declared once so no table can accidentally type it differently, and so the RLS policy
- * below always matches the column it filters on.
+ * Declared once so no table can accidentally type it differently, and so the RLS policy below
+ * always matches the column it filters on.
+ *
+ * **`reference` is required, and that is the point.** For a long time this column carried no
+ * foreign key while three docstrings claimed deleting a project took its users, sessions, keys
+ * and audit rows with it. Nothing did: a delete left every tenant row behind, unreachable and
+ * therefore un-erasable, which is an Art. 28(3)(g) failure as much as a referential one. The
+ * parameter cannot be defaulted away, so a tenant table added years from now either declares the
+ * cascade or does not compile — the same argument `classified()` itself rests on.
+ *
+ * It is a parameter rather than a reference written here because `shared.ts` cannot import
+ * `projects.ts`, which imports this module back. `orgIdColumn` below documents the identical
+ * constraint one plane up.
  */
-export const projectIdColumn = () =>
-  classified(uuid("project_id").notNull(), {
-    class: DataClass.Operational,
-    purpose: Purpose.ServiceConfiguration,
-    retention: Retention.ProjectLifetime,
-    erasure: Erasure.NotApplicable,
-    loggable: true,
-    note: "Tenant discriminator. Enforced by RLS as well as by the repository layer.",
-  });
+export const projectIdColumn = (reference: () => AnyPgColumn) =>
+  classified(
+    uuid("project_id").notNull().references(reference, { onDelete: "cascade" }),
+    projectIdClassification,
+  );
+
+/**
+ * The same column without the cascade, for the one table that cannot have it.
+ *
+ * `audit_events` only. It is partitioned, and `idenzy_app` holds SELECT and INSERT on it and
+ * nothing else — that revoke *is* the integrity control of PROJECT.md 4.13.3, so a cascade would
+ * have no privilege to fire even if the partitioning allowed one. Its rows are removed by
+ * `purge_project`, a SECURITY DEFINER function that can only run for a project being deleted in
+ * the same statement.
+ *
+ * Reaching for this anywhere else is how the hole this fixed was dug. If a new table needs it,
+ * the reason belongs in this docstring beside the existing one.
+ */
+export const unreferencedProjectIdColumn = () =>
+  classified(uuid("project_id").notNull(), projectIdClassification);
 
 /**
  * The isolation policy applied to every tenant table (ADR-0003).

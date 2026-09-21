@@ -10,6 +10,7 @@ export const ErrorCode = {
   // Request shape and routing
   ValidationFailed: "validation_failed",
   UnknownProject: "unknown_project",
+  WrongRegion: "wrong_region",
   ProjectSuspended: "project_suspended",
   NotFound: "not_found",
   Conflict: "conflict",
@@ -95,6 +96,11 @@ export const ErrorCode = {
   // which is a thing to go and do rather than a thing to wait out — so it is its own code
   // and not a rate limit, whose message would say "try again later" and be wrong.
   SendingDomainRequired: "sending_domain_required",
+
+  // This project's bounce or complaint rate would cost us the SES account, which every other
+  // customer sends through too (risks.md 2). Also not a rate limit: what clears it is cleaning
+  // the list the mail is going to, and no amount of waiting does that on its own.
+  SendingPaused: "sending_paused",
 
   // The organisation has spent its credit and used up its tolerance, so the channels that
   // cost money the moment they leave refuse (ADR-0014). Never authentication: signing

@@ -1,4 +1,8 @@
-import { classificationRegistry, type TableClassification } from "../classification/registry.js";
+import {
+  classificationRegistry,
+  subjectRegistry,
+  type TableClassification,
+} from "../classification/registry.js";
 import { DataClass } from "../classification/vocabulary.js";
 
 const GENERATED_NOTE =
@@ -59,11 +63,31 @@ function tableSection(table: string, columns: TableClassification): string[] {
   return [
     `## \`${table}\``,
     "",
+    ...subjectSection(table),
     "| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |",
     "|---|---|---|---|---|---|---|",
     ...rows,
     "",
     ...notesSection(columns),
+  ];
+}
+
+/**
+ * Whose data this table holds and how a request reaches one person's rows (4.13.6).
+ *
+ * Printed above the columns because it is the question an auditor asks first and the one the
+ * column list cannot answer: "you say you hold an email address for a data subject — show me how
+ * you would find mine." A table with no entry holds nobody's personal data.
+ */
+function subjectSection(table: string): string[] {
+  const subject = subjectRegistry().get(table);
+  if (subject === undefined) return [];
+  const located =
+    subject.locatedBy === null ? "not directly addressable" : `by \`${subject.locatedBy}\``;
+  return [
+    `Data subject: **${subject.population}**, ${located}.`,
+    ...(subject.note === undefined ? [] : ["", subject.note]),
+    "",
   ];
 }
 

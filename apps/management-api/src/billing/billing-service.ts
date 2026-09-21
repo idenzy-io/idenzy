@@ -13,6 +13,7 @@ import { OrgBillingCustomerRepository } from "@idenzy/persistence/repository/org
 import { OrgMemberRepository } from "@idenzy/persistence/repository/org-member-repository";
 import { PaymentMethodRepository } from "@idenzy/persistence/repository/payment-method-repository";
 import { TopUpRepository } from "@idenzy/persistence/repository/top-up-repository";
+import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import {
@@ -85,13 +86,19 @@ export class BillingService {
       const members = await new OrgMemberRepository(tx, context).list();
       const names = new Map(members.map((member) => [member.id, member.userId]));
 
+      // Debt is part of the balance, and until it was read here it was invisible to every
+      // screen: `wallet` answered credit alone, so an organisation $300 down showed whatever
+      // credit it had left and never the figure ADR-0014 says a wallet holds.
+      const debtCents = await new UsageDrawdownRepository(tx, context).debtCents();
+
       const purchasedCents = sum(grants, CreditKind.Purchased);
       const promotionalCents = sum(grants, CreditKind.Promotional);
       return {
         currency: settings.currency,
-        balanceCents: purchasedCents + promotionalCents,
+        balanceCents: purchasedCents + promotionalCents - debtCents,
         purchasedCents,
         promotionalCents,
+        debtCents,
         grants: grants.map(present.grant),
         methods: methods.map((method) => present.method(method, names)),
         topUps: topUps.map(present.topUp),

@@ -13,10 +13,14 @@ import {
  * Most of this screen is not settings, and that is the honest shape of the table rather
  * than a gap. A project is the unit of tenancy, of key custody and of residency: its cell
  * is immutable after creation because moving it is an audited migration and never an
- * `UPDATE`, its tier is a contract before it is a column, and its keys live in KMS where
- * nothing in a dashboard could reach them. Three of the five fields a customer might expect
- * to edit are decisions taken once, and a screen that offered them as controls would be
- * offering to do something the platform refuses.
+ * `UPDATE` — enforced by a trigger since 0063, not merely intended — its tier is a contract
+ * before it is a column, and its key custody is meant to sit in KMS where nothing in a dashboard
+ * could reach it. Three of the five fields a customer might expect to edit are decisions taken
+ * once, and a screen that offered them as controls would be offering to do something the
+ * platform refuses.
+ *
+ * Which of those are *deployed* rather than designed is the business of the `ControlCapability`
+ * declarations below, because this screen spent a while asserting several that were not.
  *
  * What is genuinely editable is a name and a set of retention ages. The name is worth
  * saying out loud: it is a label for this dashboard and reaches no end user anywhere,
@@ -28,43 +32,6 @@ import {
  * retention. The audit subject is the exception, fixed by the tier, because its retention is
  * what an auditor is promised rather than what an operator prefers.
  */
-
-/*
- * Where a project lives.
- */
-
-export interface RegionCell {
-  /** `region_cells.code`, which is what a log line and a support ticket name it by. */
-  code: string;
-  label: string;
-  /** The law the data sits under, which is the whole reason a cell exists. */
-  jurisdiction: string;
-  /** The API host for projects in this cell. What a customer's SDK is pointed at. */
-  endpoint: string;
-  /** The KMS key ring that wraps every project DEK in this cell. */
-  kmsKeyRing: string;
-}
-
-export const REGION_CELLS: readonly RegionCell[] = [
-  {
-    code: "eu-west-1",
-    label: "Europe (Belgium)",
-    jurisdiction: "European Union",
-    endpoint: "https://eu.idenzy.io",
-    kmsKeyRing: "idenzy-eu-west-1",
-  },
-  {
-    code: "us-east-1",
-    label: "United States (South Carolina)",
-    jurisdiction: "United States",
-    endpoint: "https://us.idenzy.io",
-    kmsKeyRing: "idenzy-us-east-1",
-  },
-];
-
-export function cellByCode(code: string): RegionCell | null {
-  return REGION_CELLS.find((cell) => cell.code === code) ?? null;
-}
 
 /*
  * What it is held to.
@@ -93,7 +60,7 @@ export function projectTierOf(value: string | undefined): ProjectTier {
   return PROJECT_TIERS.includes(value as ProjectTier) ? (value as ProjectTier) : "standard";
 }
 
-/** Years of audit trail the tier buys. Partitions are dropped on this schedule. */
+/** Years of audit trail the tier buys. Nothing sweeps to it yet: AUDIT_RETENTION_ENFORCEMENT. */
 export const TIER_AUDIT_YEARS: Record<ProjectTier, number> = { standard: 1, hipaa: 6 };
 
 export const TIER_NOTES: Record<ProjectTier, string> = {
@@ -114,6 +81,72 @@ export const TIER_NOTES: Record<ProjectTier, string> = {
  */
 export const TIER_CHANGE_NOTE =
   "The tier is set with your agreement rather than from this screen. It is what a BAA scopes, and it moves audit retention, so a control here would let a project claim a contract it does not have and drop partitions it cannot get back.";
+
+/*
+ * What this deployment can actually do.
+ *
+ * The same shape `data-requests.ts` uses for the same reason. This screen used to assert ten
+ * infrastructure facts in the present tense — keys in KMS, cross-cell access refused, key
+ * administrators separated from key users — and five of them were not true of the code. A
+ * customer reading a security reference is the last person who should be shown a design as
+ * though it were a deployment, and `notes/settings.md` P1 says so directly: show actual
+ * environment capability, and do not use a fixture tier as a compliance attestation.
+ *
+ * A `running: false` constant is not a drifting hardcode. It changes when the control is built,
+ * which is a code change either way — unlike an asserted fact, which stays true-looking forever.
+ */
+
+export interface ControlCapability {
+  /** Whether the control runs here, as opposed to being designed for. */
+  running: boolean;
+  /** What to show in its place. Short: it sits in one cell of a fact grid. */
+  value: string;
+  /** The sentence behind the glyph. Where it is not running, why. */
+  reason: string;
+}
+
+export const KMS_SIGNING: ControlCapability = {
+  running: false,
+  value: "Not in KMS yet",
+  reason:
+    "The design is a per-project key whose private half never leaves KMS, so a copy of our database yields nothing that can mint a token. It is not what runs: KmsEs256Issuer does not exist, and the only issuer built signs with an in-process key that is regenerated on restart. Development is the only environment that boots at all.",
+};
+
+export const WRAPPED_DEK: ControlCapability = {
+  running: false,
+  value: "Not wrapped yet",
+  reason:
+    "The design is a per-project data encryption key wrapped by this cell's key ring, so a key compromise reaches one tenant rather than one region. Nothing populates it: the column exists and is empty, and field-level encryption currently runs under a key derived from the cell code in development only.",
+};
+
+export const KEY_ADMIN_SEPARATION: ControlCapability = {
+  running: false,
+  value: "Not yet separated",
+  reason:
+    "The design is that key administrators are not key users and every signing call is recorded in the cloud audit log. There is no KMS here yet, so there are no key administrators to separate and no such log.",
+};
+
+export const CROSS_CELL_REFUSAL: ControlCapability = {
+  running: true,
+  value: "Refused",
+  reason:
+    "A request resolving to a project in another cell is refused rather than proxied, so data cannot transit a jurisdiction by accident. Your keys carry the region they belong to, so one presented to the wrong endpoint is refused on the key itself before anything is looked up — and the refusal names the endpoint to use instead. A request arriving on a custom domain carries no key, so that one is checked once the project is known.",
+};
+
+export const AUDIT_RETENTION_ENFORCEMENT: ControlCapability = {
+  running: false,
+  value: "Not swept yet",
+  reason:
+    "The age is real and the tier sets it. What does not run is the pass that applies it: audit entries are kept in monthly partitions and nothing drops one, so the trail currently grows past this age rather than ageing out of it.",
+};
+
+/** The oldest one in effect here, and still the one that matters most. */
+export const TENANT_ISOLATION: ControlCapability = {
+  running: true,
+  value: "At the database",
+  reason:
+    "Every tenant table is filtered by the project id at the database, and this project's own row is filtered by its id too. Reading another project's row is not an oversight waiting to be fixed: the policy returns nothing, whatever the application asks for. Asserted by tests that try it and fail.",
+};
 
 /*
  * What a project holds, as this screen reads it.
@@ -332,8 +365,8 @@ export const DELETE_EFFECTS: readonly DeleteEffect[] = [
   },
   {
     id: "audit",
-    label: "The audit partitions are dropped",
-    note: "The chain goes with the project. Export what an auditor will ask for before this, because afterwards there is nothing left to export.",
+    label: "The audit trail is deleted",
+    note: "Every entry for this project, and the chain over them. Export what an auditor will ask for before this, because afterwards the only record is that a deletion happened.",
     icon: "material-symbols:history",
     tone: "warning",
   },

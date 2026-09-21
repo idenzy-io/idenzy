@@ -30,11 +30,20 @@ pnpm install && pnpm run prepare   # prepare installs git hooks; ignoreScripts i
 docker compose up -d && pnpm db:migrate
 pnpm dev                           # every app through turbo
 
+docker compose --profile api up -d # auth-api and management-api in containers instead
+
 pnpm turbo run typecheck build test
 pnpm lint                          # biome, a root script and not a turbo task
 pnpm turbo run test:integration    # Testcontainers, needs Docker
 pnpm compliance:generate           # after any schema change; CI fails if stale
 ```
+
+The `api` profile is an alternative to `pnpm dev` for those two services and not an addition
+to it: both bind the same ports and both write to `apps/*/dist`, so running the pair leaves
+one of them serving a build the other wrote. It mounts the working tree and runs the same
+watcher, so an edit reaches the container in a few seconds and nothing has to be rebuilt.
+There is no Dockerfile and no image of ours — this is a development convenience, and
+deployment is still deferred.
 
 ## Where to read before you change something
 
@@ -63,11 +72,18 @@ volume bands correct).
 ## What can cost us money or take a customer down
 
 [risks.md](./risks.md) is the register: the exposure ladder, what each control actually
-bounds, and — more usefully — what is still open. Two entries matter before touching
-billing. Email has no ceiling of any kind, which is a shared-sending-domain reputation
-problem before it is a cost one. And authentication is going to become stoppable, which
-reverses what `ZERO_KEEPS_WORKING` promises on the wallet screen and must not ship before
-the three safeguards in its section 7 exist.
+bounds, and — more usefully — what is still open. Two things matter before touching billing.
+Authentication is going to become stoppable, at 30% of recent charges against the metered
+channels' 20%; the arithmetic is in the price list, **nothing calls it**, and nothing may
+until the three safeguards in section 7 exist. And nobody is warned before anything stops
+(section 4), which is what turns every control on that page from a business decision into an
+incident.
+
+Email now has two ceilings and they are different controls. The shared sender is a sandbox
+capped at a burst and a couple of hundred a day, for everybody, whatever they pay. On top of
+that a per-project bounce-rate breaker stops a project whose mail is damaging the SES account
+every customer sends through — and that one applies to a verified domain and to our own
+dashboard as well. Neither is about money.
 
 ## Compliance claims
 

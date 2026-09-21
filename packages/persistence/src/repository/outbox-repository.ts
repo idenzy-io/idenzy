@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { outbox } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 import { asRecord } from "./jsonb.js";
 
@@ -22,7 +22,7 @@ export interface OutboxMessage {
  * on the request path would mean taking a per-project lock on every authentication.
  */
 export class OutboxRepository extends BaseRepository<typeof outbox> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, outbox);
   }
 

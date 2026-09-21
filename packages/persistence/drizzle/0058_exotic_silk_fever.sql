@@ -1,0 +1,2 @@
+ALTER TABLE "top_ups" ADD COLUMN "settled_debt_cents" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "top_ups" ADD CONSTRAINT "top_ups_settled_debt_ck" CHECK (settled_debt_cents between 0 and amount_cents);

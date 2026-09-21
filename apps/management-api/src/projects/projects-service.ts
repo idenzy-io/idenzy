@@ -87,8 +87,11 @@ export class ProjectsService {
    * The refusal is here rather than only on the screen because it is a rule about the data
    * rather than about the UI: an organisation with no project has nothing for its members to
    * sign in to and no screen in the panel that means anything, so the state has no way out.
-   * Everything keyed on the project goes with it by foreign key — users, sessions, keys, the
-   * audit partitions — which is why this is the one delete in the API that says so out loud.
+   *
+   * Everything keyed on the project goes with it: users, sessions, keys and the rest by the
+   * cascade added in 0060, and the audit trail through `purge_project`, which is separate
+   * because the app role has no DELETE on an append-only table (PROJECT.md 4.13.3). The purge
+   * leaves a `project_purges` row behind, which is the only evidence that survives it.
    */
   async remove(context: OrgContext, publicProjectId: string): Promise<void> {
     const id = PublicId.parse(IdPrefix.Project, publicProjectId).uuid;
@@ -101,8 +104,8 @@ export class ProjectsService {
           detail: { projectId: publicProjectId },
         });
       }
-      const removed = await repository.remove(id);
-      if (!removed) {
+      const purge = await repository.remove(id);
+      if (purge === null) {
         throw new ResourceNotFoundError({ detail: { projectId: publicProjectId } });
       }
     });

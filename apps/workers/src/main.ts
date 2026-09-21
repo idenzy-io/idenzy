@@ -14,7 +14,11 @@ import { Sha256WebhookSigner } from "@idenzy/crypto/webhooks/webhook-signer";
 import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
+import { AuditPartitionMaintainer } from "@idenzy/persistence/repository/audit-partition-maintainer";
+import { EmailProviderEventRepository } from "@idenzy/persistence/repository/email-provider-event-repository";
+import { EmailRetentionPruner } from "@idenzy/persistence/repository/email-retention-pruner";
 import { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
+import { ProjectEmailActivityReader } from "@idenzy/persistence/repository/project-email-activity-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
 import { RetentionPruner } from "@idenzy/persistence/repository/retention-pruner";
 import { RevocationEventReader } from "@idenzy/persistence/repository/revocation-event-reader";
@@ -23,10 +27,19 @@ import { UsageClosableReader } from "@idenzy/persistence/repository/usage-closab
 import { UsageRetentionPruner } from "@idenzy/persistence/repository/usage-retention-pruner";
 import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-reader";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import {
+  SnsMessageVerifier,
+  SnsSubscriptionConfirmer,
+} from "@idenzy/providers-email/aws/sns-message-verifier";
+import { AdcTokenSource } from "@idenzy/providers-gcp/access-token-source";
+import { SecretManagerSource } from "@idenzy/providers-gcp/secret-manager-source";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { analyticsSettingsFrom } from "./analytics-settings.js";
+import { AuditPartitionKeeper } from "./audit-partition-keeper.js";
 import { AuditRelay } from "./audit-relay.js";
-import { MetadataTokenSource } from "./google/access-token-source.js";
+import { EmailEventEndpoint } from "./email/email-event-endpoint.js";
+import { EmailReputationBreaker } from "./email/email-reputation-breaker.js";
+import { EmailRetentionSweeper } from "./email/email-retention-sweeper.js";
 import { GoogleOidcVerifier } from "./google/task-caller-verifier.js";
 import { HourlyUsageRoller } from "./hourly-usage-roller.js";
 import { InternalServer } from "./http/internal-server.js";
@@ -73,7 +86,7 @@ import { HttpsWebhookTransport } from "./webhooks/webhook-transport.js";
 const SKEW_SECONDS = 60;
 
 async function bootstrap(): Promise<void> {
-  const config = AppConfig.fromEnvironment();
+  const config = await AppConfig.bootstrap((projectId) => new SecretManagerSource(projectId));
   const logger = createLogger({
     level: config.get("LOG_LEVEL"),
     service: "workers",
@@ -162,6 +175,61 @@ async function bootstrap(): Promise<void> {
   const drawdown = new UsageDrawdown(uow, new OrgUsageActivityReader(db), clock, logger);
 
   /*
+   * The SES feedback loop (PROJECT.md 11.2 item 4, risks.md 2b).
+   *
+   * Until this existed no bounce or complaint reached us at all: the suppression list had one
+   * writer in the whole repository and it was a test, so an address that hard-bounced in March
+   * was still being written to in September. The receiver is here rather than on an API because
+   * 11.2 names an `email-events` worker, and because SNS is not a customer or the panel.
+   *
+   * Both variables or neither. A receiver with no topic ARN would accept a validly-signed
+   * message from any topic anybody cared to point at it, which is a stranger deciding whose
+   * addresses we suppress — so a half-configured pair is no route rather than an open one.
+   */
+  const sesEventUrl = config.get("SES_EVENT_URL");
+  const sesTopicArn = config.get("SES_EVENT_TOPIC_ARN");
+  if ((sesEventUrl === undefined) !== (sesTopicArn === undefined)) {
+    throw new InternalError({
+      detail: {
+        reason: "SES event publishing needs both SES_EVENT_URL and SES_EVENT_TOPIC_ARN, or neither",
+        rule: "a receiver without a topic allowlist accepts any topic's signed messages",
+      },
+    });
+  }
+  const emailEvents =
+    sesEventUrl === undefined || sesTopicArn === undefined
+      ? null
+      : {
+          path: new URL(sesEventUrl).pathname,
+          endpoint: new EmailEventEndpoint(
+            uow,
+            new EmailProviderEventRepository(db),
+            new SnsMessageVerifier({ topicArns: [sesTopicArn] }),
+            new SnsSubscriptionConfirmer(),
+            clock,
+            logger,
+          ),
+        };
+
+  /*
+   * What stops a project whose mail is damaging the SES account every other customer sends
+   * through (risks.md 2). Evaluated here and read on the send path, because a rate recomputed
+   * per message is a windowed aggregate on the hot path and a figure nobody can be shown.
+   */
+  const reputation = new EmailReputationBreaker(
+    uow,
+    new ProjectEmailActivityReader(db),
+    clock,
+    logger,
+  );
+
+  /*
+   * And the sweeper that makes the two new tables' declared retention true rather than
+   * described, which is the trap the usage rollups fell into first.
+   */
+  const emailRetention = new EmailRetentionSweeper(new EmailRetentionPruner(db), clock, logger);
+
+  /*
    * Analytics ingestion (ADR-0013). A cell with no ClickHouse configured runs without it rather
    * than failing, because nothing on the authentication path reads that store — but a cell with
    * *half* of it configured fails at boot, because the symptom would otherwise be an empty chart
@@ -198,6 +266,14 @@ async function bootstrap(): Promise<void> {
   const retention = new RetentionSweeper(new RetentionPruner(db), logger);
 
   /*
+   * The one job here whose failure is not deferred work. Every sweeper above leaves rows that
+   * are still there and still past their age when a pass fails; this one, left alone, ends with
+   * `audit_events` having no partition for the current month and refusing every insert — the
+   * append-only trail going dark rather than falling behind (4.13.3).
+   */
+  const auditPartitions = new AuditPartitionKeeper(new AuditPartitionMaintainer(db), logger);
+
+  /*
    * Cloud Tasks if this deployment was given queues, and the sweeper if it was not. Both are correct:
    * the queue arms a retry to the second, the sweeper finds it on its interval, and only the second
    * of those is a delivery guarantee. A half-configured queue is the one case that fails here rather
@@ -207,7 +283,7 @@ async function bootstrap(): Promise<void> {
   const scheduler: DeliveryScheduler =
     tasks === null
       ? new SweepingScheduler()
-      : new CloudTasksScheduler(new MetadataTokenSource(clock), tasks, logger);
+      : new CloudTasksScheduler(new AdcTokenSource(), tasks, logger);
 
   const dispatcher = new WebhookDispatcher(
     uow,
@@ -246,6 +322,7 @@ async function bootstrap(): Promise<void> {
   const server = new InternalServer(
     {
       port: config.get("WORKERS_PORT") ?? config.get("PORT"),
+      ...(emailEvents === null ? {} : { events: emailEvents }),
       ...(tasks === null
         ? {}
         : {
@@ -265,6 +342,9 @@ async function bootstrap(): Promise<void> {
   // All awaited, so a worker that has just started has already done a pass before it
   // reports itself up. A restart is exactly when the cache is most likely to be empty, and
   // it is also when the audit trail is furthest behind.
+  // First, and deliberately before the audit relay: the relay's whole job is inserting into
+  // `audit_events`, and an insert with no partition to land in fails outright.
+  await auditPartitions.start();
   await reconciler.start();
   await auditRelay.start();
   await webhookRelay.start();
@@ -272,7 +352,9 @@ async function bootstrap(): Promise<void> {
   await usageCloser.start();
   await usageRoller.start();
   drawdown.start();
+  reputation.start();
   await usageRetention.start();
+  await emailRetention.start();
   await retention.start();
   if (analytics !== null && ingest !== null) {
     await migrateAnalytics(

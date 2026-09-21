@@ -25,7 +25,8 @@ data "google_project" "this" {
 # of retries are armed against a queue that does not exist, which costs those deliveries the sweeper's
 # interval rather than losing them; the scheduler logs the refusal so it is visible either way.
 resource "google_cloud_tasks_queue" "webhooks" {
-  count = var.webhook_queue_shards
+  count = var.enable_managed_infrastructure ? var.webhook_queue_shards : 0
+
 
   name     = "${local.name_prefix}-webhooks-${count.index}"
   project  = var.project_id
@@ -59,6 +60,8 @@ resource "google_cloud_tasks_queue" "webhooks" {
 # between the queue and the worker, which is the point — a token nobody stores is a token nobody
 # leaks (PROJECT.md 4.11).
 resource "google_service_account" "webhook_tasks" {
+  count = var.enable_managed_infrastructure ? 1 : 0
+
   account_id   = "${local.name_prefix}-webhooks"
   display_name = "Webhook retry dispatcher (${var.cell_code})"
   project      = var.project_id
@@ -66,13 +69,14 @@ resource "google_service_account" "webhook_tasks" {
 
 # The workers service enqueues, on these queues and no others.
 resource "google_cloud_tasks_queue_iam_member" "enqueue" {
-  count = var.webhook_queue_shards
+  count = var.enable_managed_infrastructure ? 1 : 0
+
 
   project  = var.project_id
   location = var.region
   name     = google_cloud_tasks_queue.webhooks[count.index].name
   role     = "roles/cloudtasks.enqueuer"
-  member   = "serviceAccount:${google_service_account.webhook_tasks.email}"
+  member   = "serviceAccount:${google_service_account.webhook_tasks[0].email}"
 }
 
 # Cloud Tasks mints the task's token by acting as the account above, which it may only do if its own
@@ -82,7 +86,9 @@ resource "google_cloud_tasks_queue_iam_member" "enqueue" {
 # The agent is addressed by project number rather than through `google_project_service_identity`,
 # which needs the beta provider for this service.
 resource "google_service_account_iam_member" "tasks_may_mint_tokens" {
-  service_account_id = google_service_account.webhook_tasks.name
+  count = var.enable_managed_infrastructure ? 1 : 0
+
+  service_account_id = google_service_account.webhook_tasks[0].name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
 }

@@ -1,9 +1,10 @@
-import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
+import { classified, controlTable } from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
 import {
@@ -38,7 +39,7 @@ import { createdAtColumn, orgIdColumn, orgIsolationPolicy, updatedAtColumn } fro
  * the cell being separate, which is the property residency claims rest on. `org_id`
  * carries none either, for the same reason `projectIdColumn` does not.
  */
-export const orgMembers = classifiedTable(
+export const orgMembers = controlTable(
   "org_members",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
@@ -91,7 +92,7 @@ export const orgMembers = classifiedTable(
  * to an organisation, so the rule every other token in this schema follows applies: store
  * what proves a match, never what grants access.
  */
-export const orgInvitations = classifiedTable(
+export const orgInvitations = controlTable(
   "org_invitations",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
@@ -148,6 +149,11 @@ export const orgInvitations = classifiedTable(
     index("org_invitations_expires_idx").on(t.expiresAt),
     orgIsolationPolicy("org_invitations"),
   ],
+  {
+    population: SubjectPopulation.CustomerStaff,
+    locatedBy: "email",
+    note: "The address is held in the clear because the members screen shows who has been asked, so it is also how the invitee is found.",
+  },
 ).enableRLS();
 
 /**
@@ -161,7 +167,7 @@ export const orgInvitations = classifiedTable(
  * A missing row means not required, which is the same answer as `require_mfa = false` and
  * is what an organisation that has never opened the screen should get.
  */
-export const orgSecuritySettings = classifiedTable(
+export const orgSecuritySettings = controlTable(
   "org_security_settings",
   {
     orgId: orgIdColumn(),
@@ -199,7 +205,7 @@ export const orgSecuritySettings = classifiedTable(
  * `Retention.Years1` rather than the project's lifetime: this informs what we build next
  * and stops being worth keeping long before the organisation does.
  */
-export const onboardingResponses = classifiedTable(
+export const onboardingResponses = controlTable(
   "onboarding_responses",
   {
     orgId: orgIdColumn(),
@@ -237,4 +243,9 @@ export const onboardingResponses = classifiedTable(
     ),
   },
   (t) => [primaryKey({ columns: [t.orgId] }), orgIsolationPolicy("onboarding_responses")],
+  {
+    population: SubjectPopulation.CustomerStaff,
+    locatedBy: "org_id",
+    note: "Free text somebody on the customer's team wrote. Attributed to the organisation rather than to a person, so it is reached by org.",
+  },
 ).enableRLS();

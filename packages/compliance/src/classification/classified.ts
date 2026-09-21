@@ -6,8 +6,8 @@ import {
   type PgTableExtraConfigValue,
   pgTable,
 } from "drizzle-orm/pg-core";
-import { registerTable } from "./registry.js";
-import type { ColumnClassification } from "./vocabulary.js";
+import { registerSubject, registerTable } from "./registry.js";
+import type { ColumnClassification, TableSubject } from "./vocabulary.js";
 
 declare const CLASSIFIED: unique symbol;
 
@@ -57,7 +57,9 @@ export function classifiedTable<
   name: TName,
   columns: TColumns,
   extraConfig?: (self: BuildExtraConfigColumns<TName, TColumns, "pg">) => PgTableExtraConfigValue[],
+  options: ClassifiedTableOptions = {},
 ) {
+  const { registryPrefix = "", subject } = options;
   const entries = Object.entries(columns).map(([property, builder]) => {
     const classification = classifications.get(builder);
     if (classification === undefined) {
@@ -66,9 +68,66 @@ export function classifiedTable<
     }
     return [property, classification] as const;
   });
-  registerTable(name, Object.fromEntries(entries));
+  const key = `${registryPrefix}${name}`;
+  registerTable(key, Object.fromEntries(entries));
+  if (subject !== undefined) registerSubject(key, subject);
 
   return pgTable(name, columns, extraConfig);
+}
+
+export interface ClassifiedTableOptions {
+  /**
+   * Qualifies the registry key only, never the Postgres table name. Defaults to none, so a cell
+   * table — which is almost all of them — is recorded under its bare name as it always was.
+   */
+  readonly registryPrefix?: string;
+  /**
+   * Whose personal data this table holds and how to reach one person's rows (4.13.6).
+   *
+   * Required of any table carrying a `subjectField` column, and asserted by a test rather than by
+   * the type system: the column flags are per column and this is per table, so the compiler cannot
+   * see the pair. Omit it for a table holding nobody's personal data, which is most of them.
+   */
+  readonly subject?: TableSubject;
+}
+
+/**
+ * The registry prefix a control-plane table is recorded under.
+ *
+ * The Postgres table is still `orgs`; only the key in the classification registry is qualified.
+ * `classifiedAnalyticsTable` already does exactly this with `analytics.`, for two reasons that
+ * apply here word for word: two stores cannot collide in one flat name-keyed map, and a reader of
+ * the generated data map can tell which store an answer came from.
+ *
+ * The second reason is the one that matters for residency. A cell is an independent stack per
+ * PROJECT.md 4.13.5, so "which plane is this table in" is the same question as "which
+ * jurisdiction does this column live in" — and the data map had no way to express it. The
+ * generators need no change to gain the axis: `data-map.ts` sorts by registry key, so prefixed
+ * tables group themselves.
+ */
+const CONTROL_PLANE_PREFIX = "control.";
+
+/**
+ * `classifiedTable`, for a table that lives in the global control plane rather than in a cell.
+ *
+ * Org-keyed tables and the two registries that are keyed on nothing: billing, the organisation
+ * and its members, `region_cells`, `staff_access_grants`. What separates them from everything
+ * else is that they do **not** move when a second cell is provisioned, which is why they are the
+ * ones that must be identifiable as a group before that happens.
+ */
+export function controlTable<
+  TName extends string,
+  TColumns extends Record<string, ClassifiedBuilder>,
+>(
+  name: TName,
+  columns: TColumns,
+  extraConfig?: (self: BuildExtraConfigColumns<TName, TColumns, "pg">) => PgTableExtraConfigValue[],
+  subject?: TableSubject,
+) {
+  return classifiedTable(name, columns, extraConfig, {
+    registryPrefix: CONTROL_PLANE_PREFIX,
+    ...(subject === undefined ? {} : { subject }),
+  });
 }
 
 /**

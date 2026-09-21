@@ -106,6 +106,16 @@ the panel draws itself.
 organisation is often never renamed, so the fallback has to be something its owner
 recognises on their own dashboard rather than "Untitled".
 
+**This screen is drawn in the signed-out language, not the panel's.** Square corners and
+fields that are a value over a hairline, the same as sign-in — because this is the other
+shell that is one column with one thing to do, and a person meets the two within a minute
+of each other. Both layouts carry `flow-shell`, which zeroes the radius ladder rather than
+flattening anything itself, so `ChoiceList` and `InfoNote` go square here and stay rounded
+on the fourteen panel screens that also use them. What this screen does **not** take is
+`auth-shell`: that repaints `color="primary"` as ink, which is right where the only accent
+is the sign-in button and wrong on the first screen behind it, where the product's blue
+starts.
+
 ## Acceptance checks
 
 - The dashboard is unreachable with no organisation, and this page is unreachable with one.

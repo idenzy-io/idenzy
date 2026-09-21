@@ -8,6 +8,39 @@ export const DsrKind = {
 export type DsrKind = (typeof DsrKind)[keyof typeof DsrKind];
 
 /** Lifecycle of a data-subject request. `due_at` is set at intake and is monitored. */
+/**
+ * Which law's clock a data-subject request is answered on (PROJECT.md 4.13.6).
+ *
+ * **Per request, not per cell, and the distinction is the whole reason this is an enum.** A cell's
+ * jurisdiction is about where bytes sit; this is about which law governs one person's rights, and
+ * the two come apart constantly — a US cell holds EU residents whenever a customer's users are in
+ * Europe. Idenzy is a processor here, so which rule applies is the controller's determination and
+ * arrives with the request rather than being inferred from a column.
+ *
+ * The string values match `apps/client/app/utils/data-requests.ts` exactly, because the panel had
+ * this shape first and is the specification.
+ */
+export const DsrDeadlineRule = {
+  Gdpr: "gdpr",
+  Ccpa: "ccpa",
+} as const;
+export type DsrDeadlineRule = (typeof DsrDeadlineRule)[keyof typeof DsrDeadlineRule];
+
+export const DSR_DEADLINE_RULES: readonly DsrDeadlineRule[] = [
+  DsrDeadlineRule.Gdpr,
+  DsrDeadlineRule.Ccpa,
+];
+
+/**
+ * What a request is answered on when nobody has said.
+ *
+ * GDPR, and deliberately the strictest of the two rather than the one matching the cell. A
+ * processor cannot know where a data subject lives, and the two failure directions are not
+ * symmetric: answering a Californian within a month is not a breach of anything, and answering a
+ * European after 45 days is a breach of Art. 12(3).
+ */
+export const DEFAULT_DSR_DEADLINE_RULE: DsrDeadlineRule = DsrDeadlineRule.Gdpr;
+
 export const DsrStatus = {
   Received: "received",
   InProgress: "in_progress",

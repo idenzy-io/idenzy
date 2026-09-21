@@ -1,0 +1,1 @@
+ALTER TABLE "data_subject_requests" ADD COLUMN "deadline_rule" text DEFAULT 'gdpr' NOT NULL;

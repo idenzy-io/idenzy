@@ -2,13 +2,20 @@ import {
   InvalidApiKeyError,
   MissingCredentialsError,
   SecretKeyNotPermittedError,
+  WrongRegionError,
 } from "@idenzy/core/errors";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { IdenzyHeader } from "@idenzy/protocol/http/headers";
-import { isApiKey, isPublishableKey, isSecretKey } from "@idenzy/protocol/schemas/common";
+import {
+  isApiKey,
+  isPublishableKey,
+  isSecretKey,
+  parseApiKey,
+} from "@idenzy/protocol/schemas/common";
 import { type CanActivate, type ExecutionContext, Injectable, SetMetadata } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
+import { LocalCell } from "./local-cell.js";
 import { ProjectResolver, type ResolvedProject } from "./project-resolver.js";
 
 export const PUBLIC_ROUTE = "idenzy:public-route";
@@ -56,6 +63,7 @@ export class TenantResolutionGuard implements CanActivate {
   constructor(
     private readonly resolver: ProjectResolver,
     private readonly reflector: Reflector,
+    private readonly cell: LocalCell,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -71,6 +79,21 @@ export class TenantResolutionGuard implements CanActivate {
 
     const credential = this.credential(request);
     const resolved = await this.resolve(credential);
+
+    /*
+     * The second line of the cross-cell refusal, and the one that catches the Host path.
+     *
+     * A key was already checked on its own text in `credential()`, before any lookup. This is for
+     * the requests that present no key at all — resolved by Host, on a custom auth domain — where
+     * there is nothing to check until the project is known. It also stands as a backstop for the
+     * first: a key whose segment says `us1` on a row whose cell says otherwise is a provisioning
+     * fault, and serving it would be exactly the accidental jurisdiction transit 4.13.5 forbids.
+     */
+    if (!(await this.cell.servesId(resolved.cellId))) {
+      throw new WrongRegionError({
+        detail: { servedBy: this.cell.code, from: credential.from },
+      });
+    }
     request.project = resolved;
 
     request.tenant = new TenantContext(
@@ -109,11 +132,15 @@ export class TenantResolutionGuard implements CanActivate {
     if (key.length > 0) {
       if (isSecretKey(key)) throw new SecretKeyNotPermittedError();
       if (!isPublishableKey(key)) throw new InvalidApiKeyError();
+      this.refuseAnotherCell(key);
       return { from: "publishable-header", key };
     }
 
     const bearer = this.bearerKey(request);
-    if (bearer !== null) return { from: "authorization", key: bearer };
+    if (bearer !== null) {
+      this.refuseAnotherCell(bearer);
+      return { from: "authorization", key: bearer };
+    }
 
     const host = request.headers.host;
     if (host !== undefined) return { from: "host", host };
@@ -127,6 +154,28 @@ export class TenantResolutionGuard implements CanActivate {
    * and authenticated later by SessionGuard, which is why this tests the prefix rather than
    * trying a lookup and seeing what happens.
    */
+  /**
+   * The first line of the cross-cell refusal: a key for another cell never becomes a query.
+   *
+   * §4.13.5 says routing refuses cross-cell access rather than proxying it, and refusing on the
+   * string is the strongest form of that — the key is not hashed, no row is read, and nothing
+   * about whether it is genuine is learned or leaked. It is also the only form that can say where
+   * to go instead, because after a failed lookup there is nothing left to say it with.
+   *
+   * A key that does not parse is an `InvalidApiKeyError` rather than a wrong region: it names no
+   * cell, so it is malformed rather than misdirected.
+   */
+  private refuseAnotherCell(key: string): void {
+    const parsed = parseApiKey(key);
+    if (parsed === null) throw new InvalidApiKeyError();
+    if (!this.cell.servesCode(parsed.cell)) {
+      throw new WrongRegionError({
+        message: `This key belongs to region ${parsed.cell}, and this endpoint serves ${this.cell.code}.`,
+        detail: { presented: parsed.cell, servedBy: this.cell.code },
+      });
+    }
+  }
+
   private bearerKey(request: FastifyRequest): string | null {
     const header = request.headers.authorization;
     if (header === undefined || !header.startsWith("Bearer ")) return null;

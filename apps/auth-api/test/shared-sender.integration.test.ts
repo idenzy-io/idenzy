@@ -5,6 +5,10 @@ import {
 } from "@idenzy/cache/rate-limit-strategy";
 import { SystemClock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
+import {
+  EmailSendingHoldRepository,
+  HoldReason,
+} from "@idenzy/persistence/repository/email-sending-hold-repository";
 import { ProjectDomainRepository } from "@idenzy/persistence/repository/project-domain-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
@@ -91,13 +95,17 @@ beforeAll(async () => {
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
+     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
   );
   const { rows } = await harness.owner.query<{ id: string }>(
     `INSERT INTO orgs (id, name, cell_id)
      VALUES (gen_random_uuid(), 'Acme', (SELECT id FROM region_cells LIMIT 1)) RETURNING id`,
   );
-  for (const project of [SHARED_PROJECT, OWN_DOMAIN_PROJECT, PENDING_PROJECT]) {
+  // The dashboard is seeded like any other project, because it is one: the breaker applies to
+  // it for the same reason it applies to a customer, and `email_sending_holds.project_id` now
+  // cascades from `projects`, so a hold cannot be opened against a project that never existed.
+  const dashboard = PublicId.parse(IdPrefix.Project, DASHBOARD).uuid;
+  for (const project of [SHARED_PROJECT, OWN_DOMAIN_PROJECT, PENDING_PROJECT, dashboard]) {
     await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
@@ -194,5 +202,91 @@ describe("the shared sender's ceiling", () => {
   it("says nothing about SMS, which has its own controls", async () => {
     limiter.broken = true;
     await expect(meter().assertWithinQuota(SHARED_PROJECT, Channel.Sms)).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The bounce-rate breaker, read on the send path (risks.md 2).
+ *
+ * A different control from everything above and it has to be tested as one, because the two
+ * carve-outs that exempt a project from the sandbox allowance do **not** exempt it from this.
+ * Mail leaves through one SES account whatever domain it is from, AWS reviews bounce and
+ * complaint rates per account, and a review takes mail down for every customer at once. The
+ * hold is opened by `EmailReputationBreaker` in `apps/workers`; what is asserted here is that
+ * the send path reads it and refuses.
+ */
+describe("a project whose mail is damaging the SES account", () => {
+  async function hold(projectId: string): Promise<void> {
+    const tenant = new TenantContext(projectId, "req_test", "system");
+    await uow.run(tenant, (tx) =>
+      new EmailSendingHoldRepository(tx, tenant).open({
+        reason: HoldReason.BounceRate,
+        bounceRatePpm: 90_000,
+        complaintRatePpm: 0,
+        observedSends: 1_000,
+      }),
+    );
+  }
+
+  async function release(projectId: string): Promise<void> {
+    const tenant = new TenantContext(projectId, "req_test", "system");
+    await uow.run(tenant, (tx) =>
+      new EmailSendingHoldRepository(tx, tenant).release("staff_1", "list cleaned"),
+    );
+  }
+
+  it("refuses with its own code, which says what actually clears it", async () => {
+    await hold(SHARED_PROJECT);
+    await expect(meter().assertWithinQuota(SHARED_PROJECT, Channel.Email)).rejects.toMatchObject({
+      code: "sending_paused",
+    });
+    await release(SHARED_PROJECT);
+  });
+
+  /*
+   * The case people will be surprised by, and the reason the check sits above both carve-outs.
+   * A verified domain buys a project out of the *sandbox allowance* and out of nothing else:
+   * the account-level bounce rate is everybody's problem, including the projects whose own
+   * domains are spotless.
+   */
+  it("does not spare a project sending from its own verified domain", async () => {
+    await expect(
+      meter().assertWithinQuota(OWN_DOMAIN_PROJECT, Channel.Email),
+    ).resolves.toBeUndefined();
+
+    await hold(OWN_DOMAIN_PROJECT);
+    await expect(
+      meter().assertWithinQuota(OWN_DOMAIN_PROJECT, Channel.Email),
+    ).rejects.toMatchObject({ code: "sending_paused" });
+    await release(OWN_DOMAIN_PROJECT);
+  });
+
+  /* Nor our own dashboard, for the same reason: it sends through the same account. */
+  it("does not spare our own dashboard either", async () => {
+    const dashboard = PublicId.parse(IdPrefix.Project, DASHBOARD).uuid;
+    await expect(meter().assertWithinQuota(dashboard, Channel.Email)).resolves.toBeUndefined();
+
+    await hold(dashboard);
+    await expect(meter().assertWithinQuota(dashboard, Channel.Email)).rejects.toMatchObject({
+      code: "sending_paused",
+    });
+    await release(dashboard);
+  });
+
+  it("sends again once the hold is released", async () => {
+    await hold(SHARED_PROJECT);
+    await expect(meter().assertWithinQuota(SHARED_PROJECT, Channel.Email)).rejects.toThrow();
+
+    await release(SHARED_PROJECT);
+    await expect(meter().assertWithinQuota(SHARED_PROJECT, Channel.Email)).resolves.toBeUndefined();
+  });
+
+  /* One project's hold is not another's: the read is tenant-scoped like every other. */
+  it("stops only the project it was opened for", async () => {
+    await hold(SHARED_PROJECT);
+    await expect(
+      meter().assertWithinQuota(PENDING_PROJECT, Channel.Email),
+    ).resolves.toBeUndefined();
+    await release(SHARED_PROJECT);
   });
 });

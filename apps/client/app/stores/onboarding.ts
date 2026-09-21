@@ -11,7 +11,7 @@
  * project in one transaction. Nothing is written until it is called, so leaving the form
  * halfway leaves an account exactly as it was.
  */
-import type { OnboardingResult, RegionList } from "@idenzy/protocol/schemas/management";
+import type { OnboardingResult } from "@idenzy/protocol/schemas/management";
 import type { OnboardingSubmission } from "~/utils/onboarding";
 import { managementMessage } from "~/utils/sign-in-errors";
 
@@ -22,24 +22,14 @@ export interface OnboardingRegion {
   jurisdiction: string;
 }
 
-/**
- * What a region is called on screen.
- *
- * The server sends a code and the law that applies; the place name is ours to write,
- * because "eu-west-1" is an identifier and not something to put in front of somebody
- * choosing where their users' data lives. A cell we have not named falls back to its code
- * rather than to nothing, so a new region is usable the day it exists.
- */
-const REGION_LABELS: Record<string, string> = {
-  "eu-west-1": "Europe (Belgium)",
-  "us-east-1": "United States (South Carolina)",
-};
-
 export const useOnboardingStore = defineStore("onboarding", () => {
   const bootstrap = useBootstrapStore();
 
-  const regions = ref<OnboardingRegion[]>([]);
-  const loading = ref(false);
+  const registry = useRegionsStore();
+
+  /** The cells we actually run, named for the picker. Owned by the regions store. */
+  const regions = computed<OnboardingRegion[]>(() => registry.cells);
+  const loading = computed(() => registry.loading);
   const submitting = ref(false);
   /** The refusal the server gave, in the reader's words. Null while nothing was refused. */
   const refusal = ref<string | null>(null);
@@ -55,24 +45,16 @@ export const useOnboardingStore = defineStore("onboarding", () => {
     () => bootstrap.status === "ready" && bootstrap.organisations.length === 0,
   );
 
-  /** The cells we actually run, which is what the form may offer. */
+  /**
+   * Loads the cells the form may offer.
+   *
+   * A pass-through, so the picker keeps one call site while the registry keeps one copy. A
+   * refusal is surfaced here as well as there: this form cannot be completed without the list,
+   * so its failure is the form's failure and not a detail of somebody else's store.
+   */
   async function loadRegions(): Promise<void> {
-    if (regions.value.length > 0 || loading.value) return;
-    loading.value = true;
-    try {
-      const api = useManagementApi();
-      const { data, error } = await api("/v1/regions").get().json<RegionList>();
-      if (error.value !== null) throw error.value;
-      regions.value = (data.value?.regions ?? []).map((region) => ({
-        code: region.code,
-        label: REGION_LABELS[region.code] ?? region.code,
-        jurisdiction: region.jurisdiction,
-      }));
-    } catch (cause: unknown) {
-      refusal.value = managementMessage(cause);
-    } finally {
-      loading.value = false;
-    }
+    await registry.load();
+    if (registry.refusal !== null) refusal.value = registry.refusal;
   }
 
   /**

@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { mfaChallenges } from "../schema/mfa.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** The same cap an OTP gets. Reaching it kills the challenge, lifetime or not. */
@@ -35,7 +35,7 @@ export interface MfaChallengeRow {
  * client-side counter advances is a cap concurrent guesses walk straight past.
  */
 export class MfaChallengeRepository extends BaseRepository<typeof mfaChallenges> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, mfaChallenges);
   }
 

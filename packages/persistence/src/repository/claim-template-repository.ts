@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { claimTemplates } from "../schema/claims.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface ClaimTemplateRow {
@@ -19,7 +19,7 @@ export interface ClaimTemplateRow {
  * sign-in.
  */
 export class ClaimTemplateRepository extends BaseRepository<typeof claimTemplates> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, claimTemplates);
   }
 

@@ -11,7 +11,7 @@ import type {
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
-import type { Transaction } from "@idenzy/persistence/tenancy/unit-of-work";
+import type { CellTx } from "@idenzy/persistence/tenancy/unit-of-work";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { AuthMethod } from "@idenzy/protocol/enums/auth";
 import { Channel } from "@idenzy/protocol/enums/delivery";
@@ -52,7 +52,7 @@ export class SmsOtpFlow extends OtpFlow {
   }
 
   protected override async resolveSubject(
-    tx: Transaction,
+    tx: CellTx,
     tenant: TenantContext,
     phone: string,
   ): Promise<AuthenticatedSubject> {

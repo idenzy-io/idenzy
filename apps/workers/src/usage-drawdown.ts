@@ -1,21 +1,25 @@
 import type { Logger } from "@idenzy/core/logging/logger";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
 import type { Clock } from "@idenzy/core/time/clock";
+import { SpendTolerance } from "@idenzy/domain/policies/spend-tolerance";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
 import type { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
+import { ProjectSpendStateRepository } from "@idenzy/persistence/repository/project-spend-state-repository";
 import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { mauCents } from "@idenzy/protocol/billing/price-list";
+import { mauCents, TOLERANCE_WINDOW_DAYS } from "@idenzy/protocol/billing/price-list";
 import { BillingLineItem } from "@idenzy/protocol/enums/billing";
 
 export interface UsageDrawdownOptions {
   readonly intervalMs?: number;
   /** Organisations per pass. A pass is a pass; the next one is minutes away. */
   readonly orgsPerPass?: number;
+  /** How long a published spend decision stands before a cell ignores it and sends anyway. */
+  readonly spendStateTtlMs?: number;
 }
 
 /**
@@ -27,6 +31,17 @@ export interface UsageDrawdownOptions {
  * hour behind what they have spent.
  */
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long a published spend decision stands before a cell ignores it.
+ *
+ * Six hours against a five-minute pass: roughly seventy consecutive failures before the gate
+ * opens on its own. Long enough that a restart, a deploy or a bad afternoon does not quietly
+ * stop a paying customer's one-time codes; short enough that a drawdown nobody noticed had died
+ * does not hold a decision from last week (ADR-0014, ADR-0016).
+ */
+const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_ORGS = 200;
 
 /** The first day of the month `at` falls in, `YYYY-MM-DD` in UTC. */
@@ -98,6 +113,10 @@ export class UsageDrawdown {
     for (const orgId of orgs) {
       try {
         if (await this.chargeOne(orgId, period, now)) charged += 1;
+        // Every organisation in the pass, not only the ones that were charged something. An
+        // organisation past its tolerance stops owing more the moment it stops being served,
+        // so "nothing new to charge" is exactly the state a stale gate would get wrong.
+        await this.publishSpendState(orgId, now);
       } catch (cause: unknown) {
         // One organisation's failure is not the pass's. The watermark did not move, so the
         // next pass computes the same difference and nothing is lost.
@@ -155,6 +174,49 @@ export class UsageDrawdown {
       }
       return true;
     });
+  }
+
+  /**
+   * Tells each of an organisation's cells whether it may still spend (ADR-0016).
+   *
+   * The decision is made here, in the control plane, because this is where the ledger is. It is
+   * read in the cell, from one row in the cell's own database, because a send path that reached
+   * across the plane boundary would hand every cell control-plane credentials and turn one
+   * control-plane outage into an outage of one-time codes everywhere (PROJECT.md 4.13.5).
+   *
+   * Written per project rather than per organisation because a cell holds projects, not
+   * organisations — and after the planes separate, two projects of one organisation may sit in
+   * different cells and different jurisdictions.
+   */
+  private async publishSpendState(orgId: string, now: Date): Promise<void> {
+    const context = new OrgContext(orgId, "usage-drawdown", "system");
+
+    const decision = await this.uow.runForOrg(context, async (tx) => {
+      const drawdown = new UsageDrawdownRepository(tx, context);
+      const since = new Date(now.getTime() - TOLERANCE_WINDOW_DAYS * DAY_MS);
+      return new SpendTolerance().decide({
+        debtCents: await drawdown.debtCents(),
+        creditCents: await new CreditGrantRepository(tx, context).balanceCents(now),
+        chargedInWindowCents: await drawdown.chargedSince(since),
+      });
+    });
+
+    const projects = await this.uow.runForOrg(context, (tx) =>
+      new OrgProjectRepository(tx, context).list(),
+    );
+    const staleAfter = new Date(now.getTime() + (this.options.spendStateTtlMs ?? DEFAULT_TTL_MS));
+
+    for (const project of projects) {
+      const tenant = new TenantContext(project.id, "usage-drawdown", "system");
+      await this.uow.run(tenant, (tx) =>
+        new ProjectSpendStateRepository(tx, tenant).publish({
+          spendable: decision.spendable,
+          reason: decision.reason,
+          computedAt: now,
+          staleAfter,
+        }),
+      );
+    }
   }
 
   /**

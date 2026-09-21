@@ -8,7 +8,7 @@ import { UsageRepository } from "@idenzy/persistence/repository/usage-repository
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { mauCents } from "@idenzy/protocol/billing/price-list";
+import { mauCents, TOLERANCE_FLOOR_CENTS } from "@idenzy/protocol/billing/price-list";
 import { CreditKind } from "@idenzy/protocol/enums/billing";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -134,7 +134,7 @@ beforeAll(async () => {
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
+     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
   );
   for (const org of [ORG, OTHER_ORG]) {
     await harness.owner.query(
@@ -279,6 +279,65 @@ describe("charging a month's active users", () => {
     expect(second.billed).toBeGreaterThan(first.billed);
     // The second charge is the difference between the two prices, not the second price.
     expect(first.credit - second.credit).toBe(second.billed - first.billed);
+  });
+});
+
+/**
+ * The other half of ADR-0016: the drawdown decides in the control plane and publishes into each
+ * cell, so `WalletSolvency` never reaches across the boundary on the send path. Asserted from
+ * this side because this is the side that writes.
+ */
+describe("publishing the spend gate into each cell", () => {
+  it("writes a row for every project of the organisation it visited", async () => {
+    await seedUsage(PROJECT_A, "2026-03-02", sketchOf(80_000));
+    await drawdown().runOnce();
+
+    const { rows } = await harness.owner.query<{ project_id: string; spendable: boolean }>(
+      `SELECT project_id, spendable FROM project_spend_state WHERE project_id = ANY($1::uuid[])
+       ORDER BY project_id`,
+      [[PROJECT_A, PROJECT_B]],
+    );
+    // Both projects, not only the one with usage: the gate is an organisation's answer and a
+    // cell holds projects, so it has to be written everywhere that organisation has one.
+    expect(rows).toHaveLength(2);
+  });
+
+  /**
+   * The case that would be missed by publishing only after a charge. An organisation past its
+   * tolerance stops being served, so it stops accruing charges — and the pass that follows has
+   * nothing to charge it for. If that pass skipped publishing, the refusal would age out and the
+   * gate would open for somebody who had stopped paying.
+   */
+  it("publishes even on a pass that charges nothing", async () => {
+    await drawdown().runOnce();
+    const { rows } = await harness.owner.query<{ n: string }>(
+      `SELECT count(*) AS n FROM project_spend_state WHERE project_id = $1`,
+      [PROJECT_A],
+    );
+    expect(Number(rows[0]?.n)).toBe(1);
+  });
+
+  it("refuses in the cell once the debt passes the tolerance", async () => {
+    await uow.runForOrg(context, (tx) =>
+      new UsageDrawdownRepository(tx, context).adjustDebt(TOLERANCE_FLOOR_CENTS + 100_000),
+    );
+    await drawdown().runOnce();
+
+    const { rows } = await harness.owner.query<{ spendable: boolean; reason: string }>(
+      `SELECT spendable, reason FROM project_spend_state WHERE project_id = $1`,
+      [PROJECT_A],
+    );
+    expect(rows[0]?.spendable).toBe(false);
+    expect(rows[0]?.reason).not.toBe("");
+  });
+
+  it("sets a horizon in the future, so a cell has something to expire", async () => {
+    await drawdown().runOnce();
+    const { rows } = await harness.owner.query<{ ahead: boolean }>(
+      `SELECT stale_after > computed_at AS ahead FROM project_spend_state WHERE project_id = $1`,
+      [PROJECT_A],
+    );
+    expect(rows[0]?.ahead).toBe(true);
   });
 });
 

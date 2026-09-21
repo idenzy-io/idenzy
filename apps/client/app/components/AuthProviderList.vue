@@ -18,29 +18,39 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
-    <!-- The icon is positioned rather than prepended so every label sits on the same
-         centre line: a prepended icon is part of the content and shifts the text by its
-         own width, which reads as five buttons that do not quite line up. -->
+  <!-- 11px between buttons, which is not on Tailwind's scale and is not meant to be: it
+       is the reference's own rhythm for a 55px button, and rounding it to 8 or 12 changes
+       how tight the column reads more than a three-pixel change has any right to. -->
+  <div class="flex flex-col gap-[11px]">
+    <!-- The mark is a flex item at the start and the label takes the rest of the row, so
+         every label centres in the same leftover width and the five line up with each
+         other. Sizing and the row's full width are in theme.css, on the variant, because
+         `.v-btn__content` is Vuetify's element and a template cannot reach it.
+
+         `primary` rather than the `neutral` these carried, because on the signed-out
+         shell primary is the ink token (theme.css): the border and the label are then the
+         one near-black the form's own button is drawn in, and the pair flips together on
+         the dark theme. Neutral is a step lighter and was the column quietly disagreeing
+         with the button above it. -->
     <v-btn
       v-for="provider in AUTH_PROVIDERS"
       :key="provider.id"
-      class="relative justify-center"
-      color="neutral"
+      block
+      color="primary"
       variant="outlined"
       @click="emit('provider', provider.id)"
     >
       <Icon
         :class="provider.monochrome ? '[.v-theme--dark_&]:invert' : ''"
         :name="provider.icon"
-        class="absolute start-4 text-xl"
+        class="auth-mark shrink-0"
       />
-      <span class="text-sm font-medium">Continue with {{ provider.label }}</span>
+      <span class="flex-1 text-center">Continue with {{ provider.label }}</span>
     </v-btn>
 
-    <v-btn class="relative justify-center" color="neutral" variant="outlined" @click="emit('link')">
-      <Icon class="absolute start-4 text-xl" name="material-symbols:link" />
-      <span class="text-sm font-medium">{{ linkLabel }}</span>
+    <v-btn block color="primary" variant="outlined" @click="emit('link')">
+      <Icon class="auth-mark shrink-0" name="material-symbols:link" />
+      <span class="flex-1 text-center">{{ linkLabel }}</span>
     </v-btn>
   </div>
 </template>

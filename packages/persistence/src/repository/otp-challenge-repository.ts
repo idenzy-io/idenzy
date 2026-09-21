@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { otpChallenges } from "../schema/challenges.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** The cap from PROJECT.md 4.7. Reaching it kills the challenge, code lifetime or not. */
@@ -41,7 +41,7 @@ export interface OtpChallengeRow {
  * there is nothing to sweep.
  */
 export class OtpChallengeRepository extends BaseRepository<typeof otpChallenges> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, otpChallenges);
   }
 

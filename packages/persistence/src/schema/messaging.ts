@@ -25,6 +25,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { config } from "./presets.js";
+import { projects } from "./projects.js";
 import {
   createdAtColumn,
   projectIdColumn,
@@ -44,7 +45,7 @@ export const emailTemplates = classifiedTable(
   "email_templates",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), delivery),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     type: classified(text("type").notNull(), { ...delivery, loggable: true }),
     locale: classified(text("locale").notNull(), { ...delivery, loggable: true }),
     subject: classified(text("subject").notNull(), delivery),
@@ -86,7 +87,7 @@ export const emailTemplates = classifiedTable(
 export const smsPolicies = classifiedTable(
   "sms_policies",
   {
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     allowedCountries: classified(text("allowed_countries").array().notNull().default([]), {
       ...delivery,
       purpose: Purpose.SecurityAndAbusePrevention,
@@ -141,7 +142,7 @@ export const suppressions = classifiedTable(
   "suppressions",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), delivery),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     channel: classified(text("channel").notNull(), { ...delivery, loggable: true }),
     targetHash: classified(text("target_hash").notNull(), {
       class: DataClass.Pseudonymous,
@@ -180,7 +181,7 @@ export const webhooks = classifiedTable(
   "webhooks",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     url: classified(text("url").notNull(), config),
     /** The customer's own note about what this endpoint is for. Shown, never parsed. */
     description: classified(text("description").notNull().default(""), config),
@@ -269,7 +270,7 @@ export const webhookDeliveries = classifiedTable(
   "webhook_deliveries",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     webhookId: classified(
       uuid("webhook_id")
         .notNull()
@@ -376,7 +377,7 @@ export const webhookDeliveries = classifiedTable(
 export const webhookEndpointStats = classifiedTable(
   "webhook_endpoint_stats",
   {
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     webhookId: classified(
       uuid("webhook_id")
         .notNull()
@@ -408,7 +409,7 @@ export const outbox = classifiedTable(
   "outbox",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     topic: classified(text("topic").notNull(), { ...config, loggable: true }),
     payload: classified(jsonb("payload").notNull(), {
       class: DataClass.Pii,
@@ -434,3 +435,196 @@ export const outbox = classifiedTable(
     tenantIsolationPolicy("outbox"),
   ],
 ).enableRLS();
+
+/**
+ * Counters kept as long as the daily usage rollup is, because they answer the same kind of
+ * question over the same window and a rate whose two halves aged out separately would be wrong
+ * rather than merely stale.
+ */
+const deliveryStat = {
+  ...delivery,
+  retention: Retention.Years2,
+  loggable: true,
+} as const;
+
+/**
+ * A received provider event, kept only long enough to make a redelivery idempotent.
+ *
+ * SNS retries for hours, not months, so the window a duplicate can arrive in is short; keeping
+ * the ledger past it would be storing rows whose only purpose has expired.
+ */
+const providerEvent = {
+  ...delivery,
+  retention: Retention.Days30,
+  loggable: true,
+} as const;
+
+/**
+ * Deliverability as SES reports it, per project per day.
+ *
+ * The denominator and the numerator of the bounce rate come from this one table on purpose.
+ * `usage_daily.emails_sent` counts what we handed to SES, which is not the same population as
+ * what SES then told us about — a message rejected before it left has no delivery event, and a
+ * rate computed across the two would move whenever the pipeline lagged rather than when a
+ * customer's list got worse.
+ *
+ * Counts and never addresses. Which address bounced is a `suppressions` row and is a digest
+ * there; this table is arithmetic and holds nothing about anybody.
+ */
+export const emailDeliveryStats = classifiedTable(
+  "email_delivery_stats",
+  {
+    projectId: projectIdColumn(() => projects.id),
+    day: classified(date("day").notNull(), {
+      ...deliveryStat,
+      note: "UTC day the event was received, not the day the message was sent.",
+    }),
+    sent: classified(bigint("sent", { mode: "number" }).notNull().default(0), {
+      ...deliveryStat,
+      note: "SES accepted it. The denominator every rate on this row is over.",
+    }),
+    delivered: classified(
+      bigint("delivered", { mode: "number" }).notNull().default(0),
+      deliveryStat,
+    ),
+    bouncedHard: classified(bigint("bounced_hard", { mode: "number" }).notNull().default(0), {
+      ...deliveryStat,
+      note: "Permanent bounces. These suppress the address as well as counting here.",
+    }),
+    bouncedSoft: classified(bigint("bounced_soft", { mode: "number" }).notNull().default(0), {
+      ...deliveryStat,
+      note: "Transient and undetermined. They suppress nothing and still count towards our rate at AWS.",
+    }),
+    complained: classified(
+      bigint("complained", { mode: "number" }).notNull().default(0),
+      deliveryStat,
+    ),
+    rejected: classified(bigint("rejected", { mode: "number" }).notNull().default(0), {
+      ...deliveryStat,
+      note: "SES refused it outright, usually for a virus or an address on its account suppression list.",
+    }),
+    updatedAt: updatedAtColumn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.day] }),
+    index("email_delivery_stats_day_idx").on(t.day),
+    tenantIsolationPolicy("email_delivery_stats"),
+  ],
+).enableRLS();
+
+/**
+ * A project whose sending is stopped because its bounce or complaint rate would cost us the
+ * SES account (risks.md 2).
+ *
+ * A stored decision rather than a rate recomputed on every send, for three reasons. It is one
+ * indexed read on the send path instead of a windowed aggregate. It is a record somebody can
+ * be shown, with the figures that caused it, rather than a number that has since moved. And it
+ * can be released by a person — an automated denial with no manual override is a control that
+ * will eventually be wrong at the worst possible moment, which is the argument risks.md 7 makes
+ * about the billing controls and applies here word for word.
+ *
+ * A release keeps the row. What was decided, on what evidence, and who undid it outlives the
+ * block, exactly as a suppression release does.
+ */
+export const emailSendingHolds = classifiedTable(
+  "email_sending_holds",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), delivery),
+    projectId: projectIdColumn(() => projects.id),
+    reason: classified(text("reason").notNull(), {
+      ...delivery,
+      purpose: Purpose.SecurityAndAbusePrevention,
+      loggable: true,
+      note: "Which rate tripped: bounce_rate or complaint_rate.",
+    }),
+    bounceRatePpm: classified(integer("bounce_rate_ppm").notNull(), {
+      ...delivery,
+      loggable: true,
+      note: "Parts per million, so a 5% threshold is an integer comparison and not a float one.",
+    }),
+    complaintRatePpm: classified(integer("complaint_rate_ppm").notNull(), {
+      ...delivery,
+      loggable: true,
+    }),
+    observedSends: classified(bigint("observed_sends", { mode: "number" }).notNull(), {
+      ...delivery,
+      loggable: true,
+      note: "What the rates were over. Below the floor no rate is actionable, so this is the evidence.",
+    }),
+    openedAt: classified(timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(), {
+      ...delivery,
+      loggable: true,
+    }),
+    releasedAt: classified(timestamp("released_at", { withTimezone: true }), {
+      ...delivery,
+      loggable: true,
+      note: "Null is the open hold. The partial unique index is what keeps there being only one.",
+    }),
+    releasedBy: classified(text("released_by"), {
+      class: DataClass.Pii,
+      purpose: Purpose.AuditAndCompliance,
+      retention: Retention.ProjectLifetime,
+      erasure: Erasure.RetainPseudonymous,
+      note: "Staff identifier, or null where the breaker released it because the window went clean.",
+    }),
+    releasedReason: classified(text("released_reason"), delivery),
+  },
+  (t) => [
+    uniqueIndex("email_sending_holds_open_key").on(t.projectId).where(sql`released_at is null`),
+    index("email_sending_holds_project_opened_idx").on(t.projectId, t.openedAt),
+    tenantIsolationPolicy("email_sending_holds"),
+  ],
+).enableRLS();
+
+/**
+ * Every SES delivery event we have been told about, once.
+ *
+ * The same shape and the same argument as `payment_provider_events`: SNS delivers at least
+ * once, the receiver has no tenant bound when the message lands, and the unique index is the
+ * idempotency check rather than a lookup before one. Without it a redelivered bounce would be
+ * counted twice, and a rate is the one thing double counting actually breaks — suppressing an
+ * address twice is harmless, deciding a project bounces at 10% when it bounces at 5% is not.
+ *
+ * **It keeps no payload, and that is the divergence.** `payment_provider_events` stores the
+ * provider's verbatim body because a disputed charge is reconciled against it. A bounce is not
+ * evidence of anything anybody will dispute, and its payload carries the recipient address and
+ * a diagnostic code that usually repeats it — so storing it would put personal data in a table
+ * for no purpose that survives being asked what the purpose is. What is kept is the verdict:
+ * enumerated, not identifying, and all the breaker and the suppression decision ever read.
+ */
+export const emailProviderEvents = classifiedTable(
+  "email_provider_events",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), providerEvent),
+    provider: classified(text("provider").notNull(), providerEvent),
+    providerEventId: classified(text("provider_event_id").notNull(), {
+      ...providerEvent,
+      note: "The SNS MessageId. The insert is the idempotency check, not a lookup before it.",
+    }),
+    type: classified(text("type").notNull(), providerEvent),
+    projectId: classified(uuid("project_id"), {
+      ...providerEvent,
+      note: "From the message tag. Null where the message was sent before sends carried one. No FK: unlike a tenant table this row exists before the project is resolved.",
+    }),
+    bounceType: classified(text("bounce_type"), {
+      ...providerEvent,
+      note: "Permanent, Transient or Undetermined. Only Permanent suppresses.",
+    }),
+    bounceSubType: classified(text("bounce_sub_type"), providerEvent),
+    receivedAt: classified(
+      timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+      providerEvent,
+    ),
+    processedAt: classified(timestamp("processed_at", { withTimezone: true }), {
+      ...providerEvent,
+      note: "Null means received and not yet acted on.",
+    }),
+    failureReason: classified(text("failure_reason"), providerEvent),
+  },
+  (t) => [
+    uniqueIndex("email_provider_events_provider_event_key").on(t.provider, t.providerEventId),
+    index("email_provider_events_unprocessed_idx")
+      .on(t.receivedAt)
+      .where(sql`processed_at is null`),
+  ],
+);

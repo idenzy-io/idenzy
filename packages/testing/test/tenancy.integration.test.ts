@@ -16,7 +16,7 @@ beforeAll(async () => {
   await harness.start();
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
+     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
   );
 
   // One organisation per project, so the two planes can be tested against each other.
@@ -158,7 +158,15 @@ describe("tenant isolation holds at the database", () => {
            -- The drawdown's three (migration 0055, ADR-0014). Two are financial state that
            -- nothing on the request path may delete, and the third is the ledger beneath
            -- them and is append-only. Each is asserted on its own below.
-           'usage_billing_state', 'org_debts', 'usage_charges'
+           'usage_billing_state', 'org_debts', 'usage_charges',
+           -- The email feedback loop's three (migration 0057, risks.md 2 and 2b). None gets
+           -- DELETE: two age out on a retention tier through a SECURITY DEFINER function,
+           -- and a hold is a record of a decision that outlives the block. Asserted below.
+           'email_delivery_stats', 'email_sending_holds', 'email_provider_events',
+           -- The app role holds nothing at all on this one (migration 0062). It is written by
+           -- purge_project running as the owner and read by an auditor, and it could not be
+           -- tenant-scoped even in principle: the row exists because the tenant does not.
+           'project_purges'
          )
          AND c.relname NOT LIKE 'audit_events\\_%'
        GROUP BY c.relname
@@ -167,6 +175,67 @@ describe("tenant isolation holds at the database", () => {
        ) > 0`,
     );
     expect(rows).toEqual([]);
+  });
+
+  /**
+   * The same shape of gap, one plane down, and the one that actually bit.
+   *
+   * For a long time `project_id` carried no foreign key anywhere while three docstrings claimed
+   * deleting a project took its users, sessions, keys and audit rows with it. It did not: the
+   * delete removed one row and orphaned everything pointing at it, which is an Art. 28(3)(g)
+   * failure — a processor must be able to dispose of a customer's data at the end of service,
+   * and rows nothing can reach cannot be disposed of.
+   *
+   * `projectIdColumn` now requires the reference, so a new tenant table cannot compile without
+   * one. This catches the other route in: a table that spells `project_id` by hand.
+   */
+  it("cascades every project_id to projects, except the three that say why not", async () => {
+    const { rows } = await harness.owner.query<{ relname: string }>(
+      `SELECT c.relname
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'project_id' AND a.attnum > 0
+       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+         AND c.relname NOT LIKE 'audit_events\\_%'
+         AND c.relname NOT IN (
+           -- Partitioned, and idenzy_app holds SELECT and INSERT on it and nothing else. That
+           -- revoke is the integrity control of 4.13.3, so a cascade would have no privilege
+           -- to fire. Its rows go through purge_project instead.
+           'audit_events',
+           -- Control plane, and deliberately cross-cell: a project lives in a region cell and
+           -- this row does not, so the reference would not survive the cells being independent
+           -- stacks (4.13.5). It also carries statutory six-year retention.
+           'invoice_lines',
+           -- Nullable, because the row arrives from the provider before the project it concerns
+           -- is resolved.
+           'email_provider_events',
+           -- The inverse of a cascade: this row is the record that a project was deleted, so a
+           -- reference to it would take the evidence with the thing it evidences.
+           'project_purges'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM pg_constraint fk
+           WHERE fk.conrelid = c.oid
+             AND fk.contype = 'f'
+             AND fk.confrelid = 'public.projects'::regclass
+             AND a.attnum = ANY (fk.conkey)
+             AND fk.confdeltype = 'c'
+         )
+       ORDER BY c.relname`,
+    );
+    expect(rows).toEqual([]);
+
+    // An empty list is the pass condition, so prove it is empty for the right reason. If the
+    // join above ever stops matching — a renamed column, a cast that throws — this test would
+    // go green over a schema with no cascades at all.
+    const covered = await harness.owner.query<{ n: string }>(
+      `SELECT count(*) AS n
+       FROM pg_constraint fk
+       WHERE fk.contype = 'f'
+         AND fk.confrelid = 'public.projects'::regclass
+         AND fk.confdeltype = 'c'`,
+    );
+    expect(Number(covered.rows[0]?.n)).toBeGreaterThan(30);
   });
 
   /**
@@ -201,6 +270,41 @@ describe("tenant isolation holds at the database", () => {
       expect(row.ins, row.relname).toBe(true);
       expect(row.del, row.relname).toBe(false);
       expect(row.upd, row.relname).toBe(row.relname !== "usage_charges");
+    }
+  });
+
+  /**
+   * The email feedback loop's tables, on the same principle: an exclusion above is a claim
+   * and a claim is asserted. All three need UPDATE — a counter is incremented, a hold is
+   * released, an event is marked processed — and none gets DELETE. Removing a counter or an
+   * idempotency record is retention and runs through a SECURITY DEFINER function; removing a
+   * hold would erase the evidence a stopped customer is owed (migration 0057).
+   */
+  it("shapes the email feedback loop's privileges: updatable, never deletable", async () => {
+    const { rows } = await harness.owner.query<{
+      relname: string;
+      sel: boolean;
+      ins: boolean;
+      upd: boolean;
+      del: boolean;
+    }>(
+      `SELECT c.relname,
+              has_table_privilege('idenzy_app', c.oid, 'SELECT') AS sel,
+              has_table_privilege('idenzy_app', c.oid, 'INSERT') AS ins,
+              has_table_privilege('idenzy_app', c.oid, 'UPDATE') AS upd,
+              has_table_privilege('idenzy_app', c.oid, 'DELETE') AS del
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public'
+         AND c.relname IN ('email_delivery_stats', 'email_sending_holds', 'email_provider_events')
+       ORDER BY c.relname`,
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.sel, row.relname).toBe(true);
+      expect(row.ins, row.relname).toBe(true);
+      expect(row.upd, row.relname).toBe(true);
+      expect(row.del, row.relname).toBe(false);
     }
   });
 
@@ -661,10 +765,103 @@ describe("the audit trail is append-only", () => {
     expect(rows[0]).toEqual({ upd: false, del: false });
   });
 
+  /**
+   * `cell_id` is immutable, and until 0063 nothing enforced it.
+   *
+   * PROJECT.md 4.13.5 has always said "set at creation and immutable thereafter … never an
+   * UPDATE". What enforced it was that nobody had written one. Every residency statement reads
+   * this column — the generated RoPA, the endpoint an SDK is pointed at, the cross-cell refusal —
+   * and none of them would have noticed it changing, which makes a silent reassignment worse than
+   * a project in the wrong cell: it is undetectable.
+   */
+  it("refuses to move a project between cells", async () => {
+    const other = await harness.owner.query<{ id: string }>(
+      `INSERT INTO region_cells (code, jurisdiction, endpoint, kms_key_ring)
+       VALUES ('us9', 'US', 'https://us9.test', 'ring') RETURNING id`,
+    );
+    const error = await harness.owner
+      .query(`UPDATE projects SET cell_id = $1 WHERE id = $2`, [other.rows[0]?.id, PROJECT_A])
+      .then(
+        () => null,
+        (caught: unknown) => caught as { code?: string },
+      );
+    // 23001, restrict_violation. Asserted on the code rather than the message, as everything
+    // else here is: the text is ours to reword and the SQLSTATE is the contract.
+    expect(error?.code).toBe("23001");
+  });
+
+  it("refuses to move an organisation between cells either", async () => {
+    const other = await harness.owner.query<{ id: string }>(
+      `SELECT id FROM region_cells WHERE code = 'us9'`,
+    );
+    const error = await harness.owner
+      .query(`UPDATE orgs SET cell_id = $1 WHERE id = $2`, [other.rows[0]?.id, ORG_A])
+      .then(
+        () => null,
+        (caught: unknown) => caught as { code?: string },
+      );
+    expect(error?.code).toBe("23001");
+  });
+
+  it("still allows an update that leaves the cell alone", async () => {
+    // The trigger is guarded by WHEN, so a rename must not pay for the check or trip it.
+    await harness.owner.query(`UPDATE projects SET name = 'renamed' WHERE id = $1`, [PROJECT_A]);
+    const { rows } = await harness.owner.query<{ name: string }>(
+      `SELECT name FROM projects WHERE id = $1`,
+      [PROJECT_A],
+    );
+    expect(rows[0]?.name).toBe("renamed");
+  });
+
   it("is partitioned, so retention is a dropped partition rather than a mass delete", async () => {
     const { rows } = await harness.owner.query<{ relkind: string }>(
       `SELECT relkind FROM pg_class WHERE relname = 'audit_events'`,
     );
     expect(rows[0]?.relkind).toBe("p");
+  });
+
+  /**
+   * The gap 0059 exists to close. 0001 created three months and nothing called the function
+   * again, so a deploy left running would eventually reject every audit insert — the integrity
+   * control going dark rather than falling behind.
+   */
+  it("keeps partitions ahead of the clock, called as the app role", async () => {
+    const created = await harness.db.execute<{ created: string }>(
+      sql`select ensure_audit_partitions_ahead(3) as created`,
+    );
+    expect(Number(created.rows[0]?.created ?? -1)).toBeGreaterThanOrEqual(0);
+
+    const { rows } = await harness.owner.query<{ missing: string }>(
+      `SELECT count(*) AS missing
+       FROM generate_series(0, 3) AS m(n)
+       WHERE to_regclass(
+         format('public.audit_events_%s',
+                to_char(date_trunc('month', CURRENT_DATE) + make_interval(months => m.n), 'YYYY_MM'))
+       ) IS NULL`,
+    );
+    expect(Number(rows[0]?.missing)).toBe(0);
+  });
+
+  /**
+   * The wrapper is doing the privilege work, and that is the point of it being SECURITY DEFINER.
+   * `idenzy_app` owns nothing and holds only USAGE on the schema, so calling the inner function
+   * directly must still fail — otherwise the grant would be a way for any connection to create
+   * tables, which is a far larger privilege than keeping partitions ahead.
+   */
+  it("does not let the app role create a partition except through the maintainer", async () => {
+    await expectInsufficientPrivilege(
+      harness.db.execute(sql`select ensure_audit_partition('2097-03-01'::date)`),
+    );
+  });
+
+  it("creates maintainer-made partitions append-only, like every other one", async () => {
+    await harness.db.execute(sql`select ensure_audit_partitions_ahead(3)`);
+    const name = `audit_events_${new Date().toISOString().slice(0, 7).replace("-", "_")}`;
+    const { rows } = await harness.owner.query<{ upd: boolean; del: boolean }>(
+      `SELECT has_table_privilege('idenzy_app', $1, 'UPDATE') AS upd,
+              has_table_privilege('idenzy_app', $1, 'DELETE') AS del`,
+      [name],
+    );
+    expect(rows[0]).toEqual({ upd: false, del: false });
   });
 });

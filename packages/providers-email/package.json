@@ -21,7 +21,8 @@
   "dependencies": {
     "@idenzy/core": "workspace:*",
     "@idenzy/domain": "workspace:*",
-    "@idenzy/protocol": "workspace:*"
+    "@idenzy/protocol": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@idenzy/testing": "workspace:*",

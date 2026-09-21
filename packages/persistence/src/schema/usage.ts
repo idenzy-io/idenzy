@@ -7,14 +7,17 @@ import {
 } from "@idenzy/compliance/classification/vocabulary";
 import {
   bigint,
+  boolean,
   customType,
   date,
   index,
   integer,
   numeric,
   primaryKey,
+  text,
   timestamp,
 } from "drizzle-orm/pg-core";
+import { projects } from "./projects.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
 
 /** HyperLogLog sketch, so monthly active users are counted without storing who. */
@@ -69,7 +72,7 @@ const dailyBilling = { ...billing, retention: Retention.Years2 } as const;
 export const usageDaily = classifiedTable(
   "usage_daily",
   {
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     day: classified(date("day").notNull(), { ...dailyBilling, loggable: true }),
     mauHll: classified(hll("mau_hll"), {
       ...dailyBilling,
@@ -127,7 +130,7 @@ export const usageDaily = classifiedTable(
 export const usageHourly = classifiedTable(
   "usage_hourly",
   {
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     hour: classified(timestamp("hour", { withTimezone: true }).notNull(), {
       ...hourlyBilling,
       loggable: true,
@@ -182,7 +185,7 @@ export const usageHourly = classifiedTable(
 export const usagePeriods = classifiedTable(
   "usage_periods",
   {
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     period: classified(date("period").notNull(), {
       ...billing,
       loggable: true,
@@ -205,4 +208,49 @@ export const usagePeriods = classifiedTable(
     index("usage_periods_period_idx").on(t.period),
     tenantIsolationPolicy("usage_periods"),
   ],
+).enableRLS();
+
+/**
+ * Whether an organisation may still spend on a project's behalf, kept in the project's own cell
+ * (ADR-0014, ADR-0016).
+ *
+ * A projection and not a source. The truth is `org_debts`, `credit_grants` and `usage_charges`,
+ * all of which belong to the global control plane, and until this existed `WalletSolvency` read
+ * all three **on the SMS and email send path, from inside the cell**. That was the one place a
+ * request crossed planes, and it was the wrong place for it: it would hand a cell's auth-api
+ * control-plane credentials, make a control-plane outage an outage of one-time codes in every
+ * cell at once, and put a transatlantic query in front of every send from EU (PROJECT.md 4.13.5).
+ *
+ * **Staleness is correct here, and only here.** ADR-0014 already argues the case for the tolerance
+ * this gate implements: "a card that expired on Friday does not stop SMS on Saturday, and neither
+ * does an outage of ours." A projection a few minutes behind the ledger is the same tolerance by
+ * another route. Past `staleAfter` the reader fails **open** rather than closed, because the
+ * failure mode of a stale closed gate is refusing to send a paying customer's one-time codes
+ * because a worker died.
+ */
+export const projectSpendState = classifiedTable(
+  "project_spend_state",
+  {
+    projectId: projectIdColumn(() => projects.id),
+    spendable: classified(boolean("spendable").notNull(), {
+      ...dailyBilling,
+      loggable: true,
+      note: "What the drawdown last decided. Absent or stale means yes, deliberately.",
+    }),
+    reason: classified(text("reason").notNull().default(""), {
+      ...dailyBilling,
+      loggable: true,
+      note: "Why not, where not. Operational text, never shown to an end user mid sign-in.",
+    }),
+    computedAt: classified(timestamp("computed_at", { withTimezone: true }).notNull(), {
+      ...dailyBilling,
+      loggable: true,
+    }),
+    staleAfter: classified(timestamp("stale_after", { withTimezone: true }).notNull(), {
+      ...dailyBilling,
+      loggable: true,
+      note: "After this the row is ignored and sending continues. A gate nobody refreshed is not a decision.",
+    }),
+  },
+  (t) => [primaryKey({ columns: [t.projectId] }), tenantIsolationPolicy("project_spend_state")],
 ).enableRLS();

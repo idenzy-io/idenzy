@@ -169,8 +169,10 @@ describe("tallyReasons", () => {
 });
 
 describe("the capability list", () => {
-  it("says plainly that nothing writes to the list yet", () => {
-    expect(ingestionAvailable()).toBe(false);
+  it("says the recorder is live, and still names what is missing beside it", () => {
+    expect(ingestionAvailable()).toBe(true);
+    // Provider events land now; per-message history and the outbound webhook do not. The
+    // list exists so those stay separately true rather than collapsing into one claim.
     expect(DELIVERY_CAPABILITIES.some((entry) => entry.state === "not_built")).toBe(true);
   });
 
@@ -183,14 +185,28 @@ describe("the capability list", () => {
     }
   });
 
-  /* The page leads with this badge, and a warning is the honest word while the recorder
-     is unbuilt: a green one over an empty list reads as "nothing has ever bounced". */
-  it("warns while any half is missing and only then calls itself available", () => {
-    expect(deliveryStatus().tone).toBe("warning");
+  /* The page leads with this badge, and it keys on the recorder rather than on every row
+     being live: a green badge over a list nothing writes to reads as "nothing has ever
+     bounced", which is the one thing it must never be able to say. */
+  it("warns only while nothing records, whatever else is missing", () => {
+    const recorder = {
+      id: "provider_events",
+      label: "Recording a bounce or a complaint",
+      finding: "x",
+    };
+
+    expect(deliveryStatus([{ ...recorder, state: "not_built" }]).tone).toBe("warning");
+    expect(deliveryStatus([{ ...recorder, state: "live" }]).tone).toBe("success");
+
+    // The real list: recording, with gaps named. Green, and not the unqualified word.
+    expect(deliveryStatus().tone).toBe("success");
+    expect(deliveryStatus().label).toBe("Recording");
     expect(
-      deliveryStatus([{ id: "enforcement", label: "Blocking a send", state: "live", finding: "x" }])
-        .tone,
-    ).toBe("success");
+      deliveryStatus([
+        { ...recorder, state: "live" },
+        { id: "release", label: "Allowing email again", state: "live", finding: "x" },
+      ]).label,
+    ).toBe("Fully recorded");
   });
 });
 

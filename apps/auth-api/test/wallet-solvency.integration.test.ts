@@ -1,10 +1,7 @@
-import { SystemClock } from "@idenzy/core/time/clock";
-import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
-import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
-import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
+import { Clock } from "@idenzy/core/time/clock";
+import { ProjectSpendStateRepository } from "@idenzy/persistence/repository/project-spend-state-repository";
+import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { TOLERANCE_FLOOR_CENTS } from "@idenzy/protocol/billing/price-list";
-import { BillingLineItem, CreditKind } from "@idenzy/protocol/enums/billing";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // From `dist`, like every other app test: Rolldown does not apply the decorator semantics
@@ -12,51 +9,45 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { WalletSolvency } from "../dist/delivery/wallet-solvency.js";
 
 /**
- * Whether an organisation may still spend, against a real Postgres.
+ * The spend gate as a cell reads it (ADR-0016), against a real Postgres.
  *
- * The gate is the synchronous half of ADR-0014 and the only part of billing on a request
- * path. What is worth asserting is the shape of its refusal: it is not a zero check, it
- * runs out gradually, and it never answers about anything but the metered channels — the
- * caller is `DatabaseSpendCap`, and nothing on the authentication path asks it at all.
+ * The arithmetic is not here any more. It is pure and lives in `SpendTolerance`, tested in
+ * `@idenzy/domain` without a database, because testing a calculation through Postgres was testing
+ * Postgres. What needs a database is the property this file now asserts: that the decision the
+ * control plane published is the decision the cell reads back, in the cell's own tables, with no
+ * query crossing the plane boundary on the send path.
+ *
+ * The two fail-open cases are the ones worth staring at. A gate that failed closed would mean a
+ * dead drawdown silently stopping one-time codes for paying customers, which is a far worse
+ * outage than a few hours of spending by somebody who has stopped paying — a trade ADR-0014 had
+ * already made when it wrote "neither does an outage of ours".
  */
-
 const harness = new PostgresHarness();
 const ORG = "f0f0f0f0-0000-4000-8000-000000000001";
 const PROJECT = "f1f1f1f1-0000-4000-8000-000000000002";
+const ABSENT = "f2f2f2f2-0000-4000-8000-000000000003";
 
 let uow: UnitOfWork;
 let solvency: WalletSolvency;
+let now = new Date("2026-03-01T12:00:00.000Z");
 
-const clock = new SystemClock();
-const context = new OrgContext(ORG, "req_test", "system");
-
-async function setDebt(cents: number): Promise<void> {
-  await uow.runForOrg(context, (tx) => new UsageDrawdownRepository(tx, context).adjustDebt(cents));
+/** Moved by hand, so a staleness horizon can be crossed without waiting six hours. */
+class TestClock extends Clock {
+  override now(): Date {
+    return now;
+  }
 }
 
-async function setCredit(cents: number): Promise<void> {
-  await uow.runForOrg(context, (tx) =>
-    new CreditGrantRepository(tx, context).grant({
-      kind: CreditKind.Purchased,
-      amountCents: cents,
-      currency: "USD",
-      topUpId: null,
-      note: "Test credit",
-      expiresAt: null,
-    }),
-  );
-}
+const tenant = new TenantContext(PROJECT, "req_test", "system");
 
-/** Charges in the window, which is what the tolerance is a share of. */
-async function chargeHistory(cents: number): Promise<void> {
-  await uow.runForOrg(context, (tx) =>
-    new UsageDrawdownRepository(tx, context).record({
-      period: "2026-03-01",
-      item: BillingLineItem.Mau,
-      quantity: 1,
-      chargedCents: cents,
-      fromCreditCents: cents,
-      toDebtCents: 0,
+/** What the drawdown does at the end of a pass, without running the whole worker. */
+async function publish(spendable: boolean, staleAfter: Date): Promise<void> {
+  await uow.run(tenant, (tx) =>
+    new ProjectSpendStateRepository(tx, tenant).publish({
+      spendable,
+      reason: spendable ? "" : "Owed beyond the tolerance.",
+      computedAt: now,
+      staleAfter,
     }),
   );
 }
@@ -64,88 +55,95 @@ async function chargeHistory(cents: number): Promise<void> {
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
-  solvency = new WalletSolvency(uow, clock);
+  solvency = new WalletSolvency(uow, new TestClock());
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
+     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
   );
   await harness.owner.query(
     `INSERT INTO orgs (id, name, cell_id)
      VALUES ($1, 'Acme', (SELECT id FROM region_cells LIMIT 1))`,
     [ORG],
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
-  await harness.owner.query(
-    `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
-     VALUES ($1, $2, 'p', (SELECT id FROM region_cells LIMIT 1), 'k')`,
-    [PROJECT, ORG],
-  );
+  for (const projectId of [PROJECT, ABSENT]) {
+    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
+    await harness.owner.query(
+      `INSERT INTO projects (id, org_id, name, cell_id, kms_key_name)
+       VALUES ($1, $2, 'p', (SELECT id FROM region_cells LIMIT 1), 'k')`,
+      [projectId, ORG],
+    );
+  }
 }, 180_000);
 
 beforeEach(async () => {
-  for (const table of ["usage_charges", "org_debts", "credit_grants"]) {
-    await harness.owner.query(`DELETE FROM ${table} WHERE org_id = $1`, [ORG]);
-  }
+  now = new Date("2026-03-01T12:00:00.000Z");
+  await harness.owner.query(`DELETE FROM project_spend_state WHERE project_id = $1`, [PROJECT]);
 });
 
 afterAll(async () => {
   await harness.stop();
 });
 
-describe("whether an organisation may still spend", () => {
-  it("allows one that owes nothing", async () => {
-    expect(await solvency.canSpend(PROJECT)).toBe(true);
+describe("the spend gate a cell reads", () => {
+  it("refuses when the drawdown published a refusal that is still current", async () => {
+    await publish(false, new Date(now.getTime() + 60 * 60 * 1000));
+    expect(await solvency.canSpend(PROJECT)).toBe(false);
   });
 
-  it("allows one whose credit covers what it owes", async () => {
-    await setCredit(10_000);
-    await setDebt(4000);
+  it("allows when the drawdown published an allowance", async () => {
+    await publish(true, new Date(now.getTime() + 60 * 60 * 1000));
     expect(await solvency.canSpend(PROJECT)).toBe(true);
   });
 
   /**
-   * The design's whole point: running out is not a cliff. A new organisation with no
-   * history still gets the floor, so its first overage is not also its first outage.
+   * Every new project, and every project whose organisation owes nothing, has no row. Treating
+   * that as a refusal would refuse the common case — the gate would be closed by default for a
+   * customer who has never owed a penny.
    */
-  it("allows a small overage on the floor alone", async () => {
-    await setDebt(TOLERANCE_FLOOR_CENTS - 100);
-    expect(await solvency.canSpend(PROJECT)).toBe(true);
-  });
-
-  it("refuses once the debt passes the floor and there is no history", async () => {
-    await setDebt(TOLERANCE_FLOOR_CENTS + 100);
-    expect(await solvency.canSpend(PROJECT)).toBe(false);
+  it("allows a project the drawdown has never visited", async () => {
+    expect(await solvency.canSpend(ABSENT)).toBe(true);
   });
 
   /**
-   * Tolerance is a share of what was charged, so an organisation that uses more gets more
-   * rope — and it does not move because they happened to top up on a particular day, which
-   * is the failure of keying it on payments.
+   * The fail-open case, and the reason this control is safe to depend on. A refusal that nobody
+   * refreshed is not a decision about a customer; it is a worker that died.
    */
-  it("gives a heavier user more rope, in proportion to what it was charged", async () => {
-    await chargeHistory(500_000);
-    // 20% of $5,000 is $1,000, comfortably above the floor.
-    await setDebt(90_000);
-    expect(await solvency.canSpend(PROJECT)).toBe(true);
-
-    await setDebt(20_000);
+  it("allows once a refusal has gone stale, because a stale gate is our outage and not theirs", async () => {
+    const staleAfter = new Date(now.getTime() + 60 * 60 * 1000);
+    await publish(false, staleAfter);
     expect(await solvency.canSpend(PROJECT)).toBe(false);
+
+    now = new Date(staleAfter.getTime() + 1000);
+    expect(await solvency.canSpend(PROJECT)).toBe(true);
   });
 
-  /** Credit offsets the debt before the tolerance is consulted at all. */
-  it("counts credit against the debt before the rope", async () => {
-    await setDebt(TOLERANCE_FLOOR_CENTS + 1000);
-    expect(await solvency.canSpend(PROJECT)).toBe(false);
-    await setCredit(1500);
+  it("re-refuses when a later pass republishes, so opening is never permanent", async () => {
+    await publish(false, new Date(now.getTime() + 1000));
+    now = new Date(now.getTime() + 60_000);
     expect(await solvency.canSpend(PROJECT)).toBe(true);
+
+    // The next pass lands. An upsert, so the project has one row rather than a history.
+    await publish(false, new Date(now.getTime() + 60 * 60 * 1000));
+    expect(await solvency.canSpend(PROJECT)).toBe(false);
+
+    const { rows } = await harness.owner.query<{ n: string }>(
+      `SELECT count(*) AS n FROM project_spend_state WHERE project_id = $1`,
+      [PROJECT],
+    );
+    expect(Number(rows[0]?.n)).toBe(1);
   });
 
   /**
-   * A project nobody can read is one nobody can be billed for. Refusing is the safe
-   * direction: the alternative is spending money on an unattributable send.
+   * The property the whole change exists for. If this query needed a control-plane table, the
+   * send path would still be crossing planes and ADR-0016 would not have happened.
    */
-  it("refuses a project it cannot resolve to an organisation", async () => {
-    expect(await solvency.canSpend("99999999-0000-4000-8000-00000000ffff")).toBe(false);
+  it("reads nothing outside the cell", async () => {
+    await publish(false, new Date(now.getTime() + 60 * 60 * 1000));
+    // Take the org-keyed tables away entirely: the gate must still answer.
+    for (const table of ["usage_charges", "org_debts", "credit_grants"]) {
+      await harness.owner.query(`DELETE FROM ${table} WHERE org_id = $1`, [ORG]);
+    }
+    expect(await solvency.canSpend(PROJECT)).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import {
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { refreshTokens } from "../schema/sessions.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface NewRefreshToken {
@@ -25,7 +25,7 @@ export interface NewRefreshToken {
  * two concurrent refreshes must not both succeed.
  */
 export class RefreshTokenRepository extends BaseRepository<typeof refreshTokens> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, refreshTokens);
   }
 

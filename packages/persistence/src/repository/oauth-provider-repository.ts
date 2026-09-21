@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { oauthProviders } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 import { asRecord } from "./jsonb.js";
 
@@ -23,7 +23,7 @@ export interface ProviderConfigRow {
  * query log or a crash dump of it never does either.
  */
 export class OAuthProviderRepository extends BaseRepository<typeof oauthProviders> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, oauthProviders);
   }
 

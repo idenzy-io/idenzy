@@ -393,6 +393,97 @@
       "when": 1789385936424,
       "tag": "0055_usage_drawdown_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789403164319,
+      "tag": "0056_faithful_vapor",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1789403179930,
+      "tag": "0057_email_events_grants_and_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789403683703,
+      "tag": "0058_exotic_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789412541399,
+      "tag": "0059_audit_partition_maintainer",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789413239835,
+      "tag": "0060_project_delete_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789414442122,
+      "tag": "0061_project_purges",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789414497455,
+      "tag": "0062_purge_project",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789416771881,
+      "tag": "0063_immutable_cell_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1789423344271,
+      "tag": "0064_project_spend_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1789423363905,
+      "tag": "0065_project_spend_state_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789461842496,
+      "tag": "0066_dsr_deadline_rule",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789486277657,
+      "tag": "0067_project_signing_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789486292277,
+      "tag": "0068_project_signing_keys_grants",
+      "breakpoints": true
     }
   ]
 }

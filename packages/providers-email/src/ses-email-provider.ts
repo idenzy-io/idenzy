@@ -7,6 +7,7 @@ import {
   type UsageMeter,
 } from "@idenzy/domain/ports/email-provider";
 import { type AwsCredentialsProvider, signRequest } from "./aws/sigv4.js";
+import { PROJECT_TAG } from "./ses-events.js";
 
 export interface SesOptions {
   readonly region: string;
@@ -68,11 +69,17 @@ export class SesEmailProvider extends EmailProvider {
     );
   }
 
-  protected override async dispatch(message: OutboundEmail): Promise<string> {
+  protected override async dispatch(projectId: string, message: OutboundEmail): Promise<string> {
     const body = JSON.stringify({
       FromEmailAddress: message.from,
       Destination: { ToAddresses: [message.to] },
       ConfigurationSetName: this.options.configurationSet,
+      // The tag is what makes this message's bounce attributable months later. SES echoes
+      // message tags on every event the configuration set publishes, and it is the only
+      // tenant key one carries: the shared sender is one address for every project without
+      // a domain of its own, so the recipient, the sender and the message id can none of
+      // them name who sent it.
+      EmailTags: [{ Name: PROJECT_TAG, Value: projectId }],
       Content: {
         Simple: {
           Subject: { Data: message.subject, Charset: "UTF-8" },

@@ -5,8 +5,14 @@
 Generated from the schema classification (PROJECT.md 4.13.2).
 
 Role: Idenzy is a **processor** for end-user data held on behalf of a customer, and a
-**controller** for the customer's own account data. Data is pinned to a region cell at
-project creation and does not leave it (PROJECT.md 4.13.5).
+**controller** for the customer's own account data.
+
+Residency: a project is pinned to a region cell at creation and its data does not leave that
+cell (PROJECT.md 4.13.5). Which cells exist is a deployment fact and not a property of this
+schema, so this generator does not assert one — `docs/compliance/subprocessors.md` records
+the cells actually provisioned and the transfer obligations that follow from them. Stating
+residency here in the present tense would make this document claim a second cell into
+existence on the day somebody wrote the sentence.
 
 This document is generated architecture, not a compliance attestation. Idenzy holds no
 certification; see PROJECT.md 4.13.10.
@@ -15,7 +21,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** days_30, project_lifetime, until_account_deletion
-- **Tables:** `mfa_factors`, `org_invitations`, `org_members`, `webauthn_credentials`
+- **Tables:** `control.org_invitations`, `control.org_members`, `mfa_factors`, `webauthn_credentials`
 - **Categories of personal data:**
 
   - pii: email
@@ -26,13 +32,14 @@ certification; see PROJECT.md 4.13.10.
 ## audit_and_compliance
 
 - **Lawful basis:** art_6_1_c_legal_obligation
-- **Retention:** days_30, years_1, years_6
-- **Tables:** `audit_events`, `data_subject_requests`, `email_templates`, `staff_access_grants`, `top_ups`
+- **Retention:** days_30, project_lifetime, years_1, years_6
+- **Tables:** `audit_events`, `control.staff_access_grants`, `control.top_ups`, `data_subject_requests`, `email_sending_holds`, `email_templates`
 - **Categories of personal data:**
 
   - pii: artifactUri
   - pii: grantedBy
   - pii: ip
+  - pii: releasedBy
   - pii: staffId
   - pii: ua
   - pii: updatedBy
@@ -87,7 +94,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** project_lifetime, years_2, years_6
-- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
+- **Tables:** `control.credit_grants`, `control.invoice_lines`, `control.invoices`, `control.org_debts`, `control.orgs`, `control.payment_methods`, `control.payment_provider_events`, `control.top_ups`, `control.usage_billing_state`, `control.usage_charges`, `usage_daily`
 - **Categories of personal data:**
 
   - pii: name
@@ -133,6 +140,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: receivedAt
   - pseudonymous: remainingCents
   - pseudonymous: settledAt
+  - pseudonymous: settledDebtCents
   - pseudonymous: state
   - pseudonymous: status
   - pseudonymous: toDebtCents
@@ -173,7 +181,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** years_1
-- **Tables:** `onboarding_responses`
+- **Tables:** `control.onboarding_responses`
 - **Categories of personal data:**
 
   - pii: heardFrom

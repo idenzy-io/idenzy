@@ -17,7 +17,7 @@ import { identities, users } from "../schema/identity.js";
 import { mfaFactors, webauthnCredentials } from "../schema/mfa.js";
 import { sessions } from "../schema/sessions.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /**
@@ -77,7 +77,7 @@ export interface ListOptions {
  * them in TypeScript would mean four round trips per page of fifty.
  */
 export class ProjectUserRepository extends BaseRepository<typeof users> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, users);
   }
 

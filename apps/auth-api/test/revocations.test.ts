@@ -18,10 +18,11 @@ import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { IdenzyExceptionFilter } from "../dist/common/exception.filter.js";
 import { RevocationController } from "../dist/revocation/revocation.controller.js";
+import { LocalCell } from "../dist/tenancy/local-cell.js";
 import { ProjectResolver } from "../dist/tenancy/project-resolver.js";
 import { SecretKeyGuard } from "../dist/tenancy/secret-key.guard.js";
 import { TenantResolutionGuard } from "../dist/tenancy/tenant-resolution.guard.js";
-import { InMemoryRevocationCommands, SilentLogger, testConfig } from "./fixtures.js";
+import { InMemoryRevocationCommands, SilentLogger, testCell, testConfig } from "./fixtures.js";
 
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const SESSION = "ses_00000000000000000001";
@@ -64,6 +65,7 @@ beforeAll(async () => {
       { provide: TokenIssuer, useValue: issuer },
       { provide: RevocationSet, useValue: set },
       { provide: ProjectResolver, useValue: resolver() },
+      { provide: LocalCell, useValue: testCell() },
       { provide: APP_GUARD, useClass: TenantResolutionGuard },
       { provide: APP_GUARD, useClass: SecretKeyGuard },
     ],
@@ -85,7 +87,7 @@ beforeEach(() => {
 });
 
 function withSecretKey(headers: Record<string, string> = {}): RequestInit {
-  return { headers: { authorization: "Bearer sk_test_abcdef", ...headers } };
+  return { headers: { authorization: "Bearer sk_us1_test_abcdef", ...headers } };
 }
 
 async function claims(body: string): Promise<unknown> {
@@ -105,7 +107,7 @@ describe("who may read the set", () => {
    */
   it("refuses a publishable key, which is the one that reaches a browser", async () => {
     const response = await fetch(`${base}/v1/revocations`, {
-      headers: { [IdenzyHeader.PublishableKey]: "pk_test_abc" },
+      headers: { [IdenzyHeader.PublishableKey]: "pk_us1_test_abc" },
     });
 
     expect(response.status).toBe(403);

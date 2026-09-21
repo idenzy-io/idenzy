@@ -102,6 +102,49 @@ export const lawfulBasisForPurpose: Readonly<Record<Purpose, LawfulBasis>> = {
 };
 
 /** How a column is declared. Attached at build time, read by every generator. */
+/**
+ * Whose data subject a table's `subjectField` columns belong to (PROJECT.md 4.13.6).
+ *
+ * Two populations, and conflating them is a data breach in either direction. An end user belongs
+ * to a customer's project and we are their processor; somebody on the customer's own team is our
+ * own data subject. A request from one must never reach the other's rows, and until this was
+ * declared nothing in the schema said which was which — `users.email` and `org_invitations.email`
+ * are both PII marked `subjectField` and are not the same kind of person.
+ */
+export const SubjectPopulation = {
+  /** A customer's end user: a `users` row inside a region cell. */
+  EndUser: "end_user",
+  /** Somebody on the customer's own team. Our data subject, not theirs. */
+  CustomerStaff: "customer_staff",
+} as const;
+export type SubjectPopulation = (typeof SubjectPopulation)[keyof typeof SubjectPopulation];
+
+/**
+ * How a data-subject request reaches one person's rows in a table.
+ *
+ * The missing half of the classification, and the reason nothing consumed the generated field
+ * lists in production. `subjectField` says *which columns* an access request returns and `erasure`
+ * says what to do with them; neither says how to find the rows in the first place. A worker built
+ * on that alone would hardcode a join per table — which is the hand-maintained list that
+ * generating these lists exists to abolish, reintroduced one layer down.
+ *
+ * Declaring it is cheap now and expensive later: retrofitting means revisiting every table *and*
+ * re-answering every request already served from an incomplete list.
+ */
+export interface TableSubject {
+  readonly population: SubjectPopulation;
+  /**
+   * The column one subject's rows are found by, or null where they cannot be reached directly.
+   *
+   * Null is a real answer and has to carry a `note`. `otp_challenges` holds a hash of the address
+   * rather than the address, so it is reachable only by hashing the identifier the same way — a
+   * different operation, not a lookup. Stating that beats a join that silently returns nothing.
+   */
+  readonly locatedBy: string | null;
+  /** Why the subject cannot be located, or anything a handler must know. Required when null. */
+  readonly note?: string;
+}
+
 export interface ColumnClassification {
   readonly class: DataClass;
   readonly purpose: Purpose;

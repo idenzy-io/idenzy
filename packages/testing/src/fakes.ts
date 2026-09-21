@@ -81,6 +81,14 @@ export class RecordingLogger extends Logger {
 export class CapturingEmailProvider extends EmailProvider {
   override readonly id = "capturing";
   readonly sent: OutboundEmail[] = [];
+  /**
+   * The project each message was dispatched for, in step with `sent`.
+   *
+   * Kept because a real transport stamps it on the message and a delivery event has nothing
+   * else to name a tenant by, so "which project was this sent for" is now a property worth
+   * being able to assert.
+   */
+  readonly dispatchedFor: string[] = [];
 
   constructor(suppression: SuppressionList = new AllowAll(), meter: UsageMeter = new CountAll()) {
     super(suppression, meter);
@@ -91,8 +99,9 @@ export class CapturingEmailProvider extends EmailProvider {
     return this.sent.findLast((message) => message.to === to) ?? null;
   }
 
-  protected override dispatch(message: OutboundEmail): Promise<string> {
+  protected override dispatch(projectId: string, message: OutboundEmail): Promise<string> {
     this.sent.push(message);
+    this.dispatchedFor.push(projectId);
     return Promise.resolve(`cap_${this.sent.length}`);
   }
 }

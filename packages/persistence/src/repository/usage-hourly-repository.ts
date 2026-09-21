@@ -1,7 +1,7 @@
 import { and, asc, between, desc, eq, gte } from "drizzle-orm";
 import { usageHourly } from "../schema/usage.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** One hour's figures, as a chart reads them. */
@@ -23,7 +23,7 @@ export type NewHourlyUsage = HourlyUsage;
  * Written by the roller in `apps/workers` and by nothing else, one row per completed hour.
  */
 export class UsageHourlyRepository extends BaseRepository<typeof usageHourly> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, usageHourly);
   }
 

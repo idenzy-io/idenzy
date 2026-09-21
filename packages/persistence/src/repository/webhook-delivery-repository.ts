@@ -2,7 +2,7 @@ import { InternalError } from "@idenzy/core/errors";
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { webhookDeliveries } from "../schema/messaging.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 import { asRecord } from "./jsonb.js";
 
@@ -136,7 +136,7 @@ function readAttempts(value: unknown): DeliveryAttemptRecord[] {
  * delivery that is neither open nor finished.
  */
 export class WebhookDeliveryRepository extends BaseRepository<typeof webhookDeliveries> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, webhookDeliveries);
   }
 

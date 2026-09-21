@@ -31,7 +31,12 @@ async function signOut() {
 </script>
 
 <template>
-  <v-app>
+  <!-- `flow-shell` for the square corners, shared with the signed-out screens: this is the
+       other shell that is one column with one thing to do, and it is drawn to match.
+       Deliberately not `auth-shell`, which would also repaint `color="primary"` as ink —
+       right where the only accent is the sign-in button, wrong on the first screen behind
+       it, where the panel's own blue is what the rest of the product uses. -->
+  <v-app class="flow-shell">
     <v-app-bar color="transparent" flat>
       <div class="flex items-center gap-2.5 pl-4">
         <Icon aria-hidden="true" class="text-xl" name="material-symbols:fingerprint" />

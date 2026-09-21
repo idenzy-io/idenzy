@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, eq, isNull } from "drizzle-orm";
 import { authCodes } from "../schema/challenges.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface NewAuthCode {
@@ -34,7 +34,7 @@ export interface AuthCodeRow {
  * the identity, and one implementation means one place where the single-use rule lives.
  */
 export class AuthCodeRepository extends BaseRepository<typeof authCodes> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, authCodes);
   }
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { InternalError } from "@idenzy/core/errors";
 import { hashToken } from "@idenzy/crypto/tokens/random";
-import { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
+import { ApiKeyKind, Jurisdiction } from "@idenzy/protocol/enums/tenancy";
 import { ApiKeyPrefix } from "@idenzy/protocol/schemas/common";
 import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -51,16 +51,16 @@ import { apiKeys, projects } from "./schema/projects.js";
 
 const CELLS = [
   {
-    code: "eu-west-1",
-    jurisdiction: "European Union",
-    endpoint: "https://eu.idenzy.io",
-    kmsKeyRing: "idenzy-eu-west-1",
+    code: "us1",
+    jurisdiction: Jurisdiction.Us,
+    endpoint: "https://us.idenzy.io",
+    kmsKeyRing: "idenzy-us1-ring",
   },
   {
-    code: "us-east-1",
-    jurisdiction: "United States",
-    endpoint: "https://us.idenzy.io",
-    kmsKeyRing: "idenzy-us-east-1",
+    code: "eu1",
+    jurisdiction: Jurisdiction.Eu,
+    endpoint: "https://eu.idenzy.io",
+    kmsKeyRing: "idenzy-eu1-ring",
   },
 ] as const;
 
@@ -71,8 +71,14 @@ const CELLS = [
 const IDENZY_ORG_ID = "00000000-0000-4000-8000-000000000001";
 const DASHBOARD_PROJECT_ID = "00000000-0000-4000-8000-000000000002";
 
-/** The cell the panel itself is served from. Any of them would do on a laptop. */
-const DASHBOARD_CELL = "eu-west-1";
+/**
+ * The cell the panel itself is served from.
+ *
+ * `us1`, and not just any of them: `cell_id` is immutable once set (PROJECT.md 4.13.5), so a
+ * fixture pinned to a cell nobody provisions is a row that could never be corrected. It has to
+ * name the cell the Terraform environment actually declares.
+ */
+const DASHBOARD_CELL = "us1";
 
 async function main(): Promise<void> {
   const environment = process.env["IDENZY_ENV"] ?? "development";
@@ -186,13 +192,16 @@ async function mintPublishableKey(db: NodePgDatabase): Promise<void> {
     return;
   }
 
-  // `pk_` and 32 random bytes. The prefix column keeps enough to identify a key in a log
-  // line without being enough to use it.
-  const key = `${ApiKeyPrefix.Publishable}${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
+  // `pk_`, the cell, and 32 random bytes — the same shape the management API mints, because a
+  // dev key that parsed differently from a real one would hide exactly the bugs this seed is for
+  // (PROJECT.md 4.13.5). The prefix column keeps enough to identify a key in a log line without
+  // being enough to use it.
+  const head = `${ApiKeyPrefix.Publishable}${DASHBOARD_CELL}_`;
+  const key = `${head}${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
   await db.insert(apiKeys).values({
     projectId: DASHBOARD_PROJECT_ID,
     kind: ApiKeyKind.Publishable,
-    prefix: key.slice(0, 11),
+    prefix: key.slice(0, head.length + 8),
     hash: hashToken(key),
     scopes: [],
   });

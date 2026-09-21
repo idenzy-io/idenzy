@@ -66,10 +66,9 @@ export class ProjectsController {
   /**
    * Owner only, and the only destructive route in this API.
    *
-   * Everything keyed on the project goes with it by foreign key — users, sessions, keys,
-   * the audit partitions — so this is not a role an admin should hold: an admin can be
-   * invited, and being able to delete a customer's entire tenancy should not arrive with an
-   * invitation.
+   * Everything keyed on the project goes with it — users, sessions, keys by cascade, the audit
+   * trail by purge — so this is not a role an admin should hold: an admin can be invited, and
+   * being able to delete a customer's entire tenancy should not arrive with an invitation.
    */
   @Delete(":projectId")
   @HttpCode(204)

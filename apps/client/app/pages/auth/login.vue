@@ -1,11 +1,10 @@
 <script setup lang="ts">
 /**
- * Sign-in for the panel: a password form on the left, everything passwordless on the
- * right, one divider between them.
- *
- * Both columns are offered at once rather than behind a "more options" disclosure,
- * because a provider button is the fastest path for somebody who has one and invisible
- * to somebody who does not know to look.
+ * Sign-in for the panel: one narrow column, the password form first and everything
+ * passwordless below a divider — the same shape as `recover.vue` and `two-factor.vue`
+ * rather than the two-column spread this screen used to be. A single compact column reads
+ * as centred on its own; a card around it would be answering a problem this layout does
+ * not have.
  *
  * The password form is real and goes through `@idenzy/js`, which is our own product: we
  * sign in to the panel the way a customer signs in to theirs (PROJECT.md 9.5). Nothing
@@ -24,7 +23,6 @@ import { signInMessage } from "~/utils/sign-in-errors";
 
 definePageMeta({ layout: "auth" });
 
-const { mdAndUp } = useDisplay();
 const idenzy = useIdenzy();
 const route = useRoute();
 
@@ -86,17 +84,17 @@ function sendMagicLink() {
 </script>
 
 <template>
-  <div class="flex flex-col items-center">
+  <div class="mx-auto flex w-full max-w-md flex-col items-center text-center">
     <Icon class="text-4xl" name="material-symbols:fingerprint" />
 
-    <h1 class="mt-4 text-2xl font-semibold tracking-tight">Log in to Idenzy</h1>
+    <AuthHeading :marked="false" class="mt-4" keyword="Idenzy" lead="Log in to" tone="neutral" />
 
-    <!-- One breakpoint drives both the columns and the divider's orientation. Tailwind's
-         `md` is 768px and Vuetify's is 960px, and between the two the page would show
-         three columns with a horizontal rule lying across the middle one. -->
-    <div class="mt-10 grid w-full" :class="mdAndUp ? 'grid-cols-[1fr_auto_1fr] gap-10' : 'gap-8'">
-      <form class="flex flex-col gap-2 self-center" @submit.prevent="signIn">
-        <label class="text-xs font-medium opacity-70" for="email">
+    <div class="mt-8 flex w-full flex-col items-center gap-6">
+      <!-- No gap on the form. A label sits directly on its field because the eleven
+           pixels between the two are inside the 44px control, and the only space the
+           template owns is the one between one row and the next. -->
+      <form class="flex w-full flex-col text-start" @submit.prevent="signIn">
+        <label class="auth-caps" for="email">
           Email address
         </label>
         <v-text-field
@@ -111,7 +109,7 @@ function sendMagicLink() {
           variant="underlined"
         />
 
-        <label class="mt-4 text-xs font-medium opacity-70" for="password">
+        <label class="auth-caps mt-[22px]" for="password">
           Password
         </label>
         <v-text-field
@@ -136,10 +134,15 @@ function sendMagicLink() {
           {{ refusal }}
         </p>
 
+        <!-- 33px above, which is the reference's own measure from the rule under the last
+             field to the top of the button. Neither the size nor the type is set here:
+             `variant="flat"` is what says "this is the thing the form commits", and
+             theme.css sizes it from that. -->
         <v-btn
           :disabled="!submittable"
           :loading="busy"
-          class="mt-6 text-sm"
+          block
+          class="mt-[33px]"
           color="primary"
           type="submit"
           variant="flat"
@@ -148,23 +151,29 @@ function sendMagicLink() {
         </v-btn>
       </form>
 
-      <!-- `*:w-full` reaches the wrapper the slot makes: stacked, it has to span the
-           column, and upright it is sized by the column instead. -->
-      <div class="flex justify-center" :class="mdAndUp ? '' : 'w-full *:w-full'">
-        <v-divider :vertical="mdAndUp">
-          <span class="text-xs font-medium opacity-60">Or</span>
-        </v-divider>
+      <!-- Two rules with the word between them, rather than `v-divider`'s own content
+           slot. The slot renders a wrapper holding two dividers, and the `w-full` a
+           template puts on the component lands on those two inner elements instead of on
+           the wrapper: the wrapper is then sized by its content, which in a column that
+           centres its items is the word alone, and both rules collapse to nothing. The
+           word has been floating there with no lines either side since the slot was
+           first used. Built by hand, each rule is a flex item and takes half of what the
+           word leaves. -->
+      <div class="flex w-full items-center gap-4">
+        <v-divider />
+        <span class="auth-caps">Or</span>
+        <v-divider />
       </div>
 
       <AuthProviderList
-        class="self-center"
+        class="w-full"
         link-label="Email me a magic link"
         @link="sendMagicLink"
         @provider="continueWith"
       />
     </div>
 
-    <v-btn class="mt-10 text-xs font-medium" to="/auth/recover" variant="plain">
+    <v-btn class="mt-10" to="/auth/recover" variant="plain">
       Can't log in?
     </v-btn>
   </div>

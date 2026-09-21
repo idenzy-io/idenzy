@@ -1,7 +1,7 @@
 import { InternalError } from "@idenzy/core/errors";
 import { retentionPolicies } from "../schema/compliance.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /** One stored override. A subject with no row here is swept at the default. */
@@ -24,7 +24,7 @@ export interface RetentionPolicyRow {
  * nothing on the screen would say why two projects with identical settings sweep differently.
  */
 export class RetentionPolicyRepository extends BaseRepository<typeof retentionPolicies> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, retentionPolicies);
   }
 

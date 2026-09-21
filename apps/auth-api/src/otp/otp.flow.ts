@@ -21,7 +21,7 @@ import {
   OtpChallengeRepository,
 } from "@idenzy/persistence/repository/otp-challenge-repository";
 import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
-import type { Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import type { CellTx, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { verifyOtpSchema } from "@idenzy/protocol/schemas/auth";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { parseOrThrow } from "../common/parse.js";
@@ -75,7 +75,7 @@ export abstract class OtpFlow extends AuthFlow {
    * reads.
    */
   protected abstract resolveSubject(
-    tx: Transaction,
+    tx: CellTx,
     tenant: TenantContext,
     target: string,
   ): Promise<AuthenticatedSubject>;

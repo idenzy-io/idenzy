@@ -2,11 +2,10 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
-import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
+import { AccessTokenSource, AdcTokenSource } from "@idenzy/providers-gcp/access-token-source";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AccessTokenSource, MetadataTokenSource } from "../src/google/access-token-source.js";
 import { CloudTasksScheduler, shardOf } from "../src/webhooks/cloud-tasks-scheduler.js";
 
 /**
@@ -30,18 +29,6 @@ class SilentLogger extends Logger {
   override error(): void {}
   override child(): Logger {
     return this;
-  }
-}
-
-class FixedClock extends Clock {
-  constructor(private ms: number) {
-    super();
-  }
-  override now(): Date {
-    return new Date(this.ms);
-  }
-  advance(seconds: number): void {
-    this.ms += seconds * 1000;
   }
 }
 
@@ -106,7 +93,7 @@ let baseUrl = "";
 const settings = {
   project: "idenzy-dev",
   location: "europe-west4",
-  queuePrefix: "idenzy-eu-1-webhooks",
+  queuePrefix: "idenzy-eu1-webhooks",
   shards: 8,
   serviceAccount: "webhooks@idenzy-dev.iam.gserviceaccount.com",
   url: "https://workers-abc.a.run.app/internal/webhooks/dispatch",
@@ -149,7 +136,7 @@ describe("arming a retry as a Cloud Task", () => {
     const [request] = api.captured;
     expect(request?.authorization).toBe("Bearer ya29.fake");
     expect(request?.path).toBe(
-      `/v2/projects/idenzy-dev/locations/europe-west4/queues/idenzy-eu-1-webhooks-${shardOf(ENDPOINT, 8)}/tasks`,
+      `/v2/projects/idenzy-dev/locations/europe-west4/queues/idenzy-eu1-webhooks-${shardOf(ENDPOINT, 8)}/tasks`,
     );
 
     const task = taskIn(request);
@@ -215,7 +202,7 @@ describe("reading the queue out of the environment", () => {
     IDENZY_ENV: "development",
     DATABASE_URL: "postgres://localhost/idenzy",
     VALKEY_URL: "redis://localhost:6379",
-    CELL_CODE: "eu-1",
+    CELL_CODE: "eu1",
     KMS_KEY_RING: "ring",
     ISSUER_BASE_URL: "https://auth.idenzy.io",
   };
@@ -233,7 +220,7 @@ describe("reading the queue out of the environment", () => {
           ...environment,
           GCP_PROJECT_ID: "idenzy-dev",
           WEBHOOK_TASKS_LOCATION: "europe-west4",
-          WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-eu-1-webhooks",
+          WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-eu1-webhooks",
           WEBHOOK_TASKS_SERVICE_ACCOUNT: "webhooks@idenzy-dev.iam.gserviceaccount.com",
         }),
       ),
@@ -246,7 +233,7 @@ describe("reading the queue out of the environment", () => {
         ...environment,
         GCP_PROJECT_ID: "idenzy-dev",
         WEBHOOK_TASKS_LOCATION: "europe-west4",
-        WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-eu-1-webhooks",
+        WEBHOOK_TASKS_QUEUE_PREFIX: "idenzy-eu1-webhooks",
         WEBHOOK_TASKS_SERVICE_ACCOUNT: "webhooks@idenzy-dev.iam.gserviceaccount.com",
         WEBHOOK_DISPATCH_URL: settings.url,
       }),
@@ -256,36 +243,35 @@ describe("reading the queue out of the environment", () => {
   });
 });
 
-describe("the token the metadata server hands out", () => {
-  it("is asked for once and reused until it is nearly expired", async () => {
-    let served = 0;
-    const metadata = createServer((request, response) => {
-      served += 1;
-      expect(request.headers["metadata-flavor"]).toBe("Google");
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ access_token: `token-${served}`, expires_in: 3600 }));
+describe("the identity this process calls Google as", () => {
+  /**
+   * Application Default Credentials does the work now, so what is left to test is ours: that the
+   * token it resolves is the one handed on, and that resolving nothing fails loudly.
+   *
+   * What is deliberately **not** tested here any more is caching and refresh-before-expiry. An
+   * earlier version hand-rolled the metadata fetch and those needed proving; `google-auth-library`
+   * owns them now, and a test of them would be a test of the library.
+   */
+  it("hands on whatever ADC resolved", async () => {
+    const source = new AdcTokenSource({
+      auth: { getAccessToken: () => Promise.resolve("ya29.token") } as never,
     });
-    await new Promise<void>((resolve) => {
-      metadata.listen(0, resolve);
-    });
-    const { port } = metadata.address() as AddressInfo;
+    expect(await source.token()).toBe("ya29.token");
+  });
 
-    const clock = new FixedClock(Date.parse("2026-09-13T10:00:00.000Z"));
-    const tokens = new MetadataTokenSource(clock, {
-      url: `http://127.0.0.1:${port}/token`,
-    });
-
-    expect(await tokens.token()).toBe("token-1");
-    expect(await tokens.token()).toBe("token-1");
-    expect(served).toBe(1);
-
-    // Past the hour minus the minute that is deliberately not spent.
-    clock.advance(3600);
-    expect(await tokens.token()).toBe("token-2");
-    expect(served).toBe(2);
-
-    await new Promise<void>((resolve) => {
-      metadata.close(() => resolve());
-    });
+  /**
+   * On a VPS this is `GOOGLE_APPLICATION_CREDENTIALS` unset or pointing at a file that is not
+   * there. A deployment fault rather than a request one, and it must not surface as a queue that
+   * quietly stops retrying.
+   */
+  it("refuses when ADC found no credential anywhere", async () => {
+    for (const resolved of [null, ""]) {
+      const source = new AdcTokenSource({
+        auth: { getAccessToken: () => Promise.resolve(resolved) } as never,
+      });
+      await expect(source.token()).rejects.toMatchObject({
+        detail: { remedy: expect.stringContaining("GOOGLE_APPLICATION_CREDENTIALS") },
+      });
+    }
   });
 });

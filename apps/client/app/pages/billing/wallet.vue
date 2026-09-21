@@ -11,10 +11,12 @@
  *
  * The two automatic rules are adjacent and distinct rows, as the note asks. A top-up rule
  * charges the method it names, and the row says which, how much, and how often at this
- * month's rate; the alert says plainly that it is an alert and never a cap, because the
- * only lever that would stop the spend is refusing to sign somebody in.
+ * month's rate; the alert says plainly that it is an alert and never a cap, because nothing
+ * on this screen refuses anything on its own.
  *
- * What a zero balance does is folded, with the answer in the heading: sign-in never stops.
+ * What a zero balance does is folded, with the answer in the heading: sign-in keeps working.
+ * That used to read "never stops", which was a promise rather than a description — see
+ * risks.md 1 and `~/utils/billing`.
  */
 import type { Fact } from "~/components/FactGrid.vue";
 import type { RecordColumn } from "~/components/RecordTable.vue";
@@ -155,8 +157,8 @@ const autoWords = computed(() => {
 
 const alertWords = computed(() =>
   alertTripped.value
-    ? `This month has already passed ${formatCents(alert.value.thresholdCents)}. An alert and never a cap: the lever that would stop the spend is refusing to sign somebody in, and that is not a lever we have.`
-    : `Emails the billing address when the month passes ${formatCents(alert.value.thresholdCents)}. An alert and never a cap, because the only way to stop the spend would be to stop authenticating people.`,
+    ? `This month has already passed ${formatCents(alert.value.thresholdCents)}. An alert and never a cap: nothing here refuses a sign-in, so the figure is a warning to act on rather than a ceiling that acts for you.`
+    : `Emails the billing address when the month passes ${formatCents(alert.value.thresholdCents)}. An alert and never a cap: it tells you, and stops nothing on its own.`,
 );
 
 /*
@@ -210,7 +212,7 @@ const zeroRows: readonly ZeroRow[] = [
   ...ZERO_STOPS.map((rule) => ({ ...rule, keeps: false })),
 ];
 
-const ZERO_SUMMARY = "Sign-in never stops · SMS stops · metered use above the free tier is owed";
+const ZERO_SUMMARY = "Sign-in keeps working · SMS stops · metered use above the free tier is owed";
 </script>
 
 <template>
@@ -296,7 +298,7 @@ const ZERO_SUMMARY = "Sign-in never stops · SMS stops · metered use above the 
 
         <template v-if="spendQueue.length === 0" #empty>
           <EmptyState
-            description="Credit appears here when it is bought or granted. A balance of nothing never stops a sign-in: what it stops is SMS, and anything metered above the free tier is owed rather than refused."
+            description="Credit appears here when it is bought or granted. A balance of nothing does not stop a sign-in: what it stops is SMS, and anything metered above the free tier is owed rather than refused."
             icon="material-symbols:account-balance-wallet-outline"
             title="No credit on the account"
           />
@@ -369,7 +371,7 @@ const ZERO_SUMMARY = "Sign-in never stops · SMS stops · metered use above the 
     <PageSection
       v-model:open="zeroOpen"
       :summary="ZERO_SUMMARY"
-      description="A balance at zero never stops a sign-in. What it stops is the traffic that costs money the moment it leaves, and what it does not stop is owed rather than refused."
+      description="A balance at zero does not stop a sign-in. What it stops is the traffic that costs money the moment it leaves, and what it does not stop is owed rather than refused."
       foldable
       title="What happens at zero"
     >
@@ -448,7 +450,7 @@ const ZERO_SUMMARY = "Sign-in never stops · SMS stops · metered use above the 
       :max="1_000_000"
       :min="1"
       confirm-label="Save the figure"
-      description="An email to the billing address when the organisation's charges pass this in a month. It is an alert and never a cap: nothing is stopped and no sign-in is refused."
+      description="An email to the billing address when the organisation's charges pass this in a month. It is an alert and never a cap: it tells you, and stops nothing on its own."
       integer-label="A whole number of dollars."
       label="Tell me above"
       prefix-hint=""

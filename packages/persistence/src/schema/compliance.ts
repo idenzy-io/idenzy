@@ -1,14 +1,21 @@
-import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
+import {
+  classified,
+  classifiedTable,
+  controlTable,
+} from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
+import { DEFAULT_DSR_DEADLINE_RULE } from "@idenzy/protocol/enums/compliance";
 import { sql } from "drizzle-orm";
 import {
   bigint,
   index,
+  integer,
   jsonb,
   pgPolicy,
   text,
@@ -17,8 +24,14 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { auditRecord, config } from "./presets.js";
+import { projects } from "./projects.js";
 import { appRole } from "./roles.js";
-import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
+import {
+  createdAtColumn,
+  projectIdColumn,
+  tenantIsolationPolicy,
+  unreferencedProjectIdColumn,
+} from "./shared.js";
 
 /**
  * The audit trail (PROJECT.md 4.13.3).
@@ -40,7 +53,7 @@ export const auditEvents = classifiedTable(
   "audit_events",
   {
     id: classified(uuid("id").notNull().defaultRandom(), { ...auditRecord, loggable: true }),
-    projectId: projectIdColumn(),
+    projectId: unreferencedProjectIdColumn(),
     actorType: classified(text("actor_type").notNull(), { ...auditRecord, loggable: true }),
     actorId: classified(text("actor_id"), {
       ...auditRecord,
@@ -105,19 +118,32 @@ export const auditEvents = classifiedTable(
       withCheck: sql`project_id = current_setting('app.project_id', true)::uuid`,
     }),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "actor_id",
+      note: "Export only. Erasure must not remove these: the trail keeps the pseudonymous id precisely so an erasure stays provable, which is Art. 17(3)(b) against Art. 17(1).",
+    },
+  },
 ).enableRLS();
 
 /**
  * Data-subject requests (PROJECT.md 4.13.6).
  *
- * `dueAt` is computed at intake, 30 days for GDPR, and an overdue row pages someone.
- * That is the difference between a control and an intention.
+ * `dueAt` is computed at intake from `deadlineRule`, and an overdue row pages someone. That is the
+ * difference between a control and an intention.
+ *
+ * **The rule is stored beside the date, and per request.** A cell's jurisdiction cannot supply it:
+ * GDPR governs a person rather than a server, so a cell in Iowa answers a European on Art. 12(3)'s
+ * one month the moment a customer there has European users. Which rule applies is the controller's
+ * determination, so it arrives with the request — and it is kept, because "was this answered on
+ * the right clock" is a question the date on its own cannot answer (`DsrDeadline`).
  */
 export const dataSubjectRequests = classifiedTable(
   "data_subject_requests",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     subjectUserId: classified(uuid("subject_user_id"), {
       class: DataClass.Pseudonymous,
       purpose: Purpose.AuditAndCompliance,
@@ -132,10 +158,15 @@ export const dataSubjectRequests = classifiedTable(
       timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
       { ...config, loggable: true },
     ),
+    deadlineRule: classified(text("deadline_rule").notNull().default(DEFAULT_DSR_DEADLINE_RULE), {
+      ...config,
+      loggable: true,
+      note: "DsrDeadlineRule. Which law's clock `due_at` was set on, recorded because an auditor asks exactly that and the date alone cannot answer it. Defaults to the stricter rule, so a row written without one is early rather than late.",
+    }),
     dueAt: classified(timestamp("due_at", { withTimezone: true }).notNull(), {
       ...config,
       loggable: true,
-      note: "Set at intake. Monitored, because a missed statutory deadline is the finding.",
+      note: "Set at intake from `deadline_rule`. Monitored, because a missed statutory deadline is the finding.",
     }),
     completedAt: classified(timestamp("completed_at", { withTimezone: true }), config),
     artifactUri: classified(text("artifact_uri"), {
@@ -159,7 +190,7 @@ export const retentionPolicies = classifiedTable(
   "retention_policies",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     subject: classified(text("subject").notNull(), { ...config, loggable: true }),
     maxAge: classified(text("max_age").notNull(), {
       ...config,
@@ -185,7 +216,7 @@ export const retentionPolicies = classifiedTable(
  * customer's. Deny by default: absence of a live row means no access. The quarterly
  * access review SOC 2 asks for is a query over this table.
  */
-export const staffAccessGrants = classifiedTable("staff_access_grants", {
+export const staffAccessGrants = controlTable("staff_access_grants", {
   id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
   staffId: classified(text("staff_id").notNull(), {
     class: DataClass.Pii,
@@ -218,6 +249,64 @@ export const staffAccessGrants = classifiedTable("staff_access_grants", {
     retention: Retention.Years6,
   }),
   createdAt: createdAtColumn(),
+});
+
+/**
+ * What every column of `project_purges` is.
+ *
+ * `AuditAndCompliance` rather than `ServiceConfiguration`, because the row is evidence and not
+ * settings, and six years on all of it including the primary key — a record whose id expired
+ * before its contents would be one nothing could cite.
+ */
+const disposalRecord = {
+  class: DataClass.Operational,
+  purpose: Purpose.AuditAndCompliance,
+  retention: Retention.Years6,
+  erasure: Erasure.NotApplicable,
+} as const;
+
+/**
+ * That a project's data was disposed of, kept after everything else about it is gone.
+ *
+ * GDPR Art. 28(3)(g) obliges a processor to delete a controller's personal data at the end of
+ * the provision of services — and obliges it *demonstrably*. After `purge_project` has run there
+ * is nothing left to demonstrate with: the tenant rows cascaded, the audit trail went with them,
+ * and the absence of data is indistinguishable from a project that never existed. This row is
+ * the evidence, and it is the reason the purge is not simply a `DELETE`.
+ *
+ * Global rather than tenant-scoped, for the plainest possible reason: the tenant is gone. It has
+ * no `project_id` foreign key for the same reason, and it holds no personal data — ids, a count
+ * and a timestamp. It belongs to the control plane and moves there when the planes separate
+ * (PROJECT.md 4.13.5).
+ */
+export const projectPurges = controlTable("project_purges", {
+  id: classified(uuid("id").primaryKey().defaultRandom(), {
+    ...disposalRecord,
+    loggable: true,
+  }),
+  projectId: classified(uuid("project_id").notNull(), {
+    ...disposalRecord,
+    loggable: true,
+    note: "No FK: the project it names has been deleted, which is what this row records.",
+  }),
+  orgId: classified(uuid("org_id").notNull(), {
+    ...disposalRecord,
+    loggable: true,
+    note: "Kept so the record survives in the organisation's name once the project is gone.",
+  }),
+  auditRowsDeleted: classified(integer("audit_rows_deleted").notNull(), {
+    ...disposalRecord,
+    loggable: true,
+    note: "How much of the append-only trail the purge removed. The one number worth proving.",
+  }),
+  purgedBy: classified(text("purged_by").notNull(), {
+    ...disposalRecord,
+    note: "The actor the management API was acting as. Free text, like an audit actor id.",
+  }),
+  purgedAt: classified(timestamp("purged_at", { withTimezone: true }).notNull().defaultNow(), {
+    ...disposalRecord,
+    loggable: true,
+  }),
 });
 
 /**

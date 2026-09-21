@@ -7,7 +7,7 @@ import type {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { invoiceLines, invoices } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface InvoiceLineRow {
@@ -79,7 +79,7 @@ const OUTSTANDING: readonly InvoiceStatus[] = ["open", "past_due"];
  * the usage screen by a cent on exactly the months somebody checks.
  */
 export class InvoiceRepository extends OrgRepository<typeof invoices> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, invoices);
   }
 

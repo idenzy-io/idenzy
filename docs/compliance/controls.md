@@ -41,12 +41,19 @@ control moves.
 
 ## Data subject rights
 
-| Requirement | Where it lives | Evidence |
-|---|---|---|
-| Access, rectification, erasure, portability | `data_subject_requests`, one handler per kind | Request rows with `completed_at` |
-| Statutory deadline is tracked | `due_at` set at intake and monitored | Alerting on overdue rows |
-| Export covers every field | Field list generated from classification, not hand-listed | Generated subject-field map |
-| Erasure preserves audit integrity | Classified fields tombstoned in place; user row survives as a pseudonymous shell | `Erasure` declarations per column |
+| Requirement | Where it lives | Evidence | In effect |
+|---|---|---|---|
+| Access, rectification, erasure, portability | `data_subject_requests`, one handler per kind | Request rows with `completed_at` | **No.** `DataSubjectRequestHandler` is abstract and nothing implements it, so no worker assembles an export |
+| The deadline is the right one | `DsrDeadline` per request, from the controller's rule, defaulting to the stricter | `dsr-deadline-conformance`, `data_subject_requests.deadline_rule` | Yes |
+| The deadline is tracked | `due_at` set at intake from the rule | — | **Partly.** The date is set and stored with the rule that set it; nothing pages when it passes |
+| Export covers every field | Field list generated from classification, not hand-listed | Generated subject-field map | Yes, for the list. Nothing consumes it yet |
+| Erasure preserves audit integrity | Classified fields tombstoned in place; user row survives as a pseudonymous shell | `Erasure` declarations per column, `retention_tombstone_users` in 0052 | Yes, on the retention path |
+| Disposal at end of service | `purge_project` cascades 37 tables and purges the trail | `project_purges`, `project-purge.integration.test.ts` | Yes |
+
+A GDPR deadline is **one calendar month** and not thirty days (Art. 12(3)): a request arriving on
+31 January is due on 28 February, and day arithmetic makes it 2 March — late. That is why the
+deadline is a class with a conformance suite rather than a constant, and why the rule is stored
+next to the date it produced.
 
 ## Change management and supply chain
 
@@ -60,10 +67,22 @@ control moves.
 
 ## Residency
 
-| Requirement | Where it lives | Evidence |
-|---|---|---|
-| Data stays in its jurisdiction | Cells are independent stacks; `cell_id` is set at creation and never updated | `region_cells`, Terraform per cell |
-| The global control plane holds no personal data | Only billing identifiers and cell pointers | `orgs` classification |
+| Requirement | Where it lives | Evidence | In effect |
+|---|---|---|---|
+| Data stays in its jurisdiction | Cells are independent stacks | `region_cells`, `infra/terraform/modules/cell` | **No.** One cell is declared, in `environments/dev`, and nothing has been applied |
+| `cell_id` is set at creation and never updated | `orgs.cell_id`, `projects.cell_id`, and a trigger on each | Migration 0063, asserted in `tenancy.integration.test.ts` | Yes |
+| Cross-cell access is refused | Two checks in `TenantResolutionGuard`: a key's cell segment before any lookup, the resolved project's cell after one | `tenant-resolution.test.ts`, migration 0063 | Yes |
+| A cell's email cannot leave its jurisdiction | `JurisdictionPolicy.emailRegion`, checked against `AWS_REGION` at boot | `auth-api/src/main.ts`, `jurisdiction-policy-conformance` | Yes |
+| The global control plane holds no **tenant end-user** personal data | Only billing identifiers, cell pointers and customer account data | `orgs` classification, and `control.` in the generated data map | Yes |
+
+The "In effect" column exists because the two columns to its left describe a design and this
+file is cited as evidence. A control that is written down and a control that runs are different
+claims (PROJECT.md 7.6 makes the same distinction about `ignore-scripts`).
+
+Note the last row is narrower than it used to read. The control plane holds no *end-user* data,
+which is the property residency rests on — but `orgs.name`, `org_invitations.email` and the
+`onboarding_responses` free-text columns are classified PII with `subjectField: true`, so it is
+not free of personal data altogether.
 
 ## Availability
 

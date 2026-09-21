@@ -1,11 +1,25 @@
-import { ResourceNotFoundError } from "@idenzy/core/errors";
+import { InternalError, ResourceNotFoundError } from "@idenzy/core/errors";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
+import { RegionCellReader } from "@idenzy/persistence/repository/region-cell-reader";
 import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Injectable } from "@nestjs/common";
+
+/**
+ * A project the caller may act on, and where it lives.
+ *
+ * The cell travels with the tenant rather than being looked up again by whoever needs it, because
+ * two callers resolving it separately is two chances to resolve it differently. It is what a
+ * minted key carries (4.13.5) and it is the value Phase 3's cell gateway will route on.
+ */
+export interface ScopedProject {
+  readonly tenant: TenantContext;
+  /** `region_cells.code`, e.g. `us1`. */
+  readonly cellCode: string;
+}
 
 /**
  * Turns a project id from a URL into a tenant scope, and refuses to do it for a project
@@ -29,7 +43,10 @@ import { Injectable } from "@nestjs/common";
  */
 @Injectable()
 export class ProjectScope {
-  constructor(private readonly uow: UnitOfWork) {}
+  constructor(
+    private readonly uow: UnitOfWork,
+    private readonly regions: RegionCellReader,
+  ) {}
 
   /**
    * The tenant context for a project the caller may act on.
@@ -39,6 +56,17 @@ export class ProjectScope {
    * exist, or the id space becomes an oracle for what our customers have built.
    */
   async of(context: OrgContext, publicProjectId: string): Promise<TenantContext> {
+    return (await this.resolve(context, publicProjectId)).tenant;
+  }
+
+  /**
+   * The same check, answering with the cell as well.
+   *
+   * For the callers that need to know where the project runs rather than only that they may touch
+   * it — minting a key, which carries its cell, and eventually reaching the cell that holds the
+   * data. One method does the ownership check so there is one place it can be got wrong.
+   */
+  async resolve(context: OrgContext, publicProjectId: string): Promise<ScopedProject> {
     const projectId = PublicId.parse(IdPrefix.Project, publicProjectId).uuid;
 
     const project = await this.uow.runForOrg(context, (tx) =>
@@ -48,8 +76,21 @@ export class ProjectScope {
       throw new ResourceNotFoundError({ detail: { projectId: publicProjectId } });
     }
 
+    const cell = await this.regions.byId(project.cellId);
+    if (cell === null) {
+      // The column is NOT NULL with a foreign key, so this is unreachable through the schema and
+      // is a provisioning fault rather than a request one. Refusing beats minting a key whose
+      // cell segment names nothing.
+      throw new InternalError({
+        detail: { projectId: publicProjectId, cellId: project.cellId, reason: "unknown cell" },
+      });
+    }
+
     // The actor is the membership and not the person, which is what the audit trail wants:
     // "who did this, acting for whom" is answered by one id rather than two lookups.
-    return new TenantContext(projectId, context.requestId, "customer_staff", context.actorId);
+    return {
+      tenant: new TenantContext(projectId, context.requestId, "customer_staff", context.actorId),
+      cellCode: cell.code,
+    };
   }
 }

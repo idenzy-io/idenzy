@@ -11,6 +11,7 @@ import type {
 import { PaymentProvider } from "@idenzy/domain/ports/payment-provider";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
+import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { CardBrand, TopUpState } from "@idenzy/protocol/enums/billing";
@@ -128,7 +129,7 @@ beforeAll(async () => {
 
   await harness.owner.query(
     `INSERT INTO region_cells (id, code, jurisdiction, endpoint, kms_key_ring)
-     VALUES (gen_random_uuid(), 'eu-1', 'EU', 'https://eu.test', 'ring')`,
+     VALUES (gen_random_uuid(), 'eu1', 'EU', 'https://eu.test', 'ring')`,
   );
   for (const org of [ORG, OTHER_ORG]) {
     await harness.owner.query(
@@ -264,6 +265,124 @@ describe("adding credit", () => {
     await expect(
       webhooks.receive(event("customer.updated", { id: "cus_x" }), "sig", "req_7"),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * What a top-up does about what is already owed (ADR-0014 section 3).
+ *
+ * The rule is that a top-up settles debt before it becomes spendable, and until this was
+ * written it did not: `settleIntent` granted the whole amount and never touched `org_debts`,
+ * whose only production caller adds to it. An organisation $300 down that paid $1,000 ended
+ * up with $1,000 to spend *and* $300 still owed, which nothing in the codebase could ever
+ * collect. The cases below are the arithmetic a customer and an accountant both expect.
+ */
+describe("a top-up against what is already owed", () => {
+  const debt = () =>
+    uow.runForOrg(context, (tx) => new UsageDrawdownRepository(tx, context).debtCents());
+
+  /**
+   * Puts the debt at a figure rather than adding to it.
+   *
+   * These cases share one organisation and one database, and the second of them deliberately
+   * leaves a balance owing — so a case that only added would be reading the case before it.
+   */
+  async function owe(cents: number): Promise<void> {
+    const standing = await debt();
+    await uow.runForOrg(context, (tx) =>
+      new UsageDrawdownRepository(tx, context).adjustDebt(cents - standing),
+    );
+  }
+
+  /** Settles one top-up end to end and answers the wallet afterwards. */
+  async function pay(amountCents: number, intent: string, request: string) {
+    const checkout = await billing.startTopUp(context, amountCents, actingMember);
+    await webhooks.receive(
+      event(
+        "checkout.session.completed",
+        { mode: "payment", payment_intent: intent, client_reference_id: checkout.reference },
+        { reference: checkout.reference },
+      ),
+      "sig",
+      request,
+    );
+    return await billing.wallet(context);
+  }
+
+  it("clears the debt first and grants only the remainder", async () => {
+    const creditBefore = await balance();
+    await owe(30_000);
+
+    const wallet = await pay(100_000, "pi_settles_debt", "req_debt_1");
+
+    expect(await debt(), "the debt is paid off, not left standing").toBe(0);
+    expect(await balance(), "and only the remainder became spendable").toBe(creditBefore + 70_000);
+    expect(wallet.debtCents).toBe(0);
+
+    const settled = wallet.topUps.find((topUp) => topUp.amountCents === 100_000);
+    expect(settled?.state).toBe("succeeded");
+  });
+
+  /*
+   * The case that would violate a constraint rather than merely be wrong. `credit_grants`
+   * checks `amount_cents > 0`, so a top-up wholly consumed by debt must grant nothing at all
+   * — a zero grant would roll back a payment the provider has already taken.
+   */
+  it("grants nothing when the debt swallows the whole payment, and still settles", async () => {
+    const creditBefore = await balance();
+    await owe(50_000);
+
+    await expect(pay(20_000, "pi_all_debt", "req_debt_2")).resolves.toBeDefined();
+
+    expect(await debt()).toBe(30_000);
+    expect(await balance()).toBe(creditBefore);
+  });
+
+  /* Being told twice still has to be free, and that property has to survive the change. */
+  it("settles the debt once however many times the event arrives", async () => {
+    await owe(10_000);
+    const checkout = await billing.startTopUp(context, 40_000, actingMember);
+    const completed = event(
+      "checkout.session.completed",
+      { mode: "payment", payment_intent: "pi_twice", client_reference_id: checkout.reference },
+      { reference: checkout.reference },
+    );
+
+    const creditBefore = await balance();
+    await webhooks.receive(completed, "sig", "req_debt_3");
+    const after = await balance();
+
+    await webhooks.receive(completed, "sig", "req_debt_4");
+    await webhooks.receive(
+      event("payment_intent.succeeded", { id: "pi_twice" }),
+      "sig",
+      "req_debt_5",
+    );
+
+    expect(after).toBe(creditBefore + 30_000);
+    expect(await balance()).toBe(after);
+    expect(await debt()).toBe(0);
+  });
+});
+
+/**
+ * The balance a screen reads is `spendable credit − debt` (ADR-0014), and it goes negative.
+ *
+ * That is not a failure state — it is an organisation inside its tolerance — and the wallet
+ * has to be able to say so. It could not before: `wallet()` summed the grants and never read
+ * `org_debts` at all, so an organisation in debt showed whatever credit it had left.
+ */
+describe("a balance that can go negative", () => {
+  it("reads negative for an organisation in debt with no credit left", async () => {
+    const other = new OrgContext(OTHER_ORG, "req_debt", "customer_staff", MEMBER);
+    await uow.runForOrg(other, (tx) => new UsageDrawdownRepository(tx, other).adjustDebt(12_345));
+
+    const wallet = await billing.wallet(other);
+    expect(wallet.balanceCents).toBe(-12_345);
+    expect(wallet.debtCents).toBe(12_345);
+    // The two figures beside it still mean what they meant: what was bought, and what was given.
+    expect(wallet.purchasedCents).toBe(0);
+    expect(wallet.promotionalCents).toBe(0);
   });
 });
 

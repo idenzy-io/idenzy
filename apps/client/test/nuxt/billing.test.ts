@@ -236,6 +236,25 @@ describe("the wallet", () => {
     expect(liveGrants([grant({ remainingCents: 0 })], NOW)).toEqual([]);
   });
 
+  /*
+   * The balance is credit less debt (ADR-0014), and the debt can exceed the credit. A balance
+   * below nought is an organisation inside its tolerance rather than a failure, and a screen
+   * that floored it would tell somebody they owe nothing while the drawdown says otherwise.
+   */
+  it("takes the debt off the balance, and reads negative when it exceeds the credit", () => {
+    const grants = [grant({ id: "a", kind: "purchased", remainingCents: 10_000 })];
+
+    const owing = walletOf(grants, NOW, 30_000);
+    expect(owing.totalCents).toBe(-20_000);
+    // The two halves stay separately legible: what is held, and what is owed against it.
+    expect(owing.creditCents).toBe(10_000);
+    expect(owing.debtCents).toBe(30_000);
+    expect(owing.purchasedCents).toBe(10_000);
+
+    expect(walletOf(grants, NOW, 2_500).totalCents).toBe(7_500);
+    expect(walletOf(grants, NOW).totalCents, "no debt is the old answer").toBe(10_000);
+  });
+
   it("never reports a negative remaining as credit", () => {
     expect(spendableCents(grant({ remainingCents: -400 }), NOW)).toBe(0);
   });
@@ -355,7 +374,7 @@ describe("the runway", () => {
 });
 
 describe("what a zero balance does", () => {
-  it("never stops a sign-in, and says which things it does stop", () => {
+  it("leads with sign-in, and says which things do stop", () => {
     expect(ZERO_KEEPS_WORKING.length).toBeGreaterThan(0);
     expect(ZERO_STOPS.length).toBeGreaterThan(0);
     for (const rule of [...ZERO_KEEPS_WORKING, ...ZERO_STOPS]) {
@@ -363,6 +382,33 @@ describe("what a zero balance does", () => {
       expect(rule.why.length).toBeGreaterThan(0);
     }
     expect(ZERO_KEEPS_WORKING[0]?.what.toLowerCase()).toContain("sign-in");
+  });
+
+  /*
+   * risks.md 1. The copy used to say authentication never stops, flatly, and that promise
+   * was withdrawn rather than kept — an organisation that never pays cannot be served
+   * without bound. Nothing enforces a stop today, so the rule is that this list describes
+   * and does not promise: no "never", no "not a lever we have".
+   */
+  it("makes no unconditional promise about authentication", () => {
+    const authRule = ZERO_KEEPS_WORKING[0];
+    expect(authRule?.why.toLowerCase()).not.toMatch(/\bnever\b/);
+    expect(authRule?.why.toLowerCase()).not.toContain("not a lever we have");
+  });
+
+  /*
+   * And the shared sender is not on the list that keeps working, because it stopped being
+   * true when the sandbox cap shipped: three a minute and two hundred a day, for everybody,
+   * whatever the balance.
+   */
+  it("does not claim the shared sender is unlimited", () => {
+    const shared = [...ZERO_KEEPS_WORKING, ...ZERO_STOPS].find((rule) =>
+      rule.what.toLowerCase().includes("shared"),
+    );
+    expect(ZERO_KEEPS_WORKING.some((rule) => rule.what.toLowerCase().includes("shared"))).toBe(
+      false,
+    );
+    expect(shared).toBeDefined();
   });
 });
 

@@ -1,6 +1,7 @@
 import { SecretKeyNotPermittedError, UnknownProjectError } from "@idenzy/core/errors";
 import { hashToken } from "@idenzy/crypto/tokens/random";
 import { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
+import { parseApiKey } from "@idenzy/protocol/schemas/common";
 import { Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -31,6 +32,22 @@ export interface ResolvedProject {
  * DEFINER functions from migration 0002, which are scoped to exactly this lookup and
  * return routing and configuration only, never personal data.
  */
+/**
+ * As much of a key as belongs in an error detail.
+ *
+ * A fixed `slice(0, 8)` used to be enough to name a key in a log: `pk_3f9a2`. With the cell in
+ * the middle it yields `pk_us1_3`, one character of the body — recognisable as a key but not as
+ * *which* key, which is the entire purpose. Parse and take the head plus a little body, and fall
+ * back to the old behaviour for anything that does not parse, since an unparseable key still has
+ * to appear in the line that refused it.
+ */
+function displayPrefix(key: string): string {
+  const parsed = parseApiKey(key);
+  return parsed === null
+    ? key.slice(0, 8)
+    : `${parsed.kind}${parsed.cell}_${parsed.body.slice(0, 8)}`;
+}
+
 @Injectable()
 export class ProjectResolver {
   constructor(private readonly db: NodePgDatabase) {}
@@ -50,7 +67,7 @@ export class ProjectResolver {
     const rows = await this.db.execute<ResolvedProjectRow>(
       sql`select * from resolve_project_by_key_hash(${hashToken(key)})`,
     );
-    return this.first(rows.rows, { keyPrefix: key.slice(0, 8) });
+    return this.first(rows.rows, { keyPrefix: displayPrefix(key) });
   }
 
   /**
@@ -65,7 +82,7 @@ export class ProjectResolver {
     const resolved = await this.byApiKey(key);
     if (resolved.keyKind !== ApiKeyKind.Publishable) {
       throw new SecretKeyNotPermittedError({
-        detail: { keyPrefix: key.slice(0, 8), keyKind: resolved.keyKind },
+        detail: { keyPrefix: displayPrefix(key), keyKind: resolved.keyKind },
       });
     }
     return resolved;

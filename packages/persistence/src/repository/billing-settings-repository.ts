@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { billingSettings } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface AutoTopUpRow {
@@ -42,7 +42,7 @@ const DEFAULTS: Omit<BillingSettingsRow, "updatedAt"> = {
  * the direction that charges a card.
  */
 export class BillingSettingsRepository extends OrgRepository<typeof billingSettings> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, billingSettings);
   }
 

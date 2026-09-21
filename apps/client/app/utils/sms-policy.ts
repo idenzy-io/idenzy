@@ -406,7 +406,10 @@ function fundingCheck(policy: SmsPolicy | null, balanceCents: number): SetupChec
       id: "funding",
       label,
       state: "fail",
-      finding: "The account balance is nought, so a send is refused before the cap is read.",
+      finding:
+        balance < 0
+          ? "The account is in debt, so a send is refused before the cap is read."
+          : "The account balance is nought, so a send is refused before the cap is read.",
       fix,
     };
   }

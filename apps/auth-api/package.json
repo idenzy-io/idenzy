@@ -23,6 +23,7 @@
     "@idenzy/observability": "workspace:*",
     "@idenzy/persistence": "workspace:*",
     "@idenzy/protocol": "workspace:*",
+    "@idenzy/providers-gcp": "workspace:*",
     "@idenzy/providers-email": "workspace:*",
     "@idenzy/providers-oauth": "workspace:*",
     "@idenzy/providers-sms": "workspace:*",

@@ -5,6 +5,7 @@ import type { Clock } from "@idenzy/core/time/clock";
 import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
 import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
+import type { RegionCellReader } from "@idenzy/persistence/repository/region-cell-reader";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 // From `dist`, like every other app test: Vitest transforms with Rolldown, which does not
 // apply the decorator semantics NestJS needs, and a class imported from `src` here would be
@@ -18,6 +19,7 @@ import { TotpFactor } from "../dist/mfa/totp.factor.js";
 import { PasskeyCeremony } from "../dist/passkey/passkey-ceremony.js";
 import { RelyingPartyResolver } from "../dist/passkey/relying-party-resolver.js";
 import { RevocationPublisher } from "../dist/session/revocation-publisher.js";
+import { LocalCell } from "../dist/tenancy/local-cell.js";
 
 /**
  * A config parsed from a fixed environment rather than a hand-built object, so a test
@@ -30,7 +32,7 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
     NODE_ENV: "test",
     DATABASE_URL: "postgres://idenzy@localhost:5432/idenzy",
     VALKEY_URL: "redis://localhost:6379",
-    CELL_CODE: "eu-1",
+    CELL_CODE: "eu1",
     KMS_KEY_RING: "test-ring",
     ISSUER_BASE_URL: "https://auth.example.test",
     ...overrides,
@@ -176,4 +178,18 @@ export class RecordingActiveUserMeter extends ActiveUserMeter {
 
 export function testActives(clock: Clock): RecordingActiveUserMeter {
   return new RecordingActiveUserMeter(clock);
+}
+
+/**
+ * The cell a test process serves, without a registry behind it.
+ *
+ * `LocalCell` resolves its uuid through `RegionCellReader.all()`, which is a query. A guard test
+ * asserting that a key for another cell is refused *before any lookup* must not need a database
+ * to prove it, so the reader is faked down to the one method that matters.
+ */
+export function testCell(code = "us1", id = "cell"): LocalCell {
+  const regions = {
+    all: () => Promise.resolve([{ id, code, jurisdiction: "US", endpoint: "https://us.test" }]),
+  } as unknown as RegionCellReader;
+  return new LocalCell(code, regions);
 }

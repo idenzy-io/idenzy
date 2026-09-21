@@ -21,7 +21,12 @@ export abstract class ConformanceSuite<T> {
   /** Each case is a name and an assertion that throws on failure. */
   protected abstract defineCases(): readonly {
     name: string;
-    run: (context: ConformanceContext<T>) => Promise<void>;
+    /**
+     * `void` as well as `Promise<void>`: not every family's invariants need I/O to check, and a
+     * synchronous case declaring itself `async` to satisfy this type would be a lie the linter
+     * rightly objects to. `run` below awaits either.
+     */
+    run: (context: ConformanceContext<T>) => Promise<void> | void;
   }[];
 
   /**

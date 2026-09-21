@@ -376,6 +376,33 @@
 }
 
 /*
+ * A flow's one accent is ink, not the panel's blue: `flow-primary` and `on-flow-primary`
+ * are neutral-950/neutral-50 in nuxt.config.ts, already flipped per theme — light on the
+ * dark theme, dark on the light one — so this rule only has to point Vuetify's own hooks
+ * at them. Every `color="primary"` on these screens follows: the button that commits, the
+ * chosen row of a `ChoiceList`, the step a person is on, a focus ring.
+ *
+ * On `.flow-shell` rather than `.auth-shell`, so the first run is one colour from the
+ * sign-in button through to the first project. The panel's blue starts where the panel
+ * does.
+ *
+ * Both selectors are necessary. `v-app` carries `v-theme--light`/`v-theme--dark` on the
+ * same element as `flow-shell`, which covers the root — but `provideTheme` is not called
+ * once at the root and inherited, every themed component calls it again and puts its own
+ * `v-theme--*` class on itself (`VBtn`, `VField`, `VDivider` all do). Each one re-declares
+ * Vuetify's own `--v-theme-primary` directly on itself from its own layer, and a rule that
+ * matches an element outranks one merely inherited from an ancestor regardless of layers,
+ * so a button several components deep was quietly reading the panel's blue again no matter
+ * what was set on `v-app`. Matching `.v-theme--*` wherever it recurs inside `.flow-shell`
+ * is what actually reaches it.
+ */
+.flow-shell:where(.v-theme--light, .v-theme--dark),
+.flow-shell :where(.v-theme--light, .v-theme--dark) {
+  --v-theme-primary: var(--v-theme-flow-primary);
+  --v-theme-on-primary: var(--v-theme-on-flow-primary);
+}
+
+/*
  * Buttons. Height and radius per size rather than one value on `.v-btn`, so `size="large"`
  * still means something; `--v-btn-height` is Vuetify's own hook and the padding it derives
  * follows it.
@@ -526,6 +553,300 @@
 
 .v-btn--icon.v-btn--size-default {
   border-radius: var(--idenzy-radius);
+}
+
+/*
+ * Square corners, for the shells that are one column and one task.
+ *
+ * Signing in and creating a first project are not the workspace. The panel is a dense
+ * grid of rounded controls a person lives in; these are a handful of pages seen once,
+ * each a single column with one thing to do, and they are drawn square to say so.
+ *
+ * Done by zeroing the ladder rather than by a `border-radius` on each thing, and that is
+ * the whole point of this rule. `ChoiceList` and `InfoNote` round themselves with
+ * `rounded-(--idenzy-radius-small)`, and between them they are on fourteen screens — so a
+ * radius removed in either component would square a dialog in the panel that nobody asked
+ * to change. Read from the shell instead, both go square here and stay rounded there, and
+ * neither component learns that these two pages exist. Anything else that rounds itself
+ * from the ladder is carried along for free, which is what a ladder is for.
+ *
+ * The round things that are not controls keep their shape: `rounded-full` on the step
+ * numerals and the radio's dot is a literal, not a token, because a circle is what those
+ * are rather than a corner they happen to have.
+ *
+ * Both flow layouts carry this. `auth-shell` below is the narrower class and carries only
+ * what is true of the signed-out screens alone.
+ */
+.flow-shell {
+  --idenzy-radius-x-small: 0px;
+  --idenzy-radius-small: 0px;
+  --idenzy-radius: 0px;
+  --idenzy-radius-large: 0px;
+  --idenzy-radius-x-large: 0px;
+
+  /* The type a control is labelled at in a flow: twelve pixels, against the panel's
+     thirteen. One size for both shells, because the button that commits a flow is the
+     same button whether it says LOG IN or Continue, and a screen a person meets in the
+     minute after the last one must not be set a pixel off it. The signed-out screens add
+     capitals and a track to this; the onboarding screen takes the size alone. */
+  --idenzy-flow-control-size: 0.75rem;
+}
+
+/*
+ * The button that commits a flow.
+ *
+ * Here rather than in the auth block below, because both shells have one and it is the
+ * same control: `variant="flat"` is what a page says to mean "this is the thing that
+ * happens". The height, the capitals and the track are the signed-out screens' own and
+ * stay there — this is the size and the weight the two agree on.
+ */
+.flow-shell .v-btn--variant-flat,
+.flow-shell .v-btn--variant-elevated {
+  font-size: var(--idenzy-flow-control-size);
+  font-weight: 500;
+}
+
+/*
+ * The signed-out screens' control language.
+ *
+ * One commit set in tracked-out capitals, a column of full-height bordered buttons beside
+ * it and fields that are a value over a hairline. It is a different language from the
+ * panel's — the panel is a workspace of 40px controls at 13px, and these are five pages a
+ * person sees once — so it is scoped to `.auth-shell` rather than changed on the ladder
+ * above, and the ladder is left alone for every screen behind the sign-in. The corners
+ * are not here: they come from `.flow-shell`, which the onboarding shell shares.
+ *
+ * Written against the *variant* rather than the size, because on these screens the
+ * variant already carries the meaning: flat is the one thing the form commits, outlined
+ * is a way in, and text is somewhere else to go. A page therefore asks for what a
+ * control means and gets its size, which is what stops the next screen from reaching
+ * for `size="x-large"` and landing a pixel off this one.
+ *
+ * Placed after every button and field rule above on purpose. Most of what follows beats
+ * those on specificity alone, but the outlined-button and field-outline states are
+ * written at the same weight up there, and at equal weight the later rule wins. Moving
+ * this block above them silently gives the resting state back to the panel's.
+ *
+ * Everything is a metric or a weight; no colour is stated. `auth-primary` is already
+ * near-black on light and near-white on dark (nuxt.config.ts), so the ink flips with the
+ * theme on its own and there is no second palette to keep in step. The two values that
+ * cannot flip — how hard a provider button's line is drawn, how faint a field's rule is
+ * — are the properties restated for dark at the end.
+ */
+.auth-shell {
+  /* The commit. 44px is the reference's, and it is deliberately shorter than the
+     provider buttons beside it: the form is one field-width column and the button
+     closing it reads as the end of that column, not as a sixth way in. */
+  --idenzy-auth-commit-height: 44px;
+  --idenzy-auth-commit-inline: 16px;
+
+  /* A way in. Taller than the commit and set at reading size rather than in capitals,
+     because the label is a sentence ("Continue with Google") and not a verb. */
+  --idenzy-auth-provider-height: 55px;
+  --idenzy-auth-provider-inline: 22px;
+  --idenzy-auth-provider-icon: 18px;
+
+  /* How hard the provider's border is drawn, resting and under the pointer. Full ink at
+     rest on light, which is the reference: a black rectangle on white is the button. */
+  --idenzy-auth-provider-line: 100%;
+  --idenzy-auth-provider-line-raised: 100%;
+  --idenzy-auth-provider-fill-pressed: 4%;
+
+  /* Capitals: the commit, and the three links that are not it. The size is the flow's,
+     shared with onboarding above; only the track is this shell's, so a link in the bar
+     and the button at the foot of the form are the same piece of type at two weights of
+     emphasis. */
+  --idenzy-auth-caps-tracking: 0.5px;
+  --idenzy-auth-link-height: 36px;
+
+  /* The reference sets a link flush and insets the page instead, which leaves a word
+     with nothing around it to press. Twelve is under the commit's sixteen, so a link
+     still reads as lighter than a control, and the box is a target rather than the
+     glyphs themselves. */
+  --idenzy-auth-link-inline: 12px;
+
+  /* The field. The 44px control is where the 11px above and below the value comes from,
+     so a label sits directly on the field with no gap of its own to keep in step. */
+  --idenzy-auth-field-height: 44px;
+  --idenzy-auth-value-size: 0.875rem;
+
+  /* A field's label, and the word in the divider, which is the same piece of type doing
+     the same job. 9.75px is three quarters of a 13px body and is stated in pixels for
+     that reason: as a rem it is a fraction nobody would recognise or keep. */
+  --idenzy-auth-label-size: 9.75px;
+  --idenzy-auth-label-tracking: 0.75px;
+
+  /* The rule under a value, at rest and under the pointer. Far fainter than the panel's
+     field, which is drawn to be found in a form of twenty; here there are two. */
+  --idenzy-auth-rule-opacity: 0.09;
+  --idenzy-auth-rule-opacity-raised: 0.2;
+}
+
+/*
+ * The commit.
+ *
+ * `--v-btn-height` is Vuetify's own hook, so the height is stated once and the padding,
+ * the icon box and the loader all follow it. The corner comes off the ladder, which
+ * `.flow-shell` has already flattened.
+ */
+.auth-shell .v-btn--variant-flat,
+.auth-shell .v-btn--variant-elevated {
+  --v-btn-height: var(--idenzy-auth-commit-height);
+
+  font-size: var(--idenzy-flow-control-size);
+  font-weight: 500;
+  letter-spacing: var(--idenzy-auth-caps-tracking);
+  line-height: 1.375rem;
+  padding-inline: var(--idenzy-auth-commit-inline);
+  text-transform: uppercase;
+}
+
+/*
+ * A way in.
+ *
+ * The line and the fill go through the outlined variant's own custom properties rather
+ * than being painted here, so hover, press and disabled keep working the way they are
+ * written above and this block only says how hard to draw them. `--idenzy-outlined-fill`
+ * is zeroed in both themes: the reference's button is transparent, and a fill under a
+ * full-strength border reads as a second, paler button inside the first.
+ */
+.auth-shell .v-btn--variant-outlined {
+  --v-btn-height: var(--idenzy-auth-provider-height);
+  --idenzy-outlined-fill: 0%;
+  --idenzy-outlined-fill-pressed: var(--idenzy-auth-provider-fill-pressed);
+  --idenzy-outlined-line: var(--idenzy-auth-provider-line);
+  --idenzy-outlined-line-raised: var(--idenzy-auth-provider-line-raised);
+
+  border-width: 1px;
+  font-size: var(--idenzy-auth-value-size);
+  font-weight: 500;
+  line-height: 1.375rem;
+  padding-inline: var(--idenzy-auth-provider-inline);
+}
+
+/*
+ * The mark and the label share the button's full width rather than sitting side by side
+ * in the middle of it: the mark is a flex item at the start and the label takes the rest
+ * and centres inside it, which is the reference's own arrangement.
+ *
+ * It is worth being precise about what that means, because it looks like a bug the first
+ * time it is measured. The label is centred in the space *left over*, so it sits nine
+ * pixels right of the button's true centre — and every label in the column sits nine
+ * pixels right of it, which is why the five read as a set. Centring each label in the
+ * whole button instead is what puts "Continue with Apple" under the Google mark.
+ */
+.auth-shell .v-btn--variant-outlined .v-btn__content {
+  flex: 1;
+}
+
+/*
+ * A provider's mark, in a square box of its own.
+ *
+ * The size is given three times on purpose. `Icon` renders a bare `svg` rather than a
+ * `v-icon`, so the button's icon rule above cannot reach it and the font size alone
+ * would leave each mark at its own aspect: Apple's glyph is three pixels narrower than
+ * Google's, and three pixels is enough to start its label somewhere else. Stating the
+ * box makes every mark 18 square whatever is inside it, which is what puts all five
+ * labels on one line.
+ */
+.auth-shell .auth-mark {
+  font-size: var(--idenzy-auth-provider-icon);
+  height: var(--idenzy-auth-provider-icon);
+  width: var(--idenzy-auth-provider-icon);
+}
+
+/*
+ * Somewhere else to go: Back, Create account, Can't log in?. The commit's capitals at
+ * the commit's size, which is what makes them read as the same product rather than as
+ * body text that happens to be clickable, in a box shorter and narrower than a control's
+ * so it still reads as lighter than one.
+ */
+.auth-shell .v-btn--variant-text,
+.auth-shell .v-btn--variant-plain {
+  --v-btn-height: var(--idenzy-auth-link-height);
+
+  font-size: var(--idenzy-flow-control-size);
+  font-weight: 500;
+  letter-spacing: var(--idenzy-auth-caps-tracking);
+  line-height: 1.375rem;
+  padding-inline: var(--idenzy-auth-link-inline);
+  text-transform: uppercase;
+}
+
+/*
+ * The field: a value at reading size over a hairline, with the 11px above and below it
+ * coming out of the 44px control rather than from padding of its own. That is what lets
+ * a label sit directly on the field in the markup — there is no gap to tune, and the
+ * one below the rule is the gap between rows.
+ */
+.auth-shell .v-input--density-default,
+.auth-shell .v-input--density-default .v-field {
+  --v-input-control-height: var(--idenzy-auth-field-height);
+}
+
+.auth-shell .v-field__input,
+.auth-shell .v-field__input::placeholder {
+  font-size: var(--idenzy-auth-value-size);
+  line-height: 1.375rem;
+}
+
+/*
+ * The rule, at three weights. All three are restated because the panel's are written at
+ * the same specificity higher up: leaving hover to that one would darken this rule to a
+ * quarter under the pointer, which on a two-field form reads as the field changing size.
+ * Focus and error stay at full ink — the reference cannot say what it does here, because
+ * the page was saved before anyone focused anything, and a field that does not answer
+ * the caret is the one thing worse than a field drawn slightly wrong.
+ */
+.auth-shell .v-field__outline {
+  --v-field-border-opacity: var(--idenzy-auth-rule-opacity);
+}
+
+.auth-shell .v-field:hover .v-field__outline {
+  --v-field-border-opacity: var(--idenzy-auth-rule-opacity-raised);
+}
+
+.auth-shell .v-field.v-field--focused .v-field__outline,
+.auth-shell .v-field.v-field--error .v-field__outline {
+  --v-field-border-opacity: 1;
+}
+
+/*
+ * A field's label and the word in the divider. A class rather than utilities on each
+ * one, because it is five pages' worth of the same three declarations and 9.75px is not
+ * a size anything else in the panel uses — spelled as an arbitrary value in a template
+ * it would be copied wrong exactly once and nobody would see it.
+ */
+.auth-shell .auth-caps {
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  font-size: var(--idenzy-auth-label-size);
+  font-weight: 500;
+  letter-spacing: var(--idenzy-auth-label-tracking);
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+/*
+ * Dark.
+ *
+ * Two deviations from the reference, and they are the two it cannot answer: it is a
+ * light-only page, so both of these values are being asked a question that was never put
+ * to it. A border at full strength here is pure white on a near-black ground, which is
+ * the brightest thing on the screen and turns a column of five into a wireframe; and the
+ * field's rule at 9% is invisible on that ground, so the value floats with nothing under
+ * it. Both are stated as one number each so reverting either is a single edit.
+ *
+ * `.auth-shell` carries `v-theme--dark` itself — it is the `v-app` root — so this is a
+ * compound selector and not a descendant one, and weighs the same as the rules above it.
+ * Later in the file is what makes it win, which is the same argument as the block's own
+ * placement.
+ */
+.auth-shell:where(.v-theme--dark) {
+  --idenzy-auth-provider-line: 45%;
+  --idenzy-auth-provider-line-raised: 72%;
+  --idenzy-auth-provider-fill-pressed: 8%;
+  --idenzy-auth-rule-opacity: 0.16;
+  --idenzy-auth-rule-opacity-raised: 0.32;
 }
 
 /*

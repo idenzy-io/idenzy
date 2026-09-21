@@ -2,7 +2,7 @@ import { InternalError } from "@idenzy/core/errors";
 import { eq, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { AbstractRepository } from "./abstract-repository.js";
 
 /**
@@ -17,9 +17,9 @@ import { AbstractRepository } from "./abstract-repository.js";
  * base taking either context would have to choose a column at runtime, and the failure
  * mode of choosing wrong is a query that reads every organisation's invoices.
  */
-export abstract class OrgRepository<TTable extends PgTable> extends AbstractRepository {
+export abstract class OrgRepository<TTable extends PgTable> extends AbstractRepository<ControlTx> {
   protected constructor(
-    tx: Transaction,
+    tx: ControlTx,
     protected readonly context: OrgContext,
     protected readonly table: TTable,
   ) {

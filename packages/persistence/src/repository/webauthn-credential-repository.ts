@@ -2,7 +2,7 @@ import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { and, asc, eq } from "drizzle-orm";
 import { webauthnCredentials } from "../schema/mfa.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 export interface NewWebauthnCredential {
@@ -42,7 +42,7 @@ export interface WebauthnCredentialRow {
  * the tenant is what stops one project's authenticator asserting into another's.
  */
 export class WebauthnCredentialRepository extends BaseRepository<typeof webauthnCredentials> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, webauthnCredentials);
   }
 

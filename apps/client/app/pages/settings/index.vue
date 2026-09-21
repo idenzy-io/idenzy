@@ -7,8 +7,14 @@
  * in the page. A project is the unit of tenancy, of key custody and of residency, and three
  * of the things somebody arrives expecting to edit are decisions taken once at creation:
  * the cell is immutable because moving a project is an audited migration and never an
- * `UPDATE`, the tier is the technical half of a signed agreement, and the keys live in KMS
- * where nothing in a dashboard could reach them.
+ * `UPDATE`, the tier is the technical half of a signed agreement, and key custody is meant to
+ * sit in KMS where nothing in a dashboard could reach it.
+ *
+ * "Meant to" is load-bearing. The folded reference at the foot of this page used to assert ten
+ * infrastructure facts and five were untrue of the code — keys in KMS, cross-cell access
+ * refused, key administrators separated. They now render from `ControlCapability` declarations
+ * that say what runs here, because a security reference a customer reads is the worst place to
+ * describe a design in the present tense (notes/settings.md P1).
  *
  * So the page is the project's detail page rather than a stack of settings cards: what it
  * is, in one band of facts, then the one thing on it with teeth. Each of those facts used
@@ -37,8 +43,12 @@ import type { RecordColumn } from "~/components/RecordTable.vue";
 import { isLive } from "~/utils/keys";
 import { ORG_KIND_LABELS, ORG_PROJECTS_NOTE, orgKindOf } from "~/utils/organisation";
 import {
-  cellByCode,
+  AUDIT_RETENTION_ENFORCEMENT,
+  type ControlCapability,
+  CROSS_CELL_REFUSAL,
   DELETE_EFFECTS,
+  KEY_ADMIN_SEPARATION,
+  KMS_SIGNING,
   NAME_NOTE,
   PROJECT_ID_NOTE,
   RETENTION_ACTION_LABELS,
@@ -47,10 +57,12 @@ import {
   RETENTION_SUBJECTS,
   type RetentionSubject,
   retentionLabel,
+  TENANT_ISOLATION,
   TIER_AUDIT_YEARS,
   TIER_CHANGE_NOTE,
   TIER_LABELS,
   TIER_NOTES,
+  WRAPPED_DEK,
 } from "~/utils/project-settings";
 import { countSessionsByStatus } from "~/utils/sessions";
 import { formatDate, formatDateTime } from "~/utils/time";
@@ -62,6 +74,14 @@ const users = useUsersStore();
 const sessions = useSessionsStore();
 const keys = useKeysStore();
 const audit = useAuditStore();
+const regions = useRegionsStore();
+
+// The cell registry, asked for once when the page opens. The region a project is pinned
+// to is read from the server rather than from a constant in this bundle, so a renamed or
+// drained cell cannot render as a plausible-looking place name.
+onMounted(() => {
+  void regions.load();
+});
 
 const now = useNow({ interval: 60_000 });
 
@@ -70,7 +90,7 @@ const kind = computed(() => orgKindOf(members.forOrg(org.value.id).length));
 const siblings = computed(() => projects.projectsOf(org.value.id));
 
 const facts = computed(() => store.factsFor(projects.current.id, projects.current.name));
-const cell = computed(() => cellByCode(facts.value.cellCode));
+const cell = computed(() => regions.byCode(facts.value.cellCode));
 const saved = computed(() => store.retentionFor(projects.current.id, facts.value.tier));
 
 /** What is in the project, for the dialog that ends it. */
@@ -151,18 +171,46 @@ const identity = computed<Fact[]>(() => [
 ]);
 
 /**
+ * One declared control, rendered as what it actually does here.
+ *
+ * The dot is the whole point of routing these through a helper: a reader scanning the grid sees
+ * which controls are in effect without opening ten glyphs, and a control that is designed but
+ * not deployed cannot read as one that is.
+ */
+function controlFact(key: string, label: string, control: ControlCapability): Fact {
+  return {
+    key,
+    label,
+    value: control.value,
+    info: control.reason,
+    dot: control.running ? "bg-success" : "bg-warning",
+  };
+}
+
+const controls = computed<ControlCapability[]>(() => [
+  AUDIT_RETENTION_ENFORCEMENT,
+  CROSS_CELL_REFUSAL,
+  KMS_SIGNING,
+  WRAPPED_DEK,
+  KEY_ADMIN_SEPARATION,
+  TENANT_ISOLATION,
+]);
+
+/**
  * The tier's consequences and the key custody behind them, folded away.
  *
- * Nothing here is configurable and each one is a single value, so eleven of them are a grid
- * rather than three cards of prose. The heading carries the two that decide the rest, which
- * is what a shut section owes its reader.
+ * Nothing here is configurable and each one is a single value, so ten of them are a grid rather
+ * than three cards of prose. The heading carries what a shut section owes its reader — which now
+ * includes how much of this is running, because most of it is not.
  */
 const infrastructure = computed<Fact[]>(() => [
   {
     key: "audit",
     label: "Audit retention",
     value: auditYears.value,
-    info: "Audit partitions are dropped on this schedule, and the tier is the only thing that sets it. Raising it later does not bring back a partition already dropped.",
+    info: "How long audit entries are kept, and the tier is the only thing that sets it.",
+    note: AUDIT_RETENTION_ENFORCEMENT.value,
+    dot: AUDIT_RETENTION_ENFORCEMENT.running ? "bg-success" : "bg-warning",
   },
   {
     key: "fle",
@@ -182,52 +230,39 @@ const infrastructure = computed<Fact[]>(() => [
     value: "With your agreement",
     info: TIER_CHANGE_NOTE,
   },
-  {
-    key: "cross-cell",
-    label: "Cross-cell access",
-    value: "Refused",
-    info: "A request that resolves to a project in another cell is refused rather than proxied, so data cannot transit a jurisdiction by accident.",
-  },
+  controlFact("cross-cell", "Cross-cell access", CROSS_CELL_REFUSAL),
   {
     key: "control-plane",
     label: "Global control plane",
-    value: "No personal data",
-    info: "Billing identifiers and a pointer to this cell, and nothing of your users. That is the property an EU-resident claim actually rests on: there is no personal data outside the cell to be resident anywhere else.",
+    value: "None of your users",
+    info: "Billing identifiers and a pointer to this cell, and nothing of your users. That is the property an EU-resident claim rests on: there is no end-user personal data outside the cell to be resident anywhere else. It does hold your own team's — an organisation name, an invitation address — which is why this says none of your users rather than no personal data.",
+    dot: "bg-success",
   },
-  {
-    key: "signing-key",
-    label: "Token signing key",
-    value: "In KMS",
-    note: cell.value?.kmsKeyRing ?? "",
-    info: "A per-project signing key whose private half never leaves KMS. Tokens are signed by a call into it rather than by a secret this application holds, so a copy of our database yields nothing that can mint one.",
-  },
-  {
-    key: "dek",
-    label: "Data encryption key",
-    value: "Wrapped",
-    info: "A per-project data encryption key, wrapped by this cell's key ring. It is what field-level encryption runs under, and it is why a key compromise has a blast radius of one tenant rather than one region.",
-  },
-  {
-    key: "key-admins",
-    label: "Who may use a key",
-    value: "Separated",
-    info: "Key administrators are not key users, and every signing and unwrapping call is recorded in the cloud audit log. That separation is enforced by access management rather than by policy, which is the difference between a control and an intention.",
-  },
-  {
-    key: "isolation",
-    label: "Tenant isolation",
-    value: "At the database",
-    info: "Every tenant table is filtered by the project id at the database, and this project's own row is filtered by its id too. Reading another project's row is not an oversight waiting to be fixed: the policy returns nothing, whatever the application asks for.",
-  },
+  controlFact("signing-key", "Token signing key", KMS_SIGNING),
+  controlFact("dek", "Data encryption key", WRAPPED_DEK),
+  controlFact("key-admins", "Who may use a key", KEY_ADMIN_SEPARATION),
+  controlFact("isolation", "Tenant isolation", TENANT_ISOLATION),
 ]);
 
 /* Read once and never again, so it opens shut. */
 const referenceOpen = ref(false);
 
-const referenceSummary = computed(
-  () =>
-    `${cell.value?.jurisdiction ?? "Unknown"} · ${TIER_LABELS[facts.value.tier]} tier · audit kept ${auditYears.value} · keys in KMS`,
-);
+/**
+ * What the shut heading says, and it has to be true shut.
+ *
+ * It used to end "keys in KMS", which was the least true thing on the screen. The count is the
+ * honest replacement: a reader who never opens the section still learns that most of what is
+ * inside is designed rather than deployed, which is the one thing they would want to know.
+ */
+const referenceSummary = computed(() => {
+  const inEffect = controls.value.filter((control) => control.running).length;
+  return [
+    cell.value?.jurisdiction ?? "Unknown",
+    `${TIER_LABELS[facts.value.tier]} tier`,
+    `audit kept ${auditYears.value}`,
+    `${inEffect} of ${controls.value.length} controls in effect`,
+  ].join(" · ");
+});
 
 /*
  * Saving.

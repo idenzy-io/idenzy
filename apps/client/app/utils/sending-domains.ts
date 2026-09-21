@@ -528,11 +528,12 @@ export function ratePercent(rate: number): string {
  * What the panel can honestly say about delivery.
  *
  * Sent is ours: the send is our own call and the meter behind it is what a customer is
- * billed on. Delivered, bounced and complained are not. They are provider events, and the
- * pipeline that records one is designed and not built (see `~/utils/suppressions`), so
- * those three answer null rather than nought. Nought is a measurement, and a measured
- * zero on this screen would be the page telling somebody their mail is healthy when
- * nothing has ever looked (notes/email-domains.md P1, P2).
+ * billed on. Delivered, bounced and complained are provider events, and they are recorded
+ * now — the SNS receiver writes them per project per day, and a bounce rate over the recent
+ * window is what stops a project sending (see `~/utils/suppressions`). What is still missing
+ * is the read: no endpoint serves those counts to this screen, so the three answer null
+ * rather than nought. Nought is a measurement, and a measured zero here would tell somebody
+ * their mail is healthy when this page has not looked (notes/email-domains.md P1, P2).
  */
 
 export interface DeliveryCounts {

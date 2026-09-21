@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { ResourceConflictError } from "@idenzy/core/errors";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { projects } from "../schema/projects.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface OrgProjectRow {
@@ -13,6 +13,11 @@ export interface OrgProjectRow {
   readonly plan: string;
   readonly complianceTier: string;
   readonly createdAt: Date;
+}
+
+/** What a purge did. The count is what `project_purges` keeps as evidence. */
+export interface ProjectPurge {
+  readonly auditRowsDeleted: number;
 }
 
 export interface NewOrgProject {
@@ -34,7 +39,7 @@ export interface NewOrgProject {
  * policy match column for column, as they do on every other org-keyed table.
  */
 export class OrgProjectRepository extends OrgRepository<typeof projects> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, projects);
   }
 
@@ -75,20 +80,34 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
   }
 
   /**
-   * Removes a project and everything keyed on it.
+   * Removes a project and everything keyed on it, and records that it happened.
    *
-   * The cascade is the schema's, not this method's: every tenant table carries
-   * `project_id` with a foreign key, so a deleted project takes its users, sessions, keys
-   * and audit partitions with it. That is deliberate and is why the panel refuses to
-   * delete the last project in an organisation — an organisation with none has nothing for
-   * its members to sign in to.
+   * Most of the cascade is the schema's: since 0060 every tenant table's `project_id`
+   * references `projects` with `ON DELETE CASCADE`, so 37 of the 38 empty themselves. For a
+   * long time this method's docstring claimed that and it was false — no foreign key existed
+   * anywhere, and a delete removed one row and orphaned everything pointing at it.
+   *
+   * `audit_events` is the thirty-eighth and cannot have a cascade: it is partitioned, and the
+   * app role's missing DELETE privilege on it is the integrity control of PROJECT.md 4.13.3
+   * rather than an omission. So the whole operation goes through `purge_project` (0062), a
+   * SECURITY DEFINER function that removes the trail and the project together and writes a
+   * `project_purges` row — the evidence GDPR Art. 28(3)(g) wants, and the only thing left once
+   * everything else about the project is gone.
+   *
+   * Null means no such project in this organisation. The panel refuses to delete the last one
+   * besides, because an organisation with no projects has nothing for its members to sign in to.
    */
-  async remove(id: string): Promise<boolean> {
-    const rows = await this.tx
-      .delete(projects)
-      .where(and(this.orgScope(), eq(projects.id, id)))
-      .returning({ id: projects.id });
-    return rows.length > 0;
+  async remove(id: string): Promise<ProjectPurge | null> {
+    const rows = await this.tx.execute<{ removed: number | null }>(
+      sql`select purge_project(${this.context.orgId}::uuid, ${id}::uuid, ${this.purgedBy()}) as removed`,
+    );
+    const removed = rows.rows[0]?.removed;
+    return removed === undefined || removed === null ? null : { auditRowsDeleted: Number(removed) };
+  }
+
+  /** Who the record names. The actor where there is one, the kind of caller where there is not. */
+  private purgedBy(): string {
+    return this.context.actorId ?? this.context.actorType;
   }
 
   async create(project: NewOrgProject): Promise<OrgProjectRow> {

@@ -4,10 +4,12 @@ import {
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
 import { index, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./identity.js";
 import { config, credential, ephemeralChallenge, securitySignal } from "./presets.js";
+import { projects } from "./projects.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
 
 /** A server-side session. Revocable individually or in bulk (PROJECT.md 4.2). */
@@ -15,7 +17,7 @@ export const sessions = classifiedTable(
   "sessions",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -67,6 +69,12 @@ export const sessions = classifiedTable(
     index("sessions_absolute_expiry_idx").on(t.absoluteExpiresAt),
     tenantIsolationPolicy("sessions"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();
 
 /**
@@ -80,7 +88,7 @@ export const refreshTokens = classifiedTable(
   "refresh_tokens",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     sessionId: classified(
       uuid("session_id")
         .notNull()
@@ -119,7 +127,7 @@ export const idempotencyKeys = classifiedTable(
   "idempotency_keys",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     key: classified(text("key").notNull(), ephemeralChallenge),
     requestFingerprint: classified(text("request_fingerprint").notNull(), ephemeralChallenge),
     responseStatus: classified(text("response_status"), ephemeralChallenge),

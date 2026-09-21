@@ -8,7 +8,7 @@ import type {
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { topUps } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface TopUpRow {
@@ -86,7 +86,7 @@ const IN_FLIGHT: readonly TopUpState[] = ["pending", "requires_action"];
  * balance from ever reading as proof of a payment.
  */
 export class TopUpRepository extends OrgRepository<typeof topUps> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, topUps);
   }
 
@@ -185,5 +185,24 @@ export class TopUpRepository extends OrgRepository<typeof topUps> {
       .returning();
     const row = rows[0];
     return row === undefined ? null : toRow(row);
+  }
+
+  /**
+   * Records how much of a settled top-up went on debt rather than into credit.
+   *
+   * Separate from `settle` because the figure is not known there: it depends on what the
+   * organisation owed at that instant, which the caller reads inside the same transaction.
+   * It is written rather than derived because `org_debts` holds one moving total and cannot
+   * be asked what it was last Tuesday — so without this column "why did $1,000 add $700"
+   * has no answer on the row that answers every other question about the payment.
+   */
+  async recordDebtSettled(id: string, cents: number): Promise<void> {
+    if (cents <= 0) return;
+    await this.guard(() =>
+      this.tx
+        .update(topUps)
+        .set({ settledDebtCents: cents })
+        .where(and(this.orgScope(), eq(topUps.id, id))),
+    );
   }
 }

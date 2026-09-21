@@ -3,7 +3,7 @@ import { CreditKind } from "@idenzy/protocol/enums/billing";
 import { and, asc, gt, isNull, or, sql } from "drizzle-orm";
 import { creditGrants } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface CreditGrantRow {
@@ -51,7 +51,7 @@ function toRow(row: typeof creditGrants.$inferSelect): CreditGrantRow {
  * what has not expired.
  */
 export class CreditGrantRepository extends OrgRepository<typeof creditGrants> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, creditGrants);
   }
 

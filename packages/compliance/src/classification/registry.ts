@@ -1,4 +1,4 @@
-import type { ColumnClassification } from "./vocabulary.js";
+import type { ColumnClassification, TableSubject } from "./vocabulary.js";
 
 export type TableClassification = Readonly<Record<string, ColumnClassification>>;
 
@@ -22,4 +22,23 @@ export function classificationRegistry(): ReadonlyMap<string, TableClassificatio
 /** Test helper. Never call this from application code. */
 export function resetRegistryForTesting(): void {
   registry.clear();
+  subjects.clear();
+}
+
+const subjects = new Map<string, TableSubject>();
+
+/** Called by `classifiedTable` for a table that holds somebody's personal data. */
+export function registerSubject(table: string, subject: TableSubject): void {
+  subjects.set(table, subject);
+}
+
+/**
+ * How each table reaches a data subject, by the same key the classification registry uses.
+ *
+ * Separate from the column registry rather than folded into it because it answers a different
+ * question — *how to find a person* rather than *what is held about them* — and because a table
+ * holding no personal data correctly has no entry at all.
+ */
+export function subjectRegistry(): ReadonlyMap<string, TableSubject> {
+  return subjects;
 }

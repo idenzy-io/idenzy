@@ -8,6 +8,7 @@ import {
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
 import {
   boolean,
@@ -20,6 +21,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { accountOperational, config, credential, identifyingPii } from "./presets.js";
+import { projects } from "./projects.js";
 import {
   createdAtColumn,
   projectIdColumn,
@@ -45,7 +47,7 @@ export const users = classifiedTable(
       loggable: true,
       note: "Survives erasure so the audit trail keeps a stable pseudonymous subject.",
     }),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     email: classified(text("email"), identifyingPii),
     emailVerified: classified(
       boolean("email_verified").notNull().default(false),
@@ -94,6 +96,12 @@ export const users = classifiedTable(
     index("users_project_created_idx").on(t.projectId, t.createdAt),
     tenantIsolationPolicy("users"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "id",
+    },
+  },
 ).enableRLS();
 
 /** A federated identity linked to a user. One row per provider account. */
@@ -101,7 +109,7 @@ export const identities = classifiedTable(
   "identities",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -136,4 +144,10 @@ export const identities = classifiedTable(
     index("identities_user_idx").on(t.userId),
     tenantIsolationPolicy("identities"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();

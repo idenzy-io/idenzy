@@ -1,9 +1,10 @@
-import { classified, classifiedTable } from "@idenzy/compliance/classification/classified";
+import { classified, controlTable } from "@idenzy/compliance/classification/classified";
 import {
   DataClass,
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
 import { boolean, pgPolicy, text, uuid } from "drizzle-orm/pg-core";
@@ -23,7 +24,7 @@ const operational = {
  * Global, not tenant-scoped, and holds no personal data. This is what lets an EU
  * project be honestly described as EU-resident.
  */
-export const regionCells = classifiedTable("region_cells", {
+export const regionCells = controlTable("region_cells", {
   id: classified(uuid("id").primaryKey().defaultRandom(), operational),
   code: classified(text("code").notNull().unique(), { ...operational, loggable: true }),
   jurisdiction: classified(text("jurisdiction").notNull(), operational),
@@ -39,7 +40,7 @@ export const regionCells = classifiedTable("region_cells", {
  * Control plane: billing identifiers and a cell pointer only. Tenant personal data never
  * lives here, which is the property residency claims rest on (PROJECT.md 4.13.5).
  */
-export const orgs = classifiedTable(
+export const orgs = controlTable(
   "orgs",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), { ...operational, loggable: true }),
@@ -78,4 +79,9 @@ export const orgs = classifiedTable(
       withCheck: sql`id = nullif(current_setting('app.org_id', true), '')::uuid`,
     }),
   ],
+  {
+    population: SubjectPopulation.CustomerStaff,
+    locatedBy: "id",
+    note: "The organisation name is personal only where a sole trader uses their own. The subject is the organisation, so there is no per-person row to find.",
+  },
 ).enableRLS();

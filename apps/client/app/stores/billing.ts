@@ -164,6 +164,16 @@ export const useBillingStore = defineStore("billing", () => {
     return walletOfOrg(orgId)?.balanceCents ?? 0;
   }
 
+  /**
+   * What usage has cost beyond the credit that covered it, in cents.
+   *
+   * The server's figure and never a sum taken here: debt is produced by the drawdown against
+   * meters this browser cannot see, and it is what makes `balanceFor` able to read negative.
+   */
+  function debtFor(orgId: string): number {
+    return walletOfOrg(orgId)?.debtCents ?? 0;
+  }
+
   function methodsFor(orgId: string): PaymentMethod[] {
     return (walletOfOrg(orgId)?.methods ?? []).map(present);
   }
@@ -347,6 +357,7 @@ export const useBillingStore = defineStore("billing", () => {
     running,
     grantsFor,
     balanceFor,
+    debtFor,
     methodsFor,
     defaultMethodFor,
     autoTopUpFor,

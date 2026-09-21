@@ -1599,6 +1599,24 @@ working, so the split below is by which question is being asked, not by which sc
       `apps/workers` is the chain's single writer, which is what the fork problem actually
       needed: serialising on the request path would have queued every sign-in for a busy
       project behind the one before it. What is left is the scheduled verifier, below.
+- [x] **Audit partitions are kept ahead of the clock.** 0001 created the current month and the
+      next two and nothing called `ensure_audit_partition` again, so roughly three months after
+      any deploy every audit insert would have failed with "no partition of relation found for
+      row" — the integrity control going dark rather than falling behind, and silently. This is
+      exactly the hazard the webhook-deliveries note above talks itself out of ("a table that
+      stops accepting inserts on a date nobody wrote down"); `audit_events` had already shipped
+      with it. 0059 adds `ensure_audit_partitions_ahead`, a SECURITY DEFINER wrapper the app role
+      may call — the inner function creates a table and issues grants, which `idenzy_app` cannot
+      do and should not be able to — and `AuditPartitionKeeper` in `apps/workers` runs it at boot
+      and daily, three months out. No DEFAULT partition on purpose: rows landing in one would
+      escape a retention drop and sit outside the retention story forever, which trades a loud
+      failure for a silent compliance one.
+- [ ] `RetentionAction.DropPartition` is declared and implemented nowhere. `RETENTION_INFO`
+      offers it for `audit_events` on the settings screen and no worker drops anything, so audit
+      retention is the one tier the sweeper does not enforce. Note the shape problem before
+      building it: partitions are monthly and hold every project's entries, so a drop is a
+      cluster-wide retention decision and not a per-project one — which is also why a project
+      delete purges rows rather than dropping a partition (0062).
 - [ ] `pnpm dev` cannot start `auth-api`, `management-api` or `workers`. Their dev scripts
       run `node --watch src/main.ts`, and Node's type stripping does not rewrite a relative
       `./app.module.js` specifier to the `.ts` file beside it, so the process dies on

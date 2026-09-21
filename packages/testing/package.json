@@ -22,7 +22,9 @@
   "dependencies": {
     "@idenzy/core": "workspace:*",
     "@idenzy/domain": "workspace:*",
+    "@idenzy/compliance": "workspace:*",
     "@idenzy/persistence": "workspace:*",
+    "@idenzy/providers-storage": "workspace:*",
     "@idenzy/protocol": "workspace:*",
     "@testcontainers/postgresql": "catalog:",
     "drizzle-orm": "catalog:",

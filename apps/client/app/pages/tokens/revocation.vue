@@ -45,7 +45,6 @@ import {
   snapshotRetentionSeconds,
 } from "~/utils/lifetimes";
 import { humanizeSeconds } from "~/utils/otp";
-import { cellByCode } from "~/utils/project-settings";
 import {
   entryKindFor,
   INTEGRATION_LABELS,
@@ -78,6 +77,14 @@ const lifetimes = useLifetimesStore();
 const sessions = useSessionsStore();
 const authDomains = useAuthDomainsStore();
 const settings = useProjectSettingsStore();
+const regions = useRegionsStore();
+
+// The cell registry, asked for once when the page opens. The region a project is pinned
+// to is read from the server rather than from a constant in this bundle, so a renamed or
+// drained cell cannot render as a plausible-looking place name.
+onMounted(() => {
+  void regions.load();
+});
 
 const { copy } = useClipboard({ legacy: true });
 
@@ -192,7 +199,7 @@ const endpoint = computed(() => {
   return snapshotEndpoint({
     authDomain: domain,
     deploymentBase: authApiBase.value,
-    regionEndpoint: cellByCode(facts.cellCode)?.endpoint ?? "",
+    regionEndpoint: regions.byCode(facts.cellCode)?.endpoint ?? "",
   });
 });
 

@@ -8,6 +8,7 @@ import {
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
 import { sql } from "drizzle-orm";
 import {
@@ -23,6 +24,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "./identity.js";
 import { accountOperational, config, credential, ephemeralChallenge } from "./presets.js";
+import { projects } from "./projects.js";
 import { sessions } from "./sessions.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
 
@@ -37,7 +39,7 @@ export const mfaFactors = classifiedTable(
   "mfa_factors",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -80,6 +82,12 @@ export const mfaFactors = classifiedTable(
       .where(sql`verified_at is not null`),
     tenantIsolationPolicy("mfa_factors"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();
 
 /**
@@ -99,7 +107,7 @@ export const mfaRecoveryCodes = classifiedTable(
   "mfa_recovery_codes",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -119,6 +127,12 @@ export const mfaRecoveryCodes = classifiedTable(
     index("mfa_recovery_codes_user_idx").on(t.projectId, t.userId),
     tenantIsolationPolicy("mfa_recovery_codes"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();
 
 /**
@@ -139,7 +153,7 @@ export const mfaChallenges = classifiedTable(
   "mfa_challenges",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -195,7 +209,7 @@ export const webauthnCredentials = classifiedTable(
   "webauthn_credentials",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -249,4 +263,10 @@ export const webauthnCredentials = classifiedTable(
     index("webauthn_credentials_user_idx").on(t.userId),
     tenantIsolationPolicy("webauthn_credentials"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();

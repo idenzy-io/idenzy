@@ -1,6 +1,6 @@
 import { orgSecuritySettings } from "../schema/organisation.js";
 import type { OrgContext } from "../tenancy/org-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { ControlTx } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 /**
@@ -11,7 +11,7 @@ import { OrgRepository } from "./org-repository.js";
  * branch whose wrong side locks a team out of its own panel.
  */
 export class OrgSecuritySettingsRepository extends OrgRepository<typeof orgSecuritySettings> {
-  constructor(tx: Transaction, context: OrgContext) {
+  constructor(tx: ControlTx, context: OrgContext) {
     super(tx, context, orgSecuritySettings);
   }
 

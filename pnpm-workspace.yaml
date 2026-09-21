@@ -46,6 +46,11 @@ catalog:
   reflect-metadata: 0.2.2
   rxjs: 7.8.2
 
+  # Cloud. Application Default Credentials only: the full @google-cloud SDKs drag gax, grpc-js
+  # and protobufjs onto the path that holds every credential, and Â§7.6 prefers one audited
+  # library over three convenient ones. KMS, Secret Manager and Storage are reached over REST.
+  google-auth-library: 11.0.2
+
   # Data
   drizzle-orm: 0.45.2
   drizzle-kit: 0.31.10

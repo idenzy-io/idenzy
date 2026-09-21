@@ -113,9 +113,10 @@ export function sourceLabel(reason: string): string {
 /*
  * What this page can and cannot do today.
  *
- * The list is enforced and can be asked and released; the pipeline that writes a row is
- * designed and not built. Those are different halves and the screen has to say which is
- * which, because an empty list and an absent recorder look identical from here.
+ * The list is enforced, written by provider events, and can be asked and released. What is
+ * still missing is per-message history and the outbound webhook. The screen has to say which
+ * half is which, because an empty list and an absent recorder look identical from here — and
+ * that distinction is the reason this list exists rather than a boolean.
  */
 
 export type CapabilityState = "live" | "not_built";
@@ -154,9 +155,9 @@ export const DELIVERY_CAPABILITIES: readonly DeliveryCapability[] = [
   {
     id: "provider_events",
     label: "Recording a bounce or a complaint",
-    state: "not_built",
+    state: "live",
     finding:
-      "SES publishes bounce, complaint and reject to an SNS topic, which posts to an email-events worker, which writes the row. That pipeline is designed and not written, so nothing reaches this list and an address that bounced today is still being sent to.",
+      "SES publishes bounce, complaint and reject to an SNS topic, which posts to our email-events worker, which writes the row. A permanent bounce and a complaint land on this list on their own; a transient one is a full mailbox rather than a bad address and is counted without blocking anything.",
   },
   {
     id: "delivery_log",
@@ -170,7 +171,7 @@ export const DELIVERY_CAPABILITIES: readonly DeliveryCapability[] = [
     label: "Telling your own system",
     state: "not_built",
     finding:
-      "A hard bounce or a complaint will also leave as an email.bounced event so your system can react to the same signal. It arrives when the pipeline above does.",
+      "A hard bounce or a complaint will also leave as an email.bounced event so your system can react to the same signal. The events reach us now; fanning them out to your endpoints is still to come.",
   },
   {
     id: "manual",
@@ -199,8 +200,19 @@ export interface DeliveryStatus {
 export function deliveryStatus(
   capabilities: readonly DeliveryCapability[] = DELIVERY_CAPABILITIES,
 ): DeliveryStatus {
-  const built = capabilities.every((entry) => entry.state === "live");
-  if (built) {
+  // Keyed on ingestion rather than on every row being live, because ingestion is the one
+  // that decides what an answer on this page is worth. With it off, "not blocked" cannot be
+  // told apart from "bounced and never recorded"; with it on, the remaining gaps change what
+  // else the page can show and not whether its answer means anything.
+  if (!ingestionAvailable(capabilities)) {
+    return {
+      label: "Not recording",
+      tone: "warning",
+      detail:
+        "Blocking, lookups and releases work here. Nothing records a new block yet, so an address absent from the list is unknown rather than reachable.",
+    };
+  }
+  if (capabilities.every((entry) => entry.state === "live")) {
     return {
       label: "Fully recorded",
       tone: "success",
@@ -209,10 +221,10 @@ export function deliveryStatus(
     };
   }
   return {
-    label: "Not recording",
-    tone: "warning",
+    label: "Recording",
+    tone: "success",
     detail:
-      "Blocking, lookups and releases work here. Nothing records a new block yet, so an address absent from the list is unknown rather than reachable.",
+      "Bounces and complaints reach this list on their own, so an address absent from it is one nothing has reported. What is missing is history: there is no per-message record here, and nothing forwards the event to your own endpoints yet.",
   };
 }
 

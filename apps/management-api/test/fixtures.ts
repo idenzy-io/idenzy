@@ -16,7 +16,7 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
     NODE_ENV: "test",
     DATABASE_URL: "postgres://idenzy@localhost:5432/idenzy",
     VALKEY_URL: "redis://localhost:6379",
-    CELL_CODE: "eu-1",
+    CELL_CODE: "eu1",
     KMS_KEY_RING: "test-ring",
     ISSUER_BASE_URL: "https://auth.example.test",
     DASHBOARD_PROJECT_ID: "prj_00000000000040008000000000000002",

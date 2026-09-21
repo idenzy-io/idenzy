@@ -98,7 +98,7 @@ export const projectDomains = classifiedTable(
   "project_domains",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     domain: classified(text("domain").notNull(), { ...config, loggable: true }),
     type: classified(text("type").notNull(), config),
     status: classified(text("status").notNull().default("pending"), { ...config, loggable: true }),
@@ -130,7 +130,7 @@ export const redirectUris = classifiedTable(
   "redirect_uris",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     uri: classified(text("uri").notNull(), config),
     kind: classified(text("kind").notNull(), config),
     createdAt: createdAtColumn(),
@@ -164,7 +164,7 @@ export const projectOrigins = classifiedTable(
   "project_origins",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     origin: classified(text("origin").notNull(), {
       ...config,
       loggable: true,
@@ -197,7 +197,7 @@ export const webauthnRelyingParties = classifiedTable(
   "webauthn_relying_parties",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     rpId: classified(text("rp_id").notNull(), { ...config, loggable: true }),
     rpName: classified(text("rp_name").notNull(), {
       ...config,
@@ -220,7 +220,7 @@ export const apiKeys = classifiedTable(
   "api_keys",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     kind: classified(text("kind").notNull(), { ...config, loggable: true }),
     prefix: classified(text("prefix").notNull(), {
       ...config,
@@ -245,7 +245,7 @@ export const oauthProviders = classifiedTable(
   "oauth_providers",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     provider: classified(text("provider").notNull(), { ...config, loggable: true }),
     clientId: classified(text("client_id"), config),
     clientSecretEncrypted: encrypted(text("client_secret_encrypted"), {
@@ -269,5 +269,68 @@ export const oauthProviders = classifiedTable(
   (t) => [
     uniqueIndex("oauth_providers_project_provider_key").on(t.projectId, t.provider),
     tenantIsolationPolicy("oauth_providers"),
+  ],
+).enableRLS();
+
+/**
+ * The ES256 key pairs a project's access tokens are signed with (PROJECT.md 4.2, ADR-0017).
+ *
+ * **A table rather than a column, because rotation needs two keys alive at once.** §4.2 rotates
+ * every 90 days and publishes both in JWKS during the overlap, so a token minted under the old
+ * `kid` keeps verifying while customers' cached JWKS catch up. One column could hold one key and
+ * every rotation would break every verifier that had not refetched yet.
+ *
+ * The private half is stored **wrapped by the cell's KMS key** and never in the clear. What that
+ * buys, and what it costs, is the whole of ADR-0017: signing is local and therefore free and fast,
+ * KMS is called once per key per process rather than once per token, and fixed cost per tenant
+ * stays at zero because the KMS key belongs to the cell and not to the project. The cost is that
+ * the unwrapped key exists in process memory, which is a weaker posture than a non-exportable HSM
+ * key and is not a weaker control.
+ */
+export const projectSigningKeys = classifiedTable(
+  "project_signing_keys",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), { ...config, loggable: true }),
+    projectId: projectIdColumn(() => projects.id),
+    kid: classified(text("kid").notNull(), {
+      ...config,
+      loggable: true,
+      note: "Published in JWKS and carried in every token header, so it is public by design.",
+    }),
+    algorithm: classified(text("algorithm").notNull().default("ES256"), {
+      ...config,
+      loggable: true,
+    }),
+    publicJwk: classified(jsonb("public_jwk").notNull(), {
+      ...config,
+      note: "Served at the project's JWKS endpoint. Public half only; nothing here is secret.",
+    }),
+    privateKeyWrapped: classified(text("private_key_wrapped").notNull(), {
+      class: DataClass.Secret,
+      purpose: Purpose.Authentication,
+      retention: Retention.ProjectLifetime,
+      erasure: Erasure.NullOut,
+      note: "PKCS#8, wrapped by the cell KMS key with the project id as authenticated data, so a row lifted into another project cannot be opened.",
+    }),
+    isPrimary: classified(boolean("is_primary").notNull().default(false), {
+      ...config,
+      loggable: true,
+      note: "The one new tokens are signed with. Exactly one per project, held by a partial index.",
+    }),
+    createdAt: createdAtColumn(),
+    retiredAt: classified(timestamp("retired_at", { withTimezone: true }), {
+      ...config,
+      loggable: true,
+      note: "Dropped from JWKS once set. Until then an old key still verifies tokens already minted.",
+    }),
+  },
+  (t) => [
+    uniqueIndex("project_signing_keys_kid_key").on(t.projectId, t.kid),
+    // Exactly one primary per project, the same shape `org_members` uses for its single owner. A
+    // rotation that promoted before it demoted would otherwise leave two keys claiming to be the
+    // one tokens are signed with, and which won would depend on row order.
+    uniqueIndex("project_signing_keys_primary_key").on(t.projectId).where(sql`is_primary`),
+    index("project_signing_keys_live_idx").on(t.projectId, t.retiredAt),
+    tenantIsolationPolicy("project_signing_keys"),
   ],
 ).enableRLS();

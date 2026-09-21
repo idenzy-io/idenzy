@@ -22,10 +22,37 @@ export interface DispatchRoute {
   readonly endpoint: TaskRunner;
 }
 
+/**
+ * The part of `EmailEventEndpoint` this server calls.
+ *
+ * It takes the body as **text**, not as parsed JSON, and that is not a detail. What SNS signs
+ * is the envelope's own fields, one of which is a string containing the SES event, so anything
+ * that parsed and re-encoded on the way would be verifying bytes nobody sent.
+ */
+export interface EventRunner {
+  run(body: string): Promise<string>;
+}
+
+/**
+ * What the SES feedback loop needs to be reachable (PROJECT.md 11.2 item 4).
+ *
+ * No verifier beside it, unlike the retry lane, because SNS does not carry a bearer token: it
+ * signs the body, and the check is a signature and a topic ARN that only the endpoint can make.
+ * That is why this route reads its body before it authenticates anything, and why the cap below
+ * is the one thing standing in front of it.
+ */
+export interface EventsRoute {
+  /** Taken from `SES_EVENT_URL`, so the SNS subscription's target and the route cannot disagree. */
+  readonly path: string;
+  readonly endpoint: EventRunner;
+}
+
 export interface InternalServerOptions {
   readonly port: number;
   /** Absent in every environment without a queue, and then this serves health only. */
   readonly dispatch?: DispatchRoute;
+  /** Absent where SES event publishing is not configured, and then there is no route at all. */
+  readonly events?: EventsRoute;
 }
 
 /**
@@ -36,6 +63,15 @@ export interface InternalServerOptions {
  * is capped anyway in case the declaration was a lie.
  */
 const MAX_BODY_BYTES = 4 * 1024;
+
+/**
+ * SNS's own ceiling, and the cap on the one route that has to read before it authenticates.
+ *
+ * An SES event carries the message's headers, so it is kilobytes rather than the two ids a task
+ * body is. 256 KiB is what SNS will not exceed, which makes anything larger not a notification
+ * whatever it claims to be.
+ */
+const MAX_EVENT_BYTES = 256 * 1024;
 
 /**
  * The only HTTP surface this worker has: health, and the retry lane's entry.
@@ -79,6 +115,7 @@ export class InternalServer {
       outcome: "started",
       port,
       path: this.options.dispatch?.path ?? "none",
+      eventsPath: this.options.events?.path ?? "none",
     });
     return port;
   }
@@ -106,12 +143,60 @@ export class InternalServer {
       return;
     }
 
+    const events = this.options.events;
+    if (events !== undefined && request.method === "POST" && path === events.path) {
+      await this.events(events, request, response);
+      return;
+    }
+
     if (dispatch === undefined || request.method !== "POST" || path !== dispatch.path) {
       this.answer(response, 404, { error: "not_found" });
       return;
     }
 
     await this.dispatch(dispatch, request, response);
+  }
+
+  /**
+   * One SNS notification.
+   *
+   * 200 for everything the endpoint handled, including a duplicate and an event whose message
+   * carried no project tag — both are ordinary and neither is worth a redelivery. A refusal is
+   * the endpoint's own status, which for an unverifiable signature is 400 and permanent: the
+   * same bytes will not verify next time either, and SNS retrying them for hours costs us a
+   * request per retry and changes nothing.
+   */
+  private async events(
+    route: EventsRoute,
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    if (Number(request.headers["content-length"] ?? 0) > MAX_EVENT_BYTES) {
+      this.answer(response, 413, { error: "too_large" });
+      return;
+    }
+
+    let outcome: string;
+    try {
+      outcome = await route.endpoint.run(await this.read(request, MAX_EVENT_BYTES));
+    } catch (error: unknown) {
+      if (error instanceof IdenzyError && error.status < 500) {
+        this.refuse(response, error);
+        return;
+      }
+      // 503, so a failure that might not repeat is one SNS brings back. The row is already
+      // written and marked failed, so a redelivery is dropped as a duplicate — which means the
+      // status is for our own metrics rather than for the retry, and it should still be honest.
+      this.logger.error("ses event failed", {
+        component: "internal-server",
+        outcome: "failed",
+        errorCode: error instanceof Error ? error.name : "unknown",
+      });
+      this.answer(response, 503, { error: "unavailable" });
+      return;
+    }
+
+    this.answer(response, 200, { outcome });
   }
 
   private async dispatch(
@@ -132,7 +217,7 @@ export class InternalServer {
     let body: unknown;
     try {
       await route.verifier.verify(token);
-      body = JSON.parse(await this.read(request));
+      body = JSON.parse(await this.read(request, MAX_BODY_BYTES));
     } catch (error: unknown) {
       // A token that does not verify and a body that is not JSON are both permanent: the queue is
       // told 401 or 400 and the task is done, because sending the same bytes again would fail the
@@ -162,14 +247,14 @@ export class InternalServer {
     }
   }
 
-  /** Reads the body, refusing anything that is not the size a task body is. */
-  private read(request: IncomingMessage): Promise<string> {
+  /** Reads the body, refusing anything past the cap the route sets. */
+  private read(request: IncomingMessage, limit: number): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const chunks: Buffer[] = [];
       let size = 0;
       request.on("data", (chunk: Buffer) => {
         size += chunk.byteLength;
-        if (size > MAX_BODY_BYTES) {
+        if (size > limit) {
           request.destroy();
           reject(new RangeError("body too large"));
           return;

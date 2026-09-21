@@ -5,7 +5,7 @@ import { UsagePeriodRepository } from "@idenzy/persistence/repository/usage-peri
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
-import { type Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { type CellTx, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import type {
   ProjectUsage,
   ProjectUsageHours,
@@ -187,7 +187,7 @@ export class UsageService {
 
   /** A month nobody has shut yet: the union of its sketches and Postgres's own sums. */
   private async openPeriod(
-    tx: Transaction,
+    tx: CellTx,
     tenant: TenantContext,
     month: UsageWindow,
   ): Promise<UsagePeriod> {

@@ -39,13 +39,23 @@ export abstract class EmailProvider {
   ) {}
 
   abstract readonly id: string;
-  protected abstract dispatch(message: OutboundEmail): Promise<string>;
+
+  /**
+   * Transport only, and it is handed the project because the provider has to stamp it on
+   * the message.
+   *
+   * A delivery event comes back hours later over a channel that knows nothing about the
+   * request that sent it, so whatever the transport writes into the message is the only
+   * tenant key its bounce will ever carry. The shared sender cannot be resolved back to a
+   * project from the address, and nothing stores a message-id mapping.
+   */
+  protected abstract dispatch(projectId: string, message: OutboundEmail): Promise<string>;
 
   /** Template method: the guarantees are inherited, the transport is not. */
   async send(projectId: string, message: OutboundEmail): Promise<string> {
     await this.suppression.assertSendable(projectId, message.to);
     await this.meter.assertWithinQuota(projectId, "email");
-    const messageId = await this.dispatch(message);
+    const messageId = await this.dispatch(projectId, message);
     await this.meter.record(projectId, "email", { provider: this.id, messageId });
     return messageId;
   }

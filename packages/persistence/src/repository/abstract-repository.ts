@@ -38,8 +38,8 @@ function postgresErrorCode(error: unknown): PostgresError {
  * (a project) or `OrgRepository` (an organisation), and a repository that extended this
  * directly would be one with no tenant at all — so nothing does.
  */
-export abstract class AbstractRepository {
-  protected constructor(protected readonly tx: Transaction) {}
+export abstract class AbstractRepository<TTx extends Transaction = Transaction> {
+  protected constructor(protected readonly tx: TTx) {}
 
   /** Translates constraint violations into the error contract instead of a raw 500. */
   protected async guard<T>(work: () => Promise<T>): Promise<T> {

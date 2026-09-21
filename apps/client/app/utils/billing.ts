@@ -10,12 +10,18 @@
  * never does arithmetic on a float. A dollar figure is produced at the last moment, for
  * display, by one function.
  *
- * The rule this file exists to state is what a balance at zero does, and the answer is
- * that it never stops a sign-in. This is an authentication product: refusing to
- * authenticate somebody because an invoice is unpaid takes a customer's own product down
- * and takes their users with it, and no amount owed is worth that. What does stop is the
+ * The rule this file exists to state is what a balance at zero does. What stops is the
  * traffic that costs us money the moment it leaves, which is the same reasoning the SMS
- * spend cap is built on, pointed the other way.
+ * spend cap is built on, pointed the other way. Authentication is the last thing to stop,
+ * because stopping it takes a customer's own product down and takes their users with it —
+ * people who have no relationship with us and no way to find out what happened.
+ *
+ * It used to say that authentication never stops, flatly, and that promise has been
+ * withdrawn (risks.md 1). It was not one we had decided to keep: an organisation that never
+ * pays costs real money for as long as it likes, and a business with no ability to stop
+ * serving a non-payer has no commercial relationship. Nothing stops authentication today and
+ * nothing can — there is no mechanism — so this copy says what is true now and stops
+ * promising what happens next.
  *
  * The card is never ours to see. The field that takes a number belongs to the payment
  * provider; what this panel holds is a token, a brand and four digits, which is all that
@@ -239,8 +245,18 @@ export function drawOrder(grants: readonly CreditGrant[], now: Date): CreditGran
 }
 
 export interface Wallet {
-  /** Everything spendable, in cents. This is the balance. */
+  /**
+   * The balance, in cents: spendable credit less what is owed. Negative is owed (ADR-0014).
+   *
+   * A balance below nought is not a failure state. It is an organisation that has spent past
+   * its credit and is inside its tolerance, and a screen that floored this at nought would be
+   * telling somebody they owe nothing while a drawdown says otherwise.
+   */
   totalCents: number;
+  /** What the grants hold, before the debt is taken off. */
+  creditCents: number;
+  /** What usage has cost beyond the credit that covered it. Never negative. */
+  debtCents: number;
   purchasedCents: number;
   promotionalCents: number;
   /** What expires inside `EXPIRY_SOON_DAYS`, in cents. */
@@ -249,8 +265,15 @@ export interface Wallet {
   nextExpiryAt: string | null;
 }
 
-/** What the account holds, split the way the reader asks about it. */
-export function walletOf(grants: readonly CreditGrant[], now: Date): Wallet {
+/**
+ * What the account holds, split the way the reader asks about it.
+ *
+ * The debt comes from the server because nothing in a browser can compute it: it is produced
+ * by the drawdown against meters this panel never sees. The grants are summed here so expiry
+ * is read at the moment the screen is, which is the one thing a stale server figure gets wrong
+ * on a tab left open overnight.
+ */
+export function walletOf(grants: readonly CreditGrant[], now: Date, debtCents = 0): Wallet {
   const live = liveGrants(grants, now);
   const sum = (kind: CreditKind) =>
     live
@@ -259,9 +282,13 @@ export function walletOf(grants: readonly CreditGrant[], now: Date): Wallet {
 
   const expiring = live.filter((grant) => isGrantExpiringSoon(grant, now));
   const next = drawOrder(grants, now).find((grant) => grant.expiresAt !== null) ?? null;
+  const creditCents = live.reduce((total, grant) => total + spendableCents(grant, now), 0);
+  const debt = Math.max(0, debtCents);
 
   return {
-    totalCents: live.reduce((total, grant) => total + spendableCents(grant, now), 0),
+    totalCents: creditCents - debt,
+    creditCents,
+    debtCents: debt,
     purchasedCents: sum("purchased"),
     promotionalCents: sum("promotional"),
     expiringSoonCents: expiring.reduce((total, grant) => total + spendableCents(grant, now), 0),
@@ -287,19 +314,19 @@ export interface ZeroRule {
   why: string;
 }
 
-/** Never, whatever is owed. The first list, because it is the one nobody believes. */
+/** What an unpaid balance does not touch. The first list, because it is the one nobody believes. */
 export const ZERO_KEEPS_WORKING: readonly ZeroRule[] = [
   {
     what: "Every sign-in, refresh and session",
-    why: "Refusing to authenticate over an unpaid invoice takes your product down and your users with it. No amount owed is worth that, so it is not a lever we have.",
+    why: "Authentication is the last thing we would ever stop, because stopping it takes your product down and your users with it. Nothing about a balance refuses a sign-in today, and we would tell you well before that could ever change.",
   },
   {
     what: "The dashboard, the API and your keys",
     why: "You can still see what is happening and still turn things off. An account somebody cannot reach is one they cannot fix.",
   },
   {
-    what: "Email on the shared domain",
-    why: "A verification mail nobody can receive is a sign-up nobody can finish, which is the same outage by another route.",
+    what: "Email on a domain you have verified",
+    why: "A verification mail nobody can receive is a sign-up nobody can finish, which is the same outage by another route. Your own domain is not rationed over a balance.",
   },
 ];
 
@@ -308,6 +335,10 @@ export const ZERO_STOPS: readonly ZeroRule[] = [
   {
     what: "SMS and WhatsApp",
     why: "A message costs us money before it reaches anybody, so an unfunded account cannot send one. Accounts that sign in another way are unaffected.",
+  },
+  {
+    what: "Email on the shared sender, whatever the balance",
+    why: "mail.idenzy.io is a sandbox to build against and is capped at a small burst and a couple of hundred a day, for everybody. It is not a payment control: one project mailing a bad list puts every other project's verification mail in spam. Verify a domain of your own before you ship.",
   },
   {
     what: "Anything metered above the free tier accrues",

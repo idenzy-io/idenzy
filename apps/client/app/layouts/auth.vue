@@ -10,6 +10,10 @@
  * Nothing here is an authentication widget we ship. This is our own dashboard signing
  * in to our own product through the headless SDK, which is what ADR-0002 leaves to the
  * application that owns the screen.
+ *
+ * `auth-shell` on the `v-app` root is what theme.css hooks to repaint `color="primary"`
+ * ink instead of the panel's blue on these screens alone, without reaching into a single
+ * page. See the rule in theme.css for why the selector has to reach past this element.
  */
 const router = useRouter();
 const route = useRoute();
@@ -49,36 +53,76 @@ watch(
 </script>
 
 <template>
-  <v-app>
-    <v-app-bar color="transparent" flat>
-      <v-btn
-        v-if="returnable"
-        class="text-xs font-medium"
-        prepend-icon="material-symbols:chevron-left"
-        variant="text"
-        @click="router.back()"
-      >
-        Back
-      </v-btn>
-
-      <v-spacer />
-
-      <v-btn class="text-xs font-medium" :to="alternative.to" variant="text">
-        {{ alternative.label }}
-      </v-btn>
-    </v-app-bar>
-
+  <!-- Two classes and not one. `flow-shell` is the square corner these screens share with
+       onboarding, which is the other place a person has one column and one thing to do;
+       `auth-shell` is what is true of the signed-out screens alone — the ink accent and
+       the control language built on it. See both blocks in theme.css. -->
+  <v-app class="auth-shell flow-shell">
     <!--
-      Centred in what is left below the app bar, not in the viewport. `v-main` already
-      stretches (`flex: 1 0 auto` inside a wrap of `min-height: 100dvh`) and carries the
-      bar's height as its own padding, so centring its contents lands the card in the
-      middle of the space a visitor can actually see. A `100dvh` of our own would measure
-      past the bar and sit everything slightly low.
+      Ripple, back on for these screens alone.
+
+      It is off across the panel (nuxt.config.ts), and for a good reason there: a screen
+      of twenty dense controls shows the animation more often than it shows the thing the
+      animation was meant to confirm. That argument does not survive the move to this
+      shell, where there are seven controls on the busiest page, each is at least 44px,
+      and the two that matter are a black rectangle and a bordered one with no fill of
+      their own to change under a finger.
+
+      A provider is the case that decides it: pressing one hands the tab to somebody
+      else's domain, and between the press and the redirect there is nothing on the
+      screen saying the press landed.
+
+      Through a defaults provider rather than `ripple` on each button, so the next screen
+      added to this layout does not have to remember. It renders no element of its own,
+      which is what lets it sit between `v-app` and the layout components it owns.
     -->
-    <v-main class="flex flex-col justify-center">
-      <div class="mx-auto w-full max-w-4xl px-6 py-16">
-        <slot />
-      </div>
-    </v-main>
+    <v-defaults-provider :defaults="{ global: { ripple: true } }">
+      <v-app-bar color="transparent" flat>
+      <!--
+        The bar's own gutter, because it no longer borrows one. theme.css strips the
+        padding off every `v-toolbar__content` in the panel, where the bar's contents are
+        the page's column and bring their own inset; here the two links sit at the edges
+        of the viewport with nothing between them and the window but whatever padding is
+        inside the button, which is a link's twelve pixels and not a gutter.
+
+        The page's own gutter rather than the column beneath it: these two mark the
+        corners of the screen, and pulled in to the centred column they would read as a
+        heading over the form instead.
+
+        Neither button sets its own type. `variant="text"` is what marks a link on these
+        screens, and theme.css gives it the capitals and the track it shares with the
+        button at the foot of the form.
+      -->
+        <div class="flex w-full items-center px-6">
+          <v-btn
+            v-if="returnable"
+            prepend-icon="material-symbols:chevron-left"
+            variant="text"
+            @click="router.back()"
+          >
+            Back
+          </v-btn>
+
+          <v-spacer />
+
+          <v-btn :to="alternative.to" variant="text">
+            {{ alternative.label }}
+          </v-btn>
+        </div>
+      </v-app-bar>
+
+      <!--
+        Centred in what is left below the app bar, not in the viewport. `v-main` already
+        stretches (`flex: 1 0 auto` inside a wrap of `min-height: 100dvh`) and carries the
+        bar's height as its own padding, so centring its contents lands the card in the
+        middle of the space a visitor can actually see. A `100dvh` of our own would measure
+        past the bar and sit everything slightly low.
+      -->
+      <v-main class="flex flex-col justify-center">
+        <div class="mx-auto w-full max-w-4xl px-6 py-16">
+          <slot />
+        </div>
+      </v-main>
+    </v-defaults-provider>
   </v-app>
 </template>

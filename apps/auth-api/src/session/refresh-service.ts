@@ -17,7 +17,7 @@ import { RefreshTokenRepository } from "@idenzy/persistence/repository/refresh-t
 import { SessionRepository } from "@idenzy/persistence/repository/session-repository";
 import { UserRepository } from "@idenzy/persistence/repository/user-repository";
 import type { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
-import { type Transaction, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { type CellTx, UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { SessionRevokeReason } from "@idenzy/protocol/enums/auth";
 import { Injectable } from "@nestjs/common";
 import { ProjectSettingsReader } from "../config/project-settings-reader.js";
@@ -106,7 +106,7 @@ export class RefreshService {
 
   /** Everything that must be atomic. Returns a decision; never throws for reuse. */
   private async attempt(
-    tx: Transaction,
+    tx: CellTx,
     tenant: TenantContext,
     context: FlowContext,
     tokenHash: string,
@@ -250,7 +250,7 @@ export class RefreshService {
     }
   }
 
-  private repositories(tx: Transaction, tenant: TenantContext): Repositories {
+  private repositories(tx: CellTx, tenant: TenantContext): Repositories {
     return {
       refresh: new RefreshTokenRepository(tx, tenant),
       sessions: new SessionRepository(tx, tenant),

@@ -7,6 +7,7 @@ import { OrgBillingCustomerRepository } from "@idenzy/persistence/repository/org
 import { PaymentMethodRepository } from "@idenzy/persistence/repository/payment-method-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
 import { TopUpRepository } from "@idenzy/persistence/repository/top-up-repository";
+import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import {
@@ -32,10 +33,11 @@ import { Inject, Injectable, Optional } from "@nestjs/common";
  * signature we verified before reading a single field — is a better answer than a
  * cross-tenant read to work it out, and it is the only thing here that is trusted.
  *
- * **Granting the credit and settling the charge are one transaction.** Either the row says
- * paid and the balance moved, or neither did. Two statements would leave a customer charged
- * with nothing added, which is the one failure on this path nobody can be asked to shrug
- * off.
+ * **Granting the credit, settling the charge and clearing the debt are one transaction.**
+ * Either the row says paid and the balance moved, or neither did. Two statements would leave
+ * a customer charged with nothing added, which is the one failure on this path nobody can be
+ * asked to shrug off — and a third would leave debt paid off against credit that was never
+ * granted.
  */
 @Injectable()
 export class PaymentWebhookService {
@@ -179,19 +181,33 @@ export class PaymentWebhookService {
   ): Promise<void> {
     const now = this.clock.now();
     await this.uow.runForOrg(context, async (tx) => {
-      const settled = await new TopUpRepository(tx, context).settle(
-        intentId,
-        state,
-        failureCode,
-        now,
-      );
+      const topUps = new TopUpRepository(tx, context);
+      const settled = await topUps.settle(intentId, state, failureCode, now);
       if (settled === null || state !== TopUpState.Succeeded) return;
+
+      // Debt first, and only what is left becomes spendable (ADR-0014 section 3). Until this
+      // existed `adjustDebt` had one caller in the repository and it only ever added, so debt
+      // was write-only: an organisation $300 down that paid $1,000 got $1,000 to spend and
+      // still owed the $300, which nothing would ever collect. What a customer expects, and
+      // what an accountant expects, is $700.
+      const drawdown = new UsageDrawdownRepository(tx, context);
+      const debt = await drawdown.debtCents();
+      const applied = Math.min(settled.amountCents, debt);
+      if (applied > 0) await drawdown.adjustDebt(-applied);
+      await topUps.recordDebtSettled(settled.id, applied);
+
+      const spendable = settled.amountCents - applied;
+      // A top-up wholly consumed by debt grants nothing, and must not try: `credit_grants`
+      // checks `amount_cents > 0`, so a zero grant would violate the constraint and roll back
+      // a payment the provider has already taken.
+      if (spendable === 0) return;
+
       await new CreditGrantRepository(tx, context).grant({
         kind: CreditKind.Purchased,
-        amountCents: settled.amountCents,
+        amountCents: spendable,
         currency: settled.currency,
         topUpId: settled.id,
-        note: "Top-up",
+        note: applied === 0 ? "Top-up" : "Top-up, after settling outstanding usage",
         expiresAt: null,
       });
     });

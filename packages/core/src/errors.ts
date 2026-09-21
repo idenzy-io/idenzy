@@ -76,6 +76,26 @@ export class SecretKeyNotPermittedError extends ForbiddenError {
   }
 }
 
+/**
+ * The key or host names a project in another region cell (PROJECT.md 4.13.5).
+ *
+ * Routing refuses cross-cell access rather than proxying it, so data cannot transit a
+ * jurisdiction by accident. A proxy would have been the friendlier behaviour and is exactly what
+ * residency cannot allow: the request would be served, and the bytes would have crossed a border
+ * to do it.
+ *
+ * 403 rather than 400, for the same reason `SecretKeyNotPermittedError` is: the credential is
+ * well-formed and identity is not in question, the placement is. Presented to the customer with
+ * the endpoint they should have called, because that is the only actionable half — and never with
+ * the key itself, which belongs in `detail` at display length if anywhere.
+ */
+export class WrongRegionError extends ForbiddenError {
+  override readonly code = ErrorCode.WrongRegion;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "This key belongs to another region.", options);
+  }
+}
+
 /** The request's Origin is not on the project's allowlist (PROJECT.md 4.3). */
 export class OriginNotAllowedError extends ForbiddenError {
   override readonly code = ErrorCode.OriginNotAllowed;
@@ -409,6 +429,30 @@ export class SendingDomainRequiredError extends ForbiddenError {
     super(
       options.message ??
         "This project has no verified sending domain, so it is using the shared development sender. That sender is limited and is not for production traffic — verify a sending domain of your own to send without it.",
+      options,
+    );
+  }
+}
+
+/**
+ * This project's mail is stopped because its bounce or complaint rate is too high.
+ *
+ * A 403 for the same reason as the refusal above, and not a 429 for a sharper version of the
+ * same one: waiting does not fix this. The rate is over a rolling window, so it only comes
+ * down when the mail that is bouncing stops being sent — which means the remedy is the list,
+ * not the clock.
+ *
+ * It applies to a project sending from its own verified domain as well, which surprises
+ * people. The reputation being protected is not only the domain's: every message leaves
+ * through one SES account, AWS reviews bounce and complaint rates per account, and a review
+ * takes mail down for every customer at once — including the ones whose lists are clean.
+ */
+export class SendingPausedError extends ForbiddenError {
+  override readonly code = ErrorCode.SendingPaused;
+  constructor(options: ErrorOptions = {}) {
+    super(
+      options.message ??
+        "Sending is paused for this project because too many of its recent messages bounced or were marked as spam. Clean the addresses you are sending to; sending resumes once the recent rate falls back under the threshold.",
       options,
     );
   }

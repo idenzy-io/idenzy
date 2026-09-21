@@ -2,7 +2,7 @@ import { InternalError } from "@idenzy/core/errors";
 import { eq, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { AbstractRepository } from "./abstract-repository.js";
 
 /**
@@ -16,10 +16,15 @@ import { AbstractRepository } from "./abstract-repository.js";
  * The constraint is `PgTable`, not `PgTableWithColumns`: `.enableRLS()` returns
  * `Omit<PgTableWithColumns<T>, "enableRLS">`, so every table in our schema fails the
  * narrower constraint.
+ *
+ * It takes a `CellTx` and not a `Transaction`, which is the third line and the newest. A tenant
+ * table lives in a region cell; an organisation-bound transaction has no `app.project_id` set, so
+ * handing one here would match nothing — no error, no rows, and a caller that cannot tell the
+ * difference between "empty" and "wrong plane". Now it does not compile.
  */
-export abstract class BaseRepository<TTable extends PgTable> extends AbstractRepository {
+export abstract class BaseRepository<TTable extends PgTable> extends AbstractRepository<CellTx> {
   protected constructor(
-    tx: Transaction,
+    tx: CellTx,
     protected readonly context: TenantContext,
     protected readonly table: TTable,
   ) {

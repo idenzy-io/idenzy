@@ -24,6 +24,23 @@ export interface RegionCellRow {
 export class RegionCellReader {
   constructor(private readonly db: NodePgDatabase) {}
 
+  /**
+   * Every cell, draining ones included.
+   *
+   * Separate from `active()` because the two answer different questions. `active()` answers "what
+   * may a new project be pinned to"; this answers "what stacks exist", which is what a process
+   * identifying its own cell needs — a cell being drained still serves what is already in it.
+   */
+  async all(): Promise<RegionCellRow[]> {
+    const rows = await this.db.select().from(regionCells).orderBy(asc(regionCells.code));
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      jurisdiction: row.jurisdiction,
+      endpoint: row.endpoint,
+    }));
+  }
+
   async active(): Promise<RegionCellRow[]> {
     const rows = await this.db
       .select()
@@ -42,5 +59,26 @@ export class RegionCellReader {
   async byCode(code: string): Promise<RegionCellRow | null> {
     const cells = await this.active();
     return cells.find((cell) => cell.code === code) ?? null;
+  }
+
+  /**
+   * One cell by its id, active or not, or null.
+   *
+   * Deliberately not filtered by `active`, unlike everything above. This answers "which cell is
+   * this existing project in", and a project pinned to a draining cell still has to be able to
+   * say where it lives and to mint a key that names it. Offering a cell and describing one are
+   * different questions, and only the first should be narrowed.
+   */
+  async byId(id: string): Promise<RegionCellRow | null> {
+    const rows = await this.db.select().from(regionCells).where(eq(regionCells.id, id)).limit(1);
+    const row = rows[0];
+    return row === undefined
+      ? null
+      : {
+          id: row.id,
+          code: row.code,
+          jurisdiction: row.jurisdiction,
+          endpoint: row.endpoint,
+        };
   }
 }

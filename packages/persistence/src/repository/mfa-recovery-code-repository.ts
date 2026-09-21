@@ -1,7 +1,7 @@
 import { and, count, eq, isNull } from "drizzle-orm";
 import { mfaRecoveryCodes } from "../schema/mfa.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
-import type { Transaction } from "../tenancy/unit-of-work.js";
+import type { CellTx } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
 
 /**
@@ -11,7 +11,7 @@ import { BaseRepository } from "./base-repository.js";
  * either state: the user has a printout that partly works, and no way to tell which half.
  */
 export class MfaRecoveryCodeRepository extends BaseRepository<typeof mfaRecoveryCodes> {
-  constructor(tx: Transaction, context: TenantContext) {
+  constructor(tx: CellTx, context: TenantContext) {
     super(tx, context, mfaRecoveryCodes);
   }
 

@@ -1,9 +1,13 @@
 import { RateLimitStrategy } from "@idenzy/cache/rate-limit-strategy";
 import { AppConfig } from "@idenzy/config/app-config";
-import { SendingDomainRequiredError } from "@idenzy/core/errors";
+import { SendingDomainRequiredError, SendingPausedError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import type { UsageMeter } from "@idenzy/domain/ports/email-provider";
+import {
+  EmailSendingHoldRepository,
+  type SendingHoldRow,
+} from "@idenzy/persistence/repository/email-sending-hold-repository";
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
@@ -50,11 +54,14 @@ const SHARED_RULES = [
  * retry loop damages the domain exactly as fast as a delinquent one. The wallet gate is a
  * separate control with a separate reason, and both may refuse.
  *
- * **A verified sending domain is not limited here**, because the reputation at stake is
- * then mostly the customer's own. Not entirely — mail still leaves through our SES account,
- * and an account-level bounce rate is an AWS review for everybody — which is why risks.md
- * keeps a bounce-rate breaker on the open list. It needs the SNS receiver that does not
- * exist yet, so it is named rather than pretended.
+ * **A verified sending domain is not limited by the shared rules**, because the reputation
+ * at stake is then mostly the customer's own.
+ *
+ * **It is still subject to the bounce-rate breaker, and so is our own dashboard.** Mail
+ * leaves through one SES account whatever domain it is from, AWS reviews bounce and
+ * complaint rates per account, and a review takes mail down for every customer at once. So
+ * the two carve-outs below are carve-outs from the *sandbox allowance* and from nothing
+ * else — which is why the hold is read first, before either of them.
  */
 @Injectable()
 export class DatabaseUsageMeter implements UsageMeter {
@@ -68,6 +75,26 @@ export class DatabaseUsageMeter implements UsageMeter {
 
   async assertWithinQuota(projectId: string, channel: Channel): Promise<void> {
     if (channel !== Channel.Email) return;
+
+    // Reputation first, and exempt from neither carve-out below. The rate is evaluated by
+    // `EmailReputationBreaker` in `apps/workers` and only read here: a windowed aggregate per
+    // message would put a sum over seven days of rows on the send path, and the figure a
+    // refusal has to be able to quote is the one that caused it rather than whatever it has
+    // moved to since.
+    const hold = await this.currentHold(projectId);
+    if (hold !== null) {
+      throw new SendingPausedError({
+        detail: {
+          projectId,
+          reason: hold.reason,
+          bounceRatePpm: hold.bounceRatePpm,
+          complaintRatePpm: hold.complaintRatePpm,
+          observedSends: hold.observedSends,
+          heldSince: hold.openedAt.toISOString(),
+        },
+      });
+    }
+
     // We run the panel on our own product (PROJECT.md 9.5), so our own dashboard sends real
     // mail to real customers through this path. Until it has a verified sending domain of
     // its own it would be held to a developer's allowance and our sign-ups would stop at
@@ -92,6 +119,11 @@ export class DatabaseUsageMeter implements UsageMeter {
         });
       }
     }
+  }
+
+  private async currentHold(projectId: string): Promise<SendingHoldRow | null> {
+    const tenant = new TenantContext(projectId, "delivery", "system");
+    return await this.uow.run(tenant, (tx) => new EmailSendingHoldRepository(tx, tenant).current());
   }
 
   /**

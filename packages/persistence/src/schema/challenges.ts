@@ -8,10 +8,12 @@ import {
   Erasure,
   Purpose,
   Retention,
+  SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
 import { index, integer, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./identity.js";
 import { config, credential, ephemeralChallenge } from "./presets.js";
+import { projects } from "./projects.js";
 import { createdAtColumn, projectIdColumn, tenantIsolationPolicy } from "./shared.js";
 
 /**
@@ -32,7 +34,7 @@ export const otpChallenges = classifiedTable(
   "otp_challenges",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     channel: classified(text("channel").notNull(), { ...config, loggable: true }),
     targetHash: classified(text("target_hash").notNull(), ephemeralChallenge),
     targetEncrypted: encrypted(text("target_encrypted").notNull(), {
@@ -74,6 +76,13 @@ export const otpChallenges = classifiedTable(
     index("otp_challenges_expiry_idx").on(t.expiresAt),
     tenantIsolationPolicy("otp_challenges"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: null,
+      note: "Holds a hash of the address rather than the address, so a subject is reached by hashing their identifier the same way rather than by a lookup. Short-lived besides: the retention sweep clears these well inside any statutory deadline.",
+    },
+  },
 ).enableRLS();
 
 /**
@@ -94,7 +103,7 @@ export const webauthnChallenges = classifiedTable(
   "webauthn_challenges",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     ceremony: classified(text("ceremony").notNull(), { ...config, loggable: true }),
     challengeHash: classified(text("challenge_hash").notNull(), {
       ...credential,
@@ -145,7 +154,7 @@ export const magicLinkTokens = classifiedTable(
   "magic_link_tokens",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     tokenHash: classified(text("token_hash").notNull(), {
       ...credential,
       retention: Retention.Days30,
@@ -183,6 +192,12 @@ export const magicLinkTokens = classifiedTable(
     uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash),
     tenantIsolationPolicy("magic_link_tokens"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();
 
 /**
@@ -202,7 +217,7 @@ export const oauthFlows = classifiedTable(
   "oauth_flows",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     provider: classified(text("provider").notNull(), { ...config, loggable: true }),
     codeVerifierEncrypted: encrypted(text("code_verifier_encrypted").notNull(), {
       ...credential,
@@ -263,7 +278,7 @@ export const verificationTokens = classifiedTable(
   "verification_tokens",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -313,7 +328,7 @@ export const emailChangeRequests = classifiedTable(
   "email_change_requests",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()
@@ -369,6 +384,12 @@ export const emailChangeRequests = classifiedTable(
     index("email_change_requests_user_idx").on(t.projectId, t.userId),
     tenantIsolationPolicy("email_change_requests"),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 ).enableRLS();
 
 /**
@@ -387,7 +408,7 @@ export const authCodes = classifiedTable(
   "auth_codes",
   {
     id: classified(uuid("id").primaryKey().defaultRandom(), config),
-    projectId: projectIdColumn(),
+    projectId: projectIdColumn(() => projects.id),
     userId: classified(
       uuid("user_id")
         .notNull()

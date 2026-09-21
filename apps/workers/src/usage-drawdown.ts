@@ -177,16 +177,18 @@ export class UsageDrawdown {
   }
 
   /**
-   * Tells each of an organisation's cells whether it may still spend (ADR-0016).
+   * Projects the organisation's spend decision onto each of its projects (ADR-0016).
    *
-   * The decision is made here, in the control plane, because this is where the ledger is. It is
-   * read in the cell, from one row in the cell's own database, because a send path that reached
-   * across the plane boundary would hand every cell control-plane credentials and turn one
-   * control-plane outage into an outage of one-time codes everywhere (PROJECT.md 4.13.5).
+   * The decision is made here because this is where the ledger is: debt, credit and the
+   * tolerance window are all org-keyed, and a send path that recomputed them would join across
+   * three billing tables before every one-time code. The projection is one row per project so
+   * that path reads one row under the tenant it already holds.
    *
-   * Written per project rather than per organisation because a cell holds projects, not
-   * organisations — and after the planes separate, two projects of one organisation may sit in
-   * different cells and different jurisdictions.
+   * That makes this an optimisation and not an isolation boundary. It used to be argued as one —
+   * a project sat in a different cell to the ledger, and reaching across the plane boundary would
+   * have handed every cell control-plane credentials — and there are no cells. What survives
+   * untouched is the fail-open half: an absent or stale row means spendable, because a billing
+   * job that stopped must not be able to stop authentication.
    */
   private async publishSpendState(orgId: string, now: Date): Promise<void> {
     const context = new OrgContext(orgId, "usage-drawdown", "system");

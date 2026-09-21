@@ -134,7 +134,7 @@ Notes:
 - `autoTopUpMethodId`: Which card it charges. Null falls back to the default, and the panel says so.
 - `autoTopUpThresholdCents`: Charge when the spendable balance falls below this.
 - `currency`: Set at the provider and not from here. One currency per account.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `spendAlertSentForMonth`: The month already alerted on, so a threshold crossed once is not mailed hourly.
 - `spendAlertThresholdCents`: An alert and never a cap. Authentication does not stop (5.1).
 
@@ -175,7 +175,7 @@ Notes:
 - `expiresAt`: Null says it does not expire, which is the truth about purchased credit.
 - `kind`: CreditKind. Purchased credit does not expire; promotional credit does.
 - `note`: Why it exists, in the words the wallet screen shows: a top-up, a trial, a credit.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `remainingCents`: What is left. Drawn down by the metering job, never below zero or above amount.
 - `topUpId`: The purchase that created it. Null on a grant nobody paid for.
 
@@ -370,7 +370,7 @@ Notes:
 Notes:
 
 - `item`: BillingLineItem, one name per meter in the price list (5.1).
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `projectId`: Which application spent it. No FK: the row is org-keyed and the project is not.
 - `quantity`: Users, emails, segments or domains, in the unit the meter counts.
 - `totalCents`: Rounded once, here. The invoice total is the sum of these and never a re-multiplication.
@@ -400,7 +400,7 @@ Notes:
 Notes:
 
 - `number`: The human number. Unique per organisation and never reused, voids included.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `pdfUri`: At the provider. Null while one is still being produced, which the panel shows.
 - `totalCents`: The sum of each project's own rounded total, so this figure and the usage screen's agree.
 
@@ -554,7 +554,7 @@ Free text somebody on the customer's team wrote. Attributed to the organisation 
 Notes:
 
 - `heardFrom`: Free text: how they found us. Optional.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `submittedBy`: The org_members row that answered. Who said it is part of what makes it useful.
 - `useCase`: Free text: what they are building. Optional, and skipping it is a normal answer.
 
@@ -595,7 +595,7 @@ Notes:
 - `email`: The invitee's address. Shown back on the members screen, so not hashed.
 - `expiresAt`: A week. Long enough for somebody on holiday, short enough that a link in an unread mailbox is not a way in a year later.
 - `invitedBy`: The org_members row that sent it. Kept when they leave, so the trail survives them.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `role`: MemberRole, never 'owner': ownership moves by transfer (ASSIGNABLE_MEMBER_ROLES).
 - `tokenHash`: SHA-256 of the link's token. The token itself is shown once, in the email.
 
@@ -615,7 +615,7 @@ Notes:
 
 - `invitedBy`: The member who invited them. Null on the founder, who was invited by nobody.
 - `lastActiveAt`: What makes a dormant seat visible on the members screen.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `role`: MemberRole. Exactly one 'owner' per organisation, held by a partial unique index.
 - `userId`: The member's user id in Idenzy's own project. No FK: different scope, not a different store.
 
@@ -630,7 +630,7 @@ Notes:
 
 Notes:
 
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `requireMfa`: Our dashboard only. A customer's own users are governed by their project's rules.
 - `updatedBy`: The member who last changed it, for the audit trail as much as for the reader.
 
@@ -716,7 +716,7 @@ Notes:
 
 - `addedBy`: The org_members row that added it, for the audit trail as much as for the reader.
 - `last4`: The only four digits anybody here ever sees. Not a credential, and not enough to be.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `provider`: PaymentProvider. A column rather than an assumption that there is only ever one.
 - `providerMethodId`: The provider's token for the card. Not the card, and not reversible to one.
 
@@ -1029,7 +1029,7 @@ Notes:
 Notes:
 
 - `failureCode`: The provider's decline reason, which is the only thing that tells a customer what to fix.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `paymentMethodId`: Nulled when the card is removed. The brand and last four below outlive it.
 - `providerIntentId`: Unique, which is what makes an at-least-once payment webhook safe to replay.
 - `requestedBy`: Null on an automatic top-up, which nobody asked for personally.
@@ -1052,7 +1052,7 @@ Notes:
 
 - `billedCents`: What has been charged for this month so far, in cents.
 - `billedMau`: The count the last charge was priced from. Never decreases.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `period`: First day of the calendar month this state covers.
 
 ## `usage_charges`
@@ -1073,7 +1073,7 @@ Notes:
 
 - `fromCreditCents`: How much of it came out of grants.
 - `item`: BillingLineItem. Which meter this charge was raised against.
-- `orgId`: Control-plane discriminator. Enforced by RLS as well as by the repository layer.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `quantity`: The count the charge was priced from, at the moment it was raised.
 - `toDebtCents`: How much of it the credit could not cover. The two sum to charged_cents.
 

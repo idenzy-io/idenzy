@@ -23,7 +23,7 @@ export type UsagePeriodFigures = Omit<UsagePeriodRow, "closedAt">;
  *
  * The table exists so the daily sketches do not have to outlive the month they bill, and this
  * repository is deliberately thin because the row is a record rather than state. There is no
- * update and no delete here, and there could not be: migration 0046 withholds both verbs from
+ * update and no delete here, and there could not be: `0001` withholds both verbs from
  * the app role, so a method that tried would fail at the database rather than at review.
  */
 export class UsagePeriodRepository extends BaseRepository<typeof usagePeriods> {

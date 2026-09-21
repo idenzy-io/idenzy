@@ -26,10 +26,11 @@ export interface ResolvedProject {
 /**
  * Resolves which project a request belongs to, before any tenant scope exists.
  *
- * This has to bypass RLS by definition: the policy is keyed on app.project_id, and this
- * is the code that works out what app.project_id should be. It calls the SECURITY
- * DEFINER functions from migration 0002, which are scoped to exactly this lookup and
- * return routing and configuration only, never personal data.
+ * Nothing here can be tenant-scoped, by definition: this is the code that works out which
+ * tenant a request has. It calls the SECURITY DEFINER functions `resolve_project_by_host` and
+ * `resolve_project_by_key_hash`, which are narrowed to exactly this lookup and return routing
+ * and configuration only, never personal data — which is what keeps the one unscoped read on
+ * the request path from being a way to read anything else.
  */
 @Injectable()
 export class ProjectResolver {

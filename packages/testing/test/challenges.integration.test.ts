@@ -67,7 +67,6 @@ beforeAll(async () => {
      VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
   for (const projectId of [PROJECT_A, PROJECT_B]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,

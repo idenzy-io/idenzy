@@ -75,8 +75,8 @@ function toRow(row: typeof webhooks.$inferSelect): WebhookRow {
  * a column is opaque, and the service that needs the plaintext is the one holding the
  * `FieldEncryptor`. It means nothing in the data layer can accidentally log a signing key.
  *
- * The fan-out relay reads across every project, which RLS forbids by construction. It does not
- * get a SECURITY DEFINER function for it: an outbox row already names its project, so the relay
+ * The fan-out relay reads across every project, and deliberately does not get a SECURITY
+ * DEFINER function for it: an outbox row already names its project, so the relay
  * binds one tenant per project in the batch and asks `enabledFor` inside each. That keeps the
  * cross-tenant surface at zero and costs a transaction per project per batch, which is the
  * cheaper half of a trade against a function that could read every customer's endpoints.

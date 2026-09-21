@@ -31,10 +31,10 @@ export interface ProvisionedOrganisation {
  * exists without one. Every other repository operates inside a tenant; this one *creates*
  * the tenant, so there is nothing to be scoped to until its first statement has run.
  *
- * It is only usable inside `UnitOfWork.provision`, which binds `app.org_id` to an id it
- * generated itself. That is not a convention: outside that transaction every insert here
- * fails its WITH CHECK, so a caller who tried to use this repository anywhere else gets a
- * refusal rather than a row in somebody else's organisation.
+ * It is only usable inside `UnitOfWork.provision`, which generates the organisation id itself
+ * and hands it down. That used to be enforced underneath, by a WITH CHECK that refused any
+ * insert outside that transaction; it is now enforced by the shape of the call alone, since
+ * `provision` is the only thing that constructs this and no caller can name the id.
  *
  * All three rows in one transaction because there is no useful state between them. An
  * organisation with no owner is one nobody can administer, and one with no project is a

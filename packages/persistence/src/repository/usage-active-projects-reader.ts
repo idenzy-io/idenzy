@@ -4,10 +4,14 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 /**
  * Which projects had any usage to roll up, across all of them (PROJECT.md 5.1).
  *
- * Not a `BaseRepository`, for the reason every cross-tenant reader here is not one: a worker sets
- * no `app.project_id`, so a direct read of `usage_daily` comes back empty under FORCE RLS — no
- * error, no work, and an hourly series that is permanently blank. The SECURITY DEFINER function
- * from migration 0050 answers a project id and nothing else.
+ * Not a `BaseRepository`, for the reason every cross-tenant reader here is not one: a worker has
+ * no tenant to be scoped to, and a `BaseRepository` cannot be constructed without one. The
+ * SECURITY DEFINER function `usage_projects_with_activity` answers a project id and nothing else.
+ *
+ * A direct read of `usage_daily` used to come back empty under the row policies — no error, no
+ * work, an hourly series permanently blank. It now comes back with every project's rows, which
+ * is the louder failure only if something is looking. The function is what keeps the question
+ * narrow enough that nothing has to.
  */
 export class UsageActiveProjectsReader {
   constructor(private readonly db: NodePgDatabase) {}

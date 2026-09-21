@@ -22,12 +22,11 @@ export interface UsageCutoffs {
  * Deletes usage past its tier (PROJECT.md 4.13).
  *
  * Not a `BaseRepository`, and it could not be one twice over. A sweeper serves every project and
- * sets no `app.project_id`, so under FORCE RLS a tenant-scoped delete matches nothing — no error,
- * no rows, and three tables that grow forever while a job reports success. And `usage_periods`
- * holds no DELETE grant for the app role at all, deliberately (migration 0046): retention is a
- * system action, and an application path that could remove a closed billing period is exactly what
- * that withholding exists to prevent. The SECURITY DEFINER functions from 0049 keep both
- * properties at once — the app still cannot, and this still can.
+ * has no tenant to be scoped to. And `usage_periods` holds no DELETE grant for the app role at
+ * all, deliberately (`0001`): retention is a system action, and an application path that could
+ * remove a closed billing period is exactly what that withholding exists to prevent. The
+ * `usage_prune_*` SECURITY DEFINER functions keep both properties at once — the app still cannot,
+ * and this still can.
  *
  * Bounded per call and reporting what it removed, so the first pass over a table that has been
  * accumulating is a series of passes rather than one statement holding locks for minutes.

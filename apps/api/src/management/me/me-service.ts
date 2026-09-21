@@ -44,8 +44,8 @@ export class MeService {
         joinedAt: membership.joinedAt.toISOString(),
       });
 
-      // Its own transaction per organisation, because `app.org_id` is transaction-local and
-      // each one's rows are checked against it. Sequential rather than parallel: a pool has
+      // Its own transaction per organisation, because an `OrgContext` carries exactly one and
+      // the repositories scope to it. Sequential rather than parallel: a pool has
       // a finite number of connections and a person with six organisations must not take
       // six of them to draw a sidebar.
       const context = new OrgContext(

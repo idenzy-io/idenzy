@@ -21,13 +21,12 @@ export interface RetentionDefaults {
 /**
  * Applies each project's retention, and the defaults where it stored none (PROJECT.md 4.13.6).
  *
- * Not a `BaseRepository`, and it could not be one. A sweeper serves every project and sets no
- * `app.project_id`, so under FORCE RLS every statement here would match nothing — no error, no
- * rows, and a job that reports success over tables that grow forever. That is the failure mode
- * worth naming, because it is silent: the only symptom is a data map that says 90 days beside a
- * table holding two years.
+ * Not a `BaseRepository`, and it could not be one. A sweeper serves every project and has no
+ * tenant to be scoped to, so `tenantScope()` has nothing to filter on. The failure mode worth
+ * naming is the silent one: a job that reports success while the tables grow forever, whose only
+ * symptom is a data map saying 90 days beside a table holding two years.
  *
- * The SECURITY DEFINER functions from 0052 are what make it possible without handing the app
+ * The `retention_sweep_*` SECURITY DEFINER functions are what make it possible without handing the app
  * role a way to delete across tenants. They also resolve the age per project inside the
  * statement, which is the part that matters for correctness rather than for speed: a project
  * that has never opened the settings screen has no policy row, and a sweeper that only read

@@ -78,8 +78,9 @@ function reconciler(): RevocationReconciler {
 
 describe("reading revocation events across tenants", () => {
   /**
-   * The whole reason the function exists. A relay serves every project, and RLS is keyed on
-   * a project id it does not have, so under tenant scope this read correctly returns nothing.
+   * The whole reason the function exists. A relay serves every project and has none of its own,
+   * so a tenant-scoped read is not a thing it can make — and the function's two topics are what
+   * keep the alternative from being a read of the table entire.
    */
   it("sees every project, which a tenant-scoped read never could", async () => {
     await enqueue(ONE, "session.revoked", { sessionIds: [SESSION], scope: "current" });

@@ -43,8 +43,8 @@ const KIND_PREFIXES: Record<ApiKeyKind, string> = {
  * A "show it again" feature would not be a missing convenience; it would be a different
  * and worse design.
  *
- * Every call goes through `ProjectScope`, which is what binds `app.project_id` and what
- * refuses to bind it for a project the caller's organisation does not own. Reaching for a
+ * Every call goes through `ProjectScope`, which is what resolves the tenant and what refuses
+ * to resolve one for a project the caller's organisation does not own. Reaching for a
  * `TenantContext` built from the path parameter directly is the hole that would make every
  * customer's keys readable by anybody with an account.
  */

@@ -23,7 +23,8 @@ interface Row extends Record<string, unknown> {
  * Not a `BaseRepository`, and it cannot be one: those are tenant-scoped by construction and
  * this reads every tenant. It goes through `revocation_events_since`, a SECURITY DEFINER
  * function scoped to two topics, for the same reason project resolution does: a relay serves
- * every project, and RLS is keyed on a project id the relay does not have.
+ * every project and has none of its own to be scoped to. The function's two topics are what
+ * bound it — with no policy underneath, a plain select here would read the table entire.
  *
  * It reads a window rather than a cursor. Entries in the set expire on their own, so
  * anything older than the retention window is not worth replaying, and a window means there

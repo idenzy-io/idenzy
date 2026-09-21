@@ -51,7 +51,6 @@ async function seedSession(
   minutesAgo: number,
   deviceName: string,
 ): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   await harness.owner.query(
     `INSERT INTO sessions
        (id, project_id, user_id, device_name, idle_expires_at, absolute_expires_at,
@@ -76,7 +75,6 @@ beforeAll(async () => {
     [ORG],
   );
   for (const project of [PROJECT, OTHER_PROJECT]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,

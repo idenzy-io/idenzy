@@ -5,12 +5,11 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
  * Keeps `audit_events` partitioned far enough ahead to accept the next insert (4.13.3).
  *
  * Not a `BaseRepository`, for the same reason `RetentionPruner` is not one: this serves the
- * cluster rather than a tenant, sets no `app.project_id`, and creates DDL rather than reading
- * rows. It is also the one maintenance job whose failure is not merely deferred work — a month
+ * cluster rather than a tenant, is bound to none, and creates DDL rather than reading rows. It is also the one maintenance job whose failure is not merely deferred work — a month
  * with no partition rejects every audit insert, and an authentication request that cannot write
  * its audit row is the exact event the trail exists to hold.
  *
- * The SQL side is `ensure_audit_partitions_ahead` from 0059, a SECURITY DEFINER wrapper: the app
+ * The SQL side is `ensure_audit_partitions_ahead`, a SECURITY DEFINER wrapper: the app
  * role owns nothing and holds only USAGE on the schema, so it cannot create a partition itself,
  * and granting it CREATE to make this work would hand every connection the right to make tables.
  */

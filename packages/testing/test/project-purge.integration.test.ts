@@ -23,7 +23,6 @@ let orgId = "";
 let otherOrgId = "";
 
 async function seedProject(projectId: string, owner: string): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   await harness.owner.query(
     `INSERT INTO projects (id, org_id, name, kms_key_name)
      VALUES ($1, $2, 'p', 'k')`,
@@ -37,7 +36,6 @@ async function seedProject(projectId: string, owner: string): Promise<void> {
  * credential, one configuration row, and an audit entry — the only one the cascade cannot reach.
  */
 async function seedRows(projectId: string): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   const { rows } = await harness.owner.query<{ id: string }>(
     `INSERT INTO users (project_id, email) VALUES ($1, 'someone@example.test') RETURNING id`,
     [projectId],
@@ -121,7 +119,8 @@ describe("purging a project", () => {
   it("refuses a project belonging to another organisation, without saying it exists", async () => {
     const { rows } = await harness.db.execute<{ removed: number | null }>(
       // Deliberately the wrong pairing: a real project, a real organisation, not each other's.
-      // SECURITY DEFINER runs outside RLS, so this is the check that has to hold.
+      // SECURITY DEFINER runs as the owner and is bounded by nothing else, so this pairing
+      // check inside the function is the whole of what stops it.
       `SELECT purge_project('${orgId}'::uuid, '${OTHER_ORG_PROJECT}'::uuid, 'test') AS removed`,
     );
     expect(rows[0]?.removed).toBeNull();

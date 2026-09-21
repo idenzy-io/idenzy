@@ -51,7 +51,8 @@ export function actorMemberId(request: FastifyRequest): string {
 }
 
 /**
- * The organisation scope for this request, for `UnitOfWork.runForOrg` (ADR-0011).
+ * The organisation scope for this request, for the repositories that take an `OrgContext`
+ * (ADR-0011).
  *
  * Throws rather than returning null on a request with no membership resolved. A caller
  * reaching for an org context on a route that never checked one is a routing mistake, and

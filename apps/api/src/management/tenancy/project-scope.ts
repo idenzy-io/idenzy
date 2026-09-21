@@ -11,16 +11,16 @@ import { Injectable } from "@nestjs/common";
  * Turns a project id from a URL into a tenant scope, and refuses to do it for a project
  * the caller's organisation does not own.
  *
- * This exists because the two planes meet here. The guard proved membership of an
- * organisation and bound `app.org_id`; `api_keys`, `users`, `sessions` and every other
- * tenant table is keyed on `app.project_id`, so something has to bind the second key — and
- * binding it from a path parameter without checking would be the whole hole. A caller
- * could name any project id and read its keys.
+ * This exists because the two scopes meet here. The guard proved membership of an
+ * organisation; `api_keys`, `users`, `sessions` and every other tenant table is keyed on a
+ * project, so something has to cross from one to the other — and crossing from a path
+ * parameter without checking would be the whole hole. A caller could name any project id and
+ * read its keys.
  *
- * The check is a read through the org plane's own policy, which is what makes it sound
- * rather than a comparison somebody could forget: `OrgProjectRepository.findById` runs
- * inside `runForOrg`, so a project belonging to another organisation is not "found and
- * rejected", it is simply not there. The database decides, not this file.
+ * The check is a read scoped to the caller's organisation, so a project belonging to another
+ * is not "found and rejected", it is simply not selected: `OrgProjectRepository.findById`
+ * puts `org_id` in the predicate. That predicate used to be a backstop behind a row policy
+ * and is now the whole check, which is the reason to leave it where it is.
  *
  * `projects.org_id` is never updated, so the answer cannot change between the check and
  * the use.

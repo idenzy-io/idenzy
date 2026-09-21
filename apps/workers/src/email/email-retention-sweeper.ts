@@ -28,7 +28,7 @@ const DEFAULT_EVENT_DAYS = 30;
  * published one was not — and a data map is what a customer is shown (PROJECT.md 4.13.6). A new
  * table with a declared term and no sweeper repeats that exactly.
  *
- * Both deletions run through the SECURITY DEFINER functions in migration 0057, both because a
+ * Both deletions run through the `email_prune_*` SECURITY DEFINER functions, both because a
  * sweeper has no tenant to be scoped to and because neither table grants DELETE to the app role.
  */
 export class EmailRetentionSweeper {

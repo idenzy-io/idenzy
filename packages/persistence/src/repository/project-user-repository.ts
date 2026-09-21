@@ -168,9 +168,9 @@ export class ProjectUserRepository extends BaseRepository<typeof users> {
    *
    * `tenantScope()` names `users.project_id`, which is right for every query above and
    * wrong for all four below — it produced `"users"."project_id" = $1` against `identities`
-   * and Postgres refused the statement. The row policies would have scoped these reads
-   * anyway; this is the second line of defence the RLS negative tests exist to keep honest,
-   * so it has to name the table it is actually filtering.
+   * and Postgres refused the statement. Row policies used to scope these reads whatever this
+   * said; with none left it is the only scope there is, so it has to name the table it is
+   * actually filtering.
    */
   private scopeOf(column: PgColumn): SQL {
     return eq(column, this.context.projectId);

@@ -57,7 +57,6 @@ async function seedUser(
   id: string,
   fields: { email?: string | null; phone?: string | null; password?: boolean } = {},
 ): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   await harness.owner.query(
     `INSERT INTO users (id, project_id, email, phone, password_hash, email_verified)
      VALUES ($1, $2, $3, $4, $5, true)`,
@@ -72,7 +71,6 @@ async function seedUser(
 }
 
 async function seedSession(projectId: string, userId: string, id: string): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   await harness.owner.query(
     `INSERT INTO sessions
        (id, project_id, user_id, idle_expires_at, absolute_expires_at, last_active_at, amr)
@@ -92,7 +90,6 @@ beforeAll(async () => {
     [ORG],
   );
   for (const project of [PROJECT, OTHER_PROJECT]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,
@@ -193,8 +190,8 @@ describe("the users a screen reads", () => {
     const ours = await service.list(context, publicProjectId, { limit: 100 });
     expect(ours.users.map((user) => user.email)).not.toContain("intruder@example.test");
 
-    // Naming the id directly, under our own project's scope, is the attack the row policy
-    // is there for: it must be not-found rather than found-and-refused.
+    // Naming the id directly, under our own project's scope, is the attack the tenant
+    // predicate is there for: it must be not-found rather than found-and-refused.
     await expect(service.find(context, publicProjectId, userPublicId(INTRUDER))).rejects.toSatisfy(
       isIdenzyError,
     );

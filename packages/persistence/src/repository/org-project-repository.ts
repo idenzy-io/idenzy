@@ -53,10 +53,10 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
   /**
    * One project of this organisation's, or null.
    *
-   * The organisation is in the predicate and not only in the id. It used to be the id
-   * alone, with the row policy narrowing the read and a comparison here as a backstop —
-   * which was true while the policy existed and is the single query in this package that
-   * depended on it. Scoped in SQL, a project of somebody else's does not come back to be
+   * The organisation is in the predicate and not only in the id. It used to be the id alone,
+   * with a row policy narrowing the read and a comparison here as a backstop — this was the
+   * single query in this package that depended on the policy, and the one the audit behind that
+   * removal had to fix. Scoped in SQL, a project of somebody else's does not come back to be
    * rejected; it is not selected. "Not found" and "not yours" stay the same answer, which
    * is what keeps the id space from telling a caller what our customers have built.
    */
@@ -70,13 +70,6 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
     return row === undefined ? null : toRow(row);
   }
 
-  /**
-   * Adds a project to the organisation already bound.
-   *
-   * The organisation is not a parameter, and that is the guard: `org_id` comes from the
-   * context the request was authorised against, so there is no field a caller could set
-   * to put a project somewhere else. The policy's WITH CHECK refuses it besides.
-   */
   /** The one field a project has that a customer may change. */
   async rename(id: string, name: string): Promise<OrgProjectRow | null> {
     const rows = await this.tx
@@ -119,6 +112,14 @@ export class OrgProjectRepository extends OrgRepository<typeof projects> {
     return this.context.actorId ?? this.context.actorType;
   }
 
+  /**
+   * Adds a project to the organisation already bound.
+   *
+   * The organisation is not a parameter, and that is the guard: `org_id` comes from the
+   * context the request was authorised against, so there is no field a caller could set to
+   * put a project somewhere else. A WITH CHECK used to refuse one besides; with the policies
+   * gone, the absent parameter is the whole of it.
+   */
   async create(project: NewOrgProject): Promise<OrgProjectRow> {
     const id = randomUUID();
     const rows = await this.guard(() =>

@@ -133,7 +133,6 @@ async function signInThrough(profile: Partial<ProviderProfile> = {}): Promise<UR
 }
 
 async function configureProvider(settings: Record<string, unknown> = {}): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(`DELETE FROM oauth_providers WHERE project_id = $1`, [PROJECT]);
   await harness.owner.query(
     `INSERT INTO oauth_providers
@@ -186,7 +185,6 @@ beforeAll(async () => {
     `INSERT INTO orgs (id, name)
      VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
     `INSERT INTO projects (id, org_id, name, kms_key_name)
      VALUES ($1, $2, 'Acme', 'k')`,
@@ -247,7 +245,6 @@ describe("starting a flow", () => {
   });
 
   it("refuses a provider the project has not enabled", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(`UPDATE oauth_providers SET enabled = false WHERE project_id = $1`, [
       PROJECT,
     ]);
@@ -503,7 +500,6 @@ async function currentUserId(email: string): Promise<string> {
 }
 
 async function storedTokensFor(providerUserId: string): Promise<string | null> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   const { rows } = await harness.owner.query<{ encrypted_tokens: string | null }>(
     `SELECT encrypted_tokens FROM identities WHERE provider_user_id = $1`,
     [providerUserId],

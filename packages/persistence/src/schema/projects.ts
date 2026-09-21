@@ -49,17 +49,12 @@ export const projects = classifiedTable(
   },
   (t) => [
     index("projects_org_idx").on(t.orgId),
-    // Two permissive policies, which OR together, because a project is reached from two
-    // planes and both readings are legitimate.
-    //
-    // auth-api arrives with one project bound and must see exactly that row. The panel
-    // arrives with an organisation bound and must see the projects it owns — a list the
-    // first policy cannot express, since it is keyed on a project id the caller does not
-    // have yet. The second is also what lets an organisation create another project:
-    // WITH CHECK ties the new row's `org_id` to the bound organisation, so a project can
-    // only ever be added to the one the caller was authorised for (ADR-0011).
-    // The tenant key of this table is its own id, not a project_id column, so the
-    // shared policy does not fit. Without this, a tenant could read every project row.
+    // This table is reached two ways and both are legitimate: the auth surface has one
+    // project and must see that row, the dashboard has an organisation and must see the
+    // projects it owns. Two row policies used to express that, OR'd together. With them gone
+    // the distinction lives in the repositories — `ProjectRepository` filters on the row's own
+    // `id`, `OrgProjectRepository` on its `org_id` — and the tenant key of this table being
+    // its own id rather than a `project_id` column is why neither can use `tenantScope()`.
   ],
 );
 

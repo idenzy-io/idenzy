@@ -16,8 +16,8 @@ export interface OrgDetail extends OrgSummary {
 /**
  * What the panel reads about an organisation and the caller's place in it.
  *
- * Every read past the first goes through `runForOrg`, so `app.org_id` is bound for the
- * life of the transaction and the repositories carry the predicate themselves (ADR-0011).
+ * Every read past the first runs under an `OrgContext`, so the repositories carry the
+ * predicate themselves (ADR-0011).
  * The list is the exception and has to be: it answers "which organisations are mine",
  * which is the question whose answer decides what to bind.
  */

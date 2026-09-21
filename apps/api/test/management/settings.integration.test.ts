@@ -45,7 +45,6 @@ beforeAll(async () => {
      VALUES ($1, 'Acme')`,
     [ORG],
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
     `INSERT INTO projects (id, org_id, name, kms_key_name)
      VALUES ($1, $2, 'p', 'k')`,
@@ -98,7 +97,6 @@ describe("a project's settings", () => {
    * caller happened to read.
    */
   it("leaves sections it was not given alone", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE projects SET settings = settings || '{"somethingElse": {"kept": true}}'::jsonb
        WHERE id = $1`,
@@ -132,7 +130,6 @@ describe("a project's settings", () => {
    * outcome here, so an unreadable document resolves to defaults rather than throwing.
    */
   it("reads a document of the wrong shape as the defaults", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE projects SET settings = '{"password": 42}'::jsonb WHERE id = $1`,
       [PROJECT],

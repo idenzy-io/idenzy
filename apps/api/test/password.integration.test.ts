@@ -126,7 +126,6 @@ beforeAll(async () => {
     `INSERT INTO orgs (id, name)
      VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
     `INSERT INTO projects (id, org_id, name, kms_key_name)
      VALUES ($1, $2, 'p', 'k')`,
@@ -294,7 +293,6 @@ describe("signing in", () => {
         password: "banned-user-password",
       }),
     );
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE users SET banned_until = now() + interval '1 day' WHERE email = 'banned@a.test'`,
     );
@@ -350,7 +348,6 @@ describe("signing in", () => {
  */
 describe("the project's password policy", () => {
   async function setPolicy(policy: Readonly<Record<string, unknown>>): Promise<void> {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE projects SET settings = jsonb_build_object('password', $2::jsonb) WHERE id = $1`,
       [PROJECT, JSON.stringify(policy)],
@@ -414,7 +411,6 @@ describe("the project's password policy", () => {
 
   /** A stored document we cannot read must not take sign-in down. Defaults are the answer. */
   it("falls back to the defaults when the stored settings do not parse", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE projects SET settings = '{"password": "not an object"}'::jsonb WHERE id = $1`,
       [PROJECT],

@@ -22,11 +22,10 @@ export interface EmailCutoffs {
  * `docs/guide/backend.md` records against the usage rollups: `classified()` published a term
  * while the real answer was "forever", and a data map is what a customer is shown.
  *
- * Not a `BaseRepository`, twice over. A sweeper serves every project and binds no
- * `app.project_id`, so a tenant-scoped delete matches nothing — no error, no rows, and a table
- * that grows while a job reports success. And neither table grants DELETE to the app role at
- * all (migration 0057), deliberately: removing a counter or an idempotency record is a system
- * action. The SECURITY DEFINER functions keep both properties at once.
+ * Not a `BaseRepository`, twice over. A sweeper serves every project and has no tenant to be
+ * scoped to. And neither table grants DELETE to the app role at all (`0001`), deliberately:
+ * removing a counter or an idempotency record is a system action. The `email_prune_*` SECURITY
+ * DEFINER functions keep both properties at once.
  */
 export class EmailRetentionPruner {
   constructor(private readonly db: NodePgDatabase) {}

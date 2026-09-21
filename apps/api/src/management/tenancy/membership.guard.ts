@@ -46,10 +46,10 @@ const RANK: Record<MemberRole, number> = {
  * is the most honest test of it we have (PROJECT.md 9.5). `aud` must name our dashboard
  * project, so a token minted for a customer's project cannot be replayed here.
  *
- * Then the organisation. A person signs in once and may belong to several, so the path
- * names one and this checks the membership before anything binds `app.org_id`. That check
- * cannot run under the policy it is deciding, which is why it goes through migration
- * 0036's SECURITY DEFINER functions rather than a repository.
+ * Then the organisation. A person signs in once and may belong to several, so the path names
+ * one and this checks the membership before anything is scoped to it. That check is the thing
+ * that decides the scope, so it cannot run inside one — which is why it goes through
+ * `OrgMembershipReader`, which takes the pool rather than an `OrgContext`.
  *
  * A membership that does not exist and a role that is too junior are deliberately
  * different answers: the first is 401-shaped because the caller is not part of this

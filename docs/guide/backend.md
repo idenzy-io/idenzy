@@ -365,7 +365,7 @@ because a HyperLogLog cannot be asked the obvious question.
   — all in one transaction, because either half alone loses something. It waits six hours past the
   month end for the meters, and `mergeActiveUsers` drops a flush landing on a frozen day rather than
   putting a sketch back on one whose figure is published.
-- **`usage_periods` holds SELECT and INSERT and nothing else** (migration 0046). It is a financial
+- **`usage_periods` holds SELECT and INSERT and nothing else** (the append-only grant in `0001`). It is a financial
   record; a period that could be amended after its invoice was raised is not a record of anything.
   The absence is asserted in `tenancy.integration.test.ts`, because the grants test can only see
   privileges that are present.
@@ -557,6 +557,7 @@ ADR first: two of these look arbitrary until you know what they are avoiding.
   bounces out of five is 40% and means nothing, so without the floor the breaker's first act on a
   new project would be to close it over one undeliverable test address.
 - **The sweeper shipped with the tables.** `EmailRetentionSweeper` prunes both through the
-  SECURITY DEFINER functions in migration 0057, because neither table grants DELETE to the app
+  SECURITY DEFINER functions `email_prune_delivery_stats` and `email_prune_provider_events`,
+  because neither table grants DELETE to the app
   role and a sweeper has no tenant to be scoped to. A declared retention with nothing behind it is
   the bug this file already records against the usage rollups.

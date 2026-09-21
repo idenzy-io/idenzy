@@ -144,7 +144,6 @@ beforeAll(async () => {
     [PROJECT_B, ORG],
     [OTHER_PROJECT, OTHER_ORG],
   ] as const) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,

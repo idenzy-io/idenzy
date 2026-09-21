@@ -5,14 +5,17 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
  * Which organisations have had usage worth charging for, across all of them (ADR-0014).
  *
  * Not an `OrgRepository`, for the reason every cross-tenant reader here is not one: the
- * drawdown serves every organisation and binds no `app.org_id`, so a direct read comes back
- * empty under FORCE RLS — no error, no work, and nothing ever charged. Migration 0055's
- * SECURITY DEFINER function answers organisation ids and nothing else.
+ * drawdown serves every organisation, and an `OrgRepository` cannot be constructed without one
+ * to be scoped to. `orgs_with_recent_usage` answers organisation ids and nothing else.
  *
- * What the job does with each id is ordinary and scoped: the organisation's projects under
- * `app.org_id`, then each project's own days under `app.project_id`. This function is the
- * only part that crosses a tenant boundary, and all it can disclose is that an organisation
- * exists and has been used.
+ * A direct read used to come back empty under the row policies — no error, no work, nothing
+ * ever charged. It now comes back with every organisation's rows, and a drawdown that reads
+ * them all is a billing error against real money rather than a silent no-op.
+ *
+ * What the job does with each id is ordinary and scoped: the organisation's projects under an
+ * `OrgContext`, then each project's own days under a `TenantContext`. This function is the only
+ * part that crosses a tenant boundary, and all it can disclose is that an organisation exists
+ * and has been used.
  */
 export class OrgUsageActivityReader {
   constructor(private readonly db: NodePgDatabase) {}

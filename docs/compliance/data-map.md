@@ -55,7 +55,7 @@ Notes:
 Notes:
 
 - `prefix`: First characters only, so a key can be identified in logs without being usable.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `audit_events`
 
@@ -87,7 +87,7 @@ Notes:
 - `ip`: Retained under legal obligation, so erasure does not clear it (Art.17(3)(b)).
 - `outboxSeq`: The outbox row this entry was relayed from, and what makes a replay a no-op instead of a duplicate. Null on an entry with no outbox event behind it.
 - `prevHash`: Hash of the preceding entry for this project. Genesis is 64 zeroes.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `seq`: Total order across every partition, from one cluster sequence. The chain needs it: created_at ties at millisecond precision, and two entries in the same millisecond would leave the project's tip ambiguous and fork the chain (PROJECT.md 4.13.3).
 
 ## `auth_codes`
@@ -109,7 +109,7 @@ Notes:
 
 - `amr`: Pinned at issue time, so an exchange cannot claim a method it did not prove.
 - `codeChallenge`: S256 only, and null for magic links, which are clicked in a different browser.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `redirectUri`: The allowlisted target this code was minted for. Kept for the audit trail.
 
 ## `billing_settings`
@@ -152,7 +152,7 @@ Notes:
 
 - `claims`: The mappings. Names and source paths only: no user data is stored here.
 - `privateMetadataAcknowledgedAt`: When the customer accepted that mapping metadata_private publishes it into every token. Kept as evidence rather than as a flag, because the question is when somebody agreed and not whether a box is ticked.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `credit_grants`
 
@@ -200,7 +200,7 @@ Notes:
 - `artifactUri`: Export bundle location. Expires quickly: it contains everything about a person.
 - `deadlineRule`: DsrDeadlineRule. Which law's clock `due_at` was set on, recorded because an auditor asks exactly that and the date alone cannot answer it. Defaults to the stricter rule, so a row written without one is early rather than late.
 - `dueAt`: Set at intake from `deadline_rule`. Monitored, because a missed statutory deadline is the finding.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `subjectUserId`: Kept after erasure, as proof the erasure was performed.
 
 ## `email_change_requests`
@@ -223,7 +223,7 @@ Data subject: **end_user**, by `user_id`.
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `email_delivery_stats`
 
@@ -244,7 +244,7 @@ Notes:
 - `bouncedHard`: Permanent bounces. These suppress the address as well as counting here.
 - `bouncedSoft`: Transient and undetermined. They suppress nothing and still count towards our rate at AWS.
 - `day`: UTC day the event was received, not the day the message was sent.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `rejected`: SES refused it outright, usually for a virus or an address on its account suppression list.
 - `sent`: SES accepted it. The denominator every rate on this row is over.
 
@@ -289,7 +289,7 @@ Notes:
 
 - `bounceRatePpm`: Parts per million, so a 5% threshold is an integer comparison and not a float one.
 - `observedSends`: What the rates were over. Below the floor no rate is actionable, so this is the evidence.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `reason`: Which rate tripped: bounce_rate or complaint_rate.
 - `releasedAt`: Null is the open hold. The partial unique index is what keeps there being only one.
 - `releasedBy`: Staff identifier, or null where the breaker released it because the window went clean.
@@ -314,7 +314,7 @@ Notes:
 Notes:
 
 - `html`: Compiled output, cached by version.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `updatedBy`: Customer staff identifier, kept for change attribution.
 
 ## `idempotency_keys`
@@ -331,7 +331,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `identities`
 
@@ -352,7 +352,7 @@ Data subject: **end_user**, by `user_id`.
 Notes:
 
 - `encryptedTokens`: Provider access and refresh tokens. Stored only when the customer opts in (4.6).
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `invoice_lines`
 
@@ -422,7 +422,7 @@ Data subject: **end_user**, by `user_id`.
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `redirectUri`: Validated against redirect_uris at issue time and pinned for the token's life.
 - `targetEncrypted`: The address the link was sent to, read back when it is clicked.
 
@@ -445,7 +445,7 @@ Notes:
 
 - `amr`: What the first factor proved, carried so the issued session claims both halves.
 - `attempts`: Capped at 5, as for an OTP. Exhaustion kills the challenge (PROJECT.md 4.7).
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `sessionId`: Set for a step-up and null for a sign-in, so a challenge cannot raise the factor age of a session it was not minted in.
 
 ## `mfa_factors`
@@ -470,7 +470,7 @@ Notes:
 
 - `counter`: The last TOTP step this factor spent. A code from that step or earlier is refused however well it verifies, which is what stops a shoulder-surfed code being replayed inside its own window.
 - `label`: User-chosen name for the authenticator, so two of them are tellable apart.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `mfa_recovery_codes`
 
@@ -487,7 +487,7 @@ Data subject: **end_user**, by `user_id`.
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `usedAt`: Single use. Set in the same statement that reads the row, so two requests cannot spend one code.
 
 ## `oauth_flows`
@@ -512,7 +512,7 @@ Notes:
 - `clientCodeChallenge`: The SDK's PKCE challenge for OUR exchange code. Not code_verifier_encrypted, which is ours for the provider.
 - `codeVerifierEncrypted`: Presented to the provider at the token exchange, so it cannot be a digest.
 - `linkUserId`: Set when a signed-in user is attaching a provider rather than signing in.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `redirectUri`: The customer route this flow returns to. Re-checked against the allowlist.
 - `state`: Bound to the client session. Mismatch is the CSRF signal (PROJECT.md 4.6).
 
@@ -534,7 +534,7 @@ Notes:
 Notes:
 
 - `mode`: instant mode uses our shared app and is blocked on production domains (4.6).
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `settings`: Non-secret provider extras: Apple's team and key ids, a Microsoft directory.
 
 ## `onboarding_responses`
@@ -675,7 +675,7 @@ Holds a hash of the address rather than the address, so a subject is reached by 
 Notes:
 
 - `attempts`: Capped at 5. Exhaustion invalidates the challenge (PROJECT.md 4.7).
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `targetEncrypted`: The address itself, read back at verification to establish the subject.
 
 ## `outbox`
@@ -693,7 +693,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `seq`: Total order for consumers, from one cluster sequence. A consumer's watermark cannot be created_at: it ties at millisecond precision, so an event sharing the last instant would be skipped by an exclusive bound and never relayed (PROJECT.md 4.13.3).
 
 ## `payment_methods`
@@ -755,7 +755,7 @@ Notes:
 Notes:
 
 - `checkedAt`: When DNS was last resolved, so a reader knows how stale a 'not found' is.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `project_origins`
 
@@ -769,7 +769,7 @@ Notes:
 Notes:
 
 - `origin`: Scheme, host and port only. Logged, because a refused origin is the whole diagnosis.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `project_purges`
 
@@ -808,7 +808,7 @@ Notes:
 - `isPrimary`: The one new tokens are signed with. Exactly one per project, held by a partial index.
 - `kid`: Published in JWKS and carried in every token header, so it is public by design.
 - `privateKeyWrapped`: PKCS#8, wrapped by the cell KMS key with the project id as authenticated data, so a row lifted into another project cannot be opened.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `publicJwk`: Served at the project's JWKS endpoint. Public half only; nothing here is secret.
 - `retiredAt`: Dropped from JWKS once set. Until then an old key still verifies tokens already minted.
 
@@ -824,7 +824,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `reason`: Why not, where not. Operational text, never shown to an end user mid sign-in.
 - `spendable`: What the drawdown last decided. Absent or stale means yes, deliberately.
 - `staleAfter`: After this the row is ignored and sending continues. A gate nobody refreshed is not a decision.
@@ -861,7 +861,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `refresh_tokens`
 
@@ -883,7 +883,7 @@ Notes:
 
 - `deviceKeyId`: Set when the client bound the token to a Secure Enclave key (PROJECT.md 4.4).
 - `familyId`: Reuse of any member revokes the entire family.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `usedAt`: Non-null means rotated. Presenting it again is the reuse signal.
 
 ## `relay_offsets`
@@ -913,7 +913,7 @@ Notes:
 Notes:
 
 - `maxAge`: ISO 8601 duration. Defaults follow compliance_tier (1 year, or 6 for HIPAA).
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `sessions`
 
@@ -943,7 +943,7 @@ Notes:
 - `deviceName`: Client-supplied label for the 'your devices' list. Free text a user often puts their own name in, so it is PII and never a security decision.
 - `factorVerifiedAt`: Backs the fva claim, so step-up can require a recent second factor.
 - `ip`: Personal data under GDPR. Retained one year for abuse investigation.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `sms_policies`
 
@@ -967,7 +967,7 @@ Notes:
 - `attestationRequired`: On by default. A project turning it off is accepting the pumping risk itself.
 - `dailySpendCap`: Hard stop, not an alert threshold. Same scale as usage_daily.sms_cost.
 - `maxSendsPerVerify`: Pumping signal: codes that are never entered. Applied above a daily floor.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `senderId`: Alphanumeric sender id, registered per country. Null uses the shared number.
 
 ## `staff_access_grants`
@@ -1002,7 +1002,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `targetHash`: Hashed, so a suppression list is not a harvestable address list.
 
 ## `top_ups`
@@ -1096,7 +1096,7 @@ Notes:
 - `mau`: The day's own actives, frozen from the sketch at close. Null while the period is open, where it is read from the sketch instead.
 - `mauHll`: Sketch only. Cannot be reversed to a user list, nor asked whether one person was active.
 - `mauToDate`: The period's running actives through this day. The only one a bill reconciles with, because daily figures do not add up.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `smsVerified`: Codes actually entered. Sends far above this is the pumping signal (4.8).
 
 ## `usage_hourly`
@@ -1116,7 +1116,7 @@ Notes:
 
 - `hour`: The start of the UTC hour the figures belong to.
 - `mauToDate`: Month-to-date active users at the end of this hour. A level, so it is never summed.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `smsCost`: This hour's share. Can be negative: a provider that came in under its quote settles the difference against the hour the correction lands in.
 
 ## `usage_periods`
@@ -1137,7 +1137,7 @@ Notes:
 
 - `closedAt`: When the period was shut and the sketches behind it dropped. A period is written once and never amended.
 - `period`: The first day of the calendar month, in UTC. A billing period is a month, not a rolling window.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `users`
 
@@ -1170,7 +1170,7 @@ Notes:
 - `metadataPrivate`: Readable only with a secret key. Never returned to a client SDK.
 - `metadataPublic`: Customer-controlled. Assume it holds personal data, because it usually does.
 - `passwordAlgoVersion`: Lets a hash be upgraded transparently on next login (PROJECT.md 4.5).
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `verification_tokens`
 
@@ -1187,7 +1187,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `webauthn_challenges`
 
@@ -1204,7 +1204,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `userId`: Set for registration, which happens in a session. Null for authentication.
 
 ## `webauthn_credentials`
@@ -1233,7 +1233,7 @@ Notes:
 - `backupState`: The signed BS flag, which does move: an eligible credential is backed up later, not at registration.
 - `lastUsedAt`: Advanced on every successful assertion, so the owner can tell which passkey is stale.
 - `name`: User-chosen label, such as the name of a phone.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `signCount`: A decrease suggests a cloned authenticator and is a security signal.
 
 ## `webauthn_relying_parties`
@@ -1250,7 +1250,7 @@ Notes:
 Notes:
 
 - `origins`: Exact match. No wildcards, for the same reason redirect_uris has none.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `rpName`: Shown by the authenticator when it asks. The customer's product name, not ours.
 
 ## `webhook_deliveries`
@@ -1276,7 +1276,7 @@ Notes:
 
 - `attemptLog`: Carries a capped excerpt of the receiver's own response, which may contain anything.
 - `payload`: Cleared when a delivery is taken; a failed one keeps it for the window, so a replay can send it.
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `webhook_endpoint_stats`
 
@@ -1293,7 +1293,7 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `webhooks`
 
@@ -1319,5 +1319,5 @@ Notes:
 
 Notes:
 
-- `projectId`: Tenant discriminator. Enforced by RLS as well as by the repository layer.
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `secretCiphertext`: Encrypted rather than hashed: signing needs the value back (ADR-0012).

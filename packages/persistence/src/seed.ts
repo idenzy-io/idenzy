@@ -83,17 +83,18 @@ async function main(): Promise<void> {
 /**
  * Idenzy's own organisation, its dashboard project, and one publishable key for the panel.
  *
- * Every statement runs with `app.org_id` and `app.project_id` bound to the ids being
- * created, which is what makes the inserts pass their own WITH CHECK clauses — the same
- * mechanism `UnitOfWork.provision` uses, and the reason neither needs a SECURITY DEFINER
- * function (ADR-0011).
+ * Idempotent by inspection rather than by upsert: each step looks for what it would create
+ * and skips it, so running this against a database that already holds the dashboard adds
+ * nothing and rotates no key.
+ *
+ * It used to bind `app.org_id` and `app.project_id` first, so the inserts would pass their
+ * own WITH CHECK clauses. There are no policies left to satisfy and the bindings are gone
+ * with them; what remains is one transaction, for the ordinary reason that a half-seeded
+ * organisation is worse than none.
  */
 async function seedDashboard(client: pg.Client, db: NodePgDatabase): Promise<void> {
   await client.query("BEGIN");
   try {
-    await client.query("SELECT set_config('app.org_id', $1, true)", [IDENZY_ORG_ID]);
-    await client.query("SELECT set_config('app.project_id', $1, true)", [DASHBOARD_PROJECT_ID]);
-
     const org = await db.select({ id: orgs.id }).from(orgs).limit(1);
     if (org.length === 0) {
       await db.insert(orgs).values({ id: IDENZY_ORG_ID, name: "Idenzy" });

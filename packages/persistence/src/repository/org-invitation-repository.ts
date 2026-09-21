@@ -44,8 +44,8 @@ const isOpen = and(isNull(orgInvitations.acceptedAt), isNull(orgInvitations.revo
  * Invitations to join an organisation (ADR-0011).
  *
  * `findByTokenHash` is the only read that is not org-scoped, and it cannot be: somebody
- * following a link is not inside the organisation yet, so there is no `app.org_id` to
- * bind. It answers with the row's own `org_id`, which is what the caller then opens an
+ * following a link is not inside the organisation yet, so there is no organisation to scope to.
+ * It answers with the row's own `org_id`, which is what the caller then opens an
  * org transaction with. That is why it takes a hash and never an id — a guessable handle
  * on an unscoped lookup would be a way into somebody else's organisation.
  */
@@ -124,10 +124,10 @@ export class OrgInvitationRepository extends OrgRepository<typeof orgInvitations
    * Resolves a link to the organisation it joins, before any organisation is bound.
    *
    * Static and taking the transaction directly, because there is no `OrgContext` to
-   * construct a repository with at this point in the flow — which is also why it runs
-   * through a SECURITY DEFINER function rather than a plain select: the RLS policy on
-   * this table would correctly match nothing. The function is narrow by construction; it
-   * takes a hash and returns routing, the shape `resolve_project_by_key_hash` has.
+   * construct a repository with at this point in the flow. It runs through a SECURITY DEFINER
+   * function rather than a plain select because the function is narrow by construction: it takes
+   * a hash and returns routing, the shape `resolve_project_by_key_hash` has. A plain select would
+   * be reaching into an org-keyed table with no organisation in hand.
    */
   static async findByTokenHash(
     tx: Transaction,

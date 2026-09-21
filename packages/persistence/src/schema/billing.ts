@@ -389,10 +389,10 @@ export const invoices = classifiedTable(
  * the usage screen and the invoice reconcile line for line rather than at the total.
  *
  * `project_id` carries no foreign key, which is the shape every org-keyed table here uses:
- * the row is reached through `app.org_id` and the project through `app.project_id`, so a
- * reference would tie two scopes together that are never bound in the same
- * independent stacks (PROJECT.md 4.13.5) — the same reason `org_members.user_id` has none.
- * `org_id` is repeated so the isolation policy applies without a join to the invoice.
+ * this row is scoped by its organisation and a project is scoped by itself, so a reference
+ * would tie two scopes together that no single query holds at once — the same reason
+ * `org_members.user_id` has none. `org_id` is repeated on the line rather than read through
+ * the invoice, so scoping a line never needs a join.
  */
 export const invoiceLines = classifiedTable(
   "invoice_lines",
@@ -441,8 +441,8 @@ export const invoiceLines = classifiedTable(
  * webhook arrives for whichever organisation it happens to concern, and the handler that
  * receives it has none bound yet — mapping the provider's customer id to an organisation
  * is the first thing it does with this row, not something it can know before writing it.
- * `relay_offsets` is outside RLS for the same shape of reason (migration 0023): a process
- * that serves every organisation at once cannot be scoped to one.
+ * `relay_offsets` carries no tenant key for the same shape of reason: a process that serves
+ * every organisation at once cannot be scoped to one.
  *
  * What replaces the policy is the unique index. The provider delivers at least once by
  * design, so the insert is the idempotency check: a second delivery of an event collides

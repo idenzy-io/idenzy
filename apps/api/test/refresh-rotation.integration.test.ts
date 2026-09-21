@@ -75,7 +75,6 @@ beforeAll(async () => {
     `INSERT INTO orgs (id, name)
      VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
     `INSERT INTO projects (id, org_id, name, kms_key_name)
      VALUES ($1, $2, 'p', 'k')`,
@@ -188,7 +187,6 @@ describe("rotation", () => {
  */
 describe("the project's idle window", () => {
   async function setLifetimes(lifetimes: Readonly<Record<string, unknown>>): Promise<void> {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE projects SET settings = jsonb_build_object('lifetimes', $2::jsonb) WHERE id = $1`,
       [PROJECT, JSON.stringify(lifetimes)],
@@ -196,7 +194,6 @@ describe("the project's idle window", () => {
   }
 
   async function idleExpiryOf(sessionId: string): Promise<Date> {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     const { rows } = await harness.owner.query<{ idle_expires_at: Date }>(
       `SELECT idle_expires_at FROM sessions WHERE id = $1`,
       [sessionId],

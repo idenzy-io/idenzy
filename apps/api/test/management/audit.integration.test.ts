@@ -96,14 +96,12 @@ beforeAll(async () => {
     [ORG],
   );
   for (const project of [PROJECT, OTHER_PROJECT]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,
       [project, ORG],
     );
   }
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
     `INSERT INTO users (id, project_id, email, display_name, email_verified)
      VALUES ($1, $2, 'alice@example.test', 'Alice Doe', true)`,

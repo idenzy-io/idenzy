@@ -18,10 +18,10 @@ import { Injectable } from "@nestjs/common";
 /**
  * The projects an organisation holds, and adding another one.
  *
- * Every call runs inside `runForOrg`, so `app.org_id` is bound and the repository carries
- * the predicate itself. The organisation is never a parameter on the write: it comes from
- * the context the request was authorised against, so there is no field a caller could set
- * to put a project somewhere else, and the policy refuses it besides (ADR-0011).
+ * Every call runs inside a transaction with an `OrgContext`, so the repository carries the
+ * predicate itself. The organisation is never a parameter on the write: it comes from the
+ * context the request was authorised against, so there is no field a caller could set to put a
+ * project somewhere else (ADR-0011).
  */
 @Injectable()
 export class ProjectsService {

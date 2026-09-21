@@ -18,7 +18,7 @@ export interface NewEmailProviderEvent {
  * Takes the pool rather than a transaction and a `TenantContext`, like
  * `PaymentProviderEventRepository` and for the same reason: the notification arrives for
  * whichever project it happens to concern, and reading the tag that says which is something
- * the receiver does *after* it has a row. The table is outside RLS to match.
+ * the receiver does *after* it has a row. The table carries no tenant key to match.
  *
  * `record` is the idempotency check and not something done before one. SNS delivers at least
  * once, so a lookup followed by an insert has a window two concurrent deliveries both pass;

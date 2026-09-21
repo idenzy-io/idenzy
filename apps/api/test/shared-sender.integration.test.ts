@@ -102,7 +102,6 @@ beforeAll(async () => {
   // cascades from `projects`, so a hold cannot be opened against a project that never existed.
   const dashboard = PublicId.parse(IdPrefix.Project, DASHBOARD).uuid;
   for (const project of [SHARED_PROJECT, OWN_DOMAIN_PROJECT, PENDING_PROJECT, dashboard]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [project]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,

@@ -32,7 +32,6 @@ beforeAll(async () => {
     [PROJECT_A, ORG_A, "alice@a.test"],
     [PROJECT_B, ORG_B, "bob@b.test"],
   ]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,
@@ -319,7 +318,6 @@ describe("the grants the app role holds", () => {
    * request 404s with `unknown_project` while the function itself looks perfectly healthy.
    */
   it("still lets the app role execute the resolution functions after the rebuild", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT_A]);
     await harness.owner.query(
       `INSERT INTO project_domains (project_id, domain, type, status)
        VALUES ($1, 'auth.acme.test', 'auth', 'verified')
@@ -371,8 +369,6 @@ describe("the constraints an organisation owns", () => {
     const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
     const userId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
 
-    await harness.db.execute(sql`select set_config('app.project_id', '', false)`);
-    await harness.db.execute(sql`select set_config('app.org_id', ${orgId}, false)`);
     await harness.db.execute(
       sql`insert into orgs (id, name) values (${orgId}::uuid, 'Provisioned')`,
     );
@@ -432,14 +428,12 @@ describe("the constraints an organisation owns", () => {
   });
 
   /**
-   * Somebody following an invite link is not in the organisation yet, so the lookup runs
-   * with no `app.org_id` and RLS would correctly hide the row. Migration 0029 is the
-   * narrow way through, and the point of this test is that it stays narrow: it resolves
-   * an open invitation and nothing else.
+   * Somebody following an invite link is not in the organisation yet, so there is no
+   * organisation to scope the lookup to. `resolve_open_invitation` is the narrow way through,
+   * and the point of this test is that it stays narrow: it resolves an open invitation and
+   * nothing else. With no policy underneath, narrow is the whole of the guarantee.
    */
   it("resolves an open invitation with no organisation bound, and only an open one", async () => {
-    await harness.db.execute(sql`select set_config('app.org_id', '', false)`);
-
     const open = await harness.db.execute<{ org_id: string; email: string }>(
       sql`select * from resolve_open_invitation(${OPEN_INVITE_HASH}, now())`,
     );
@@ -461,7 +455,6 @@ describe("the constraints an organisation owns", () => {
 
 describe("the audit trail is append-only", () => {
   it("accepts an insert", async () => {
-    await harness.db.execute(sql`select set_config('app.project_id', ${PROJECT_A}, false)`);
     await harness.db.execute(
       sql`insert into audit_events (project_id, actor_type, action, prev_hash, entry_hash)
           values (${PROJECT_A}::uuid, 'user', 'user.created', repeat('0', 64), 'h1')`,

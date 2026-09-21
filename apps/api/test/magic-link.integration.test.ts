@@ -114,7 +114,6 @@ beforeAll(async () => {
     `INSERT INTO orgs (id, name)
      VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   await harness.owner.query(
     // Magic links are off in `DEFAULT_PROJECT_SETTINGS`, and the service reads that before
     // anything else, so a project seeded with bare defaults refuses every test in this file.
@@ -280,7 +279,6 @@ describe("exchanging the code", () => {
 
   it("refuses a suspended account even though the click already happened", async () => {
     const code = await clickThrough("banned-link@a.test");
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
     await harness.owner.query(
       `UPDATE users SET banned_until = now() + interval '1 day' WHERE email = 'banned-link@a.test'`,
     );

@@ -291,7 +291,7 @@ export const projectPurges = classifiedTable("project_purges", {
  *
  * Not tenant-scoped and deliberately so: a relay serves every project at once, which is
  * the same reason `revocation_events_since` is SECURITY DEFINER. It is ours rather than a
- * customer's, so no RLS policy and no `project_id`.
+ * customer's, so no `project_id` and nothing to scope it by.
  *
  * One row per consumer, and that is the point. The outbox already has `published_at`, and
  * it belongs to the relay that will drain this table to Pub/Sub; a second consumer sharing

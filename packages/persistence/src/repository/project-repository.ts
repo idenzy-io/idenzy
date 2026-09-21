@@ -25,12 +25,12 @@ export interface ProjectRow {
 /**
  * The current project's own row.
  *
- * `tenantScope()` is not used here and cannot be: this table's tenant key is its own
- * `id`, not a `project_id` column, which is also why it carries a hand-written policy
- * instead of the shared one. The filter below matches that policy exactly.
+ * `tenantScope()` is not used here and cannot be: this table's tenant key is its own `id`, not
+ * a `project_id` column. The filter below is written out for that reason.
  *
- * Reading a project by an id other than the caller's is not an oversight to fix later.
- * It is not possible: RLS returns nothing, whatever this class asks for.
+ * Reading a project by an id other than the caller's is not offered, and the filter below is now
+ * the whole of why. It used to be the second of two — a hand-written row policy said the same
+ * thing underneath — so treat the predicate as load-bearing rather than as a convenience.
  */
 export class ProjectRepository extends BaseRepository<typeof projects> {
   constructor(tx: Transaction, context: TenantContext) {

@@ -148,9 +148,9 @@ export class UsageDrawdownRepository extends OrgRepository<typeof usageBillingSt
    *
    * The base's predicate is built from `usage_billing_state`, so reaching for it while
    * selecting from `usage_charges` emits `"usage_billing_state"."org_id"` against a table
-   * that is not in the query — which Postgres refuses outright. The row policy would have
-   * scoped the read anyway, which is exactly why the second line of defence has to name the
-   * table it is filtering. The same mistake the project users read model made once with
+   * that is not in the query — which Postgres refuses outright. A row policy used to scope the
+   * read whatever this said, which is how the mistake stayed invisible; with no policy left it is
+   * the only scope there is. The same mistake the project users read model made once with
    * `tenantScope()`.
    */
   private scopeOf(column: PgColumn): SQL {

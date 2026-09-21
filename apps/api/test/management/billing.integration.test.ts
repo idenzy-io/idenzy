@@ -134,7 +134,6 @@ beforeAll(async () => {
       [org],
     );
   }
-  await harness.owner.query(`SELECT set_config('app.org_id', $1, false)`, [ORG]);
   await harness.owner.query(
     `INSERT INTO org_members (id, org_id, user_id, role) VALUES ($1, $2, $3, 'owner')`,
     [MEMBER, ORG, USER],

@@ -8,9 +8,9 @@ import { RetentionSweeper } from "../src/retention-sweeper.js";
  * The retention sweep, against a real Postgres.
  *
  * Everything worth asserting here is a database property. The functions are SECURITY DEFINER
- * because the app role under FORCE RLS with no `app.project_id` bound matches nothing — the
- * failure that motivated them is silent, so the test that matters is "rows actually went",
- * run as `idenzy_app` exactly as the worker does.
+ * because a sweeper has no tenant to be scoped to and the app role holds no DELETE on some of
+ * these tables at all — and because the failure that motivated them is silent either way. So
+ * the test that matters is "rows actually went", run as `idenzy_app` exactly as the worker does.
  *
  * Two projects, because the interesting case is not one project being swept. It is a project
  * with a stored policy and a project with none being swept at *different* ages in the same

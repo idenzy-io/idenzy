@@ -51,7 +51,6 @@ beforeAll(async () => {
   const orgId = rows[0]?.id;
 
   for (const projectId of [PROJECT_A, PROJECT_B]) {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
     await harness.owner.query(
       `INSERT INTO projects (id, org_id, name, kms_key_name)
        VALUES ($1, $2, 'p', 'k')`,
@@ -111,8 +110,8 @@ describe("UserRepository", () => {
     expect(found?.isAnonymous()).toBe(false);
   });
 
-  // The repository predicate and the RLS policy say the same thing here. This asserts
-  // the pair, which is what a caller actually depends on.
+  // The repository predicate is the only thing separating these two tenants now. It used to
+  // agree with a row policy underneath; this asserts what is actually left.
   it("cannot see another tenant's user", async () => {
     await inTenant(PROJECT_A, (repos) => repos.users.create(newUser("isolated@a.test")));
     const leaked = await inTenant(PROJECT_B, (repos) => repos.users.findByEmail("isolated@a.test"));

@@ -41,8 +41,8 @@ export interface OrgSummaryRow {
  * the package whose input is a user rather than a tenant, so it takes the pool directly.
  *
  * These were two SECURITY DEFINER functions, `resolve_org_membership` and `orgs_for_user`,
- * added in migration 0036. They existed for one reason: `org_members` carried a row policy
- * keyed on `app.org_id`, and this is the lookup that decides *which* organisation to bind,
+ * added when `org_members` was first read this way. They existed for one reason: it carried a
+ * row policy keyed on the bound organisation, and this is the lookup that decides *which* one,
  * so under the policy it correctly returned nothing. With the policies gone there is
  * nothing to step around and they are ordinary selects — which is better, because a
  * definer-rights function is a standing privilege whether or not anything needs it.

@@ -26,8 +26,8 @@ import { ProjectScope } from "../tenancy/project-scope.js";
  * The end users of a customer's project, for the panel's Users and Sessions screens
  * (PROJECT.md 3.2).
  *
- * Every call goes through `ProjectScope`, which binds `app.project_id` and refuses to bind
- * it for a project the caller's organisation does not own. This is the service where that
+ * Every call goes through `ProjectScope`, which resolves the tenant and refuses to resolve one
+ * for a project the caller's organisation does not own. This is the service where that
  * matters most in the whole API: the rows it returns are a customer's own customers, so a
  * scope resolved from the path without the ownership check would be the worst tenancy bug
  * this product could have.

@@ -48,14 +48,14 @@ export interface AuditListOptions {
  *
  * Read-only and it will stay that way, because the runtime role's grant on this table is
  * SELECT and INSERT and the insert belongs to the relay, which is the chain's only writer.
- * There is deliberately no `update` or `delete` here for the same reason migration 0001
+ * There is deliberately no `update` or `delete` here for the same reason `0001`
  * withheld the privileges: a repository that could offer them would be the one thing a
  * reviewer has to take on trust.
  *
  * Distinct from `AuditEventReader`, which serves the relay across every project through
  * SECURITY DEFINER functions because a relay binds no tenant. This one is ordinary and
- * tenant-scoped: the management API has already resolved which project the request acts
- * on, so the row policy is the second line of defence rather than something to get around.
+ * tenant-scoped: the dashboard endpoints have already resolved which project the request acts
+ * on, so there is a tenant to scope to and no reason to step around one.
  */
 export class ProjectAuditRepository extends BaseRepository<typeof auditEvents> {
   constructor(tx: Transaction, context: TenantContext) {
@@ -72,7 +72,7 @@ export class ProjectAuditRepository extends BaseRepository<typeof auditEvents> {
    * index behind it.
    *
    * `created_at` is never the sort key here. It ties at millisecond precision, which is
-   * the bug migration 0031 exists to record.
+   * the bug the `seq` column exists to prevent.
    */
   async list(options: AuditListOptions): Promise<ProjectAuditPage> {
     const predicates: SQL[] = [this.tenantScope()];

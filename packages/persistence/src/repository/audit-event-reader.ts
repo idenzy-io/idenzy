@@ -30,17 +30,17 @@ interface OutboxRow extends Record<string, unknown> {
  * The reads and the one write the audit relay needs, across every project.
  *
  * Not a `BaseRepository` and it cannot be one: those are tenant-scoped by construction and
- * a relay has no `app.project_id` to be scoped to. Every call here therefore goes through a
- * SECURITY DEFINER function, each narrowed to one job, which is the pattern migration 0002
- * used for project resolution and 0015 for the revocation reader.
+ * a relay has no tenant to be scoped to. Every call here therefore goes through a SECURITY
+ * DEFINER function, each narrowed to one job — the pattern `resolve_project_by_host` uses for
+ * project resolution and `revocation_events_since` for the revocation reader.
  *
- * Reaching for the tables directly is what the first version of this did, and it failed in
- * the quietest possible way: `audit_events` has FORCE RLS keyed on a variable a relay does
- * not set, so every insert was refused and every read came back empty, with no error and an
- * audit trail that recorded nothing.
+ * Reaching for the tables directly is what the first version of this did, and it failed in the
+ * quietest possible way: every insert refused and every read empty, with no error and an audit
+ * trail that recorded nothing. The row policy that did that is gone, so the same mistake now
+ * reads every project's trail instead. Quiet in the other direction, and worse.
  *
  * None of the three functions can UPDATE or DELETE, so the append-only privilege shape from
- * migration 0001 still holds (PROJECT.md 4.13.3): a bug here can add a wrong entry and
+ * the append-only grant still holds (PROJECT.md 4.13.3): a bug here can add a wrong entry and
  * still cannot remove or alter a right one.
  */
 export class AuditEventReader {

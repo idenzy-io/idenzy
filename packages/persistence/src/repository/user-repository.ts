@@ -25,8 +25,8 @@ export interface NewUser {
 /**
  * Reads and writes users within one tenant transaction.
  *
- * Every method starts from `tenantScope()`, and the RLS policy on the table is the
- * second, independent line if one ever does not (ADR-0003). Lookups return the `User`
+ * Every method starts from `tenantScope()`, which is now the only line rather than the first of
+ * two — there is no policy underneath to catch one that forgets. Lookups return the `User`
  * entity rather than a row, so the sign-in rules live in one place and this class stays
  * about SQL.
  */

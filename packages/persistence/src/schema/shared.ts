@@ -13,7 +13,7 @@ const projectIdClassification = {
   retention: Retention.ProjectLifetime,
   erasure: Erasure.NotApplicable,
   loggable: true,
-  note: "Tenant discriminator. Enforced by RLS as well as by the repository layer.",
+  note: "Tenant discriminator. Enforced by the repository layer.",
 } as const;
 
 /**

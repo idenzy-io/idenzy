@@ -36,7 +36,7 @@ function utcDay(at: Date): string {
  * than a shorter tier, because a data map is what a customer is shown.
  *
  * The cutoffs are computed here from the same numbers the schema declares, and the deletion runs
- * through the SECURITY DEFINER functions in migration 0049 — both because a sweeper has no tenant
+ * through the `usage_prune_*` SECURITY DEFINER functions — both because a sweeper has no tenant
  * to be scoped to, and because `usage_periods` deliberately holds no DELETE grant for the app role.
  * Retention is a system action; an application path that could remove a closed billing period is
  * precisely what that withholding exists to stop.

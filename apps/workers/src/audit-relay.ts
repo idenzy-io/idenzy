@@ -49,7 +49,7 @@ const DEFAULT_COLD_START_MS = 24 * 60 * 60 * 1000;
  * and an exclusive bound on a tied value skips every event sharing the last instant of a
  * sweep, permanently and without an error. A sequence is unique, so the bound excludes
  * exactly what was consumed. It is also a total order, so the trail's order is the order
- * events were enqueued rather than the order of their random uuids (migration 0031).
+ * events were enqueued rather than the order of their random uuids (`audit_events.seq`).
  *
  * Replaying an event is a no-op, and it is the unique index on `audit_events.outbox_seq`
  * that makes it one rather than anything in this file. The obvious argument — that the

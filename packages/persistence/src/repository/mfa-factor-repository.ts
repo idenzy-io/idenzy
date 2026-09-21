@@ -27,10 +27,10 @@ export interface MfaFactorRow {
 /**
  * Enrolled second factors (PROJECT.md 4.5).
  *
- * Every read here is scoped by user as well as by tenant, and the second scope is not
- * redundant. RLS keeps one project out of another's rows; nothing in the database stops
- * a query in the right project from reading a stranger's factor, and a factor id is the
- * kind of value that ends up in a URL.
+ * Every read here is scoped by user as well as by tenant, and the user scope is not redundant.
+ * The tenant predicate keeps one project out of another's rows; nothing at all stops a query in
+ * the right project from reading a stranger's factor, and a factor id is the kind of value that
+ * ends up in a URL.
  */
 export class MfaFactorRepository extends BaseRepository<typeof mfaFactors> {
   constructor(tx: Transaction, context: TenantContext) {

@@ -25,9 +25,8 @@ const INVITATION_DAYS = 7;
 /**
  * An organisation's team, and the invitations that have not been answered (PROJECT.md 3.2).
  *
- * Every read and write goes through `runForOrg`, which binds `app.org_id` for the life of
- * the transaction, so the repositories carry the predicate themselves rather than relying on
- * a filter somebody has to remember (ADR-0011). The one exception is the name-and-address
+ * Every read and write runs under an `OrgContext`, so the repositories carry the predicate
+ * themselves rather than relying on a filter somebody has to remember (ADR-0011). The one exception is the name-and-address
  * join, which reads the dashboard project's own users under a scope fixed in configuration —
  * see `DashboardUsers` for why that cannot come from the request.
  *

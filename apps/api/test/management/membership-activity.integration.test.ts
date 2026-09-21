@@ -10,17 +10,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MembershipGuard, REQUIRES_ROLE } from "../../dist/management/tenancy/membership.guard.js";
 
 /**
- * Recording that a member was here, against a real Postgres and its real policies.
+ * Recording that a member was here, against a real Postgres.
  *
- * The bound itself is a pure function with its own test; what needs a database is
- * everything around it. The stamp is written through `OrgMemberRepository` under
- * `app.org_id`, while the read that decides whether to write comes back from
- * `resolve_org_membership`, which is SECURITY DEFINER precisely because it runs before
- * that key is bound. Migration 0053 had to drop and recreate that function to widen its
- * return type, and privileges do not survive a drop — so if its GRANT were forgotten,
- * `idenzy_app` would lose its only membership lookup and every dashboard request would
- * answer as though the caller were in no organisation at all. A fake reader would agree
- * with whatever the guard believed.
+ * The bound itself is a pure function with its own test; what needs a database is everything
+ * around it. The stamp is written through `OrgMemberRepository` under an `OrgContext`, while
+ * the read that decides whether to write comes back from `OrgMembershipReader`, which takes
+ * the pool directly because it is the lookup that decides *which* organisation to scope to.
+ *
+ * Worth a real database rather than a fake reader for the ordinary reason: a fake would agree
+ * with whatever the guard believed, and the property under test is that the stamp and the
+ * membership read agree with each other.
  */
 
 const harness = new PostgresHarness();
@@ -91,7 +90,6 @@ async function activate(required: MemberRole): Promise<Record<string, unknown>> 
 }
 
 async function storedStamp(): Promise<Date | null> {
-  await harness.owner.query(`SELECT set_config('app.org_id', $1, false)`, [ORG]);
   const { rows } = await harness.owner.query<{ last_active_at: Date | null }>(
     `SELECT last_active_at FROM org_members WHERE id = $1`,
     [MEMBER],
@@ -100,7 +98,6 @@ async function storedStamp(): Promise<Date | null> {
 }
 
 async function setStamp(value: string | null): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.org_id', $1, false)`, [ORG]);
   await harness.owner.query(`UPDATE org_members SET last_active_at = $2 WHERE id = $1`, [
     MEMBER,
     value,
@@ -116,7 +113,6 @@ beforeAll(async () => {
      VALUES ($1, 'Acme')`,
     [ORG],
   );
-  await harness.owner.query(`SELECT set_config('app.org_id', $1, false)`, [ORG]);
   await harness.owner.query(
     `INSERT INTO org_members (id, org_id, user_id, role) VALUES ($1, $2, $3, 'owner')`,
     [MEMBER, ORG, USER],

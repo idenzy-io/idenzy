@@ -91,7 +91,6 @@ function build(attestationAnswer = true): GuardParts {
 const US = E164PhoneNumber.parse("+14155550123");
 
 async function seedProject(id: string, name: string): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [id]);
   await harness.owner.query(
     `INSERT INTO projects (id, org_id, name, kms_key_name)
      VALUES ($1, (SELECT id FROM orgs LIMIT 1), $2, 'k')`,
@@ -109,7 +108,6 @@ async function seedPolicy(id: string, overrides: Record<string, unknown> = {}): 
     max_sends_per_verify: 6,
     ...overrides,
   };
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [id]);
   await harness.owner.query(
     `INSERT INTO sms_policies
        (project_id, allowed_countries, daily_spend_cap, attestation_required,
@@ -310,7 +308,6 @@ describe("velocity and sweeps", () => {
    * throttles the project rather than the caller, which is blunt on purpose.
    */
   it("refuses once sends run far ahead of verifications", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [BUSY]);
     await harness.owner.query(
       `INSERT INTO usage_daily (project_id, day, sms_sent, sms_verified)
        VALUES ($1, (now() at time zone 'utc')::date, 200, 1)
@@ -325,7 +322,6 @@ describe("velocity and sweeps", () => {
   });
 
   it("ignores the ratio below the daily floor", async () => {
-    await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [BUSY]);
     await harness.owner.query(
       `UPDATE usage_daily SET sms_sent = 5, sms_verified = 0
        WHERE project_id = $1 AND day = (now() at time zone 'utc')::date`,
@@ -426,7 +422,6 @@ describe("the daily spend cap", () => {
 });
 
 async function resetSpend(projectId: string): Promise<void> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   await harness.owner.query(
     `DELETE FROM usage_daily WHERE project_id = $1 AND day = (now() at time zone 'utc')::date`,
     [projectId],
@@ -434,7 +429,6 @@ async function resetSpend(projectId: string): Promise<void> {
 }
 
 async function spendOf(projectId: string): Promise<string> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [projectId]);
   const { rows } = await harness.owner.query<{ sms_cost: string }>(
     `SELECT sms_cost FROM usage_daily
      WHERE project_id = $1 AND day = (now() at time zone 'utc')::date`,

@@ -5,13 +5,14 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
  * Which projects have a delivery due, across all of them (ADR-0012).
  *
  * Not a `BaseRepository`, and it cannot be one: those are tenant-scoped by construction and the
- * sweeper serving every project has no `app.project_id` to be scoped to. So it goes through the
- * SECURITY DEFINER function from migration 0043, narrowed to exactly this question — project ids,
- * nothing else — which is the pattern the audit relay's outbox reader already uses.
+ * sweeper serving every project has no tenant to be scoped to. So it goes through the SECURITY
+ * DEFINER function `webhook_projects_with_due_deliveries`, narrowed to exactly this question —
+ * project ids, nothing else — which is the pattern the audit relay's outbox reader already uses.
  *
  * Reaching for `webhook_deliveries` directly is the mistake this class exists to prevent, and it
- * fails silently: FORCE RLS keyed on a variable a sweeper does not set means every row is invisible,
- * so the queue reads as empty while it fills.
+ * fails silently either way. Under the old row policies the queue read as empty while it filled;
+ * with them gone it reads every project's deliveries at once. The function is the only remaining
+ * bound on the question.
  */
 export class WebhookDueReader {
   constructor(private readonly db: NodePgDatabase) {}

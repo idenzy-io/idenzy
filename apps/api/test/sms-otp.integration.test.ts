@@ -137,7 +137,6 @@ beforeAll(async () => {
     `INSERT INTO orgs (id, name)
      VALUES (gen_random_uuid(), 'Acme') RETURNING id`,
   );
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   // SMS OTP is off in `DEFAULT_PROJECT_SETTINGS`, and deliberately: it costs money per
   // message and is the channel fraud reaches for first, so a project has to ask for it. The
   // service reads that setting before anything else, so a project seeded with bare defaults
@@ -316,7 +315,6 @@ async function sessionsFor(): Promise<SessionService> {
 }
 
 async function verifiedCount(): Promise<number> {
-  await harness.owner.query(`SELECT set_config('app.project_id', $1, false)`, [PROJECT]);
   const { rows } = await harness.owner.query<{ sms_verified: string }>(
     `SELECT sms_verified FROM usage_daily
      WHERE project_id = $1 AND day = (now() at time zone 'utc')::date`,

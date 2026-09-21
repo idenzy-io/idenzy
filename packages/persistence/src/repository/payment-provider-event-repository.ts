@@ -15,7 +15,7 @@ export interface NewPaymentProviderEvent {
  * Takes the pool rather than a transaction and an `OrgContext`, like `RelayOffsetRepository`
  * and for the same reason: a webhook arrives for whichever organisation it happens to
  * concern, and the receiver has none bound at the moment it has to write the row. The
- * table is outside RLS to match (migration 0028), and it is the only billing table that is.
+ * table carries no organisation key to match, and it is the only billing table that does not.
  *
  * `record` is the idempotency check rather than something done before one. The provider
  * delivers at least once by design, so a lookup followed by an insert has a window two

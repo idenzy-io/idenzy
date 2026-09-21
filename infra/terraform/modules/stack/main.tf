@@ -9,19 +9,17 @@ terraform {
 }
 
 locals {
-  name_prefix = "idenzy-${var.cell_code}"
+  name_prefix = "idenzy"
 
   common_labels = {
     app          = "idenzy"
-    cell         = var.cell_code
-    jurisdiction = lower(var.jurisdiction)
     managed_by   = "terraform"
   }
 }
 
-# Per-cell key ring. Per-project signing keys are created inside it at runtime, so a
+# The key ring. Per-project signing keys are created inside it at runtime, so a
 # compromise of one project's key exposes exactly one tenant (PROJECT.md 4.2).
-resource "google_kms_key_ring" "cell" {
+resource "google_kms_key_ring" "stack" {
   name     = "${local.name_prefix}-ring"
   location = var.region
   project  = var.project_id
@@ -30,7 +28,7 @@ resource "google_kms_key_ring" "cell" {
 # Wraps each project's data encryption key for field-level encryption (4.13.4).
 resource "google_kms_crypto_key" "dek_wrapping" {
   name     = "${local.name_prefix}-dek-wrapping"
-  key_ring = google_kms_key_ring.cell.id
+  key_ring = google_kms_key_ring.stack.id
   purpose  = "ENCRYPT_DECRYPT"
 
   version_template {
@@ -72,7 +70,7 @@ resource "google_sql_database_instance" "primary" {
       # The half that was missing. `ipv4_enabled = false` on its own is an instance with no public
       # address *and* no private one — private-only means reachable from a VPC, so it has to name
       # which. Nothing could have connected to this before.
-      private_network = google_compute_network.cell[0].id
+      private_network = google_compute_network.stack[0].id
       # Even inside the VPC. There is no reason for an unencrypted hop to the database.
       ssl_mode = "ENCRYPTED_ONLY"
     }

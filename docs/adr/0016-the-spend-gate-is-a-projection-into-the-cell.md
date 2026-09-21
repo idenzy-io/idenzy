@@ -3,6 +3,18 @@
 - Status: accepted
 - Date: 2026-09-15
 
+> **Superseded 2026-09-21.** All three reasons in the Context below were region-derived and
+> none of them survives: there is no cell to bound a blast radius, no second cell for a
+> control-plane outage to take down, and no transatlantic hop to avoid. `project_spend_state`
+> is now an optimisation — one local read on the send path instead of a join across org-keyed
+> billing tables — rather than an isolation boundary, and should be judged as one.
+>
+> **The fail-open half stands on its own and is the part to keep.** A missing or stale row
+> means yes, because a delivery refused by a gate that cannot answer is worse than a delivery
+> that costs money; `SpendTolerance` and the staleness horizon are unchanged, and ADR-0014's
+> continuity argument does not depend on cells. If this projection is ever removed, the
+> fail-open rule has to be re-stated wherever the gate ends up.
+
 ## Context
 
 `WalletSolvency` decides whether an organisation may still spend on the metered channels — SMS,
@@ -11,7 +23,7 @@ a tolerance, so that a card which expired on Friday does not stop one-time codes
 
 What it was not asked at the time is *where it reads that from*. It read three tables —
 `org_debts`, `credit_grants` and `usage_charges` — inside `runForOrg`, on the send path, from
-`apps/auth-api`. Its own docstring flagged this as unusual and defended it:
+`apps/api`. Its own docstring flagged this as unusual and defended it:
 
 > This crosses from a project to its organisation, which is the one place on the request path
 > that does.
@@ -21,7 +33,7 @@ belong to the global control plane (ADR-0011); the send path belongs to a cell. 
 makes cells independent stacks, so "the one place on the request path that crosses" becomes the
 one place a cell reaches into another database, and it breaks three ways at once:
 
-- **Credentials.** `apps/auth-api` would need a control-plane connection. A cell exists to bound
+- **Credentials.** `apps/api` would need a control-plane connection. A cell exists to bound
   a blast radius, and handing every cell's public-facing service credentials to the plane holding
   every organisation's billing identity is the opposite of that.
 - **Availability.** A control-plane outage would stop one-time codes in *every* cell

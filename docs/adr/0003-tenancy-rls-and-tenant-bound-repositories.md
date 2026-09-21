@@ -3,6 +3,16 @@
 - Status: accepted
 - Date: 2026-09-03
 
+> **Superseded in part, 2026-09-21.** Row-level security was removed. The half of this
+> decision that survives is the half named in its title: `BaseRepository` still cannot be
+> constructed without a `TenantContext`, `OrgRepository` still cannot without an
+> `OrgContext`, and every query starts from that predicate. The half that is gone is the
+> database's: no policies, no `FORCE ROW LEVEL SECURITY`, no `NOBYPASSRLS`, no
+> `set_config('app.project_id')`. The audit that preceded the removal found 232 of 233
+> statements already filtering in SQL and fixed the one that did not, so what was lost was
+> the second line rather than the first — but it was a real second line, and §7.4's
+> nineteen negative tests went with it. See PROJECT.md §4.10.
+
 ## Context
 
 Idenzy is fully multi-tenant on a single shared Postgres cluster, which is the decision that makes

@@ -4,11 +4,11 @@ Route: `/settings` · [Page source](../apps/client/app/pages/settings/index.vue)
 
 ## User task
 
-I need to identify the project, understand where its data lives, change its label and avoid destructive mistakes.
+I need to identify the project, change its label and avoid destructive mistakes.
 
 ## Keep
 
-Keep immutable project ID/residency presentation, the explicit no-certification statement and a separate danger section.
+Keep the immutable project ID, the explicit no-certification statement and a separate danger section. Residency presentation is gone with the cells (PROJECT.md 4.13.5).
 
 ## Proposed mockup
 
@@ -58,7 +58,7 @@ ProjectDeleteDialog properly requires the name and lists resource counts, but it
 
 ## Proposed page
 
-Project identity and connected app → region and effective controls → editable retention → billing/team links → danger zone. Reference descriptions of RLS and key-management internals should be secondary.
+Project identity and connected app → effective controls → editable retention → billing/team links → danger zone. Reference descriptions of RLS and key-management internals should be secondary.
 
 ## Dialogs and interactions
 
@@ -87,8 +87,9 @@ diagnosis word for word. The sentences are unchanged and none was deleted: they 
 `Statistic` already used. `FactGrid` is the new primitive, and it also replaces the
 hand-written `grid gap-px` mosaic on ten other pages.
 
-Residency, the compliance tier and key custody were three cards between two things the
-reader can change. They are now one folded section of ten facts, and it states its own
+The compliance tier and key custody were cards between two things the reader can
+change. They are now one folded section. Residency was the third and is gone with the
+region cells (PROJECT.md 4.13.5).
 values in the heading while shut, which this file's own collapsed-section rule requires.
 
 Retention keeps its draft, its `Cancel changes` and its `Save changes` at the section's

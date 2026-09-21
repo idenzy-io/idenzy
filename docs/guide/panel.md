@@ -142,6 +142,13 @@ The seam between them is the token: `useIdenzy().getToken()` is what the managem
 client's request interceptor attaches, so the SDK stays the only holder of session state
 and VueUse stays the only way the panel asks a question of its own.
 
+**One host, two surfaces.** The two clients used to point at two services on two ports, and
+`useManagementApi()` read its own `NUXT_PUBLIC_MANAGEMENT_API_URL`. They were merged into
+one API (PROJECT.md 9.1), so both now read the SDK's `apiUrl` and a second variable would
+only let a deployment point the two halves of the panel at different hosts — a
+misconfiguration with no symptom until a screen failed. The split that remains is the one
+that matters and is unchanged: the SDK holds the session, VueUse asks the questions.
+
 ## Syntax highlighting
 
 Shiki, through `nuxt-shiki`, and it is configured once in `nuxt.config.ts` so a caller

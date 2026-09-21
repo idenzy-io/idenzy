@@ -10,7 +10,7 @@ terraform {
 }
 
 variable "project_id" {
-  description = "The GCP project this cell is provisioned into."
+  description = "The GCP project this deployment is provisioned into."
   type        = string
   default     = "idenzy-dev"
 }
@@ -20,18 +20,16 @@ provider "google" {
   region  = "us-central1"
 }
 
-# The first cell. Open decision 2 in PROJECT.md 16 is closed: us-central1.
+# The deployment. Open decision 2 in PROJECT.md 16 is closed: us-central1.
 #
-# The cell code and jurisdiction follow the region rather than the other way round, because
-# `projects.cell_id` is immutable once set (PROJECT.md 4.13.5) and a cell labelled EU that
-# runs in Iowa would make every residency claim built on that column false.
-module "cell_us_1" {
-  source = "../../modules/cell"
+# There is one, and there is no second planned. This was `module "cell_us_1"` from
+# `modules/cell`, with a `cell_code` and a `jurisdiction`, back when a project could be
+# pinned to a region; residency is not offered (PROJECT.md 4.13.5).
+module "stack" {
+  source = "../../modules/stack"
 
-  project_id   = var.project_id
-  cell_code    = "us1"
-  region       = "us-central1"
-  jurisdiction = "US"
+  project_id = var.project_id
+  region     = "us-central1"
 
   # Dev runs single-zone and scales to zero; production does neither.
   database_ha   = false

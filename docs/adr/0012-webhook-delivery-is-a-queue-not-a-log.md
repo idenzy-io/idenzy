@@ -3,6 +3,9 @@
 - Status: accepted
 - Date: 2026-09-13
 
+> **Amended 2026-09-21.** The sizing sentence says "1000 projects and 10M MAU in one cell";
+> read it as "in the system". Nothing structural changes.
+
 ## Context
 
 PROJECT.md 3.2 promises webhooks that are "HMAC-signed, retried, replay-safe", and the panel's

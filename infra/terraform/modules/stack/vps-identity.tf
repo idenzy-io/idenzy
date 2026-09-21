@@ -1,4 +1,4 @@
-# How a cell that runs outside Google reaches the two things inside it.
+# How a deployment that runs outside Google reaches the two things inside it.
 #
 # Stage one puts the APIs, Postgres, Valkey, ClickHouse and the workers on one VPS. Two things stay
 # on Google and only two, each for a reason that is not cost:
@@ -13,39 +13,39 @@
 # Both are ordinary outbound HTTPS calls. Nothing here needs a VPC, a connector, a NAT gateway or
 # Cloud Run — those belong to `enable_managed_infrastructure`, and this is what stage one uses
 # instead.
-resource "google_service_account" "cell_runtime" {
+resource "google_service_account" "stack_runtime" {
   account_id   = "${local.name_prefix}-runtime"
   project      = var.project_id
-  display_name = "Cell ${var.cell_code} runtime (off-platform)"
-  description  = "Used by the VPS running this cell to reach KMS and the export bucket, and nothing else."
+  display_name = "Idenzy runtime (off-platform)"
+  description  = "Used by the VPS to reach KMS and the export bucket, and nothing else."
 }
 
 # Sign and verify, not manage. The runtime may *use* the per-project signing keys and may not
 # create, rotate, disable or read them — which is the separation PROJECT.md 4.13.7 asks for between
 # key administrators and key users, expressed as two roles rather than as a policy document.
 resource "google_kms_key_ring_iam_member" "runtime_signs" {
-  key_ring_id = google_kms_key_ring.cell.id
+  key_ring_id = google_kms_key_ring.stack.id
   role        = "roles/cloudkms.signerVerifier"
-  member      = "serviceAccount:${google_service_account.cell_runtime.email}"
+  member      = "serviceAccount:${google_service_account.stack_runtime.email}"
 }
 
 # Unwrapping the per-project data encryption key, which is what field-level encryption runs on.
 resource "google_kms_key_ring_iam_member" "runtime_unwraps" {
-  key_ring_id = google_kms_key_ring.cell.id
+  key_ring_id = google_kms_key_ring.stack.id
   role        = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member      = "serviceAccount:${google_service_account.cell_runtime.email}"
+  member      = "serviceAccount:${google_service_account.stack_runtime.email}"
 }
 
 # Write an export and hand out a signed link to it. `objectAdmin` rather than `objectCreator`
 # because the worker must also be able to delete a bundle a request withdrew before the lifecycle
 # rule would have.
 #
-# Scoped to this bucket, not the project. A cell's runtime has no business reading any other
+# Scoped to this bucket, not the project. The runtime has no business reading any other
 # bucket, and a project-level grant is how it would come to.
 resource "google_storage_bucket_iam_member" "runtime_writes_exports" {
   bucket = google_storage_bucket.subject_exports.name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.cell_runtime.email}"
+  member = "serviceAccount:${google_service_account.stack_runtime.email}"
 }
 
 /*

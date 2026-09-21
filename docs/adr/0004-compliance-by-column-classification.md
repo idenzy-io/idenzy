@@ -3,6 +3,14 @@
 - Status: accepted
 - Date: 2026-09-03
 
+> **Amended 2026-09-21.** Strike the "Residency is immutable" outcome: `cell_id` is gone from
+> `orgs` and `projects`, and residency is not offered (PROJECT.md §4.13.5). `controlTable()`
+> is gone too — it qualified the registry key with `control.` on the argument that "which
+> plane is this table in" was the same question as "which jurisdiction does this column live
+> in", which was true only while a cell was an independent stack. Everything else holds:
+> every column is still declared through `classified()`, and the data map, RoPA, log
+> allowlist and DSR field lists are still generated from those declarations.
+
 ## Context
 
 The compliance roadmap is SOC 2 Type II in year one, then ISO 27001, a GDPR DPA, and a HIPAA BAA on

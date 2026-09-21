@@ -1,4 +1,4 @@
-# The cell's network. **Stage two, not stage one** — every resource here is behind
+# The network. **Stage two, not stage one** — every resource here is behind
 # `enable_managed_infrastructure` and creates nothing by default.
 #
 # Stage one is one high-end VPS running the APIs, Postgres, Valkey, ClickHouse and the workers, so
@@ -20,27 +20,27 @@
 # they are made: Direct VPC egress rather than a Serverless VPC Access connector, and
 # private-ranges-only egress rather than a Cloud NAT gateway.
 
-resource "google_compute_network" "cell" {
+resource "google_compute_network" "stack" {
   count = var.enable_managed_infrastructure ? 1 : 0
 
   name                    = "${local.name_prefix}-vpc"
   project                 = var.project_id
   auto_create_subnetworks = false
-  description             = "One cell, one network. Cells share no data and no route to each other."
+  description             = "One deployment, one network. No route to each other."
 }
 
-# A single regional subnet: a cell never spans regions, so neither does its subnet.
+# A single regional subnet: the deployment is one region, so neither does its subnet.
 #
 # `private_ip_google_access` lets workloads reach Google APIs — Cloud Storage for a data-subject
 # export, KMS for a signing call — without a public address and without a NAT gateway. That is the
 # first of the two cost decisions.
-resource "google_compute_subnetwork" "cell" {
+resource "google_compute_subnetwork" "stack" {
   count = var.enable_managed_infrastructure ? 1 : 0
 
   name                     = "${local.name_prefix}-subnet"
   project                  = var.project_id
   region                   = var.region
-  network                  = google_compute_network.cell[0].id
+  network                  = google_compute_network.stack[0].id
   ip_cidr_range            = var.subnet_cidr
   private_ip_google_access = true
 }
@@ -55,7 +55,7 @@ resource "google_compute_global_address" "private_services" {
   purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
   prefix_length = 16
-  network       = google_compute_network.cell[0].id
+  network       = google_compute_network.stack[0].id
 }
 
 # The peering itself. This is what turns `ipv4_enabled = false` from an instance with no route into
@@ -63,7 +63,7 @@ resource "google_compute_global_address" "private_services" {
 resource "google_service_networking_connection" "private_services" {
   count = var.enable_managed_infrastructure ? 1 : 0
 
-  network                 = google_compute_network.cell[0].id
+  network                 = google_compute_network.stack[0].id
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_services[0].name]
 }

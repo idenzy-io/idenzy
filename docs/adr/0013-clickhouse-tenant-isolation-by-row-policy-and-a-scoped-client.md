@@ -3,6 +3,12 @@
 - Status: accepted
 - Date: 2026-09-13
 
+> **Amended 2026-09-21.** The decision stands unchanged and is now the only row policy in the
+> system: Postgres RLS was removed, ClickHouse's was not, because the argument for it never
+> rested on Postgres. What is struck is the residency consequence at the foot of this file —
+> there are no cells, so an EU project's events do not go to an EU ClickHouse, and a
+> cross-tenant query is prevented by the policy rather than by topology.
+
 ## Context
 
 todo.md 3.2 decided that analytics and log storage are ClickHouse rather than Postgres, and listed

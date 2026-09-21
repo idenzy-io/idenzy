@@ -2,7 +2,7 @@
 
 Route: `/getting-started` · [Page](../apps/client/app/pages/getting-started.vue) ·
 [Layout](../apps/client/app/layouts/onboarding.vue) ·
-[Guard](../apps/client/app/middleware/onboarding.global.ts)
+[Guard](../apps/client/app/middleware/session.global.ts)
 
 ## User task
 
@@ -37,11 +37,6 @@ Project name
 [ My application                    ]
 A label for this dashboard. Nobody signing in to your application ever sees it.
 
-Where should this project's data live?
-( ) 🇪🇺 Europe (Belgium)      Data stays under European Union law.
-( ) 🇺🇸 United States          Data stays under United States law.
-🔒 Pinned when the project is created. Moving it later is a migration we run.
-
                                           [ Continue → ]
 ```
 
@@ -63,13 +58,14 @@ Your team, your billing and your invoices belong to this.
 
 ## Findings and fixes
 
-### P1 — The two halves are not equally binding
+### P1 — ~~The two halves are not equally binding~~
 
-A project's name is editable from settings for ever. Its region is pinned at creation and
-moving it is an audited migration, not a setting (PROJECT.md 4.13.5). On one page every
-field would look the same weight. Splitting the steps puts the irreversible answer on a
-step of its own with the warning beside it, and leaves the survey somewhere it cannot be
-mistaken for a decision.
+**Moot since 2026-09-21.** This finding was about the region: a name is editable for ever,
+a region was pinned at creation, and putting both on one page made every field look the
+same weight. Region cells are gone (PROJECT.md 4.13.5), so step one now asks one question
+and nothing on this page is irreversible. The two steps remain, for the weaker but still
+real reason that a survey mixed into the form that creates the project reads as part of
+creating it.
 
 ### P1 — Nothing may be written before the form is finished
 
@@ -86,11 +82,10 @@ a page whose only button creates something they do not want.
 
 ## Settled while implementing
 
-**The region is asked as a question about the project, not about the customer.** "Where
-should this project's data live" rather than "what country are you in": a company in one
-country routinely wants residency in another, and the billing country is the organisation's
-and belongs on an invoice. Flags are on the options because two place names read faster with
-them than without.
+**The region question is gone.** It asked "where should this project's data live" rather
+than "what country are you in", which was the right framing for a question we no longer ask:
+residency is not offered (PROJECT.md 4.13.5). The `ChoiceList`, the flags and the "pinned at
+creation" warning went with it.
 
 **The optional answers are a list before they are a box.** A list gets answered; an empty
 textarea gets skipped. Both still take a written answer, because the useful ones are the
@@ -119,8 +114,8 @@ starts.
 ## Acceptance checks
 
 - The dashboard is unreachable with no organisation, and this page is unreachable with one.
-- Continue is refused until the name and the region are both answered; the name's error
-  replaces its helper rather than stacking under it.
+- Continue is refused until the name is answered; the name's error replaces its helper
+  rather than stacking under it.
 - Skipping the second step creates the project and stores no survey row at all.
 - Leaving the page at any point writes nothing.
 
@@ -129,4 +124,4 @@ starts.
 - Domain rules and copy: [utils/onboarding.ts](../apps/client/app/utils/onboarding.ts)
 - Store and the call: [stores/onboarding.ts](../apps/client/app/stores/onboarding.ts)
 - Server: `POST /v1/onboarding` in
-  [apps/management-api](../apps/management-api/src/onboarding/onboarding-service.ts)
+  [apps/api](../apps/api/src/management/onboarding/onboarding-service.ts)

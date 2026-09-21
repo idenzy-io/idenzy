@@ -21,8 +21,8 @@ never been given credentials.
 
 ## Infrastructure (Google Cloud)
 
-One cloud, on purpose: a cell is an independent Cloud Run, Cloud SQL, Valkey and KMS ring,
-and running two clouds would double the residency story for no customer benefit
+One cloud, on purpose: running two would double the key-management story for no customer
+benefit
 (PROJECT.md 4.13.5, 6.2).
 
 | Service | Purpose | Status |
@@ -111,7 +111,7 @@ the subprocessor register.
 | GitHub | Source, pull requests, CI |
 | npm registry | Dependencies, and eventually the published SDK scope, with provenance and CI-only publishing (PROJECT.md 7.6) |
 | Docker Hub | `postgres:17-alpine` and `valkey:8-alpine` for `docker compose` and Testcontainers |
-| Terraform (Google provider) | Cells, roles, KMS rings and everything else a migration must not create |
+| Terraform (Google provider) | Roles, KMS rings and everything else a migration must not create |
 
 ## Deliberately not used
 
@@ -121,7 +121,7 @@ the subprocessor register.
   because we render no authentication pages at all (ADR-0002).
 - **No session-replay or error-reporting vendor** with access to customer data.
 - **No second cloud.** Multi-cloud here would double the residency and key-management
-  story to hedge a risk that regional cells already cover.
+  story to hedge a risk a single well-run region already covers.
 
 ## HIPAA-tier restriction
 

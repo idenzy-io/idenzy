@@ -30,7 +30,7 @@ pnpm install && pnpm run prepare   # prepare installs git hooks; ignoreScripts i
 docker compose up -d && pnpm db:migrate
 pnpm dev                           # every app through turbo
 
-docker compose --profile api up -d # auth-api and management-api in containers instead
+docker compose --profile api up -d # the API in a container instead of pnpm dev
 
 pnpm turbo run typecheck build test
 pnpm lint                          # biome, a root script and not a turbo task
@@ -38,9 +38,9 @@ pnpm turbo run test:integration    # Testcontainers, needs Docker
 pnpm compliance:generate           # after any schema change; CI fails if stale
 ```
 
-The `api` profile is an alternative to `pnpm dev` for those two services and not an addition
-to it: both bind the same ports and both write to `apps/*/dist`, so running the pair leaves
-one of them serving a build the other wrote. It mounts the working tree and runs the same
+The `api` profile is an alternative to `pnpm dev` for that service and not an addition to it:
+both bind the same port and both write to `apps/api/dist`, so running the pair leaves one of
+them serving a build the other wrote. It mounts the working tree and runs the same
 watcher, so an edit reaches the container in a few seconds and nothing has to be rebuilt.
 There is no Dockerfile and no image of ours — this is a development convenience, and
 deployment is still deferred.
@@ -50,7 +50,7 @@ deployment is still deferred.
 | If you are touching | Read |
 | --- | --- |
 | the toolchain, a migration, a column, an error code, a test | [docs/guide/repo.md](./docs/guide/repo.md) |
-| the auth API, a flow, MFA, passkeys, claims, SMS, revocation, the audit trail, webhook delivery | [docs/guide/backend.md](./docs/guide/backend.md) |
+| the API — a flow, MFA, passkeys, claims, SMS, revocation, the audit trail, webhook delivery, the dashboard endpoints | [docs/guide/backend.md](./docs/guide/backend.md) |
 | `@idenzy/js`, a framework binding, an SSR helper, `@idenzy/node`, the CLI | [docs/guide/sdk.md](./docs/guide/sdk.md) |
 | `apps/client` generally — its stack, shared components, charts, code blocks | [docs/guide/panel.md](./docs/guide/panel.md) |
 | one screen of the panel | its `notes/` file, then [docs/guide/panel-screens.md](./docs/guide/panel-screens.md) |

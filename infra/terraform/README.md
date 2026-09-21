@@ -1,20 +1,23 @@
 # Infrastructure
 
-A **cell** is one independent regional stack: Cloud Run, Cloud SQL, Memorystore, a KMS
-key ring, and the network around them. Cells share no data. A project is pinned to one at
-creation and does not move (PROJECT.md 4.13.5), which is what lets an EU project be
-honestly described as EU-resident.
+One deployment: Cloud Run, Cloud SQL, Memorystore, a KMS key ring, and the network around
+them, in one region.
 
-The control plane (billing, the cell registry, our own dashboard auth) is global and
-holds cell pointers and billing identifiers only, never tenant personal data.
+This used to describe **cells** — independent regional stacks sharing no data, with a
+project pinned to one at creation so that an EU project could be honestly described as
+EU-resident, and a global control plane holding cell pointers only. That model was built
+and removed on 2026-09-21. **Residency is not offered** (PROJECT.md 4.13.5), and nothing
+here should be read as offering it.
+
+Nothing in this directory has been applied.
 
 ## Layout
 
 ```
-modules/cell/          one region cell, instantiated per environment
+modules/stack/         the deployment, instantiated per environment
   main.tf              KMS, Cloud SQL, the Postgres roles
   webhooks.tf          the webhook retry lane: Cloud Tasks queues, an identity, IAM
-environments/dev/      the first cell
+environments/dev/      the one environment
 ```
 
 ## What lives here rather than in a migration
@@ -22,8 +25,8 @@ environments/dev/      the first cell
 Postgres roles. They are cluster-level objects, not schema, so `idenzy_app` and
 `idenzy_owner` are created by Terraform on Cloud SQL and by
 `infra/docker/postgres-init` locally. Migration 0000 already references `idenzy_app` in
-its `CREATE POLICY` statements, so a migration that also created the role could not run
-on a fresh cluster.
+its grant statements, so a migration that also created the role could not run on a fresh
+cluster.
 
 ## The webhook retry lane
 
@@ -34,8 +37,8 @@ sweeping the table if it is given none (ADR-0012):
 
 | Variable | From |
 |---|---|
-| `GCP_PROJECT_ID` | the cell's Cloud project |
-| `WEBHOOK_TASKS_LOCATION` | the cell's region |
+| `GCP_PROJECT_ID` | the Cloud project |
+| `WEBHOOK_TASKS_LOCATION` | the region |
 | `WEBHOOK_TASKS_QUEUE_PREFIX` | `webhook_queue_prefix` output |
 | `WEBHOOK_TASKS_QUEUE_SHARDS` | `webhook_queue_shards` output |
 | `WEBHOOK_TASKS_SERVICE_ACCOUNT` | `webhook_tasks_service_account` output |
@@ -46,12 +49,12 @@ half-configured queue is retry latency nobody is watching.
 
 Everything in that file is free to hold. Cloud Tasks bills per operation with a million a
 month free, and a queue, a service account and an IAM binding cost nothing at rest — which is
-why the retry lane exists in the skeleton while the rest of the cell's compute does not.
+why the retry lane exists in the skeleton while the rest of the compute does not.
 
 **One binding is missing on purpose**: `roles/run.invoker` on the workers service for that
 identity. The Cloud Run services are not declared in this module yet, and granting the invoker
 role at project level to make the file look complete would hand a webhook identity the right to
-call everything in the cell.
+call everything in the deployment.
 
 ## Not applied
 

@@ -12,8 +12,8 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   husky installing itself.
 - **Roles are not created by migrations.** `idenzy_app` and `idenzy_owner` are
   cluster-level objects created by provisioning (`infra/docker/postgres-init` locally,
-  Terraform on Cloud SQL). Migration 0000 references `idenzy_app` in its `CREATE POLICY`
-  statements, so a migration that also created the role could not run on a fresh cluster.
+  Terraform on Cloud SQL). The migrations reference `idenzy_app` in their grant statements,
+  so a migration that also created the role could not run on a fresh cluster.
 - **TypeScript is pinned to 6.0.x**, not 7. `@nestjs/cli` 12 depends on `typescript
   ~6.0.2` and Nest DI needs `emitDecoratorMetadata`.
 - **Node cannot run this source, so `pnpm dev` compiles.** Two reasons and both are
@@ -31,21 +31,21 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
 - **App tests import from `dist`.** Vitest 4 transforms with Rolldown, which does not
   apply the legacy decorator semantics NestJS needs, so decorated classes fail to parse
   from source. Compiling first also means tests exercise the artifact that ships.
-- **`drizzle-kit` does not generate roles, grants, `FORCE ROW LEVEL SECURITY` or
-  partitioning.** Those are hand-authored migrations made with `pnpm db:custom`, in the
-  same numbered sequence. Read them as SQL.
-- **A new tenant table needs its own FORCE RLS and grant migration.** Migration 0001
-  applied both by looping over the tables that existed when it ran, and it ran once. A
-  table added later gets its policy from `drizzle-kit` and neither FORCE nor a grant,
-  which means `idenzy_app` cannot read it at all and the owner can read across tenants.
-  Two tests in `packages/testing` fail if you forget.
+- **`drizzle-kit` does not generate roles, grants or partitioning.** Those are
+  hand-authored migrations made with `pnpm db:custom`, in the same numbered sequence. Read
+  them as SQL. It used to not generate `FORCE ROW LEVEL SECURITY` either; there is no RLS
+  to force since `0069_remove_rls_and_cells.sql` (PROJECT.md 4.10).
+- **A new tenant table needs its own grant migration.** Migration 0001 granted by looping
+  over the tables that existed when it ran, and it ran once. A table added later gets its
+  DDL from `drizzle-kit` and no grant, which means `idenzy_app` cannot read it at all —
+  a permission error on a route nobody has called yet. `tenancy.integration.test.ts` fails
+  if you forget.
   **Name the table; do not copy the dynamic blocks from `0004_nasty_catseye.sql`.** They
   grant all four verbs on every table except `audit_events`, and three tables now
   deliberately refuse one: every `audit_events_*` partition (append-only, narrowed in 0030)
   and `payment_provider_events` (no `DELETE`). Copying them re-grants what those migrations
   withheld, which is how `0042` was first written and what the append-only tests caught.
-  Two named statements are the whole migration:
-  `ALTER TABLE public.x FORCE ROW LEVEL SECURITY;` and
+  One named statement is the whole migration:
   `GRANT SELECT, INSERT, UPDATE, DELETE ON public.x TO idenzy_app;`
 - **Default privileges outrank your migration's intent, and did so twice.** Migration
   0001 ends with `ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE, DELETE`, so
@@ -55,11 +55,12 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   `ensure_audit_partition` revoke them itself. If you add a table that must refuse a
   privilege, revoke it explicitly and assert the *absence* in a test — the grants test
   only checks that privileges are present, so it cannot see this class of bug.
-- **There are two tenant keys, not one.** `app.project_id` scopes a project's data and
-  `app.org_id` scopes the organisation's — the team, the wallet, the cards, the invoices
-  (ADR-0011). Neither satisfies the other's policy, so a repository built on the wrong
-  base reads nothing rather than reading everything, and `BaseRepository` and
-  `OrgRepository` are deliberately separate classes so the choice is made at construction.
+- **There are two tenant scopes, not one.** `projectId` scopes a project's data and
+  `orgId` scopes the organisation's — the team, the wallet, the cards, the invoices
+  (ADR-0011). They were two RLS keys, and a repository built on the wrong base read nothing
+  rather than everything. With the policies gone the wrong base reads **everything**, which
+  is why `BaseRepository` and `OrgRepository` are still deliberately separate classes taking
+  different context types: the choice is made at construction or not at all.
 - **A new tenant table's grant migration is not optional even when the table is config.**
   `sms_policies` holds the spend cap, so a missing grant would not fail loudly: `idenzy_app`
   reads no policy, every project looks unconfigured, and SMS refuses everywhere.
@@ -67,7 +68,7 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   which requires `process.env["X"]`. TypeScript wins.
 - **Biome's `useImportType` breaks NestJS DI.** Rewriting an injected dependency to
   `import type` compiles and lints, then resolves to `undefined` in `design:paramtypes`
-  and fails at boot. The rule is off for `apps/*/src/**`, and `apps/auth-api/test/
+  and fails at boot. The rule is off for `apps/*/src/**`, and `apps/api/test/
   wiring.test.ts` compiles the composition root so the failure shows up in a test run
   rather than on a container that will not start. Biome also cannot parse `@Body()` and
   friends without `javascript.parser.unsafeParameterDecoratorsEnabled`; without it its
@@ -76,9 +77,10 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   with the pg error, and the SQLSTATE, on `cause`. Reading `code` off the caught value
   finds nothing, which is how every unique violation was surfacing as a 500 instead of a
   409. `BaseRepository.guard` walks the cause chain.
-- **`.enableRLS()` changes the table's type** to `Omit<PgTableWithColumns<T>,
-  "enableRLS">`, so a generic constrained to `PgTableWithColumns` rejects every table in
-  our schema. `BaseRepository` is constrained to `PgTable`.
+- **`BaseRepository` is constrained to `PgTable`, not `PgTableWithColumns`.** It was
+  `.enableRLS()` that forced this — it returned `Omit<PgTableWithColumns<T>, "enableRLS">`,
+  which the narrower constraint rejected. The calls are gone and the constraint stays,
+  because nothing gains from tightening it.
 - **`drizzle-kit generate` needs a TTY when a column is dropped and another added.** It
   asks whether the pair is a rename, and there is no flag to answer. Piping input fails
   outright. Split the change into an additive migration and a drop, which is why
@@ -116,12 +118,15 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
 1. Declare it with `classified()` inside a `classifiedTable`. The compiler enforces this.
 2. `pnpm db:generate`, then read the generated SQL before committing it.
 3. `pnpm compliance:generate` and commit the regenerated artifacts.
-4. If it is a tenant table, confirm it carries `projectId` and a tenant isolation policy.
-   If it is an organisation table, the same question with `orgId` and `orgIsolationPolicy`
-   (ADR-0011) — the control plane has its own key and `UnitOfWork.runForOrg` sets it.
-5. If it is a *new* table, add the FORCE RLS and grant blocks in a `pnpm db:custom`
-   migration. See the note above; the policy alone is not enough. The two `DO` blocks are
-   dynamic and cover either key, so they need no edit for an org-scoped table.
+4. If it is a tenant table, confirm it carries `projectId` and that every query in its
+   repository starts from `tenantScope()`. If it is an organisation table, the same
+   question with `orgId` and `orgScope()` (ADR-0011) — an organisation is not a project.
+   **There is no policy underneath any more** (PROJECT.md 4.10), so a query that forgets
+   its scope is answered rather than refused.
+5. If it is a *new* table, add the grant block in a `pnpm db:custom` migration. The `DO`
+   block is dynamic and covers every table, so it needs no edit — but a table added after
+   it last ran has no grants until one runs again, which shows up as a permission error on
+   a route nobody has called yet. `tenancy.integration.test.ts` is what notices.
 
 ## Adding an error
 
@@ -160,7 +165,7 @@ only `src`. A conformance suite that could not have compiled reported a pass.
 
 ## Tests that must never become optional
 
-The RLS negative tests and the audit append-only tests in `packages/testing`. They assert
+The audit append-only tests and the grant tests in `packages/testing`. They assert
 that an attack or a mistake fails, which is the only thing that proves tenant isolation
 holds when application code is wrong. A test that only exercises correct usage proves
 nothing here.

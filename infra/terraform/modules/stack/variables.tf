@@ -1,20 +1,10 @@
 variable "project_id" {
-  description = "GCP project hosting this cell."
-  type        = string
-}
-
-variable "cell_code" {
-  description = "Short cell identifier, e.g. us1. Lowercase alphanumeric. Appears in logs and the region_cells table."
+  description = "GCP project hosting the deployment."
   type        = string
 }
 
 variable "region" {
-  description = "GCP region. A cell never spans regions; that is the point of a cell."
-  type        = string
-}
-
-variable "jurisdiction" {
-  description = "Data residency jurisdiction this cell serves, e.g. EU, US."
+  description = "GCP region. One region, and everything is in it."
   type        = string
 }
 
@@ -34,7 +24,7 @@ variable "enable_cmek" {
   description = <<-EOT
     Customer-managed encryption keys on Cloud SQL and storage (PROJECT.md 4.13.4).
 
-    Present and off by default. Enabling it for an enterprise or HIPAA-tier cell is a
+    Present and off by default. Enabling it for an enterprise or HIPAA-tier deployment is a
     configuration change rather than a migration, which is the whole reason it exists
     before anyone has asked for it.
   EOT
@@ -95,7 +85,7 @@ variable "webhook_queue_concurrent_dispatches" {
 }
 
 variable "subnet_cidr" {
-  description = "The cell's single regional subnet. /20 leaves room for Direct VPC egress, which consumes addresses from it per Cloud Run revision."
+  description = "The single regional subnet. /20 leaves room for Direct VPC egress, which consumes addresses from it per Cloud Run revision."
   type        = string
   default     = "10.8.0.0/20"
 }
@@ -114,7 +104,7 @@ variable "subject_export_retention_days" {
 
 variable "enable_managed_infrastructure" {
   description = <<-EOT
-    Whether this cell runs on Google's managed services or on a VPS.
+    Whether the deployment runs on Google's managed services or on a VPS.
 
     **Off, which is the first production stage.** One high-end VPS runs everything that holds
     state or serves a request: the APIs, Postgres, Valkey, ClickHouse and the workers. Nothing

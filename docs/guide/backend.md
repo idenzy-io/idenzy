@@ -51,7 +51,7 @@ itself proved a factor rather than whether one is owed. That is the gate's busin
 `authenticate` therefore returns a session *or* a challenge (ADR-0010).
 
 `FlowHooks` and `FlowAudit` are interfaces, so they are injected with the symbol tokens
-in `apps/auth-api/src/flows/flow-tokens.ts` rather than by type.
+in `apps/api/src/flows/flow-tokens.ts` rather than by type.
 
 Anything security-critical needs a test that asserts the attack fails (PROJECT.md 7.4),
 not only that the happy path works. The existing ones are the models: refresh reuse

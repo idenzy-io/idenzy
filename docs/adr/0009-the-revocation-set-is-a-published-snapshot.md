@@ -3,6 +3,10 @@
 - Status: accepted
 - Date: 2026-09-03
 
+> **Amended 2026-09-21.** Strike the paragraph about the set being per cell and replication lag
+> between cells being part of the advertised propagation number. One deployment, one set, and
+> the number is simpler for it.
+
 ## Context
 
 An access token is verified offline against a cached JWKS, which is what makes a server-rendered

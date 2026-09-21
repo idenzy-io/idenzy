@@ -15,15 +15,15 @@ The customer's end user is a different person from the signed-in dashboard membe
 | `apps/client` | Nuxt SPA, Vue, Vuetify, Tailwind, Pinia, ECharts | This audit's scope; shared styling is appropriate, but page composition should follow the task. |
 | `apps/landing` | Public marketing/documentation shell | Long integration and architecture explanations belong here, with concise help beside dashboard controls. |
 | `apps/admin` | Separate internal operator console | Do not imply customer access to internal infrastructure controls. |
-| `apps/management-api` | Intended management and billing control plane | Its current module registers health only. Dashboard management actions are not evidence of working production features. |
-| `apps/auth-api` | Authentication, sessions, MFA, OAuth, claims and revocation | Some real capabilities exist here independently of the incomplete management plane. |
+| `apps/api` (`src/management/`) | Management and billing, merged into the one API service | Both surfaces run in one process; `src/http/surface.ts` keeps their CORS and guard chains apart. |
+| `apps/api` | Authentication, sessions, MFA, OAuth, claims and revocation | Some real capabilities exist here independently of the incomplete management plane. |
 | `apps/workers` | Background processing; audit relay and revocation reconciliation exist | Delivery, exports, provisioning and other future jobs need their own observable job states. |
 | `packages/protocol`, `core`, `domain` | Contracts, errors, invariants, flows and policies | UI examples and validation must use the actual contract; copied constants already disagree between pages. |
 | `packages/persistence`, `crypto`, `cache` | Drizzle/Postgres, tenant RLS, credentials, Valkey | Preserve tenant scoping and security guarantees while simplifying their explanation. |
 | `packages/sdk`, `tools/cli`, `examples` | Headless integration and customer-owned starter code | Onboarding should finish at a real successful sign-in, not merely at creating a key. |
-| `infra`, compliance registers | Region cells, deployment plans, data classification and controls | A planned control must not appear as verified operational protection. |
+| `infra`, compliance registers | Deployment plans, data classification and controls | A planned control must not appear as verified operational protection. |
 
-Dependency direction is apps → feature/infrastructure packages → domain → protocol/core. Tenant data is bound to a project; the intended infrastructure uses independent regional cells. The intended shared `@idenzy/ui` package is not yet present: dashboard components and tokens live locally.
+Dependency direction is apps → feature/infrastructure packages → domain → protocol/core. Tenant data is bound to a project by the repository layer. Regional cells were built and removed (PROJECT.md 4.13.5). The intended shared `@idenzy/ui` package is not yet present: dashboard components and tokens live locally.
 
 ## What is implemented versus demonstrated
 

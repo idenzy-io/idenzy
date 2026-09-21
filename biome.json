@@ -238,7 +238,7 @@
       }
     },
     {
-      "includes": ["apps/auth-api/src/**", "apps/management-api/src/**", "apps/workers/src/**"],
+      "includes": ["apps/api/src/**", "apps/workers/src/**"],
       "linter": {
         "rules": {
           "style": {

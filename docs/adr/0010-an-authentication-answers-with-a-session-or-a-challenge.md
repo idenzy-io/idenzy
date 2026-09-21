@@ -82,7 +82,7 @@ breaks the day a project can require a factor of every session. Uniformity here 
 
 Whether a subject owes a factor needs the user's enrolled factors and a challenge table, neither
 of which `@idenzy/domain` may reach (PROJECT.md 8.3). So `MfaGate` is an interface, implemented
-in `apps/auth-api`, injected by symbol like `FlowHooks` and `FlowAudit`.
+in `apps/api`, injected by symbol like `FlowHooks` and `FlowAudit`.
 
 What the base owns is where it is consulted. A flow that wanted to skip the gate would have to
 stop extending `AuthFlow`, which is visible in a diff; a flow that forgot it would hand a fully

@@ -21,7 +21,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** days_30, project_lifetime, until_account_deletion
-- **Tables:** `control.org_invitations`, `control.org_members`, `mfa_factors`, `webauthn_credentials`
+- **Tables:** `mfa_factors`, `org_invitations`, `org_members`, `webauthn_credentials`
 - **Categories of personal data:**
 
   - pii: email
@@ -33,7 +33,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_c_legal_obligation
 - **Retention:** days_30, project_lifetime, years_1, years_6
-- **Tables:** `audit_events`, `control.staff_access_grants`, `control.top_ups`, `data_subject_requests`, `email_sending_holds`, `email_templates`
+- **Tables:** `audit_events`, `data_subject_requests`, `email_sending_holds`, `email_templates`, `staff_access_grants`, `top_ups`
 - **Categories of personal data:**
 
   - pii: artifactUri
@@ -94,7 +94,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** project_lifetime, years_2, years_6
-- **Tables:** `control.credit_grants`, `control.invoice_lines`, `control.invoices`, `control.org_debts`, `control.orgs`, `control.payment_methods`, `control.payment_provider_events`, `control.top_ups`, `control.usage_billing_state`, `control.usage_charges`, `usage_daily`
+- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
 - **Categories of personal data:**
 
   - pii: name
@@ -181,7 +181,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** years_1
-- **Tables:** `control.onboarding_responses`
+- **Tables:** `onboarding_responses`
 - **Categories of personal data:**
 
   - pii: heardFrom

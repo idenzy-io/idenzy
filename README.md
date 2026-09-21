@@ -82,11 +82,15 @@ pnpm compliance:generate     # regenerate the data map and RoPA from the schema
 ## Compliance
 
 The data architecture is built to satisfy SOC 2 Type II, ISO 27001, GDPR and HIPAA: column-level
-data classification, an append-only hash-chained audit trail, per-project envelope encryption,
-region-pinned data residency, and first-class data-subject-request handling. See `PROJECT.md` §4.13.
+data classification, an append-only hash-chained audit trail, per-project envelope encryption, and
+first-class data-subject-request handling. See `PROJECT.md` §4.13.
+
+**Data residency is not offered.** One deployment in one region serves every customer; a project
+cannot be pinned to a jurisdiction.
 
 **No certification is currently held or claimed.** The architecture is present so that pursuing one
-is an audit rather than a rebuild.
+is an audit rather than a rebuild, and the programme itself is deliberately parked — see
+`docs/compliance/TODO.md`.
 
 ## Licence
 

@@ -14,8 +14,8 @@
 #     project's public-access prevention means a bundle is reached by a signed URL with a short
 #     life, and no misconfigured ACL can turn it into a link that works forever.
 #
-# It lives in the cell's own region, like everything else the cell holds: an export is a copy of
-# exactly the data the cell exists to keep in one jurisdiction.
+# It lives in the deployment's own region, like everything else: an export is a copy of
+# exactly the data an export bundle should not outlive.
 resource "google_storage_bucket" "subject_exports" {
   name     = "${local.name_prefix}-subject-exports"
   project  = var.project_id
@@ -37,7 +37,7 @@ resource "google_storage_bucket" "subject_exports" {
     }
   }
 
-  # An export bundle is worth encrypting under the cell's own key where CMEK is on, for the same
+  # An export bundle is worth encrypting under the deployment's own key where CMEK is on, for the same
   # reason the database is: it is the same data, concentrated.
   dynamic "encryption" {
     for_each = var.enable_cmek ? [1] : []

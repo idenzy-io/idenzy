@@ -9,7 +9,7 @@ Document status: Architecture & scope blueprint (September 2026). Name finalized
 **Two things to internalize before reading further:**
 
 1. **We ship no authentication UI.** No hosted sign-in pages, no embeddable components, no widget, no iframe. The auth API speaks JSON and HTTP redirects; the sign-in screen belongs to the customer's application. Everything in this document follows from that (§3.2, §10, ADR-0002).
-2. **The data architecture is compliance-shaped from day one** (classification, audit integrity, residency, data-subject rights, key custody; §4.13), while no certification is held or claimed.
+2. **The data architecture is compliance-shaped from day one** (classification, audit integrity, data-subject rights, key custody; §4.13), while no certification is held or claimed. Residency is **not** offered (§4.13.5), and the compliance programme itself is parked until there is revenue (`docs/compliance/TODO.md`).
 
 ---
 
@@ -21,7 +21,7 @@ Document status: Architecture & scope blueprint (September 2026). Name finalized
 | Free tier | 50,000 MAU/month free (matches Firebase, Supabase, and Clerk's Feb-2026 50K tier). |
 | Paid | **$0.0025 per MAU** above 50K (flat, no tiers). Email/SMS/passwordless delivery is metered separately with a margin. |
 | Core stack | **TypeScript (strict) · NestJS on Fastify · Node.js LTS** services on Cloud Run · Cloud SQL for PostgreSQL (HA) · Memorystore (Valkey/Redis) · Cloud KMS · Global HTTPS LB + Cloud Armor · Pub/Sub + Cloud Tasks · Terraform. |
-| Data access | **Drizzle**. Schema-in-TypeScript is the source of truth, `drizzle-kit` generates forward-only SQL migrations, RLS policies are declared in the schema next to the tables they protect (§9.4). |
+| Data access | **Drizzle**. Schema-in-TypeScript is the source of truth and `drizzle-kit` generates forward-only SQL migrations. RLS policies used to be declared in the schema beside the tables they protected; they were removed in favour of repository-level scoping alone (§4.10, §9.4). |
 | Codebase | **Single pnpm workspace monorepo**, split into publishable/internal packages under `@idenzy/*`; apps consume packages, packages never consume apps. |
 | Code style | **Class-based throughout.** Abstract base classes, inheritance, interfaces, decorators and constructor DI are mandatory; free-floating functions and ad-hoc object literals are not the unit of composition (see §7). |
 | Front end | **Nuxt (latest), three panels**: `landing` (**SSR**, public marketing + docs shell), `admin` (**SPA, no SSR**: internal operator console), `client` (**SPA, no SSR**: customer dashboard). None of these is authentication UI; they are our own surfaces. |
@@ -102,7 +102,7 @@ The cost of this choice is honest and recorded as a risk in §15: time-to-first-
 - OAuth via server-side redirect flow (`/authorize` → provider → `/callback`) with PKCE for mobile/SSR; the customer supplies provider credentials.
 - Email: customer configures SMTP (built-in SMTP is rate-limited to a handful of emails/hour and dev-only). Templates use a simple variable-substitution syntax (`{{ .ConfirmationURL }}`, `{{ .Token }}`), editable in the dashboard.
 - SMS: customer configures Twilio / MessageBird / Vonage / Textlocal.
-- Row Level Security (RLS) integration is the "moat": the JWT's claims are usable inside Postgres policies.
+- Row Level Security (RLS) integration is the "moat": the JWT's claims are usable inside Postgres policies. (Theirs, not ours — we removed our own RLS; see §4.10.)
 - Auth Hooks (Postgres functions or HTTP) for customizing claims, password checks, send-email/send-SMS overrides.
 - MFA: TOTP free; phone MFA and "Advanced MFA" paid add-on; SAML SSO on paid tiers at $0.015/SSO MAU.
 
@@ -115,7 +115,7 @@ The cost of this choice is honest and recorded as a risk in §15: time-to-first-
 - Their email/SMS story ("bring your own SMTP") is a real pain point, so **we offer a ready-to-use managed delivery layer with templates**.
 - Hooks-style extensibility (HTTP webhooks that can block or modify) is worth copying.
 - Their "Auth UI" library was effectively deprecated in favour of pointing people at their own components, independent confirmation of §1.1.
-- What makes their model correct is the schema and the token-family invariants, not the implementation. We enforce the same invariants in the database (constraints + RLS) as well as in application code, so correctness does not depend on any one service behaving.
+- What makes their model correct is the schema and the token-family invariants, not the implementation. We enforce what the database can still enforce — constraints, unique indexes, the append-only audit grants — in the database as well as in application code. Tenant isolation is no longer among them (§4.10).
 
 ### 2.3 Clerk
 
@@ -155,7 +155,7 @@ The cost of this choice is honest and recorded as a risk in §15: time-to-first-
 | Passkeys | limited | yes (paid tiers) | yes (Pro) | **yes, free, promoted as default** |
 | **UI model** | FirebaseUI (aging) | Auth UI (community, deprecated) | excellent components | **headless by design, we ship none (§1.1)** |
 | Platforms | very broad | JS-centric + Flutter/Swift/Kotlin | JS-centric + RN/Expo/Flutter (beta) | **broad, tiered, spec-driven** |
-| Data residency | region selection | region per project | limited | **region cells, pinned at creation (§4.13.5)** |
+| Data residency | region selection | region per project | limited | **not offered (§4.13.5)** |
 | Compliance posture | Google-wide certs | SOC 2, HIPAA on paid | SOC 2, HIPAA | **architecture ready, uncertified (§4.13)** |
 | Organizations / B2B | via custom claims | none | excellent | Phase 2 |
 
@@ -334,10 +334,10 @@ One threat class is **absent by construction**: we render no HTML on any custome
 
 ### 4.10 Multi-tenancy and data isolation
 
-- A single shared Postgres cluster with `project_id` on every tenant row, enforced by **Postgres Row Level Security** at the database layer. The application connects with a role that has `NOBYPASSRLS` and sets `app.project_id` per transaction, so policies deny cross-project reads even when application code has a bug.
-- Every tenant table is declared `FORCE ROW LEVEL SECURITY`, so even the table owner is subject to the policies. Ownership is not an escape hatch.
+- One Postgres database with `project_id` on every tenant row. Isolation is enforced **in the repository layer**: `BaseRepository` cannot be constructed without a `TenantContext` and every query starts from its `project_id` predicate, `OrgRepository` does the same one scope up with `org_id`.
+- **This was two lines and is now one.** Every tenant table used to be `FORCE ROW LEVEL SECURITY` with a policy keyed on `current_setting('app.project_id')`, set per transaction by a role created `NOBYPASSRLS`, so the database returned nothing for a wrongly-scoped query whatever the application asked for. That was removed deliberately (2026-09-21) to collapse the schema to one plane. The audit that preceded it found 232 of 233 statements already filtering in SQL and fixed the one that did not — so the surviving line is the one that was always doing the work, but a missed predicate in a new repository is now a cross-tenant read with nothing behind it.
 - Per-project signing keys and per-project encryption DEKs: compromising one project's key exposes nothing else.
-- Data residency: a project is pinned to a **region cell** (EU, US, Asia) at creation, and cells are fully independent stacks (§4.13.5).
+- **Data residency is not offered.** One deployment in one region serves every customer. A project cannot be pinned to a jurisdiction, and nothing in this document should be read as saying it can (§4.13.5).
 - Deletion: hard delete with tombstones for audit; GDPR export and delete APIs (§4.13.6).
 - Tenant context propagation is a framework concern, not a developer concern. A request-scoped `TenantContext` sets `app.project_id` on the connection for the life of the transaction (§9.4), and a repository cannot be constructed without one.
 
@@ -376,7 +376,7 @@ The scope of §4.13 is the **data architecture**. The organizational half of eve
 |---|---|---|
 | **SOC 2 Type II** (year 1) | Evidence *over time* for access control, change management, monitoring, and incident response | Hash-chained audit trail (§4.13.3), `staff_access_grants` (§4.13.7), signed images and CI-only publishing (§4.11, §7.6), evidence artifacts per release (§4.13.9) |
 | **ISO 27001** | An asset and data inventory, documented controls, a supplier register | Data map generated from the schema (§4.13.2), `docs/compliance/controls.md`, `docs/compliance/subprocessors.md` |
-| **GDPR** (DPA) | Lawful basis and purpose per field, Art.30 records, data-subject rights within **one calendar month** (Art. 12(3) — not 30 days), residency, sub-processor transparency, 72-hour breach notification | Column-level purpose tags generating the RoPA (§4.13.2), `data_subject_requests` carrying its `deadline_rule` and a due date computed from it (§4.13.6), region cells (§4.13.5) |
+| **GDPR** (DPA) | Lawful basis and purpose per field, Art.30 records, data-subject rights within **one calendar month** (Art. 12(3) — not 30 days), residency, sub-processor transparency, 72-hour breach notification | Column-level purpose tags generating the RoPA (§4.13.2), `data_subject_requests` carrying its `deadline_rule` and a due date computed from it (§4.13.6). **Residency is not satisfied and is not offered** (§4.13.5). |
 | **US state privacy** (CCPA/CPRA and the ~20 states that follow it) | Access, deletion and correction rights on a 45-day clock extendable by 45; service-provider contract terms; no sale or sharing of personal information | `DsrDeadline` is a per-request family rather than a per-cell setting, so a state whose clock differs is a subclass and not a migration (`docs/compliance/us-and-eu-readiness.md`) |
 | **HIPAA** (BAA, enterprise) | BAA scoping, PHI encryption, minimum necessary access, 6-year audit retention, no PHI in logs | `projects.compliance_tier`, field-level envelope encryption (§4.13.4), log allowlist (§4.13.8), tier-driven retention (§4.13.3) |
 
@@ -438,12 +438,18 @@ A generated document is regenerated in CI and the build fails if the committed c
 - Key custody follows §4.11: keys never leave KMS, key administrators are not key users, and every signing and unwrapping call is recorded in Cloud Audit Logs. That separation is a SOC 2 control and a HIPAA requirement, and it is enforced by IAM rather than by policy.
 - Per-project DEKs mean a key compromise has a blast radius of one tenant.
 
-#### 4.13.5 Residency and cell isolation
+#### 4.13.5 Residency
 
-- A `region_cells` registry describes each independent stack (Cloud Run, Cloud SQL, Valkey, KMS key ring) and its jurisdiction.
-- `orgs.cell_id` and `projects.cell_id` are set at creation and **immutable thereafter**. Moving a project between cells is an explicit, audited migration operation, never an `UPDATE`.
-- Routing refuses cross-cell access: a request that resolves to a project in another cell is rejected rather than proxied, so data cannot transit a jurisdiction by accident.
-- The global control plane (billing, the cell registry, authentication for our own dashboard) holds **billing identifiers and cell pointers only, never tenant personal data**. This is what allows an EU project to be honestly described as EU-resident.
+**Not offered.** One deployment, in one region, for every customer.
+
+This section used to describe region cells: a `region_cells` registry of independent stacks, `cell_id` immutable on `orgs` and `projects` behind a trigger, routing that refused cross-cell access on the key before any lookup, and a global control plane holding billing identifiers only so that an EU project could be honestly described as EU-resident. All of it was built and all of it was removed on 2026-09-21, because the machinery cost more every day than the feature was worth before it had a customer asking for it.
+
+What that means, stated plainly rather than left to be inferred:
+
+- A customer cannot choose where their data lives, and we must not imply otherwise in copy, in a questionnaire, or in the panel.
+- The competitive line in §2.4 that named residency as our answer to Firebase and Supabase no longer holds, and §15 no longer has it as a moat.
+- Every EEA customer's data reaches one region. The transfer obligations that follow are recorded in `docs/compliance/subprocessors.md`.
+- Bringing it back is a deployment-topology decision long before it is a schema one. The `cell_id` columns, the registry and the cross-cell refusal were the cheap half; the second stack was never provisioned.
 
 #### 4.13.6 Data-subject rights and retention
 
@@ -502,7 +508,7 @@ The architecture is in place. The programme is not started. Nothing in this docu
 | SMS OTP | Regional wholesale cost plus **25% margin**, rounded (e.g. US around $0.012; TR, IN and DE per the provider table). Displayed transparently per country in the dashboard. BYO Twilio/Vonage: free. |
 | WhatsApp OTP | Meta authentication-template rate plus 25%. |
 | Enterprise SSO (SAML/OIDC) | $0.01 / SSO MAU (Phase 2) |
-| Extra: dedicated region cell, HIPAA BAA, SLA 99.99%, SSO for dashboard | Enterprise contract |
+| Extra: HIPAA BAA, SLA 99.99%, SSO for dashboard | Enterprise contract |
 
 No "Pro plan required for MFA, passkeys or custom domains" gates. Security features are free, because gating security is how competitors end up with insecure customers.
 
@@ -527,7 +533,7 @@ Cost levers that make this possible:
 1. **Fastify, not Express.** The adapter choice is a cost decision, not a taste one: significantly higher throughput per vCPU on JSON workloads, and schema-compiled serialization that avoids the reflection cost most Node stacks pay per response.
 2. Cloud Run concurrency of **120 or more per instance** with an event-loop-friendly service. The hot paths (token refresh, session exchange) are I/O-bound, which is where Node is competitive with anything. CPU-bound work (Argon2, key wrapping) is pushed to a worker pool so it never serializes the loop (§9.6).
 3. **Cache JWKS, project config, and rate-limit state** in Valkey. Access-token verification never hits us; token refresh is one indexed Postgres update.
-4. **Single shared HA Postgres** with RLS instead of per-tenant databases. Supabase's model forces a project per tenant; ours does not.
+4. **Single shared HA Postgres** instead of per-tenant databases. Supabase's model forces a project per tenant; ours does not. Isolation is the repository layer's (§4.10).
 5. Cloud CDN for JWKS and static assets (long cache with `kid` versioning). The `landing` panel's SSR output is CDN-cached at the edge so SSR cost is amortized across visitors rather than paid per view (§10.3).
 6. Async everything non-critical (email, webhooks, audit, analytics) via Pub/Sub, so request latency and CPU stay low.
 7. Cold-start discipline: services are bundled to a single JS file, the dependency graph is audited, barrel-file mega-imports are banned by lint (§7.5), `NODE_OPTIONS` is tuned, and rarely-used surfaces are lazy NestJS modules. This keeps min-instances low instead of paying for warm capacity.
@@ -549,8 +555,8 @@ Cost levers that make this possible:
                     +------+---------------+-------+
                            |               |
                 +----------v-------+  +----v---------------------+
-                | auth-api         |  | landing (Nuxt SSR)       |  Cloud Run
-                | management-api   |  | client / admin (Nuxt SPA)|  + CDN/static bucket
+                | api              |  | landing (Nuxt SSR)       |  Cloud Run
+                |                  |  | client / admin (Nuxt SPA)|  + CDN/static bucket
                 | NestJS + Fastify |  +--------------------------+
                 +--+-----+------+--+
                    |     |      |
@@ -587,14 +593,14 @@ Note what is absent compared to a competitor's diagram: there is no hosted-UI se
 | Edge | **Global external Application LB, Cloud Armor, Cloud CDN, Certificate Manager** | A single anycast IP for all customer CNAMEs, managed certs for thousands of custom domains, and WAF plus rate limiting before traffic costs us CPU. |
 | Front end | **Nuxt (latest)**: `landing` SSR on Cloud Run, `admin` and `client` prerendered SPA shells on CDN/GCS (§10) | SSR only where SEO and first paint are the product (marketing and docs). The two authenticated panels are pure SPAs, which removes an entire class of server-side session handling and costs nothing to serve. |
 | Async | **Pub/Sub**, **Cloud Tasks**, Cloud Run workers | Cheap, at-least-once delivery, dead-letter topics, per-task retry with backoff for webhooks. |
-| Analytics / billing | **ClickHouse** (`auth_events`, one instance per cell), queried for MAU | Isolation is a row policy plus a client that cannot exist without a tenant (ADR-0013). MAU is `COUNT(DISTINCT user_id)` per project per month. BigQuery was the first draft and was replaced; a cross-cell analytics store would have put two jurisdictions in one table. |
+| Analytics / billing | **ClickHouse** (`auth_events`), queried for MAU | Isolation is a row policy plus a client that cannot exist without a tenant (ADR-0013), and it is the one place a row policy survives — ClickHouse has no `current_setting`, so the argument for it never depended on Postgres RLS. MAU is `COUNT(DISTINCT user_id)` per project per month. BigQuery was the first draft and was replaced. |
 | Observability | Cloud Logging/Monitoring/Trace, OpenTelemetry (Node SDK, auto-instrumentation for Fastify, pg and Valkey), alerting to PagerDuty/Slack | Included. Structured logs (Pino) with `project_id` for customer-facing log export, field-allowlisted per §4.13.8. |
 | IaC / CI | Terraform (google provider), Cloud Build to Artifact Registry to Cloud Deploy, Binary Authorization, pnpm workspace-aware build graph | Reproducible environments: dev, staging, prod-us, and prod-eu when the second cell exists. Only `environments/dev` is written today and nothing has been applied. |
-| Regions | Launch: one cell, `us1` in `us-central1`, with regional HA (§16 resolved this; the earlier draft said `europe-west4` and is superseded). Then an EU cell in `europe-west4`, then `asia-southeast1`. A cell is an independent Cloud Run + Cloud SQL + Valkey + KMS ring; the control plane (dashboard, billing) is global. | Data residency, blast-radius isolation, simple pricing (§4.13.5). |
+| Regions | **One**, `us-central1`, with regional HA. There is no second region and no per-project region; residency is not offered (§4.13.5). | Simplicity. The multi-region story was built and removed. |
 
 ### 6.3 Reliability targets
 
-- 99.95% API availability at launch (single region, HA SQL, multi-zone Cloud Run); 99.99% once multi-cell with DNS/LB failover for the control plane.
+- 99.95% API availability at launch (single region, HA SQL, multi-zone Cloud Run). 99.99% would need a second region, which no longer exists as a plan (§4.13.5).
 - p95 latency: token refresh under 60 ms, sign-in under 250 ms (excluding provider round trips), JWKS from CDN under 20 ms.
 - **Event-loop lag is a first-class SLO**: p99 under 20 ms per instance, alerting at 50 ms. A Node service that violates this is failing even while returning 200s, so it is monitored like an error rate rather than a nice-to-have.
 - RPO of 5 minutes or better (PITR), RTO of 30 minutes or better, with a documented restore drill run quarterly. The drill record is itself compliance evidence (§4.13.9).
@@ -604,7 +610,7 @@ Note what is absent compared to a competitor's diagram: there is no hosted-UI se
 
 | Item | Monthly |
 |---|---|
-| Cloud Run (auth-api 2 min instances at 1 vCPU/1 GiB, management-api, landing SSR, workers) | ~$95 |
+| Cloud Run (api 2 min instances at 1 vCPU/1 GiB, landing SSR, workers) | ~$95 |
 | Cloud SQL PG HA, 2 vCPU / 8 GB, 50 GB SSD, PITR | ~$220 |
 | Memorystore Valkey 1 GB basic | ~$35 |
 | Global LB, Cloud Armor (standard), Certificate Manager (first 100 certs) | ~$50 |
@@ -705,7 +711,7 @@ A new provider is then about 40 lines and cannot omit a security step. That prop
 
 - Unit tests instantiate classes directly with fakes passed to the constructor. No framework, no mocking of module internals.
 - Every abstract base class ships a **conformance test suite** exported as a reusable class, and each concrete subclass runs it. A new OAuth provider or SMS provider is not merged until it passes the family's suite. This mirrors the SDK conformance suite in §3.3, applied inward.
-- Integration tests run against a real Postgres and Valkey in containers (Testcontainers), including **RLS negative tests** that assert cross-project reads fail at the database even when the repository is deliberately misused.
+- Integration tests run against a real Postgres and Valkey in containers (Testcontainers). These used to include **RLS negative tests** asserting that a cross-project read failed at the database even when the repository was deliberately misused; with the policies gone those nineteen tests were deleted rather than weakened, and isolation is tested at the repository layer instead (§4.10).
 - Security-critical paths (token rotation, reuse detection, OAuth callback, OTP verification, password reset) require a test that asserts the *attack* fails, not only that the happy path succeeds.
 - Compliance-critical invariants are tested too: `UPDATE` and `DELETE` on `audit_events` must be rejected for the app role, the audit hash chain must verify, and a data-subject export must cover every field marked `subjectField` in the schema.
 - Coverage gates: 90% on `domain`, 80% overall. Coverage is a floor, not a goal.
@@ -768,8 +774,8 @@ idenzy/
 ├── tsconfig.base.json
 ├── biome.json
 ├── apps/
-│   ├── auth-api/                 # NestJS + Fastify, the public auth API (Cloud Run)
-│   ├── management-api/           # NestJS + Fastify, dashboard/management + billing control plane
+│   ├── api/                      # NestJS + Fastify, both surfaces: the public auth API,
+│   │                             #   and dashboard/management + billing under src/management/
 │   ├── workers/                  # NestJS standalone: email, sms, webhook, audit, dsr, retention
 │   ├── landing/                  # Nuxt, marketing + docs shell            [SSR: ON]
 │   ├── client/                   # Nuxt, customer dashboard panel          [SSR: OFF, SPA]
@@ -805,7 +811,7 @@ idenzy/
 │           ├── node/             # @idenzy/node       (public, server SDK)
 │           └── nest/             # @idenzy/nest       (public, guards + module for customers on NestJS)
 ├── infra/
-│   ├── terraform/                # cells, LB, Cloud Run, SQL, KMS, Armor
+│   ├── terraform/                # LB, Cloud Run, SQL, KMS, Armor
 │   └── docker/                   # Dockerfiles, distroless runtime images
 ├── docs/
 │   ├── adr/                      # architecture decision records
@@ -851,13 +857,12 @@ This table is not prose. It is transcribed directly into `biome.json` as `style/
 
 | App | Shape | Notes |
 |---|---|---|
-| `auth-api` | NestJS HTTP (Fastify adapter) | Public, internet-facing, per-project routing by Host header (customer CNAME). The only app that mints tokens. Returns JSON and redirects, never HTML (§4.3). |
-| `management-api` | NestJS HTTP (Fastify adapter) | Dashboard, management API and billing, authenticated by staff/customer session or secret API key. Separate deployment so a dashboard incident cannot degrade sign-in. |
+| `api` | NestJS HTTP (Fastify adapter) | Public, internet-facing, per-project routing by Host header (customer CNAME). The only app that mints tokens. Returns JSON and redirects, never HTML (§4.3). Serves **both surfaces**: the public authentication API, and the dashboard/management/billing API authenticated by a dashboard access token. These were `auth-api` and `management-api`, separate deployments so that a dashboard incident could not degrade sign-in; §16 item 6 recorded the split as open and it was resolved by merging (2026-09-21). `src/http/surface.ts` decides which surface a path is on, and is what keeps the dashboard routes from inheriting the auth API's CORS policy — the auth surface allows credentials because cookie mode needs them, the dashboard surface allows none because it has none to allow. |
 | `workers` | NestJS standalone (no HTTP server) | One module per consumer: email, sms, webhook, audit, analytics, plus `dsr` and `retention` (§4.13.6). Pub/Sub push endpoints where an HTTP entry is required, otherwise pull. |
 
 All three share the same packages and the same class conventions; only the transport differs. A worker is a class with a `handle(message)` method registered in a module, not a script.
 
-### 9.2 Module map (inside `auth-api`)
+### 9.2 Module map (inside `api`)
 
 ```
 AppModule
@@ -904,11 +909,11 @@ The one genuine gap is **table partitioning**, which `drizzle-kit` does not gene
 
 **The tenancy mechanism:**
 
-- Two Postgres roles. `idenzy_owner` owns the schema and runs migrations. `idenzy_app` is the runtime role, created **`NOBYPASSRLS`**, and it is the only role the application ever connects as. Every tenant table is `FORCE ROW LEVEL SECURITY`, so ownership is not an escape hatch (§4.10).
+- Two Postgres roles. `idenzy_owner` owns the schema and runs migrations. `idenzy_app` is the runtime role and the only one the application connects as. It was created `NOBYPASSRLS` and every tenant table was `FORCE ROW LEVEL SECURITY`; both are gone with the policies (§4.10). What the split still buys is the grants — `idenzy_app` has no UPDATE or DELETE on `audit_events`, which is the integrity control of §4.13.3 and never had anything to do with RLS.
 - `PersistenceModule` exposes a request-scoped `TenantContext` (project id, actor, request id, trace id) and a `UnitOfWork`.
-- `UnitOfWork.run(cb)` opens a Drizzle transaction and, as its first statement, executes `select set_config('app.project_id', $1, true)`. The parameterized `set_config` form is used deliberately: `SET LOCAL` cannot take a bind parameter, and building that statement by string concatenation would put a tenant identifier into SQL text. The `true` argument makes it transaction-local, so a pooled connection cannot leak tenant context into the next checkout.
+- `UnitOfWork.transaction(cb)` opens a Drizzle transaction. It used to bind the scope to the connection first — `select set_config('app.project_id', $1, true)`, parameterized because `SET LOCAL` takes no bind parameter, transaction-local so a pooled connection could not leak context into the next checkout — and there were two methods because there were two keys. With no policies to match against, there is nothing to bind and one method.
 - `BaseRepository<TEntity, TId>` is abstract. It takes the transaction-bound Drizzle handle and the `TenantContext` in its constructor and owns query timing metrics, error translation (unique violation to `ConflictError`), and the `project_id` predicate. Concrete repositories (`UserRepository`, `SessionRepository`, `RefreshTokenRepository`) write only their queries.
-- A repository **cannot be instantiated without a `TenantContext`**, so the tenant filter is structural rather than a convention someone might forget. RLS at the database is the second, independent line, and §7.4's negative tests prove it holds when the first line is deliberately broken.
+- A repository **cannot be instantiated without a `TenantContext`**, so the tenant filter is structural rather than a convention someone might forget. **It is now the only line.** RLS was the second and §7.4's negative tests proved it; both are gone, and what replaces them is a repository-level isolation test against a real database with two tenants in it. `TenantContext` and `OrgContext` stay separate for the reason that matters more without RLS than with it: one context carrying both keys would let a repository filter on whichever it reached for.
 - Transactions are explicit through `UnitOfWork.run(cb)`, and nested calls join the ambient transaction. The **outbox** (events, webhooks, audit) is written in the same transaction as the state change and then relayed to Pub/Sub, so we never emit an event for a rolled-back write.
 - Migrations are numbered SQL files applied by a dedicated Cloud Run job before traffic shifts. Forward-only, with explicit expand and contract discipline for column changes.
 
@@ -1061,12 +1066,11 @@ Short template per event and per locale with `{{otp}}`, `{{project.name}}` and `
 Every column is declared through the `classified()` wrapper of §4.13.2, which is what generates the RoPA, the data map, the log allowlist and the data-subject field lists.
 
 ```
-region_cells(id, code, jurisdiction, endpoint, kms_key_ring, active)
-orgs(id, name, cell_id, billing_customer_id, created_at)                 -- control plane, no tenant personal data
+orgs(id, name, billing_customer_id, created_at)
 org_members(id, org_id, user_id, role[owner|admin|developer|viewer], invited_by, last_active_at)
 org_invitations(id, org_id, email, role, token_hash, invited_by, expires_at, accepted_at, revoked_at)
 org_security_settings(org_id, require_mfa, updated_by, updated_at)
-projects(id, org_id, name, cell_id, plan, compliance_tier, settings jsonb,
+projects(id, org_id, name, plan, compliance_tier, settings jsonb,
          kms_key_name, dek_wrapped bytea, created_at)
 project_domains(project_id, domain, type[auth|email], status, dns_records jsonb)
 redirect_uris(project_id, uri, kind[oauth|magic_link|post_signout], created_at)  -- exact-match allowlist
@@ -1093,7 +1097,7 @@ api_keys(id, project_id, kind[publishable|secret], prefix, hash, scopes[], last_
 usage_daily(project_id, day, mau_hll, emails_sent, sms_sent, sms_cost)   -- HyperLogLog sketch for MAU
 outbox(id, project_id, topic, payload jsonb, created_at, published_at, attempts)  -- transactional relay
 
--- Billing, on the control plane and keyed on org_id (ADR-0011). Money is integer cents.
+-- Billing, keyed on org_id rather than project_id (ADR-0011). Money is integer cents.
 payment_methods(id, org_id, provider, provider_method_id, brand, last4, expiry_month, expiry_year,
                 is_default, added_by)                      -- one default per org, partial unique
 credit_grants(id, org_id, kind[purchased|promotional], amount_cents, remaining_cents, currency,
@@ -1105,7 +1109,7 @@ invoices(id, org_id, number, period_start, period_end, status, total_cents, prov
          pdf_uri, issued_at, due_at, paid_at, voided_at)   -- voided, never deleted
 invoice_lines(id, org_id, invoice_id, project_id, item, quantity, unit_rate_millicents, total_cents)
 payment_provider_events(id, provider, provider_event_id, type, payload jsonb, processed_at)
-                                                           -- outside RLS: no org bound on arrival
+                                                           -- no org known on arrival
 
 -- Compliance surface (4.13)
 audit_events(id, project_id, actor_type, actor_id, action, target, ip, ua, metadata jsonb,
@@ -1116,9 +1120,9 @@ retention_policies(project_id, subject, max_age, action[purge|tombstone|drop_par
 staff_access_grants(id, staff_id, scope, granted_by, reason, created_at, expires_at, revoked_at)
 ```
 
-All tenant tables carry `project_id`, are protected by RLS policies keyed on `current_setting('app.project_id')`, and are declared `FORCE ROW LEVEL SECURITY` (§4.10, §9.4).
+All tenant tables carry `project_id` and every query against them goes through `BaseRepository`, which cannot be constructed without a `TenantContext` and filters on it. Org-scoped tables carry `org_id` and go through `OrgRepository` the same way (ADR-0011). `orgs` is keyed on its own `id`, the way `projects` is.
 
-The control plane has its own key alongside it. Every org-scoped table carries `org_id` and is protected by the same shape of policy keyed on `current_setting('app.org_id')`, set by `UnitOfWork.runForOrg` (ADR-0011). `orgs` is keyed on its own `id`, the way `projects` is. Three tables are outside both by design and say so in their own migration: `region_cells` and `staff_access_grants` have no customer to be scoped to, and `payment_provider_events` receives a webhook before the organisation it concerns is known.
+Both used to carry an RLS policy underneath, keyed on `current_setting('app.project_id')` or `app.org_id`, with `FORCE ROW LEVEL SECURITY` so that ownership was not an escape hatch. Those were removed (§4.10); the discriminator columns and the two repository bases are what remain. Two tables are scoped to nothing and say so in their own migration: `staff_access_grants` is about our staff rather than a customer, and `payment_provider_events` receives a webhook before the organisation it concerns is known.
 
 ---
 
@@ -1172,7 +1176,7 @@ final user = await Idenzy.signInWithOAuth(Provider.google);
 - Error codes are stable, documented and machine-readable, which matters much more for us than for a vendor that ships UI: the customer's error messages are built from them (§7.2.8).
 - CLI: `idenzy users import`, `idenzy templates pull/push`, `idenzy keys rotate`.
 
-**Internal DX** (our own team): `pnpm i && pnpm run prepare && pnpm dev` boots Postgres and Valkey in containers, runs migrations, and starts `auth-api`, `management-api`, the workers and all Nuxt panels through Turbo with hot reload. One command, no per-service setup. `pnpm gen:openapi` regenerates the spec and the non-TS SDK clients from `@idenzy/protocol`; `pnpm compliance:generate` regenerates the data map and RoPA from the schema.
+**Internal DX** (our own team): `pnpm i && pnpm run prepare && pnpm dev` boots Postgres and Valkey in containers, runs migrations, and starts `api`, the workers and all Nuxt panels through Turbo with hot reload. One command, no per-service setup. `pnpm gen:openapi` regenerates the spec and the non-TS SDK clients from `@idenzy/protocol`; `pnpm compliance:generate` regenerates the data map and RoPA from the schema.
 
 ---
 
@@ -1180,10 +1184,10 @@ final user = await Idenzy.signInWithOAuth(Provider.google);
 
 | Phase | Duration | Scope |
 |---|---|---|
-| **0 - Foundations** | 5 weeks | pnpm workspace, Turbo, strict TS baseline, Biome with the §7 rules as real lint errors, husky/lint-staged/commitlint; Terraform for one cell; NestJS/Fastify skeleton on Cloud Run; Drizzle schema with RLS, roles, grants and the migration runner; `TenantContext`/`UnitOfWork`/`BaseRepository`; the §4.13 compliance surface (classification wrapper, generators, audit hash chain, DSR and retention tables); KMS signing; JWKS and OIDC discovery; `IdenzyError` hierarchy and the error contract in `@idenzy/protocol`; Nuxt scaffolds for `landing` (SSR), `client` and `admin` (SPA); CI with Binary Authorization, provenance and the dependency policy. |
+| **0 - Foundations** | 5 weeks | pnpm workspace, Turbo, strict TS baseline, Biome with the §7 rules as real lint errors, husky/lint-staged/commitlint; Terraform for one deployment; NestJS/Fastify skeleton on Cloud Run; Drizzle schema with roles, grants and the migration runner; `TenantContext`/`UnitOfWork`/`BaseRepository`; the §4.13 compliance surface (classification wrapper, generators, audit hash chain, DSR and retention tables); KMS signing; JWKS and OIDC discovery; `IdenzyError` hierarchy and the error contract in `@idenzy/protocol`; Nuxt scaffolds for `landing` (SSR), `client` and `admin` (SPA); CI with Binary Authorization, provenance and the dependency policy. |
 | **1 - MVP (private beta)** | 8 weeks | Email plus password, email OTP and magic link (SES), Google/Apple/GitHub/Microsoft OAuth (instant and custom), passkeys, sessions and refresh rotation, JS core plus React, Next and Nuxt SDKs, Node server SDK, framework starter templates and `idenzy init`, template studio v1, webhooks, usage metering, Cloud Armor rules, `client` panel v1. |
 | **2 - Public launch** | 8 weeks | SMS and WhatsApp OTP with fraud controls, TOTP MFA and recovery codes, Vue/SvelteKit/Flutter/iOS/Android/React Native SDKs, custom auth domains, custom email domains, migration importers, billing (Stripe), `admin` panel v1, status page, SOC 2 readiness assessment against the §4.13 architecture. |
-| **3 - Breadth** | 12 weeks | Angular, Solid, Astro, Unity, Godot and KMP SDKs; Python/PHP/Ruby/Java/.NET server SDKs; second region cell; app attestation; device-bound tokens; security center; hooks. |
+| **3 - Breadth** | 12 weeks | Angular, Solid, Astro, Unity, Godot and KMP SDKs; Python/PHP/Ruby/Java/.NET server SDKs; app attestation; device-bound tokens; security center; hooks. |
 | **4 - B2B** | 12 weeks | Organizations, roles and permissions, invitations, SAML/OIDC SSO, SCIM, dashboard SSO, audit log export, enterprise SLA, and the compliance programme itself (§4.13.10) if enterprise demand justifies it. |
 
 Team for phases 0 to 2: 2 backend (TypeScript/NestJS, one with a security background), 1 frontend (the three panels), 1 to 2 SDK engineers (mobile and web), 1 DevOps/SRE (part-time), plus an external pen test before public launch. The single-language stack means the frontend engineer can review protocol changes and the SDK engineers share the backend's types, and that overlap is what makes this headcount realistic.
@@ -1198,13 +1202,13 @@ Phase 0 is deliberately front-loaded. The class hierarchies, boundary lint rules
 
 | Risk | Mitigation |
 |---|---|
-| A security incident kills trust (existential for an auth vendor) | Strict SDLC, external pen test before launch, bug bounty, small blast radius (per-project keys, RLS), rehearsed IR plan, transparent disclosure policy. |
+| A security incident kills trust (existential for an auth vendor) | Strict SDLC, external pen test before launch, bug bounty, small blast radius (per-project keys), rehearsed IR plan, transparent disclosure policy. RLS was part of this answer and is not any more (§4.10). |
 | **Headless raises time-to-first-login versus Clerk** | This is the real cost of §1.1 and we accept it. Mitigated by `idenzy init` scaffolding working routes into the customer's repo, per-framework starter templates and quickstarts, an MCP server so AI coding tools write the integration correctly, and hard measurement: time-from-signup-to-first-successful-auth is a tracked product metric with a target under 15 minutes. If that number does not come down, the answer is better scaffolding and docs, not shipping a component. |
 | Losing deals to "but Clerk has a drop-in component" | Qualify early. Our buyer is a team that already has a design system and wants control, and a price 8 times lower. Publish an honest comparison page rather than pretending the gap does not exist. |
 | **npm supply-chain compromise** (large transitive dependency surface) | Dependency budget with sign-off, `ignoreScripts` plus an `onlyBuiltDependencies` allowlist, frozen lockfile, integrity pinning on the crypto path, nightly advisory scans, SBOMs, CI-only publishing with provenance (§7.6). Drizzle's zero runtime dependencies help here. |
 | **Event-loop stall degrades the whole instance** | Worker pool for all CPU-bound work, event-loop lag as an alerting SLO (§6.3), load tests that specifically exercise Argon2 concurrency, `--max-old-space-size` below the container limit. |
 | **Node memory and CPU cost erode margin** | Cost model already uplifted (§5.2), Fastify plus high concurrency plus bundled cold starts, quarterly cost-per-MAU review with a hard tripwire at $0.0008 marginal. |
-| **Drizzle abstracts away something that matters** (RLS, partitions, index use) | Repositories own their SQL and it is reviewed as SQL. Generated migrations are read before they are committed. Partitioning is explicitly hand-authored (§9.4). RLS negative tests assert isolation at the database, so a query-builder mistake cannot silently become a tenancy breach. ADR-0001 records the trigger for reversing this decision. |
+| **Drizzle abstracts away something that matters** (partitions, index use) | Repositories own their SQL and it is reviewed as SQL. Generated migrations are read before they are committed. Partitioning is explicitly hand-authored (§9.4). A query-builder mistake **can** now become a tenancy breach, because the database no longer refuses one — which is the cost recorded in §4.10. ADR-0001 records the trigger for reversing this decision. |
 | **Class-based architecture ossifies into over-abstraction** | Hierarchies stay shallow (base to concrete), an abstraction requires two real implementations before it is introduced, conformance suites keep bases honest, and there is an architecture review at each phase boundary. |
 | **Compliance architecture is mistaken for compliance** | §4.13.10 states plainly what is not done. No sales material may claim a certification we do not hold, and the trust page says "architecture ready, uncertified" until an audit says otherwise. |
 | **Data classification decays** | The `classified()` wrapper is the only way to declare a column, the schema lint rejects bare columns, and CI regenerates the RoPA and data map and fails on a diff. Decay is a build failure, not a discovery. |
@@ -1212,10 +1216,10 @@ Phase 0 is deliberately front-loaded. The class hierarchies, boundary lint rules
 | Free-tier abuse | Project verification, quotas, MAU anomaly detection, Cloud Armor. |
 | Email deliverability and reputation on shared domains | Per-project warm-up ceilings, suppression lists, DMARC reject, provider failover, dedicated IPs at volume. |
 | Provider dependency (SES, Twilio, Meta) | Abstraction layer plus at least two live providers per channel. |
-| Price war (Firebase or Supabase drop prices) | Our differentiators are security defaults, managed delivery, platform breadth and residency, not only price. The cost structure supports going lower. |
+| Price war (Firebase or Supabase drop prices) | Our differentiators are security defaults, managed delivery and platform breadth, not only price. Residency was on this list and is not offered (§4.13.5). The cost structure supports going lower. |
 | SDK sprawl (20+ platforms) | One spec, a generated core, a conformance suite every SDK must pass, community contributions for Tier 2. Headless SDKs are far smaller than SDKs with UI, which is what makes the matrix survivable. |
 | Monorepo build times grow with package count | Turbo remote caching, affected-only pipelines, per-package typecheck. Build time is tracked as a team metric with a 10-minute CI budget. |
-| Cloud Run and Cloud SQL scaling ceilings | Read replicas, table partitioning (audit, sessions), an AlloyDB migration path, additional cells. |
+| Cloud Run and Cloud SQL scaling ceilings | Read replicas, table partitioning (audit, sessions), an AlloyDB migration path. |
 
 ---
 
@@ -1227,7 +1231,7 @@ Resolved since the first draft:
 - ~~Query layer: hand-written SQL versus a typed query builder versus an ORM~~ **Resolved: Drizzle** (§9.4, ADR-0001).
 - ~~Whether to ship hosted pages and embeddable components~~ **Resolved: no, and never** (§1.1, ADR-0002).
 - ~~Lint and format toolchain~~ **Resolved: Biome**, with GritQL plugins for the project-specific bans, plus husky, lint-staged and commitlint (§7.5).
-- ~~Launch region~~ **Resolved: `us-central1`.** The largest market and the cheapest region; `europe-west4` was the alternative and remains the obvious second cell. The first cell is therefore `us-1` with a `US` jurisdiction, because `projects.cell_id` is immutable once set (§4.13.5) and a cell labelled EU that runs in Iowa would make every residency claim resting on that column false.
+- ~~Launch region~~ **Resolved: `us-central1`.** The largest market and the cheapest region. This used to carry a second clause about `projects.cell_id` being immutable and a cell labelled EU that ran in Iowa making every residency claim false; there are no cells and no residency claim, so the region is now simply where the one deployment is (§4.13.5).
 
 Still open, to resolve before Phase 0 ends:
 
@@ -1236,7 +1240,7 @@ Still open, to resolve before Phase 0 ends:
 3. Whether to open-source the auth server (a Supabase-style trust signal) while keeping the managed cloud as the business. Headless makes this easier, because there is no UI licensing question.
 4. Billing granularity for email: per-send versus monthly bundles.
 5. Panel hosting for `client` and `admin`: GCS plus CDN static (proposed) versus Firebase Hosting for simpler preview channels.
-6. Whether `management-api` stays a separate deployment at launch or ships as a second module inside `auth-api` until traffic justifies the split (separation is preferred; cost is about $25/mo).
+6. ~~Whether `management-api` stays a separate deployment~~ **Resolved: merged.** One service, `apps/api`, serving both surfaces on one port (2026-09-21). The separation was preferred here and the cost was about $25/mo; what decided it the other way was the operational weight of two of everything — two CORS policies, two connection pools, two bootstraps — for a product with no customers yet. The thing the split protected is written down so it can be taken back: a dashboard incident can now degrade sign-in, because they share a process.
 7. Whether magic links ship in Phase 1 at all, or wait until Phase 2 given that OTP covers the same need without a redirect (§4.7).
 8. Whether native SDKs (Swift, Kotlin, Dart) live in this repo or in separate repositories wired in as git submodules. SPM, Maven and pub.dev all expect a repository root, which argues for splitting them out at Phase 2.
 9. Node version policy: pin to the active LTS line, or track Current for the performance work. Related: TypeScript 7 is released, but the NestJS toolchain still targets TypeScript 6, so we are pinned to 6.0.x until that lands.

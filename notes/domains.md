@@ -49,7 +49,7 @@ A verified host does not automatically update a deployed SDK base URL or make un
 
 ### P1 — Endpoint examples disagree across pages
 
-Auth domains, General, Revocation and OAuth examples use different shared hosts. All copyable configuration must derive from the same project/cell/domain settings. Keep illustrative values visibly marked.
+Auth domains, General, Revocation and OAuth examples use different shared hosts. All copyable configuration must derive from the same project/domain settings. Keep illustrative values visibly marked.
 
 ### P2 — Disabled capability looks like an error incident
 

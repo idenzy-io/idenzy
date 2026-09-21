@@ -63,7 +63,7 @@ resource "google_service_account" "webhook_tasks" {
   count = var.enable_managed_infrastructure ? 1 : 0
 
   account_id   = "${local.name_prefix}-webhooks"
-  display_name = "Webhook retry dispatcher (${var.cell_code})"
+  display_name = "Webhook retry dispatcher"
   project      = var.project_id
 }
 
@@ -96,4 +96,4 @@ resource "google_service_account_iam_member" "tasks_may_mint_tokens" {
 # Not here, and deliberately: `roles/run.invoker` on the workers service for this account. The Cloud
 # Run services are not declared in this module yet (see README), so the binding has nowhere to attach
 # — and granting the invoker role at project level to make this file look finished would hand a
-# webhook identity the right to call every service in the cell. It belongs with the service.
+# webhook identity the right to call every service. It belongs with the service.

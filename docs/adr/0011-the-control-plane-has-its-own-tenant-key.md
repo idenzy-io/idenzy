@@ -3,6 +3,14 @@
 - Status: accepted
 - Date: 2026-09-12
 
+> **Superseded in part, 2026-09-21.** The control plane is gone as a plane: there was never a
+> second database, only a second RLS key and a phantom TypeScript brand, and both were
+> removed with the policies. What survives is the distinction this ADR was really about —
+> an organisation is not a project. `org_id` is still a separate discriminator, `OrgRepository`
+> is still a separate base that cannot take a `TenantContext`, and keeping the two apart
+> matters more now than it did: with no policy underneath, a base that accepted either
+> context would filter on whichever column it reached for.
+
 ## Context
 
 ADR-0003 gave tenant data two independent lines of defence: a repository that cannot be constructed

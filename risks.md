@@ -287,41 +287,27 @@ unrecoverable.
 
 ---
 
-## 7b. A customer can be permanently pinned to the wrong jurisdiction
+## 7b. ~~A customer can be permanently pinned to the wrong jurisdiction~~
 
-**Risk.** `projects.cell_id` is immutable by design (PROJECT.md 4.13.5), and one cell exists:
-`us1`, in the United States. Every project created before an EU cell is provisioned is US-resident
-forever, because the "explicit, audited migration operation" that 4.13.5 says moves a project
-between cells **does not exist** — there is no column, no route and no worker for it.
+**Closed 2026-09-21, by removing the thing that created it.**
 
-This register held nothing about residency before, which is why it is worth writing down: the
-whole page is billing and delivery, and this is the one exposure that is neither.
+The risk was that `projects.cell_id` was immutable, one cell existed, and the "explicit,
+audited migration operation" PROJECT.md 4.13.5 promised for moving a project between cells
+did not exist — so every project created before an EU cell was provisioned would have been
+US-resident for ever, with no way out but deleting the project and making every end user
+register again.
 
-**Exposure.** Commercial, and it lands on exactly the customers worth most. An EU buyer who signs
-today and later needs EU residency cannot be given it without a migration nobody has built. The
-answer in that moment is "delete the project and start again", which for an authentication
-provider means every one of their end users re-registers. That is not a migration, it is a churn
-event with our name on it.
+Region cells are gone (PROJECT.md 4.13.5). There is no `cell_id`, no registry, and no
+region picker, so nothing can be pinned to the wrong jurisdiction.
 
-Second order: the panel already shows a region picker fed by `GET /v1/regions`, and the seed
-offers two cells. A customer who picks EU in dev and reasons that production will offer the same
-has been misled by a fixture.
+**What the closure costs, said plainly, because it is not a win.** The second-order note in
+the original entry was that the panel offered a region picker fed by a fixture, so a
+customer who chose EU in development had been misled. That is fixed by not offering the
+choice at all. The exposure that replaces it is simpler and larger: **we cannot offer EU
+residency to anyone.** An EEA buyer who needs it is a buyer we decline, rather than one we
+mislead. That is a better failure and it is still a lost deal, and it belongs on this page
+rather than in a changelog.
 
-**Today.** Nothing. The registry is real and validated at project creation, so a project cannot
-name a cell that has no row — but nothing stops a row existing for a cell nobody runs, and
-nothing moves a project afterwards.
-
-**What closes it.** Any one of three, in increasing order of cost:
-
-1. Only ever seed `region_cells` with cells that are actually provisioned, so the picker cannot
-   offer a jurisdiction we do not serve. Cheap, and it is the honest default.
-2. Build the migration operation before taking EU customers — the reverse saga of provisioning,
-   and the thing 4.13.5 already promises.
-3. Provision the EU cell before selling into the EEA.
-
-**Status: open.** Sharpened, not created, by the decision to launch US-first.
-
----
 
 ## 8. Closed, and worth keeping closed
 

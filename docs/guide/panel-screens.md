@@ -142,7 +142,7 @@ URLs they share, whether the whole thing works, then the linking rule. Single co
 passkeys, and the catalogue is not on the page at all.
 
 `app/utils/providers.ts` is the panel's catalogue of the eighteen adapters registered in
-`apps/auth-api/src/oauth/oauth.module.ts`, plus the generic OIDC connector, which is shown
+`apps/api/src/oauth/oauth.module.ts`, plus the generic OIDC connector, which is shown
 grey because "not supported" and "not yet" read differently. `app/utils/auth-providers.ts`
 derives the four marks our own sign-in screens use from it, so there is one answer to what
 Google looks like.

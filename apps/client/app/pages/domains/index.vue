@@ -349,7 +349,7 @@ const GUIDES_URL = "https://idenzy.io/docs/domains/auth";
             v-if="store.loading"
             class="my-1 block h-4 w-64 max-w-full animate-pulse rounded-full bg-ink/8"
           />
-          <CopyField v-else :value="baseUrl" label="Copy the API base URL" wrap />
+          <CopyField v-else :value="baseUrl" label="Copy the API base URL" />
           <span class="text-[11px] leading-4 text-ink/50">
             <!-- A read that failed is not a project on the shared host, and the line under
                  the value it copied has to say which of the two this is. -->

@@ -142,7 +142,7 @@ function sendMagicLink() {
           :disabled="!submittable"
           :loading="busy"
           block
-          class="mt-[33px]"
+          class="mt-[33px] !font-semibold"
           color="primary"
           type="submit"
           variant="flat"

@@ -24,6 +24,13 @@ const { mdAndUp } = useDisplay();
 const projects = useProjectStore();
 const billing = useBillingStore();
 
+/* The theme, and the one control that changes it. Kept beside the notifications bell
+   rather than in the user menu because it is the only preference in the panel a person
+   changes for the room they are in rather than for the account they are on, and a
+   preference somebody reaches for twice in an afternoon belongs on the bar. It shows on a
+   phone too, unlike the figure above: there is no other way to it. */
+const { isDark, toggle: toggleScheme } = useColorScheme();
+
 /* The same figure the billing screen shows, read from the same store and keyed by the
    same organisation. In cents, the way the billing API hands it over: a float would round
    the wrong way, and a bar quoting a different balance from the page it links to is worse
@@ -50,6 +57,34 @@ const DOCS_URL = "https://idenzy.io/docs";
       </NuxtLink>
       <span aria-hidden="true" class="mr-1 h-4 w-px bg-shell-line" />
     </template>
+
+    <!-- The glyph is the theme the click lands on, not the one being left, which is how
+         the collapse control in the drawer reads too: an icon button with no label says
+         what pressing it does. The label beside it says the same thing in words, so a
+         reader who cannot see the sun is not told "dark mode" and given light. -->
+    <v-btn
+      :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+      class="text-ink/70 hover:text-ink"
+      icon
+      size="small"
+      variant="text"
+      @click="toggleScheme()"
+    >
+      <Icon
+        :name="
+          isDark
+            ? 'material-symbols:sunny-outline-rounded'
+            : 'material-symbols:moon-stars-outline-rounded'
+        "
+        aria-hidden="true"
+        class="text-lg"
+      />
+      <v-tooltip
+        :text="isDark ? 'Light mode' : 'Dark mode'"
+        activator="parent"
+        location="bottom"
+      />
+    </v-btn>
 
     <v-btn
       aria-label="Notifications"

@@ -206,8 +206,13 @@ export default defineNuxtConfig({
       defaults: { global: { ripple: true } },
 
       theme: {
-        // Vuetify 4 follows prefers-color-scheme itself, so no watcher of ours can
-        // disagree with it. Colours are placeholders until @idenzy/ui owns the tokens.
+        // The theme before anything of ours has run, which is the one the operating
+        // system asks for: Vuetify 4 resolves `system` itself, so the first paint is
+        // already the right colour and a person who has never chosen is never switched.
+        // app.vue pins it to `light` or `dark` from the stored preference on mount
+        // (app/composables/color-scheme.ts), and from then on that is what follows the
+        // system, because it stays on `auto` until somebody presses the control in the
+        // bar. Colours are placeholders until @idenzy/ui owns the tokens.
         defaultTheme: "system",
         themes: {
           /**

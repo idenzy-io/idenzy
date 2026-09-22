@@ -119,6 +119,41 @@ through turbo, which is rarely what you want while working on one panel.
 Design tokens and the shared `ApiClient` belong in `@idenzy/ui` (PROJECT.md 10.3), which
 does not exist yet. The theme colours in `nuxt.config.ts` are placeholders until it does.
 
+## Two themes, one ref, and one place it reaches Vuetify
+
+Both themes are declared in `nuxt.config.ts` and have been since the panel was built: three
+surfaces each, an accent pair, outcome colours stepped per theme, and six chart slots
+validated in order. Nothing in a component names a colour, which is why a screen written
+against one theme is drawn correctly in the other without being revisited — `theme.css`
+scopes its exceptions with `:where(.v-theme--dark)` and Tailwind reads the same tokens
+through the `@theme inline` block in `main.css`.
+
+What was missing was a way to choose. `defaultTheme: "system"` makes Vuetify resolve
+`prefers-color-scheme` itself, and resolving it itself is exactly what leaves nothing for a
+person to press. Three things now hold the choice, and each is somewhere for a reason.
+
+- **`app/composables/color-scheme.ts` owns the preference,** as VueUse's `useDark` over a
+  `idenzy.theme` key. It stays on `auto` — still following the operating system — until
+  somebody presses the control, which is the behaviour `defaultTheme` used to give and the
+  half worth keeping. It is a `createSharedComposable`, so the control and the binding read
+  one ref rather than two that agree through a storage event. The default handler is
+  replaced by nothing: it writes a class on `<html>` that nothing here reads, and Vuetify
+  already marks the application root and sets `color-scheme` on `:root`, which is what the
+  browser reads for a scrollbar.
+- **`app.vue` is the only thing that calls `theme.change`.** It wraps all three layouts and
+  never unmounts; a watcher in a layout would stop at that layout's edge, and signing out
+  swaps the panel's layout for the flow's. Write `theme.change(name)` and not
+  `theme.global.name.value`, which Vuetify 4 keeps as a ref and deprecates writing to.
+- **`defaultTheme: "system"` stays**, because it is the theme of the first paint, before
+  any of the above has run. Set it to `light` and a person whose machine is dark sees the
+  panel flash white on every load.
+
+The control is in `HeaderActions.vue`, beside the notifications bell, and it shows on a
+phone as well as a desktop — unlike the balance next to it, because there is no other way
+to reach it. Its glyph is the theme the press lands on rather than the one being left,
+which is how the drawer's collapse control reads too, and its `aria-label` says the same
+thing in words.
+
 ## The panel's own HTTP is VueUse, and the SDK's is not the panel's
 
 Two kinds of request leave this app, and they do not share a client.

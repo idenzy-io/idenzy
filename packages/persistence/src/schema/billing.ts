@@ -257,6 +257,16 @@ export const billingSettings = classifiedTable(
       loggable: true,
       note: "AutoTopUpSuspension: what the person who clears it has to fix first.",
     }),
+    billingMode: classified(text("billing_mode").notNull().default("prepaid"), {
+      ...billingConfig,
+      loggable: true,
+      note: "BillingMode. Set by Idenzy staff only, with a reason in operator_actions (ADR-0019).",
+    }),
+    invoiceTermsDays: classified(smallint("invoice_terms_days").notNull().default(14), {
+      ...billingConfig,
+      loggable: true,
+      note: "Net terms for an invoiced organisation. Staff-set; 14 unless agreed otherwise.",
+    }),
     spendAlertEnabled: classified(boolean("spend_alert_enabled").notNull().default(false), {
       ...billingConfig,
       loggable: true,
@@ -285,6 +295,8 @@ export const billingSettings = classifiedTable(
       sql`not auto_top_up_enabled or auto_top_up_amount_cents >= auto_top_up_threshold_cents`,
     ),
     check("billing_settings_auto_top_up_limit_ck", sql`auto_top_up_daily_limit between 1 and 10`),
+    check("billing_settings_mode_ck", sql`billing_mode in ('prepaid', 'invoiced')`),
+    check("billing_settings_terms_ck", sql`invoice_terms_days between 1 and 90`),
     check(
       "billing_settings_auto_top_up_suspension_ck",
       sql`(auto_top_up_suspended_at is null) = (auto_top_up_suspended_reason is null)`,

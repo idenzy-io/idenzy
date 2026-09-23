@@ -672,23 +672,28 @@ export function methodForAuto(
  * Invoices.
  */
 
-export type InvoiceStatus = "paid" | "open" | "past_due" | "void";
+export type InvoiceStatus = "draft" | "paid" | "open" | "past_due" | "void" | "uncollectible";
 
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  /* The API never lists a draft; the label exists so the type is total, not to be seen. */
+  draft: "Being prepared",
   paid: "Paid",
   open: "Open",
   past_due: "Past due",
   void: "Void",
+  uncollectible: "Written off",
 };
 
 export const INVOICE_STATUS_TONES: Record<
   InvoiceStatus,
   "success" | "neutral" | "error" | "warning"
 > = {
+  draft: "neutral",
   paid: "success",
   open: "neutral",
   past_due: "error",
   void: "warning",
+  uncollectible: "error",
 };
 
 export interface Invoice {

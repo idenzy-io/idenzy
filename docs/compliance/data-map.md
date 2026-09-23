@@ -16,7 +16,7 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | phi | 0 |
 | secret | 21 |
 | pseudonymous | 122 |
-| operational | 422 |
+| operational | 424 |
 
 ## `analytics.auth_events`
 
@@ -125,7 +125,9 @@ Notes:
 | `autoTopUpSuspendedAt` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `autoTopUpSuspendedReason` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `autoTopUpThresholdCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `billingMode` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `currency` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `invoiceTermsDays` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `spendAlertEnabled` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `spendAlertSentForMonth` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
@@ -143,7 +145,9 @@ Notes:
 - `autoTopUpSuspendedAt`: Set when charging again cannot help. Cleared only by a person saving the rule.
 - `autoTopUpSuspendedReason`: AutoTopUpSuspension: what the person who clears it has to fix first.
 - `autoTopUpThresholdCents`: Charge when the spendable balance falls below this.
+- `billingMode`: BillingMode. Set by Idenzy staff only, with a reason in operator_actions (ADR-0019).
 - `currency`: Set at the provider and not from here. One currency per account.
+- `invoiceTermsDays`: Net terms for an invoiced organisation. Staff-set; 14 unless agreed otherwise.
 - `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `spendAlertSentForMonth`: The month already alerted on, so a threshold crossed once is not mailed hourly.
 - `spendAlertThresholdCents`: An alert and never a cap. Authentication does not stop (5.1).

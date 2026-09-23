@@ -4,12 +4,16 @@ import { StaffRole } from "@idenzy/protocol/enums/staff";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import {
   type OperatorMe,
+  type OperatorOrgBilling,
   type OperatorOrgList,
   operatorOrgQuerySchema,
+  type SetBillingMode,
+  setBillingModeSchema,
 } from "@idenzy/protocol/schemas/operator";
-import { Controller, Get, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Put, Query, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
+import { OperatorBillingService } from "./operator-billing-service.js";
 import { operatorOf, RequireStaff } from "./staff.guard.js";
 
 /**
@@ -20,7 +24,10 @@ import { operatorOf, RequireStaff } from "./staff.guard.js";
  */
 @Controller("v1/operator")
 export class OperatorController {
-  constructor(private readonly orgs: OperatorOrgReader) {}
+  constructor(
+    private readonly orgs: OperatorOrgReader,
+    private readonly billing: OperatorBillingService,
+  ) {}
 
   @Get("me")
   @RequireStaff(StaffRole.Support)
@@ -43,6 +50,28 @@ export class OperatorController {
         createdAt: row.createdAt.toISOString(),
       })),
     };
+  }
+
+  /** One organisation's billing: its mode and terms, its balance and its invoices. */
+  @Get("orgs/:orgId/billing")
+  @RequireStaff(StaffRole.Support)
+  async billingOf(
+    @Param("orgId") orgId: string,
+    @Req() request: FastifyRequest,
+  ): Promise<OperatorOrgBilling> {
+    return await this.billing.load(orgId, String(request.id));
+  }
+
+  /** Switches how an organisation pays. Billing staff and above, with a reason, audited. */
+  @Put("orgs/:orgId/billing")
+  @HttpCode(204)
+  @RequireStaff(StaffRole.Billing)
+  async setBilling(
+    @Param("orgId") orgId: string,
+    @Body(new ZodValidationPipe(setBillingModeSchema)) body: SetBillingMode,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.billing.setMode(orgId, body, operatorOf(request), String(request.id));
   }
 }
 

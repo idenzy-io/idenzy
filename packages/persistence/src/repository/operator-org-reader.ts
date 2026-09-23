@@ -20,6 +20,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export class OperatorOrgReader {
   constructor(private readonly db: NodePgDatabase) {}
 
+  /** One organisation by id, or null. */
+  async byId(id: string): Promise<OperatorOrgRow | null> {
+    const rows = await this.db
+      .select({ id: orgs.id, name: orgs.name, createdAt: orgs.createdAt })
+      .from(orgs)
+      .where(eq(orgs.id, id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   /** By exact id, or by name containing the query, newest first. */
   async search(query: string, limit: number): Promise<readonly OperatorOrgRow[]> {
     const trimmed = query.trim();

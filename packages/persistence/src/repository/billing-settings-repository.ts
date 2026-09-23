@@ -1,5 +1,9 @@
 import { AUTO_TOP_UP_DAILY_LIMIT } from "@idenzy/protocol/billing/price-list";
-import type { AutoTopUpSuspension } from "@idenzy/protocol/enums/billing";
+import {
+  type AutoTopUpSuspension,
+  BillingMode,
+  DEFAULT_INVOICE_TERMS_DAYS,
+} from "@idenzy/protocol/enums/billing";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { billingSettings } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
@@ -32,6 +36,9 @@ export interface BillingSettingsRow {
   readonly currency: string;
   readonly autoTopUp: AutoTopUpRow;
   readonly autoTopUpState: AutoTopUpStateRow;
+  /** How the organisation pays (ADR-0019). Staff-set. */
+  readonly mode: BillingMode;
+  readonly invoiceTermsDays: number;
   readonly spendAlert: SpendAlertRow;
   readonly updatedBy: string | null;
   readonly updatedAt: Date;
@@ -48,6 +55,8 @@ const DEFAULTS: Omit<BillingSettingsRow, "updatedAt"> = {
     suspendedAt: null,
     suspendedReason: null,
   },
+  mode: BillingMode.Prepaid,
+  invoiceTermsDays: DEFAULT_INVOICE_TERMS_DAYS,
   spendAlert: { enabled: false, thresholdCents: 0, sentForMonth: null },
   updatedBy: null,
 };
@@ -69,6 +78,9 @@ function toRow(row: typeof billingSettings.$inferSelect): BillingSettingsRow {
       // Safe: the column is written only from AutoTopUpSuspension.
       suspendedReason: row.autoTopUpSuspendedReason as AutoTopUpSuspension | null,
     },
+    // Safe: the column is constrained to BillingMode's values by `billing_settings_mode_ck`.
+    mode: row.billingMode as BillingMode,
+    invoiceTermsDays: row.invoiceTermsDays,
     spendAlert: {
       enabled: row.spendAlertEnabled,
       thresholdCents: row.spendAlertThresholdCents,
@@ -186,6 +198,14 @@ export class BillingSettingsRepository extends OrgRepository<typeof billingSetti
       },
       updatedBy,
     );
+  }
+
+  /**
+   * Switches how the organisation pays (ADR-0019). Called only from the operator surface, inside
+   * the transaction that also writes the `operator_actions` row recording who and why.
+   */
+  async setBillingMode(mode: BillingMode, termsDays: number, updatedBy: string | null) {
+    await this.upsert({ billingMode: mode, invoiceTermsDays: termsDays }, updatedBy);
   }
 
   async setSpendAlert(

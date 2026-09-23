@@ -7,8 +7,10 @@ import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Global, Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { BillingModule } from "../management/billing/billing.module.js";
 import { DATABASE } from "../persistence/persistence.module.js";
 import { OperatorController } from "./operator.controller.js";
+import { OperatorBillingService } from "./operator-billing-service.js";
 import { OPERATOR_PROJECT, OPERATOR_VERIFIER, StaffGuard } from "./staff.guard.js";
 
 /**
@@ -21,6 +23,7 @@ import { OPERATOR_PROJECT, OPERATOR_VERIFIER, StaffGuard } from "./staff.guard.j
  */
 @Global()
 @Module({
+  imports: [BillingModule],
   controllers: [OperatorController],
   providers: [
     {
@@ -51,6 +54,7 @@ import { OPERATOR_PROJECT, OPERATOR_VERIFIER, StaffGuard } from "./staff.guard.j
       inject: [DATABASE],
       useFactory: (db: NodePgDatabase) => new OperatorOrgReader(db),
     },
+    OperatorBillingService,
     StaffGuard,
     { provide: APP_GUARD, useExisting: StaffGuard },
   ],

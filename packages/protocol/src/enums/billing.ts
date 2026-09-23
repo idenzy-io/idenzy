@@ -31,6 +31,22 @@ export const TopUpState = {
 } as const;
 export type TopUpState = (typeof TopUpState)[keyof typeof TopUpState];
 
+/**
+ * How an organisation pays (ADR-0019).
+ *
+ * Prepaid is everybody's: credit bought in advance and drawn down by usage. Invoiced is for the
+ * large organisations staff select: usage is billed monthly in arrears on net terms, the wallet is
+ * not drawn on, and nothing stops over an unpaid invoice — a person decides.
+ */
+export const BillingMode = {
+  Prepaid: "prepaid",
+  Invoiced: "invoiced",
+} as const;
+export type BillingMode = (typeof BillingMode)[keyof typeof BillingMode];
+
+/** Net terms an invoiced organisation gets unless staff set others. */
+export const DEFAULT_INVOICE_TERMS_DAYS = 14;
+
 /** Whether a person asked for the top-up or the automatic rule fired it. */
 export const TopUpTrigger = {
   Manual: "manual",
@@ -110,10 +126,14 @@ export type CardBrand = (typeof CardBrand)[keyof typeof CardBrand];
  * auditor asks about.
  */
 export const InvoiceStatus = {
+  /** Written by the invoice run and not yet issued at the provider. A person never sees one. */
+  Draft: "draft",
   Open: "open",
   Paid: "paid",
   PastDue: "past_due",
   Void: "void",
+  /** Given up on at the provider. Kept, because a debt written off is still a record. */
+  Uncollectible: "uncollectible",
 } as const;
 export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
 

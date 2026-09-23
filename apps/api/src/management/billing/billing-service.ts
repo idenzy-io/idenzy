@@ -5,6 +5,8 @@ import {
 } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
+import { AUTO_TOP_UP_WINDOW_MS } from "@idenzy/domain/policies/auto-top-up-policy";
+import { BillingSignals } from "@idenzy/domain/ports/billing-signals";
 import { PaymentProvider } from "@idenzy/domain/ports/payment-provider";
 import { BillingSettingsRepository } from "@idenzy/persistence/repository/billing-settings-repository";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
@@ -59,6 +61,12 @@ export class BillingService {
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     /**
+     * Told after the rule or its card changes, so the worker's cached copy is dropped and the
+     * organisation gets a look within one tick — the case being somebody switching the rule on
+     * while already under their threshold, who should not wait five minutes for it to fire.
+     */
+    private readonly signals: BillingSignals,
+    /**
      * `@Inject` by token and not by type, which is not decoration.
      *
      * A constructor parameter typed `PaymentProvider | null` emits `Object` into
@@ -90,6 +98,9 @@ export class BillingService {
       // screen: `wallet` answered credit alone, so an organisation $300 down showed whatever
       // credit it had left and never the figure ADR-0014 says a wallet holds.
       const debtCents = await new UsageDrawdownRepository(tx, context).debtCents();
+      const attemptsToday = await new TopUpRepository(tx, context).automaticAttemptsSince(
+        new Date(now.getTime() - AUTO_TOP_UP_WINDOW_MS),
+      );
 
       const purchasedCents = sum(grants, CreditKind.Purchased);
       const promotionalCents = sum(grants, CreditKind.Promotional);
@@ -103,6 +114,7 @@ export class BillingService {
         methods: methods.map((method) => present.method(method, names)),
         topUps: topUps.map(present.topUp),
         autoTopUp: present.autoTopUp(settings),
+        autoTopUpStatus: present.autoTopUpStatus(settings, attemptsToday),
         spendAlert: present.spendAlert(settings),
         outstandingCents,
         provider: this.payments == null ? null : ProviderName.Stripe,
@@ -189,6 +201,7 @@ export class BillingService {
       new PaymentMethodRepository(tx, context).setDefault(id),
     );
     if (!changed) throw new ResourceNotFoundError({ detail: { methodId: publicId } });
+    await this.signals.ruleChanged(context.orgId);
   }
 
   /**
@@ -229,6 +242,7 @@ export class BillingService {
         });
       }
     });
+    await this.signals.ruleChanged(context.orgId);
   }
 
   async setAutoTopUp(context: OrgContext, rule: AutoTopUp, memberId: string): Promise<void> {
@@ -252,6 +266,7 @@ export class BillingService {
         memberId,
       );
     });
+    await this.signals.ruleChanged(context.orgId);
   }
 
   async setSpendAlert(context: OrgContext, alert: SpendAlert, memberId: string): Promise<void> {

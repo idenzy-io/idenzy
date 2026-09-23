@@ -1,10 +1,18 @@
+import { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import { createValkeyClient, type ValkeyClient } from "@idenzy/cache/connection/client";
+import { DueSet } from "@idenzy/cache/due-set";
 import { RateLimitStrategy } from "@idenzy/cache/rate-limit-strategy";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
 import { SlidingWindowStrategy } from "@idenzy/cache/sliding-window-strategy";
+import {
+  AUTO_TOP_UP_DUE_KEY,
+  DRAWDOWN_DUE_KEY,
+  ValkeyBillingSignals,
+} from "@idenzy/cache/valkey-billing-signals";
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
+import { BillingSignals } from "@idenzy/domain/ports/billing-signals";
 import { Global, Inject, Injectable, Module, type OnApplicationShutdown } from "@nestjs/common";
 
 /** Injection token for the raw client. Only the things in this module take it. */
@@ -36,7 +44,7 @@ export class ValkeyLifecycle implements OnApplicationShutdown {
 }
 
 /**
- * Valkey and the revocation set (PROJECT.md 8.2, ADR-0009).
+ * Valkey, the revocation set, and the billing signals (PROJECT.md 8.2, ADR-0009, ADR-0017).
  *
  * The set is written to and published; it is not read on the request path. `SessionGuard`
  * reads the session row, so revocation is already immediate for our own endpoints, and
@@ -81,8 +89,28 @@ export class ValkeyLifecycle implements OnApplicationShutdown {
       useFactory: (valkey: ValkeyClient, clock: Clock): RateLimitStrategy =>
         new SlidingWindowStrategy(valkey, clock),
     },
+    {
+      // Hints to the billing worker (ADR-0017). Sent after the change they describe has
+      // committed, and never able to fail the request that sends them.
+      provide: BillingSignals,
+      inject: [VALKEY, Clock, Logger],
+      useFactory: (valkey: ValkeyClient, clock: Clock, logger: Logger): BillingSignals =>
+        new ValkeyBillingSignals(
+          new DueSet(valkey, DRAWDOWN_DUE_KEY),
+          new DueSet(valkey, AUTO_TOP_UP_DUE_KEY),
+          new AutoTopUpRuleCache(valkey),
+          clock,
+          (signal, cause) => {
+            logger.warn("billing signal not sent", {
+              component: "billing",
+              outcome: signal,
+              errorName: cause instanceof Error ? cause.name : "unknown",
+            });
+          },
+        ),
+    },
     ValkeyLifecycle,
   ],
-  exports: [VALKEY, RevocationSet, RateLimitStrategy],
+  exports: [VALKEY, RevocationSet, RateLimitStrategy, BillingSignals],
 })
 export class CacheModule {}

@@ -6,6 +6,7 @@ import type { PaymentMethodRow } from "@idenzy/persistence/repository/payment-me
 import type { TopUpRow } from "@idenzy/persistence/repository/top-up-repository";
 import type {
   AutoTopUp,
+  AutoTopUpStatus,
   CreditGrant,
   Invoice,
   InvoiceLine,
@@ -107,6 +108,16 @@ export const present = {
         settings.autoTopUp.methodId === null
           ? null
           : PublicId.encode(IdPrefix.PaymentMethod, settings.autoTopUp.methodId).value,
+    };
+  },
+
+  autoTopUpStatus(settings: BillingSettingsRow, attemptsToday: number): AutoTopUpStatus {
+    return {
+      suspendedReason: settings.autoTopUpState.suspendedReason,
+      suspendedAt: settings.autoTopUpState.suspendedAt?.toISOString() ?? null,
+      failures: settings.autoTopUpState.failures,
+      attemptsToday,
+      dailyLimit: settings.autoTopUpState.dailyLimit,
     };
   },
 

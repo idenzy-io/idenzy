@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AutoTopUpSuspension,
   CardBrand,
   CreditKind,
   InvoiceStatus,
@@ -152,6 +153,25 @@ export const autoTopUpSchema = z
   });
 export type AutoTopUp = z.infer<typeof autoTopUpSchema>;
 
+/**
+ * What the automatic rule has been doing, read-only.
+ *
+ * Separate from `autoTopUp` because that is what a person sends back when they save, and none
+ * of this is theirs to set: the rule writes it, and a person clears a suspension by saving the
+ * rule, not by editing these. `suspendedReason` is what the screen has to explain — it is the
+ * one field here that means somebody has to act.
+ */
+export const autoTopUpStatusSchema = z.object({
+  suspendedReason: enumOf(AutoTopUpSuspension).nullable(),
+  suspendedAt: isoDateTimeSchema.nullable(),
+  /** Consecutive charges that did not succeed. */
+  failures: z.number().int().nonnegative(),
+  /** Automatic charges attempted in the last twenty-four hours, and how many are allowed. */
+  attemptsToday: z.number().int().nonnegative(),
+  dailyLimit: z.number().int().positive(),
+});
+export type AutoTopUpStatus = z.infer<typeof autoTopUpStatusSchema>;
+
 export const spendAlertSchema = z.object({
   enabled: z.boolean(),
   thresholdCents: centsSchema,
@@ -186,6 +206,7 @@ export const walletSchema = z.object({
   methods: z.array(paymentMethodSchema),
   topUps: z.array(topUpSchema),
   autoTopUp: autoTopUpSchema,
+  autoTopUpStatus: autoTopUpStatusSchema,
   spendAlert: spendAlertSchema,
   outstandingCents: centsSchema,
   /** Which provider takes the money, or null where none is configured. */

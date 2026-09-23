@@ -25,10 +25,12 @@ declare module "fastify" {
  * decorator resolves no membership, so nothing downstream can reach for an org context it
  * was never given.
  *
- * **It answers 200 to almost everything, and that is deliberate.** A provider retries what
- * it reads as a failure, so a 500 on an event we do not handle would have Stripe deliver it
- * for days. What we cannot verify is a 400 — that is not a retry, it is a forgery or a
- * misconfiguration, and neither improves by being sent again.
+ * **It answers 200 to everything it has handled or chosen not to handle.** A provider retries
+ * what it reads as a failure, so a 500 on an event we do not act on would have Stripe deliver
+ * it for days. What we cannot verify is a 400 — that is not a retry, it is a forgery or a
+ * misconfiguration, and neither improves by being sent again. What we tried to handle and could
+ * not is a 500, on purpose: the provider's retry is the only retry there is, and every handler
+ * is idempotent, so being told again is how a refund that hit a timeout still gets applied.
  */
 @Controller()
 export class PaymentWebhookController {

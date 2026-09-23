@@ -1,5 +1,6 @@
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
+import { BillingSignals } from "@idenzy/domain/ports/billing-signals";
 import {
   EmailProvider,
   type OutboundEmail,
@@ -122,4 +123,26 @@ export class CountAll implements UsageMeter {
     this.records.push({ projectId, channel });
     return Promise.resolve();
   }
+}
+
+/** Records every billing signal sent, so a test can assert that a change told the worker. */
+export class RecordingBillingSignals extends BillingSignals {
+  readonly sent: { signal: string; id: string }[] = [];
+
+  protected override sendUsageMoved(projectId: string): Promise<void> {
+    this.sent.push({ signal: "usage_moved", id: projectId });
+    return Promise.resolve();
+  }
+
+  protected override sendWalletMoved(orgId: string): Promise<void> {
+    this.sent.push({ signal: "wallet_moved", id: orgId });
+    return Promise.resolve();
+  }
+
+  protected override sendRuleChanged(orgId: string): Promise<void> {
+    this.sent.push({ signal: "rule_changed", id: orgId });
+    return Promise.resolve();
+  }
+
+  protected override failed(): void {}
 }

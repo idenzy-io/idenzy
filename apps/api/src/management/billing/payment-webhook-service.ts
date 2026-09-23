@@ -1,16 +1,35 @@
-import { WebhookSignatureInvalidError } from "@idenzy/core/errors";
+import { InternalError, WebhookSignatureInvalidError } from "@idenzy/core/errors";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
+import { BillingSignals } from "@idenzy/domain/ports/billing-signals";
 import { PaymentProvider, type ProviderEvent } from "@idenzy/domain/ports/payment-provider";
-import { TopUpSettlement } from "@idenzy/persistence/billing/top-up-settlement";
+import { type DisputeMovement, TopUpReversals } from "@idenzy/persistence/billing/top-up-reversals";
+import { type Settled, TopUpSettlement } from "@idenzy/persistence/billing/top-up-settlement";
+import { BillingSettingsRepository } from "@idenzy/persistence/repository/billing-settings-repository";
 import { OrgBillingCustomerRepository } from "@idenzy/persistence/repository/org-billing-customer-repository";
 import { PaymentMethodRepository } from "@idenzy/persistence/repository/payment-method-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
 import { TopUpRepository } from "@idenzy/persistence/repository/top-up-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { PaymentProvider as ProviderName, TopUpState } from "@idenzy/protocol/enums/billing";
+import {
+  AutoTopUpSuspension,
+  PaymentProvider as ProviderName,
+  TopUpState,
+} from "@idenzy/protocol/enums/billing";
 import { Inject, Injectable, Optional } from "@nestjs/common";
+import {
+  type StripeDispute,
+  type StripeRefund,
+  type StripeReview,
+  stripeDisputeSchema,
+  stripeIntentSchema,
+  stripeRefundSchema,
+  stripeReviewSchema,
+} from "./stripe-objects.js";
+
+/** Our own row ids are uuids; a reference that is not one is not a row of ours. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * What the provider tells us, turned into credit — once (PROJECT.md 5.1).
@@ -28,6 +47,12 @@ import { Inject, Injectable, Optional } from "@nestjs/common";
  * signature we verified before reading a single field — is a better answer than a
  * cross-tenant read to work it out, and it is the only thing here that is trusted.
  *
+ * **Money that leaves again is followed too.** A refund or a dispute of a top-up takes back the
+ * credit it bought, and gives it back if the refund fails or the dispute is won, through
+ * `TopUpReversals` — each movement claimed on its own row first, so the several events Stripe
+ * sends about one refund or one dispute move the wallet once. Those events carry none of our
+ * metadata, so their organisation is found by asking Stripe whose intent it is.
+ *
  * **Granting the credit, settling the charge and clearing the debt are one transaction.**
  * Either the row says paid and the balance moved, or neither did. Two statements would leave
  * a customer charged with nothing added, which is the one failure on this path nobody can be
@@ -41,6 +66,7 @@ export class PaymentWebhookService {
     private readonly events: PaymentProviderEventRepository,
     private readonly clock: Clock,
     private readonly logger: Logger,
+    private readonly signals: BillingSignals,
     /**
      * `@Inject` by token and not by type, which is not decoration.
      *
@@ -72,52 +98,197 @@ export class PaymentWebhookService {
       });
     }
 
-    const first = await this.events.record({
+    const disposition = await this.events.record({
       provider: ProviderName.Stripe,
       providerEventId: event.id,
       type: event.type,
       payload: event.payload,
     });
-    if (!first) return;
+    if (disposition === "handled") return;
 
     try {
       await this.handle(event, requestId);
       await this.events.markProcessed(ProviderName.Stripe, event.id);
     } catch (cause: unknown) {
-      // Recorded and swallowed. The row keeps `processed_at` null, which is what a sweep
-      // looks for, and the provider is answered 200 — a retry storm over an event we have
-      // already stored helps nobody, and the durable record is what makes it recoverable.
+      // Recorded, and then answered with a 500 so the provider delivers it again. There is no
+      // sweep of our own that would ever retry it — the row's `processed_at` stays null, which
+      // is what makes the redelivery handle it rather than skip it — and every handler below is
+      // idempotent by its own predicates, so a second run moves nothing twice. A refund or a
+      // dispute left unhandled is credit that should have been taken back and was not.
       const reason = cause instanceof Error ? cause.name : "unknown";
       await this.events.markFailed(ProviderName.Stripe, event.id, reason);
       this.logger.error("payment event not handled", {
         requestId,
         component: "billing",
-        outcome: "deferred",
+        outcome: "retry",
         errorName: reason,
       });
+      throw new InternalError({ detail: { event: event.type, reason } });
     }
   }
 
   private async handle(event: ProviderEvent, requestId: string): Promise<void> {
-    if (event.orgId === null) return;
-    const context = new OrgContext(event.orgId, requestId, "system");
-
     switch (event.type) {
       case "checkout.session.completed":
-        await this.completed(context, event);
-        return;
+        return await this.forOrg(event, requestId, (context) => this.completed(context, event));
       case "payment_intent.succeeded":
-        await this.settled(context, event, TopUpState.Succeeded);
-        return;
+        return await this.intent(event, requestId, TopUpState.Succeeded);
       case "payment_intent.payment_failed":
-        await this.settled(context, event, TopUpState.Failed);
-        return;
+        return await this.intent(event, requestId, TopUpState.Failed);
+      case "payment_intent.canceled":
+        return await this.intent(event, requestId, TopUpState.Cancelled);
+
+      case "refund.created":
+      case "refund.updated":
+      case "refund.failed":
+      case "charge.refund.updated":
+        return await this.refunded(stripeRefundSchema.parse(event.payload), requestId);
+
+      case "charge.dispute.created":
+      case "charge.dispute.updated":
+      case "charge.dispute.closed":
+        return await this.disputed(stripeDisputeSchema.parse(event.payload), null, requestId);
+      case "charge.dispute.funds_withdrawn":
+        return await this.disputed(
+          stripeDisputeSchema.parse(event.payload),
+          "withdrawn",
+          requestId,
+        );
+      case "charge.dispute.funds_reinstated":
+        return await this.disputed(
+          stripeDisputeSchema.parse(event.payload),
+          "reinstated",
+          requestId,
+        );
+
+      case "review.closed":
+        return await this.reviewed(stripeReviewSchema.parse(event.payload), requestId);
+
       default:
-        // Everything else is stored and acknowledged. An event catalogue we do not act on
-        // is not a failure, and treating it as one is how a provider ends up retrying a
-        // `customer.updated` for three days.
+        // Everything else is stored and acknowledged. That includes, deliberately:
+        //
+        // `charge.refunded`, whose charge no longer embeds its refunds under the API version
+        // we pin — the `refund.*` events carry the same money and are what acts on it.
+        // `invoice.*`, `invoiceitem.*` and `invoice_payment.*`: we never create a Stripe
+        // invoice, because the product is prepaid (ADR-0014) and `invoices` stays ours.
+        // `issuing_dispute.*`: Issuing is for cards we would issue, and we issue none.
+        //
+        // An event we do not act on is not a failure, and treating it as one is how a
+        // provider ends up retrying a `customer.updated` for three days.
         return;
     }
+  }
+
+  /** For an event we originated, which carries our organisation in its metadata. */
+  private async forOrg(
+    event: ProviderEvent,
+    requestId: string,
+    work: (context: OrgContext) => Promise<void>,
+  ): Promise<void> {
+    if (event.orgId === null) return;
+    await work(new OrgContext(event.orgId, requestId, "system"));
+  }
+
+  /**
+   * For an event that names an intent and none of our metadata — a refund, a dispute, a review.
+   *
+   * The provider is asked whose intent it is, because what we stamped on the intent when we
+   * made it is the only trusted way from one of these to an organisation. An intent that is not
+   * ours answers null and the event is acknowledged and left.
+   */
+  private async ownerOf(intentId: string | null | undefined, requestId: string) {
+    if (intentId == null || this.payments == null) return null;
+    const owner = await this.payments.chargeOwner(intentId);
+    return owner === null ? null : new OrgContext(owner.orgId, requestId, "system");
+  }
+
+  private async intent(event: ProviderEvent, requestId: string, state: TopUpState): Promise<void> {
+    const intent = stripeIntentSchema.parse(event.payload);
+    await this.forOrg(event, requestId, async (context) => {
+      // An automatic charge's intent can reach us before the worker that made it has written
+      // the handle down. The intent carries our row id as its reference, so the handle is
+      // attached here first — once, and only onto a row that has none — and the settlement
+      // below then finds it. Whichever of this and the worker settles first does the work.
+      const reference = event.reference;
+      if (reference !== null && UUID.test(reference)) {
+        await this.uow.transaction((tx) =>
+          new TopUpRepository(tx, context).attachIfUnset(reference, intent.id),
+        );
+      }
+      const settled = await this.settleIntent(
+        context,
+        intent.id,
+        state,
+        intent.last_payment_error?.code ?? null,
+      );
+      if (settled?.suspended != null) await this.signals.ruleChanged(context.orgId);
+    });
+  }
+
+  private async refunded(refund: StripeRefund, requestId: string): Promise<void> {
+    const context = await this.ownerOf(refund.payment_intent, requestId);
+    if (context === null || refund.payment_intent === null) return;
+    const intentId = refund.payment_intent;
+    const reversal = await this.uow.transaction((tx) =>
+      new TopUpReversals(tx, context).refund({
+        providerRefundId: refund.id,
+        providerIntentId: intentId,
+        amountCents: refund.amount,
+        state: refund.status,
+        at: this.clock.now(),
+      }),
+    );
+    if (reversal?.suspended != null) await this.signals.ruleChanged(context.orgId);
+  }
+
+  private async disputed(
+    dispute: StripeDispute,
+    movement: DisputeMovement,
+    requestId: string,
+  ): Promise<void> {
+    const context = await this.ownerOf(dispute.payment_intent, requestId);
+    if (context === null || dispute.payment_intent === null) return;
+    const intentId = dispute.payment_intent;
+    const reversal = await this.uow.transaction((tx) =>
+      new TopUpReversals(tx, context).dispute({
+        providerDisputeId: dispute.id,
+        providerIntentId: intentId,
+        amountCents: dispute.amount,
+        status: dispute.status,
+        reason: dispute.reason,
+        movement,
+        at: this.clock.now(),
+      }),
+    );
+    if (reversal?.suspended != null) await this.signals.ruleChanged(context.orgId);
+    if (reversal !== null && reversal.debitedCents + reversal.creditedCents > 0) {
+      this.logger.warn("dispute moved a wallet", {
+        requestId,
+        orgId: context.orgId,
+        component: "billing",
+        outcome: movement ?? dispute.status,
+      });
+    }
+  }
+
+  /**
+   * A fraud review that ended against the payment stops the automatic rule.
+   *
+   * The money itself moves on the refund or dispute events that accompany these; what this adds
+   * is that Radar thought the card suspect, and a rule that went on charging it would be asking
+   * to be declined as the next one.
+   */
+  private async reviewed(review: StripeReview, requestId: string): Promise<void> {
+    if (review.reason !== "refunded_as_fraud" && review.reason !== "disputed") return;
+    const context = await this.ownerOf(review.payment_intent, requestId);
+    if (context === null) return;
+    const suspended = await this.uow.transaction((tx) =>
+      new BillingSettingsRepository(tx, context).suspendAutoTopUp(
+        AutoTopUpSuspension.FraudReview,
+        this.clock.now(),
+      ),
+    );
+    if (suspended) await this.signals.ruleChanged(context.orgId);
   }
 
   /**
@@ -145,21 +316,6 @@ export class PaymentWebhookService {
     await this.settleIntent(context, intentId, TopUpState.Succeeded, null);
   }
 
-  private async settled(
-    context: OrgContext,
-    event: ProviderEvent,
-    state: TopUpState,
-  ): Promise<void> {
-    const intentId = readString(event.payload["id"]);
-    if (intentId === null) return;
-    const failure = event.payload["last_payment_error"];
-    const code =
-      typeof failure === "object" && failure !== null
-        ? readString((failure as Record<string, unknown>)["code"])
-        : null;
-    await this.settleIntent(context, intentId, state, code);
-  }
-
   /**
    * Settles a charge and, where it succeeded, grants the credit it bought.
    *
@@ -173,9 +329,9 @@ export class PaymentWebhookService {
     intentId: string,
     state: TopUpState,
     failureCode: string | null,
-  ): Promise<void> {
+  ): Promise<Settled | null> {
     const at = this.clock.now();
-    await this.uow.transaction((tx) =>
+    return await this.uow.transaction((tx) =>
       new TopUpSettlement(tx, context).settle({
         providerIntentId: intentId,
         state,

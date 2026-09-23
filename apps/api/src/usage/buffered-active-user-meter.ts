@@ -3,6 +3,7 @@ import { Logger } from "@idenzy/core/logging/logger";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
 import { Clock } from "@idenzy/core/time/clock";
 import { ActiveUserMeter } from "@idenzy/domain/ports/active-user-meter";
+import { BillingSignals } from "@idenzy/domain/ports/billing-signals";
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
@@ -66,6 +67,12 @@ export class BufferedActiveUserMeter
     private readonly uow: UnitOfWork,
     private readonly logger: Logger,
     config: AppConfig,
+    /**
+     * Told after a flush that wrote something, so the organisation's month is repriced within a
+     * tick rather than on the drawdown's five-minute pass (ADR-0017). A hint and never a record:
+     * it cannot fail the flush, and a lost one only waits for the pass.
+     */
+    private readonly signals: BillingSignals,
   ) {
     super(clock);
     this.intervalMs = config.get("USAGE_FLUSH_INTERVAL_SECONDS") * 1000;
@@ -129,7 +136,9 @@ export class BufferedActiveUserMeter
         outcome: "deferred",
         errorCode: error instanceof Error ? error.name : "unknown",
       });
+      return;
     }
+    await this.signals.usageMoved(buffer.projectId);
   }
 
   /** The backstop, and where a day that is over is written one last time and let go. */

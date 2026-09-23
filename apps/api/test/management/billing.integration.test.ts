@@ -1,14 +1,23 @@
+import { InternalError } from "@idenzy/core/errors";
 import { SystemClock } from "@idenzy/core/time/clock";
 import type { ProviderEvent } from "@idenzy/domain/ports/payment-provider";
+import { BillingSettingsRepository } from "@idenzy/persistence/repository/billing-settings-repository";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
+import { TopUpRepository } from "@idenzy/persistence/repository/top-up-repository";
 import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { CardBrand } from "@idenzy/protocol/enums/billing";
+import {
+  AutoTopUpSuspension,
+  CardBrand,
+  PaymentProvider as ProviderName,
+  TopUpTrigger,
+} from "@idenzy/protocol/enums/billing";
 import { FakePaymentProvider } from "@idenzy/testing/fake-payment-provider";
+import { RecordingBillingSignals } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // From `dist`, like every other app test: Rolldown does not apply the decorator semantics
 // NestJS DI depends on.
 import { BillingService } from "../../dist/management/billing/billing-service.js";
@@ -44,6 +53,7 @@ const context = new OrgContext(ORG, "req_billing", "customer_staff", MEMBER);
 const actingMember = MEMBER;
 
 const provider = new FakePaymentProvider();
+const signals = new RecordingBillingSignals();
 
 function event(
   type: string,
@@ -72,8 +82,8 @@ beforeAll(async () => {
   events = new PaymentProviderEventRepository(harness.db);
   const clock = new SystemClock();
   const urls = { successUrl: "https://app.test/ok", cancelUrl: "https://app.test/no" };
-  billing = new BillingService(uow, clock, provider, urls);
-  webhooks = new PaymentWebhookService(uow, events, clock, new SilentLogger(), provider);
+  billing = new BillingService(uow, clock, signals, provider, urls);
+  webhooks = new PaymentWebhookService(uow, events, clock, new SilentLogger(), signals, provider);
 
   for (const org of [ORG, OTHER_ORG]) {
     await harness.owner.query(
@@ -103,7 +113,7 @@ describe("the wallet a screen reads", () => {
 
   /** A deployment with no keys is correct, and the screen is built to say so. */
   it("answers a null provider where nothing can take a card", async () => {
-    const unpaid = new BillingService(uow, new SystemClock(), null, null);
+    const unpaid = new BillingService(uow, new SystemClock(), signals, null, null);
     expect((await unpaid.wallet(context)).provider).toBeNull();
     await expect(unpaid.startTopUp(context, 2500, actingMember)).rejects.toMatchObject({
       code: "payments_unavailable",
@@ -391,5 +401,260 @@ describe("cards on file", () => {
     // The provider first: a card detached here and still attached there is one we have
     // stopped showing and could still charge.
     expect(provider.detached).toContain("pm_later");
+  });
+});
+
+/**
+ * Money that leaves after it arrived, and the events that say so (ADR-0017).
+ *
+ * Refunds, disputes and reviews carry none of our metadata, so each of these tests registers
+ * the intent with the fake as ours — which is what asking Stripe whose intent it is would
+ * answer — and an intent it does not register is one somebody else made.
+ */
+describe("refunds, disputes and reviews", () => {
+  const REVERSALS = "ffffffff-0000-4000-8000-00000000000f";
+  const here = new OrgContext(REVERSALS, "req_reversals", "customer_staff", MEMBER);
+  let sequence = 0;
+
+  const wallet = () =>
+    uow.transaction(async (tx) => ({
+      credit: await new CreditGrantRepository(tx, here).balanceCents(new Date()),
+      debt: await new UsageDrawdownRepository(tx, here).debtCents(),
+    }));
+
+  const ruleState = async () =>
+    (await uow.transaction((tx) => new BillingSettingsRepository(tx, here).current()))
+      .autoTopUpState;
+
+  /** A top-up paid through the hosted page, as the rest of this file does it. */
+  async function paid(amountCents: number): Promise<string> {
+    sequence += 1;
+    const intent = `pi_reversal_${String(sequence)}`;
+    const checkout = await billing.startTopUp(here, amountCents, actingMember);
+    await webhooks.receive(
+      event(
+        "checkout.session.completed",
+        { mode: "payment", payment_intent: intent, client_reference_id: checkout.reference },
+        { orgId: REVERSALS, reference: checkout.reference },
+      ),
+      "sig",
+      `req_pay_${intent}`,
+    );
+    provider.own(intent, REVERSALS);
+    return intent;
+  }
+
+  /** An event about an object that carries no stamps of ours, as refunds and disputes do. */
+  function unstamped(type: string, payload: Record<string, unknown>, id?: string): string {
+    return event(type, payload, { orgId: null, reference: null, ...(id ? { id } : {}) });
+  }
+
+  const refundOf = (intent: string, status: string, amount = 3000, id = `re_${intent}`) => ({
+    id,
+    amount,
+    status,
+    payment_intent: intent,
+  });
+  const disputeOf = (intent: string, status: string, amount = 3000) => ({
+    id: `dp_${intent}`,
+    amount,
+    status,
+    reason: "fraudulent",
+    payment_intent: intent,
+  });
+
+  beforeAll(async () => {
+    await harness.owner.query(`INSERT INTO orgs (id, name) VALUES ($1, 'Reversals')`, [REVERSALS]);
+  });
+
+  beforeEach(async () => {
+    for (const table of ["payment_refunds", "payment_disputes", "credit_grants", "org_debts"]) {
+      await harness.owner.query(`DELETE FROM ${table} WHERE org_id = $1`, [REVERSALS]);
+    }
+    await harness.owner.query(`DELETE FROM top_ups WHERE org_id = $1`, [REVERSALS]);
+    // Through the repository: the service insists on a card, and a checkout completion
+    // reconciles cards against the fake provider's list, which is empty here.
+    await uow.transaction((tx) =>
+      new BillingSettingsRepository(tx, here).setAutoTopUp(
+        { enabled: true, thresholdCents: 1000, amountCents: 5000, methodId: null },
+        MEMBER,
+      ),
+    );
+    signals.sent.length = 0;
+  });
+
+  it("takes a refund's credit back once, across every event Stripe sends about it", async () => {
+    const intent = await paid(5000);
+    await webhooks.receive(unstamped("refund.created", refundOf(intent, "pending")), "sig", "r1");
+    await webhooks.receive(unstamped("refund.updated", refundOf(intent, "succeeded")), "sig", "r2");
+    await webhooks.receive(
+      unstamped("charge.refund.updated", refundOf(intent, "succeeded")),
+      "sig",
+      "r3",
+    );
+    expect(await wallet()).toEqual({ credit: 2000, debt: 0 });
+  });
+
+  it("stops the automatic rule and tells the worker, so the card is not charged straight back", async () => {
+    const intent = await paid(5000);
+    await webhooks.receive(unstamped("refund.created", refundOf(intent, "pending")), "sig", "r4");
+    expect((await ruleState()).suspendedReason).toBe(AutoTopUpSuspension.Refunded);
+    expect(signals.sent).toContainEqual({ signal: "rule_changed", id: REVERSALS });
+  });
+
+  it("gives a refund's credit back when the refund fails", async () => {
+    const intent = await paid(5000);
+    await webhooks.receive(unstamped("refund.created", refundOf(intent, "pending")), "sig", "r5");
+    await webhooks.receive(unstamped("refund.failed", refundOf(intent, "failed")), "sig", "r6");
+    expect(await wallet()).toEqual({ credit: 5000, debt: 0 });
+  });
+
+  it("follows a dispute's money out and back, once each", async () => {
+    const intent = await paid(5000);
+    await webhooks.receive(
+      unstamped("charge.dispute.created", disputeOf(intent, "needs_response")),
+      "sig",
+      "d1",
+    );
+    expect((await ruleState()).suspendedReason).toBe(AutoTopUpSuspension.Dispute);
+    expect(await wallet()).toEqual({ credit: 5000, debt: 0 });
+
+    const withdrawn = unstamped(
+      "charge.dispute.funds_withdrawn",
+      disputeOf(intent, "needs_response"),
+    );
+    await webhooks.receive(withdrawn, "sig", "d2");
+    await webhooks.receive(
+      unstamped("charge.dispute.funds_withdrawn", disputeOf(intent, "needs_response")),
+      "sig",
+      "d3",
+    );
+    expect(await wallet()).toEqual({ credit: 2000, debt: 0 });
+
+    await webhooks.receive(
+      unstamped("charge.dispute.funds_reinstated", disputeOf(intent, "won")),
+      "sig",
+      "d4",
+    );
+    await webhooks.receive(
+      unstamped("charge.dispute.closed", disputeOf(intent, "won")),
+      "sig",
+      "d5",
+    );
+    expect(await wallet()).toEqual({ credit: 5000, debt: 0 });
+  });
+
+  it("puts a lost dispute's spent credit on debt", async () => {
+    const intent = await paid(5000);
+    await uow.transaction((tx) => new UsageDrawdownRepository(tx, here).adjustDebt(0));
+    await harness.owner.query(`UPDATE credit_grants SET remaining_cents = 1000 WHERE org_id = $1`, [
+      REVERSALS,
+    ]);
+    await webhooks.receive(
+      unstamped("charge.dispute.closed", disputeOf(intent, "lost", 5000)),
+      "sig",
+      "d6",
+    );
+    expect(await wallet()).toEqual({ credit: 0, debt: 4000 });
+  });
+
+  it("leaves alone a refund or dispute of a charge that is not ours", async () => {
+    await paid(5000);
+    await webhooks.receive(
+      unstamped("refund.created", refundOf("pi_stranger", "succeeded")),
+      "sig",
+      "s1",
+    );
+    await webhooks.receive(
+      unstamped("charge.dispute.funds_withdrawn", disputeOf("pi_stranger", "needs_response")),
+      "sig",
+      "s2",
+    );
+    expect(await wallet()).toEqual({ credit: 5000, debt: 0 });
+  });
+
+  it("stops the rule on a review closed as fraud, and not on one approved", async () => {
+    const intent = await paid(5000);
+    await webhooks.receive(
+      unstamped("review.closed", { reason: "approved", payment_intent: intent }),
+      "sig",
+      "v1",
+    );
+    expect((await ruleState()).suspendedReason).toBeNull();
+    await webhooks.receive(
+      unstamped("review.closed", { reason: "refunded_as_fraud", payment_intent: intent }),
+      "sig",
+      "v2",
+    );
+    expect((await ruleState()).suspendedReason).toBe(AutoTopUpSuspension.FraudReview);
+  });
+
+  it("acknowledges invoice and issuing events without acting on them", async () => {
+    for (const type of [
+      "invoice.paid",
+      "invoice.overdue",
+      "issuing_dispute.created",
+      "charge.refunded",
+    ]) {
+      await expect(
+        webhooks.receive(unstamped(type, { id: "x" }), "sig", type),
+      ).resolves.toBeUndefined();
+    }
+    expect(await wallet()).toEqual({ credit: 0, debt: 0 });
+  });
+
+  /**
+   * The race the attach exists for: Stripe's event about an automatic charge arrives before the
+   * worker that made it has written the intent down. The reference on the intent is our row id.
+   */
+  it("settles an automatic charge whose event beat the worker to it", async () => {
+    const topUpId = await uow.transaction(async (tx) => {
+      const row = await new TopUpRepository(tx, here).start({
+        amountCents: 5000,
+        currency: "USD",
+        trigger: TopUpTrigger.Automatic,
+        provider: ProviderName.Stripe,
+        requestedBy: null,
+      });
+      return row.id;
+    });
+    await webhooks.receive(
+      event(
+        "payment_intent.succeeded",
+        { id: "pi_early" },
+        { orgId: REVERSALS, reference: topUpId },
+      ),
+      "sig",
+      "e1",
+    );
+    expect(await wallet()).toEqual({ credit: 5000, debt: 0 });
+  });
+
+  /**
+   * A handler that fails answers 500 so Stripe delivers again, and the redelivery — the same
+   * event id — is handled rather than skipped as a duplicate. Once handled, a further
+   * redelivery is skipped.
+   */
+  it("handles a redelivery of an event whose first handling failed, and only that", async () => {
+    const intent = await paid(5000);
+    const original = provider.chargeOwner.bind(provider);
+    let failures = 1;
+    provider.chargeOwner = (id: string) => {
+      if (failures > 0) {
+        failures -= 1;
+        return Promise.reject(new InternalError({ detail: { reason: "stripe timed out" } }));
+      }
+      return original(id);
+    };
+    const delivery = unstamped("refund.created", refundOf(intent, "succeeded"), "evt_retried");
+
+    await expect(webhooks.receive(delivery, "sig", "x1")).rejects.toBeInstanceOf(InternalError);
+    expect(await wallet()).toEqual({ credit: 5000, debt: 0 });
+
+    await webhooks.receive(delivery, "sig", "x2");
+    expect(await wallet()).toEqual({ credit: 2000, debt: 0 });
+    await webhooks.receive(delivery, "sig", "x3");
+    expect(await wallet()).toEqual({ credit: 2000, debt: 0 });
+    provider.chargeOwner = original;
   });
 });

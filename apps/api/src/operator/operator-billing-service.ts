@@ -45,6 +45,7 @@ export class OperatorBillingService {
       org: { id: orgPublicId, name: org.name, createdAt: org.createdAt.toISOString() },
       mode: found.settings.mode,
       invoiceTermsDays: found.settings.invoiceTermsDays,
+      invoiceEmail: found.settings.invoiceEmail,
       balance: await this.balances.read(context),
       invoices: found.invoices.map(present.invoice),
     };
@@ -63,14 +64,27 @@ export class OperatorBillingService {
     await this.uow.transaction(async (tx) => {
       const settings = new BillingSettingsRepository(tx, context);
       const before = await settings.current();
-      await settings.setBillingMode(change.mode, change.invoiceTermsDays, null);
+      await settings.setBillingMode(
+        change.mode,
+        change.invoiceTermsDays,
+        change.invoiceEmail?.toLowerCase() ?? null,
+        null,
+      );
       await new OperatorActionLog(tx).record({
         staffId: operator.staffId,
         action: OperatorAction.SetBillingMode,
         orgId: context.orgId,
         detail: {
-          from: { mode: before.mode, invoiceTermsDays: before.invoiceTermsDays },
-          to: { mode: change.mode, invoiceTermsDays: change.invoiceTermsDays },
+          from: {
+            mode: before.mode,
+            invoiceTermsDays: before.invoiceTermsDays,
+            invoiceEmail: before.invoiceEmail,
+          },
+          to: {
+            mode: change.mode,
+            invoiceTermsDays: change.invoiceTermsDays,
+            invoiceEmail: change.invoiceEmail?.toLowerCase() ?? null,
+          },
         },
         reason: change.reason,
       });

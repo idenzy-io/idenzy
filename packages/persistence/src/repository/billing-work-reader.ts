@@ -75,4 +75,45 @@ export class BillingWorkReader {
       createdAt: new Date(row.created_at),
     }));
   }
+
+  /**
+   * One page of invoiced organisations ready to be invoiced for a month (ADR-0019): no invoice
+   * for it yet, and no project of theirs with a day in it that the period closer has not closed.
+   *
+   * "Every project closed" is the condition rather than a date, because the closer waits for the
+   * meters and then closes each project separately; an invoice priced before the last of them
+   * closed would bill a month that was still moving.
+   */
+  async invoicedReady(
+    period: string,
+    periodEnd: string,
+    limit: number,
+    after: string | null = null,
+  ): Promise<readonly string[]> {
+    const rows = await this.db.execute<{ org_id: string }>(
+      sql`select bs.org_id from billing_settings bs
+          where bs.billing_mode = 'invoiced'
+            and (${after}::uuid is null or bs.org_id > ${after}::uuid)
+            and not exists (
+              select 1 from invoices i where i.org_id = bs.org_id and i.period_start = ${period}::date)
+            and not exists (
+              select 1 from projects p
+              join usage_daily d on d.project_id = p.id
+                and d.day between ${period}::date and ${periodEnd}::date
+              left join usage_periods up on up.project_id = p.id and up.period = ${period}::date
+              where p.org_id = bs.org_id and up.project_id is null)
+          order by bs.org_id limit ${limit}`,
+    );
+    return rows.rows.map((row) => row.org_id);
+  }
+
+  /** One page of organisations holding an invoice the provider has not issued yet. */
+  async withDraftInvoices(limit: number, after: string | null = null): Promise<readonly string[]> {
+    const rows = await this.db.execute<{ org_id: string }>(
+      sql`select distinct org_id from invoices
+          where status = 'draft' and (${after}::uuid is null or org_id > ${after}::uuid)
+          order by org_id limit ${limit}`,
+    );
+    return rows.rows.map((row) => row.org_id);
+  }
 }

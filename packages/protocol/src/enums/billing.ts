@@ -145,6 +145,10 @@ export const BillingLineItem = {
   Sms: "sms",
   Whatsapp: "whatsapp",
   SsoMau: "sso_mau",
+  /** On an invoice: prepaid credit the organisation held when it moved to invoicing, applied. */
+  PrepaidCredit: "prepaid_credit",
+  /** On an invoice: what it owed on its prepaid wallet when it moved to invoicing. */
+  PrepaidDebt: "prepaid_debt",
 } as const;
 export type BillingLineItem = (typeof BillingLineItem)[keyof typeof BillingLineItem];
 

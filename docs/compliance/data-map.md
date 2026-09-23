@@ -12,10 +12,10 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 36 |
+| pii | 37 |
 | phi | 0 |
 | secret | 21 |
-| pseudonymous | 122 |
+| pseudonymous | 123 |
 | operational | 424 |
 
 ## `analytics.auth_events`
@@ -127,6 +127,7 @@ Notes:
 | `autoTopUpThresholdCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `billingMode` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `currency` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `invoiceEmail` | pii | billing_and_metering | project_lifetime | no | null_out | no |
 | `invoiceTermsDays` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
 | `spendAlertEnabled` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
@@ -147,6 +148,7 @@ Notes:
 - `autoTopUpThresholdCents`: Charge when the spendable balance falls below this.
 - `billingMode`: BillingMode. Set by Idenzy staff only, with a reason in operator_actions (ADR-0019).
 - `currency`: Set at the provider and not from here. One currency per account.
+- `invoiceEmail`: Where an invoiced organisation's invoices are sent. Staff-set with the mode.
 - `invoiceTermsDays`: Net terms for an invoiced organisation. Staff-set; 14 unless agreed otherwise.
 - `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `spendAlertSentForMonth`: The month already alerted on, so a threshold crossed once is not mailed hourly.
@@ -385,7 +387,7 @@ Notes:
 
 - `item`: BillingLineItem, one name per meter in the price list (5.1).
 - `orgId`: Organisation discriminator. Enforced by the repository layer.
-- `projectId`: Which application spent it. No FK: the row is org-keyed and the project is not.
+- `projectId`: Which application spent it; null on an organisation-level line such as credit applied. No FK: the row is org-keyed and the project is not.
 - `quantity`: Users, emails, segments or domains, in the unit the meter counts.
 - `totalCents`: Rounded once, here. The invoice total is the sum of these and never a re-multiplication.
 - `unitRateMillicents`: Thousandths of a cent: MAU is $0.0025, which is a quarter of a cent and not an integer one.
@@ -397,6 +399,7 @@ Notes:
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
 | `currency` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
 | `dueAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `hostedUrl` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
 | `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
 | `issuedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
 | `number` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
@@ -413,6 +416,7 @@ Notes:
 
 Notes:
 
+- `hostedUrl`: The provider's page where the invoice is paid, by card or bank transfer.
 - `number`: The human number. Unique per organisation and never reused, voids included.
 - `orgId`: Organisation discriminator. Enforced by the repository layer.
 - `pdfUri`: At the provider. Null while one is still being produced, which the panel shows.

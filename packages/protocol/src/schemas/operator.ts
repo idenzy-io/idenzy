@@ -35,6 +35,7 @@ export const operatorOrgBillingSchema = z.object({
   org: operatorOrgSchema,
   mode: z.enum(BillingMode),
   invoiceTermsDays: z.number().int(),
+  invoiceEmail: z.string().nullable(),
   balance: orgBalanceSchema,
   invoices: z.array(invoiceSchema),
 });
@@ -45,9 +46,16 @@ export type OperatorOrgBilling = z.infer<typeof operatorOrgBillingSchema>;
  * made the change, because a change to a customer's terms that nobody can explain later is not
  * reviewable.
  */
-export const setBillingModeSchema = z.object({
-  mode: z.enum(BillingMode),
-  invoiceTermsDays: z.number().int().min(1).max(90),
-  reason: z.string().trim().min(5).max(500),
-});
+export const setBillingModeSchema = z
+  .object({
+    mode: z.enum(BillingMode),
+    invoiceTermsDays: z.number().int().min(1).max(90),
+    /** Where invoices are sent. Required to invoice: an invoice with nowhere to go is not sent. */
+    invoiceEmail: z.email().max(254).nullable(),
+    reason: z.string().trim().min(5).max(500),
+  })
+  .refine((change) => change.mode === "prepaid" || change.invoiceEmail !== null, {
+    message: "an invoiced organisation needs an address to send invoices to",
+    path: ["invoiceEmail"],
+  });
 export type SetBillingMode = z.infer<typeof setBillingModeSchema>;

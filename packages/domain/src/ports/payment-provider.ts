@@ -69,6 +69,37 @@ export interface ChargeOutcome {
   readonly card: ProviderCard | null;
 }
 
+/** One line of an invoice, in integer cents. Negative for a credit applied. */
+export interface InvoiceLineRequest {
+  /** Ours, so a replay creates the line once. */
+  readonly reference: string;
+  readonly description: string;
+  readonly amountCents: number;
+}
+
+/** A month's invoice for an invoiced organisation (ADR-0019), issued on net terms. */
+export interface InvoiceRequest {
+  readonly providerCustomerId: string;
+  readonly orgId: string;
+  /** Our invoice row's id, stamped on the provider's invoice so an event finds the row. */
+  readonly reference: string;
+  /** Our own invoice number, shown on the document beside the provider's. */
+  readonly number: string;
+  readonly currency: string;
+  readonly daysUntilDue: number;
+  readonly lines: readonly InvoiceLineRequest[];
+}
+
+/** What the provider made of an invoice, once issued. */
+export interface IssuedInvoice {
+  readonly providerInvoiceId: string;
+  /** Where the customer pays it: card or bank transfer, the provider's page. */
+  readonly hostedUrl: string | null;
+  readonly pdfUrl: string | null;
+  readonly issuedAt: Date;
+  readonly dueAt: Date | null;
+}
+
 /**
  * One event the provider sent us, after its signature has been checked.
  *
@@ -157,6 +188,18 @@ export abstract class PaymentProvider {
    * provider for the intent and read what we stamped on it. Null for an intent we did not make.
    */
   abstract chargeOwner(providerIntentId: string): Promise<ChargeOwner | null>;
+
+  /**
+   * Issues an invoice on net terms and sends it to the customer's billing address.
+   *
+   * Safe to call again for the same reference: an implementation finds the invoice it already
+   * made rather than making a second, because the caller replays a draft whose answer it never
+   * wrote down — and two invoices for one month is a customer billed twice.
+   */
+  abstract issueInvoice(invoice: InvoiceRequest): Promise<IssuedInvoice>;
+
+  /** Where the provider sends a customer's invoices. */
+  abstract setBillingEmail(providerCustomerId: string, email: string): Promise<void>;
 
   /**
    * Verifies a webhook's signature and returns what it says.

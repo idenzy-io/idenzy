@@ -4,6 +4,8 @@ import {
   type ChargeOwner,
   type CheckoutRequest,
   type HostedCheckout,
+  type InvoiceRequest,
+  type IssuedInvoice,
   type OffSessionCharge,
   PaymentProvider,
   type ProviderCard,
@@ -228,6 +230,72 @@ export class StripePaymentProvider extends PaymentProvider {
     if (typeof org !== "string" || org.length === 0) return null;
     const reference = intent.metadata[REFERENCE];
     return { orgId: org, reference: typeof reference === "string" ? reference : null };
+  }
+
+  /**
+   * A month's invoice, issued and sent (ADR-0019).
+   *
+   * **Never two for one reference.** The caller replays a draft whose answer it never recorded,
+   * so the invoice is first looked for by our reference (Stripe's search, which is eventually
+   * consistent within about a minute) and only then created under an idempotency key derived from
+   * our row (honoured for a day). Between them they cover every replay the invoice run makes: a
+   * retry within the hour is caught by the key, one a day later by the search. Lines are created
+   * the same way, keyed on our line ids, and attached to this invoice explicitly so nothing
+   * pending on the customer is swept into it.
+   *
+   * Finalised and sent only from draft, so a replay after it was sent does not email it again.
+   */
+  override async issueInvoice(request: InvoiceRequest): Promise<IssuedInvoice> {
+    const found = await this.stripe.invoices.search({
+      query: `metadata['${REFERENCE}']:'${request.reference}'`,
+      limit: 1,
+    });
+    let invoice =
+      found.data[0] ??
+      (await this.stripe.invoices.create(
+        {
+          customer: request.providerCustomerId,
+          collection_method: "send_invoice",
+          days_until_due: request.daysUntilDue,
+          currency: request.currency.toLowerCase(),
+          auto_advance: false,
+          pending_invoice_items_behavior: "exclude",
+          description: `Idenzy usage — ${request.number}`,
+          metadata: { [REFERENCE]: request.reference, [ORG]: request.orgId },
+        },
+        { idempotencyKey: `idenzy-invoice-${request.reference}` },
+      ));
+
+    if (invoice.status === "draft") {
+      const invoiceId = invoice.id ?? "";
+      for (const line of request.lines) {
+        await this.stripe.invoiceItems.create(
+          {
+            customer: request.providerCustomerId,
+            invoice: invoiceId,
+            amount: line.amountCents,
+            currency: request.currency.toLowerCase(),
+            description: line.description,
+            metadata: { [REFERENCE]: line.reference, [ORG]: request.orgId },
+          },
+          { idempotencyKey: `idenzy-invoice-line-${line.reference}` },
+        );
+      }
+      invoice = await this.stripe.invoices.finalizeInvoice(invoiceId, { auto_advance: false });
+      invoice = await this.stripe.invoices.sendInvoice(invoiceId);
+    }
+
+    return {
+      providerInvoiceId: invoice.id ?? "",
+      hostedUrl: invoice.hosted_invoice_url ?? null,
+      pdfUrl: invoice.invoice_pdf ?? null,
+      issuedAt: new Date((invoice.status_transitions?.finalized_at ?? invoice.created) * 1000),
+      dueAt: invoice.due_date === null ? null : new Date(invoice.due_date * 1000),
+    };
+  }
+
+  override async setBillingEmail(providerCustomerId: string, email: string): Promise<void> {
+    await this.stripe.customers.update(providerCustomerId, { email });
   }
 
   /**

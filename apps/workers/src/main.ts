@@ -53,6 +53,7 @@ import { AuditRelay } from "./audit-relay.js";
 import { AutoTopUpRunner } from "./billing/auto-top-up-runner.js";
 import { AutoTopUpSweeper } from "./billing/auto-top-up-sweeper.js";
 import { BillingSignalConsumer } from "./billing/billing-signal-consumer.js";
+import { InvoiceRunner } from "./billing/invoice-runner.js";
 import { LiveBalance } from "./billing/live-balance.js";
 import { EmailEventEndpoint } from "./email/email-event-endpoint.js";
 import { EmailReputationBreaker } from "./email/email-reputation-breaker.js";
@@ -237,6 +238,22 @@ async function bootstrap(): Promise<void> {
           ruleCache,
           signals,
           billingWork,
+          clock,
+          logger,
+        );
+  /*
+   * Month-end invoices for the organisations staff chose to bill in arrears (ADR-0019). Drafted in
+   * Postgres, then issued through Stripe Invoicing on the organisation's terms; nothing stops over
+   * an unpaid one. Without a provider there is nothing to issue through, and nothing is drafted.
+   */
+  const invoiceRunner =
+    stripe === null
+      ? null
+      : new InvoiceRunner(
+          uow,
+          new StripePaymentProvider(stripe),
+          billingWork,
+          signals,
           clock,
           logger,
         );
@@ -437,6 +454,7 @@ async function bootstrap(): Promise<void> {
   drawdown.start();
   billingSignals.start();
   await autoTopUpSweeper?.start();
+  await invoiceRunner?.start();
   reputation.start();
   await usageRetention.start();
   await emailRetention.start();

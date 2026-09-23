@@ -4,14 +4,15 @@ import type {
   InvoiceStatus,
   PaymentProvider,
 } from "@idenzy/protocol/enums/billing";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { invoiceLines, invoices } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 import { OrgRepository } from "./org-repository.js";
 
 export interface InvoiceLineRow {
-  readonly projectId: string;
+  /** Null on an organisation-level line: prepaid credit applied, prepaid debt carried over. */
+  readonly projectId: string | null;
   readonly item: BillingLineItem;
   readonly quantity: number;
   readonly unitRateMillicents: number;
@@ -29,9 +30,24 @@ export interface InvoiceRow {
   readonly provider: PaymentProvider;
   readonly providerInvoiceId: string | null;
   readonly pdfUri: string | null;
+  readonly hostedUrl: string | null;
   readonly issuedAt: Date;
   readonly dueAt: Date | null;
   readonly paidAt: Date | null;
+}
+
+/** A line with its id, which is what makes creating it at the provider idempotent. */
+export interface StoredInvoiceLine extends InvoiceLineRow {
+  readonly id: string;
+}
+
+/** What the provider made of an invoice, written onto the draft that asked for it. */
+export interface IssuedInvoiceRecord {
+  readonly providerInvoiceId: string;
+  readonly hostedUrl: string | null;
+  readonly pdfUrl: string | null;
+  readonly issuedAt: Date;
+  readonly dueAt: Date | null;
 }
 
 export interface NewInvoice {
@@ -42,6 +58,8 @@ export interface NewInvoice {
   readonly provider: PaymentProvider;
   readonly issuedAt: Date;
   readonly dueAt: Date | null;
+  /** Set on an invoice that is settled the moment it is written, as one covered by credit. */
+  readonly paidAt?: Date | null;
   readonly lines: readonly InvoiceLineRow[];
 }
 
@@ -58,6 +76,7 @@ function toRow(row: typeof invoices.$inferSelect): InvoiceRow {
     currency: row.currency,
     providerInvoiceId: row.providerInvoiceId,
     pdfUri: row.pdfUri,
+    hostedUrl: row.hostedUrl,
     issuedAt: row.issuedAt,
     dueAt: row.dueAt,
     paidAt: row.paidAt,
@@ -83,11 +102,16 @@ export class InvoiceRepository extends OrgRepository<typeof invoices> {
     super(tx, context, invoices);
   }
 
+  /**
+   * Issued invoices, newest first. Drafts are left out: a draft is the invoice run's working
+   * state before the provider has issued anything, and a customer shown one would be shown a bill
+   * that does not exist yet.
+   */
   async list(limit = 50): Promise<InvoiceRow[]> {
     const rows = await this.tx
       .select()
       .from(invoices)
-      .where(this.orgScope())
+      .where(and(this.orgScope(), ne(invoices.status, "draft")))
       .orderBy(desc(invoices.issuedAt))
       .limit(limit);
     return rows.map(toRow);
@@ -102,13 +126,22 @@ export class InvoiceRepository extends OrgRepository<typeof invoices> {
     return rows.map(toRow);
   }
 
-  async linesOf(invoiceId: string): Promise<InvoiceLineRow[]> {
+  /**
+   * One invoice's lines.
+   *
+   * Scoped on `invoice_lines.org_id` by name. `orgScope()` builds its predicate from this
+   * repository's own table, `invoices`, and used here it emitted `"invoices"."org_id"` against a
+   * query that does not join it — which Postgres refuses outright. Nothing wrote invoices until
+   * the invoice run, so nothing had ever reached this.
+   */
+  async linesOf(invoiceId: string): Promise<StoredInvoiceLine[]> {
     const rows = await this.tx
       .select()
       .from(invoiceLines)
-      .where(and(this.orgScope(), eq(invoiceLines.invoiceId, invoiceId)))
+      .where(and(eq(invoiceLines.orgId, this.context.orgId), eq(invoiceLines.invoiceId, invoiceId)))
       .orderBy(invoiceLines.projectId, invoiceLines.item);
     return rows.map((row) => ({
+      id: row.id,
       projectId: row.projectId,
       // Safe: written only from BillingLineItem.
       item: row.item as BillingLineItem,
@@ -126,7 +159,50 @@ export class InvoiceRepository extends OrgRepository<typeof invoices> {
    * run of the monthly job safe: the closed month is already invoiced, and the conflict
    * says so rather than issuing a duplicate against the same period.
    */
-  async issue(invoice: NewInvoice): Promise<InvoiceRow> {
+  /** The invoice for one month, whatever its state, or null. There is at most one (unique). */
+  async forPeriod(periodStart: string): Promise<InvoiceRow | null> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(this.orgScope(), eq(invoices.periodStart, periodStart)))
+      .limit(1);
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /** Drafts the provider has not issued yet, oldest first: the invoice run's unfinished work. */
+  async drafts(): Promise<InvoiceRow[]> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(this.orgScope(), eq(invoices.status, "draft")))
+      .orderBy(invoices.createdAt);
+    return rows.map(toRow);
+  }
+
+  /**
+   * Writes the provider's answer onto a draft and opens it, once. `status = 'draft'` in the
+   * predicate is what keeps a replay from rewriting an invoice the webhook has already moved on.
+   */
+  async recordIssued(id: string, issued: IssuedInvoiceRecord): Promise<boolean> {
+    const rows = await this.guard(() =>
+      this.tx
+        .update(invoices)
+        .set({
+          status: "open",
+          providerInvoiceId: issued.providerInvoiceId,
+          hostedUrl: issued.hostedUrl,
+          pdfUri: issued.pdfUrl,
+          issuedAt: issued.issuedAt,
+          dueAt: issued.dueAt,
+        })
+        .where(and(this.orgScope(), eq(invoices.id, id), eq(invoices.status, "draft")))
+        .returning({ id: invoices.id }),
+    );
+    return rows.length === 1;
+  }
+
+  async issue(invoice: NewInvoice, status: InvoiceStatus = "open"): Promise<InvoiceRow> {
     const totalCents = invoice.lines.reduce((total, line) => total + line.totalCents, 0);
     const rows = await this.guard(() =>
       this.tx
@@ -136,12 +212,13 @@ export class InvoiceRepository extends OrgRepository<typeof invoices> {
           number: invoice.number,
           periodStart: invoice.periodStart,
           periodEnd: invoice.periodEnd,
-          status: "open",
+          status,
           totalCents,
           currency: invoice.currency,
           provider: invoice.provider,
           issuedAt: invoice.issuedAt,
           dueAt: invoice.dueAt,
+          paidAt: invoice.paidAt ?? null,
         })
         .returning(),
     );

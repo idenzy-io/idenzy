@@ -94,9 +94,10 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** project_lifetime, years_2, years_6
-- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_disputes`, `payment_methods`, `payment_provider_events`, `payment_refunds`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
+- **Tables:** `billing_settings`, `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_disputes`, `payment_methods`, `payment_provider_events`, `payment_refunds`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
 - **Categories of personal data:**
 
+  - pii: invoiceEmail
   - pii: name
   - pseudonymous: amountCents
   - pseudonymous: billedCents
@@ -115,6 +116,7 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: failureReason
   - pseudonymous: fromCreditCents
   - pseudonymous: grantedAt
+  - pseudonymous: hostedUrl
   - pseudonymous: id
   - pseudonymous: invoiceId
   - pseudonymous: issuedAt

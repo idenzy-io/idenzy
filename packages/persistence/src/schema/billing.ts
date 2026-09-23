@@ -262,6 +262,13 @@ export const billingSettings = classifiedTable(
       loggable: true,
       note: "BillingMode. Set by Idenzy staff only, with a reason in operator_actions (ADR-0019).",
     }),
+    invoiceEmail: classified(text("invoice_email"), {
+      class: DataClass.Pii,
+      purpose: Purpose.BillingAndMetering,
+      retention: Retention.ProjectLifetime,
+      erasure: Erasure.NullOut,
+      note: "Where an invoiced organisation's invoices are sent. Staff-set with the mode.",
+    }),
     invoiceTermsDays: classified(smallint("invoice_terms_days").notNull().default(14), {
       ...billingConfig,
       loggable: true,
@@ -297,6 +304,11 @@ export const billingSettings = classifiedTable(
     check("billing_settings_auto_top_up_limit_ck", sql`auto_top_up_daily_limit between 1 and 10`),
     check("billing_settings_mode_ck", sql`billing_mode in ('prepaid', 'invoiced')`),
     check("billing_settings_terms_ck", sql`invoice_terms_days between 1 and 90`),
+    // An invoiced organisation whose invoices have nowhere to go is one that is never billed.
+    check(
+      "billing_settings_invoice_email_ck",
+      sql`billing_mode = 'prepaid' or invoice_email is not null`,
+    ),
     check(
       "billing_settings_auto_top_up_suspension_ck",
       sql`(auto_top_up_suspended_at is null) = (auto_top_up_suspended_reason is null)`,
@@ -423,6 +435,10 @@ export const invoices = classifiedTable(
       ...financialRecord,
       note: "At the provider. Null while one is still being produced, which the panel shows.",
     }),
+    hostedUrl: classified(text("hosted_url"), {
+      ...financialRecord,
+      note: "The provider's page where the invoice is paid, by card or bank transfer.",
+    }),
     issuedAt: classified(timestamp("issued_at", { withTimezone: true }).notNull(), {
       ...financialRecord,
       loggable: true,
@@ -464,10 +480,10 @@ export const invoiceLines = classifiedTable(
         .references(() => invoices.id, { onDelete: "cascade" }),
       { ...financialRecord, loggable: true },
     ),
-    projectId: classified(uuid("project_id").notNull(), {
+    projectId: classified(uuid("project_id"), {
       ...financialRecord,
       loggable: true,
-      note: "Which application spent it. No FK: the row is org-keyed and the project is not.",
+      note: "Which application spent it; null on an organisation-level line such as credit applied. No FK: the row is org-keyed and the project is not.",
     }),
     item: classified(text("item").notNull(), {
       ...financialRecord,

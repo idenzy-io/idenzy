@@ -5,6 +5,8 @@ import {
   type ChargeOwner,
   type CheckoutRequest,
   type HostedCheckout,
+  type InvoiceRequest,
+  type IssuedInvoice,
   type OffSessionCharge,
   PaymentProvider,
   type ProviderCard,
@@ -45,6 +47,13 @@ export class FakePaymentProvider extends PaymentProvider {
     ChargeOutcome & { reference: string; orgId: string }
   >();
   private sequence = 0;
+  /** Invoices issued, by our reference. A second call for one reference returns the first. */
+  readonly invoices = new Map<string, InvoiceRequest & IssuedInvoice>();
+  /** Every issue request, replays included. */
+  readonly invoiceRequests: InvoiceRequest[] = [];
+  readonly billingEmails = new Map<string, string>();
+  /** Makes the next `issueInvoice` fail after creating the invoice, as a timeout would. */
+  failNextInvoice = false;
 
   /** Queues what the next charges do, in order. Unscripted charges succeed. */
   next(...outcomes: ScriptedCharge[]): this {
@@ -133,6 +142,34 @@ export class FakePaymentProvider extends PaymentProvider {
         ? null
         : { orgId: found.orgId, reference: found.reference === "" ? null : found.reference },
     );
+  }
+
+  override async issueInvoice(request: InvoiceRequest): Promise<IssuedInvoice> {
+    await Promise.resolve();
+    this.invoiceRequests.push(request);
+    const existing = this.invoices.get(request.reference);
+    if (existing !== undefined) return existing;
+
+    this.sequence += 1;
+    const issuedAt = new Date("2026-10-01T09:00:00Z");
+    const issued: IssuedInvoice = {
+      providerInvoiceId: `in_fake_${String(this.sequence)}`,
+      hostedUrl: `https://invoice.test/${String(this.sequence)}`,
+      pdfUrl: `https://invoice.test/${String(this.sequence)}.pdf`,
+      issuedAt,
+      dueAt: new Date(issuedAt.getTime() + request.daysUntilDue * 86_400_000),
+    };
+    this.invoices.set(request.reference, { ...request, ...issued });
+    if (this.failNextInvoice) {
+      this.failNextInvoice = false;
+      throw new InternalError({ detail: { reason: "provider timed out after creating it" } });
+    }
+    return issued;
+  }
+
+  override setBillingEmail(providerCustomerId: string, email: string): Promise<void> {
+    this.billingEmails.set(providerCustomerId, email);
+    return Promise.resolve();
   }
 
   override readEvent(rawBody: string): ProviderEvent {

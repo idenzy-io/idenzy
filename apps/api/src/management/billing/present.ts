@@ -85,6 +85,9 @@ export const present = {
       currency: row.currency,
       status: row.status,
       pdfUri: row.pdfUri,
+      hostedUrl: row.hostedUrl,
+      dueAt: row.dueAt?.toISOString() ?? null,
+      paidAt: row.paidAt?.toISOString() ?? null,
     };
   },
 

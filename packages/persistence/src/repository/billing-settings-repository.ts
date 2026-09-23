@@ -39,6 +39,8 @@ export interface BillingSettingsRow {
   /** How the organisation pays (ADR-0019). Staff-set. */
   readonly mode: BillingMode;
   readonly invoiceTermsDays: number;
+  /** Where invoices go, for an invoiced organisation. Required by constraint when invoiced. */
+  readonly invoiceEmail: string | null;
   readonly spendAlert: SpendAlertRow;
   readonly updatedBy: string | null;
   readonly updatedAt: Date;
@@ -57,6 +59,7 @@ const DEFAULTS: Omit<BillingSettingsRow, "updatedAt"> = {
   },
   mode: BillingMode.Prepaid,
   invoiceTermsDays: DEFAULT_INVOICE_TERMS_DAYS,
+  invoiceEmail: null,
   spendAlert: { enabled: false, thresholdCents: 0, sentForMonth: null },
   updatedBy: null,
 };
@@ -81,6 +84,7 @@ function toRow(row: typeof billingSettings.$inferSelect): BillingSettingsRow {
     // Safe: the column is constrained to BillingMode's values by `billing_settings_mode_ck`.
     mode: row.billingMode as BillingMode,
     invoiceTermsDays: row.invoiceTermsDays,
+    invoiceEmail: row.invoiceEmail,
     spendAlert: {
       enabled: row.spendAlertEnabled,
       thresholdCents: row.spendAlertThresholdCents,
@@ -204,8 +208,13 @@ export class BillingSettingsRepository extends OrgRepository<typeof billingSetti
    * Switches how the organisation pays (ADR-0019). Called only from the operator surface, inside
    * the transaction that also writes the `operator_actions` row recording who and why.
    */
-  async setBillingMode(mode: BillingMode, termsDays: number, updatedBy: string | null) {
-    await this.upsert({ billingMode: mode, invoiceTermsDays: termsDays }, updatedBy);
+  async setBillingMode(
+    mode: BillingMode,
+    termsDays: number,
+    invoiceEmail: string | null,
+    updatedBy: string | null,
+  ) {
+    await this.upsert({ billingMode: mode, invoiceTermsDays: termsDays, invoiceEmail }, updatedBy);
   }
 
   async setSpendAlert(

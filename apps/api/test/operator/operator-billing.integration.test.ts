@@ -64,7 +64,12 @@ describe("switching how an organisation pays", () => {
   it("switches to invoicing, and records who did it and why", async () => {
     await service.setMode(
       ORG_PUBLIC,
-      { mode: "invoiced", invoiceTermsDays: 30, reason: "Signed enterprise agreement #88" },
+      {
+        mode: "invoiced",
+        invoiceTermsDays: 30,
+        invoiceEmail: "AP@Globex.test",
+        reason: "Signed enterprise agreement #88",
+      },
       operator(),
       "req",
     );
@@ -87,8 +92,8 @@ describe("switching how an organisation pays", () => {
         org_id: ORG,
         reason: "Signed enterprise agreement #88",
         detail: {
-          from: { mode: "prepaid", invoiceTermsDays: 14 },
-          to: { mode: "invoiced", invoiceTermsDays: 30 },
+          from: { mode: "prepaid", invoiceTermsDays: 14, invoiceEmail: null },
+          to: { mode: "invoiced", invoiceTermsDays: 30, invoiceEmail: "ap@globex.test" },
         },
       },
     ]);
@@ -101,7 +106,7 @@ describe("switching how an organisation pays", () => {
     await expect(
       service.setMode(
         ORG_PUBLIC,
-        { mode: "prepaid", invoiceTermsDays: 14, reason: "Back to prepaid" },
+        { mode: "prepaid", invoiceTermsDays: 14, invoiceEmail: null, reason: "Back to prepaid" },
         { ...operator(), staffId: "00000000-0000-4000-8000-00000000dead" },
         "req",
       ),
@@ -115,7 +120,12 @@ describe("switching how an organisation pays", () => {
     await expect(
       service.setMode(
         missing,
-        { mode: "invoiced", invoiceTermsDays: 14, reason: "x".repeat(5) },
+        {
+          mode: "invoiced",
+          invoiceTermsDays: 14,
+          invoiceEmail: "ap@missing.test",
+          reason: "x".repeat(5),
+        },
         operator(),
         "req",
       ),

@@ -114,6 +114,11 @@ export const invoiceSchema = z.object({
   status: enumOf(InvoiceStatus),
   /** Where the PDF is. Null while one is still being produced. */
   pdfUri: z.string().nullable(),
+  /** The provider's page where it is paid, by card or bank transfer. Null until issued. */
+  hostedUrl: z.string().nullable(),
+  /** When payment is due on the organisation's terms. Null for an invoice with no terms. */
+  dueAt: isoDateTimeSchema.nullable(),
+  paidAt: isoDateTimeSchema.nullable(),
 });
 export type Invoice = z.infer<typeof invoiceSchema>;
 
@@ -129,7 +134,8 @@ export const invoiceLineSchema = z.object({
   item: z.string(),
   quantity: z.number().int(),
   unitRateMillicents: z.number().int(),
-  totalCents: centsSchema,
+  /** Negative on a line that takes something off, such as prepaid credit applied. */
+  totalCents: signedCentsSchema,
 });
 export type InvoiceLine = z.infer<typeof invoiceLineSchema>;
 

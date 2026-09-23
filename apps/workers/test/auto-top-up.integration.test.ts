@@ -583,7 +583,7 @@ describe("an invoiced organisation", () => {
   it("is never topped up: it pays by invoice, not from a wallet", async () => {
     await enableRule();
     await pg.owner.query(
-      `UPDATE billing_settings SET billing_mode = 'invoiced' WHERE org_id = $1`,
+      `UPDATE billing_settings SET billing_mode = 'invoiced', invoice_email = 'ap@acme.test' WHERE org_id = $1`,
       [ORG],
     );
     expect(await runner().evaluate(ORG, false, 99_999)).toEqual({

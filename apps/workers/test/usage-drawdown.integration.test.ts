@@ -402,8 +402,9 @@ describe("keeping one organisation out of another's wallet", () => {
 describe("an invoiced organisation", () => {
   const invoice = async () =>
     await harness.owner.query(
-      `INSERT INTO billing_settings (org_id, billing_mode) VALUES ($1, 'invoiced')
-       ON CONFLICT (org_id) DO UPDATE SET billing_mode = 'invoiced'`,
+      `INSERT INTO billing_settings (org_id, billing_mode, invoice_email)
+       VALUES ($1, 'invoiced', 'ap@acme.test')
+       ON CONFLICT (org_id) DO UPDATE SET billing_mode = 'invoiced', invoice_email = 'ap@acme.test'`,
       [ORG],
     );
   const prepay = async () =>

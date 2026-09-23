@@ -177,7 +177,8 @@ describe("the balance a visit shows", () => {
     const INVOICED = "99990000-0000-4000-8000-000000000009";
     await harness.owner.query(`INSERT INTO orgs (id, name) VALUES ($1, 'Initech')`, [INVOICED]);
     await harness.owner.query(
-      `INSERT INTO billing_settings (org_id, billing_mode, invoice_terms_days) VALUES ($1, 'invoiced', 30)`,
+      `INSERT INTO billing_settings (org_id, billing_mode, invoice_terms_days, invoice_email)
+       VALUES ($1, 'invoiced', 30, 'ap@initech.test')`,
       [INVOICED],
     );
     await harness.owner.query(

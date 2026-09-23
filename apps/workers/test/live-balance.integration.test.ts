@@ -197,7 +197,7 @@ describe("the live balance", () => {
 describe("for an invoiced organisation", () => {
   it("is its usage not yet invoiced, marked as invoiced", async () => {
     await pg.owner.query(
-      `INSERT INTO billing_settings (org_id, billing_mode) VALUES ($1, 'invoiced')`,
+      `INSERT INTO billing_settings (org_id, billing_mode, invoice_email) VALUES ($1, 'invoiced', 'ap@acme.test')`,
       [ORG],
     );
     await publish(sketchOf(0, 80_000));

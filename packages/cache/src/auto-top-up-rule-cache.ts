@@ -9,6 +9,12 @@ export interface RuleCacheCommands {
 export interface CachedRule {
   /** Enabled and not suspended: the only state in which the rule could fire. */
   readonly armed: boolean;
+  /**
+   * Where it fires. Cached so the five-second tick can see that a live balance is above it
+   * without reading Postgres; a stale value only makes the tick look early or late, because the
+   * decision itself is made again under the settings row lock.
+   */
+  readonly thresholdCents: number;
 }
 
 /** Ten minutes. A rule edit drops the entry at once; this bounds a drop that was lost. */
@@ -44,7 +50,10 @@ export class AutoTopUpRuleCache {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== "object" || parsed === null) return null;
       const armed = (parsed as Record<string, unknown>)["armed"];
-      return typeof armed === "boolean" ? { armed } : null;
+      const threshold = (parsed as Record<string, unknown>)["thresholdCents"];
+      return typeof armed === "boolean" && typeof threshold === "number"
+        ? { armed, thresholdCents: threshold }
+        : null;
     } catch {
       return null;
     }

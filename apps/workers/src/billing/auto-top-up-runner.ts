@@ -110,7 +110,10 @@ export class AutoTopUpRunner {
       // Held until this transaction commits, by which time the charge below is visible to the
       // next worker to take it.
       const current = await settings.lockForAutoTopUp();
-      if (current === null) return { result: skipped("disabled"), armed: false } as const;
+      if (current === null) {
+        return { result: skipped("disabled"), armed: false, thresholdCents: 0 } as const;
+      }
+      const thresholdCents = current.autoTopUp.thresholdCents;
       const armed = current.autoTopUp.enabled && current.autoTopUpState.suspendedReason === null;
 
       const methods = await new PaymentMethodRepository(tx, context).list();
@@ -140,13 +143,19 @@ export class AutoTopUpRunner {
         },
       );
 
-      if (decision.kind === "skip") return { result: skipped(decision.reason), armed } as const;
+      if (decision.kind === "skip") {
+        return { result: skipped(decision.reason), armed, thresholdCents } as const;
+      }
       if (decision.kind === "suspend") {
         await settings.suspendAutoTopUp(decision.reason, now);
-        return { result: { kind: "suspended", reason: decision.reason }, armed: false } as const;
+        return {
+          result: { kind: "suspended", reason: decision.reason },
+          armed: false,
+          thresholdCents,
+        } as const;
       }
       if (method === null || customer?.billingCustomerId == null) {
-        return { result: skipped("disabled"), armed } as const;
+        return { result: skipped("disabled"), armed, thresholdCents } as const;
       }
 
       const topUp = await topUps.start({
@@ -168,10 +177,10 @@ export class AutoTopUpRunner {
         providerCustomerId: customer.billingCustomerId,
         providerMethodId: method.providerMethodId,
       };
-      return { result: null, armed, opened } as const;
+      return { result: null, armed, thresholdCents, opened } as const;
     });
 
-    await this.remember(orgId, decided.armed);
+    await this.remember(orgId, decided.armed, decided.thresholdCents);
     if (decided.result !== null) {
       if (decided.result.kind === "suspended") await this.signals.ruleChanged(orgId);
       return decided.result;
@@ -342,9 +351,9 @@ export class AutoTopUpRunner {
     }
   }
 
-  private async remember(orgId: string, armed: boolean): Promise<void> {
+  private async remember(orgId: string, armed: boolean, thresholdCents: number): Promise<void> {
     try {
-      await this.rules.put(orgId, { armed });
+      await this.rules.put(orgId, { armed, thresholdCents });
     } catch {
       // Nothing depends on this having worked.
     }

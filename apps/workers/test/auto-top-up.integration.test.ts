@@ -1,6 +1,8 @@
 import { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import { createValkeyClient, type ValkeyClient } from "@idenzy/cache/connection/client";
 import { DueSet } from "@idenzy/cache/due-set";
+import { LiveBalanceCache } from "@idenzy/cache/live-balance-cache";
+import { LiveUsageSketches } from "@idenzy/cache/live-usage-sketches";
 import { SpacingGate } from "@idenzy/cache/spacing-gate";
 import {
   AUTO_TOP_UP_DUE_KEY,
@@ -28,6 +30,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AutoTopUpRunner } from "../src/billing/auto-top-up-runner.js";
 import { AutoTopUpSweeper } from "../src/billing/auto-top-up-sweeper.js";
 import { BillingSignalConsumer } from "../src/billing/billing-signal-consumer.js";
+import { LiveBalance } from "../src/billing/live-balance.js";
 import { UsageDrawdown } from "../src/usage-drawdown.js";
 
 /**
@@ -64,6 +67,10 @@ function runner(): AutoTopUpRunner {
     clock,
     new RecordingLogger(),
   );
+}
+
+function liveBalance(): LiveBalance {
+  return new LiveBalance(uow, new LiveUsageSketches(valkey), new LiveBalanceCache(valkey), clock);
 }
 
 function later(ms: number): void {
@@ -358,7 +365,7 @@ describe("when a charge fails", () => {
 
   it("stops at once when the bank wants the cardholder, and drops the cached rule", async () => {
     await enableRule();
-    await rules.put(ORG, { armed: true });
+    await rules.put(ORG, { armed: true, thresholdCents: 1000 });
     provider.next({
       kind: "answer",
       state: TopUpState.RequiresAction,
@@ -383,14 +390,14 @@ describe("when a charge fails", () => {
 describe("the cache", () => {
   it("skips an organisation whose rule is cached as off without reading Postgres", async () => {
     await enableRule();
-    await rules.put(ORG, { armed: false });
+    await rules.put(ORG, { armed: false, thresholdCents: 1000 });
     expect(await runner().evaluate(ORG, true)).toEqual({ kind: "skipped", reason: "cached_off" });
   });
 
   /** The bound on a stale cache: the sweep never asks it. */
   it("is ignored by the sweep, which catches a stale entry", async () => {
     await enableRule();
-    await rules.put(ORG, { armed: false });
+    await rules.put(ORG, { armed: false, thresholdCents: 1000 });
     await new AutoTopUpSweeper(
       runner(),
       new BillingWorkReader(pg.db),
@@ -406,7 +413,7 @@ describe("the cache", () => {
       [ORG],
     );
     await runner().evaluate(ORG, false);
-    expect(await rules.get(ORG)).toEqual({ armed: false });
+    expect(await rules.get(ORG)).toEqual({ armed: false, thresholdCents: 1000 });
   });
 
   it("still works when Valkey is unreachable", async () => {
@@ -463,6 +470,7 @@ describe("the five-second tick", () => {
       new SpacingGate(valkey, "billing:drawdown:spacing:"),
       new BillingWorkReader(pg.db),
       drawdown,
+      liveBalance(),
       runner(),
       clock,
       new RecordingLogger(),
@@ -481,7 +489,7 @@ describe("the five-second tick", () => {
     expect(await autoTopUpDue.size()).toBe(0);
   });
 
-  it("reprices a busy organisation at most once a minute", async () => {
+  it("books a busy organisation's ledger at most once per spacing", async () => {
     let repriced = 0;
     const drawdown = new UsageDrawdown(
       uow,
@@ -499,6 +507,7 @@ describe("the five-second tick", () => {
       new SpacingGate(valkey, "billing:drawdown:spacing:"),
       new BillingWorkReader(pg.db),
       drawdown,
+      liveBalance(),
       null,
       clock,
       new RecordingLogger(),
@@ -508,8 +517,9 @@ describe("the five-second tick", () => {
       await consumer.tick();
     }
     expect(repriced).toBe(1);
-    // Deferred, not dropped: it is still there for when the minute is up.
-    expect(await drawdownDue.size()).toBe(1);
+    // Finished rather than deferred: the live figure already reflects them, and the ledger pass
+    // reprices the whole month whenever it next runs.
+    expect(await drawdownDue.size()).toBe(0);
   });
 });
 

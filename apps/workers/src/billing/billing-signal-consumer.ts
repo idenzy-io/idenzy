@@ -6,6 +6,7 @@ import type { BillingWorkReader } from "@idenzy/persistence/repository/billing-w
 import type { UsageDrawdown } from "../usage-drawdown.js";
 import type { AutoTopUpRunner } from "./auto-top-up-runner.js";
 import { inParallel } from "./in-parallel.js";
+import type { LiveBalance } from "./live-balance.js";
 
 export interface BillingSignalConsumerOptions {
   /** How often the due sets are drained. */
@@ -27,11 +28,12 @@ export interface BillingSignalConsumerOptions {
  */
 const DEFAULT_TICK_MS = 5_000;
 /**
- * A minute: the meter's own flush interval by default. Repricing a month more often than its
- * sketches are written reads the same numbers again, and a busy organisation's month is a read
- * of up to thirty-one sketches per project.
+ * Five minutes between ledger writes per organisation: at most 288 `usage_charges` rows a day,
+ * where writing every tick would be up to 17,280. The balance a person sees does not wait for it —
+ * the live figure is recomputed every tick — so this spacing is only how often the charge is
+ * booked, never how fresh it looks.
  */
-const DEFAULT_SPACING_MS = 60_000;
+const DEFAULT_SPACING_MS = 5 * 60 * 1000;
 const DEFAULT_RETRY_MS = 60_000;
 const DEFAULT_BATCH = 100;
 /**
@@ -44,10 +46,9 @@ const DEFAULT_PARALLELISM = 8;
 /**
  * Drains the two billing due sets on a short tick (ADR-0017).
  *
- * **Projects whose usage moved** are resolved to their organisations and repriced — at most
- * once a minute each, whichever worker gets there, because the drawdown's watermark makes an
- * extra repricing free of charge but not free of reads. A charge the repricing raises signals
- * the organisation's wallet in turn.
+ * **Projects whose usage moved** are resolved to their organisations, whose live balance is
+ * recomputed on the spot, and whose ledger is repriced at most once every five minutes — whichever
+ * worker gets there. A charge the repricing raises signals the organisation's wallet in turn.
  *
  * **Organisations whose wallet moved** get one look from the automatic top-up, which decides
  * under the settings row lock whether to charge. That is the "immediately after a charge" path:
@@ -67,6 +68,7 @@ export class BillingSignalConsumer {
     private readonly repriceGate: SpacingGate,
     private readonly work: BillingWorkReader,
     private readonly drawdown: UsageDrawdown,
+    private readonly live: LiveBalance,
     /** Null in a deployment with no payment provider, where there is nothing to charge. */
     private readonly topUps: AutoTopUpRunner | null,
     private readonly clock: Clock,
@@ -127,14 +129,14 @@ export class BillingSignalConsumer {
 
     const spacing = this.options.repriceSpacingMs ?? DEFAULT_SPACING_MS;
     await inParallel([...byOrg], this.parallelism(), async ([org, entries]) => {
+      // Every tick: the balance a person sees moves as fast as usage does.
+      await this.live.refresh(org);
+      // At most once per spacing: the ledger is what is written, and it is written rarely. The
+      // entries are finished either way, because the live figure already reflects them and the
+      // ledger pass reprices the whole month whenever it next runs.
       const gate = await this.repriceGate.pass(org, spacing);
-      if (!gate.passed) {
-        const until = new Date(this.clock.now().getTime() + gate.waitMs);
-        for (const entry of entries) await this.drawdownDue.defer(entry, until);
-        return;
-      }
       // `runFor` catches and logs per organisation, and leaves the watermark where it was.
-      await this.drawdown.runFor([org]);
+      if (gate.passed) await this.drawdown.runFor([org]);
       for (const entry of entries) await this.drawdownDue.done(entry, this.clock.now());
     });
   }
@@ -148,6 +150,10 @@ export class BillingSignalConsumer {
   private async lookAt(entry: DueEntry): Promise<void> {
     try {
       // With nothing to charge, a mark is drained and dropped rather than left to accumulate.
+      // A wallet mark means the ledger was written: the snapshot is dropped and the live figure
+      // recomputed before anything decides from it.
+      await this.live.ledgerMoved(entry.member);
+      await this.live.refresh(entry.member);
       if (this.topUps !== null) {
         const result = await this.topUps.evaluate(entry.member, true);
         if (result.kind !== "skipped") {

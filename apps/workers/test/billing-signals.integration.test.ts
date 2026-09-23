@@ -136,15 +136,15 @@ describe("a due set", () => {
 describe("the rule cache", () => {
   it("round-trips, and drops", async () => {
     const cache = new AutoTopUpRuleCache(valkey);
-    await cache.put("org_a", { armed: true });
-    expect(await cache.get("org_a")).toEqual({ armed: true });
+    await cache.put("org_a", { armed: true, thresholdCents: 1000 });
+    expect(await cache.get("org_a")).toEqual({ armed: true, thresholdCents: 1000 });
     await cache.drop("org_a");
     expect(await cache.get("org_a")).toBeNull();
   });
 
   it("expires", async () => {
     const cache = new AutoTopUpRuleCache(valkey, 50);
-    await cache.put("org_a", { armed: false });
+    await cache.put("org_a", { armed: false, thresholdCents: 1000 });
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(await cache.get("org_a")).toBeNull();
   });
@@ -175,7 +175,7 @@ describe("the signals", () => {
 
   it("drops the cached rule and marks the organisation when the rule changes", async () => {
     const cache = new AutoTopUpRuleCache(valkey);
-    await cache.put("org_a", { armed: false });
+    await cache.put("org_a", { armed: false, thresholdCents: 1000 });
     await signals().ruleChanged("org_a");
     expect(await cache.get("org_a")).toBeNull();
     expect(await new DueSet(valkey, AUTO_TOP_UP_DUE_KEY).size()).toBe(1);

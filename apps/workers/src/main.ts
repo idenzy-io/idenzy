@@ -6,6 +6,8 @@ import { migrateAnalytics } from "@idenzy/analytics/migrate";
 import { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import { createValkeyClient } from "@idenzy/cache/connection/client";
 import { DueSet } from "@idenzy/cache/due-set";
+import { LiveBalanceCache } from "@idenzy/cache/live-balance-cache";
+import { LiveUsageSketches } from "@idenzy/cache/live-usage-sketches";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
 import { SpacingGate } from "@idenzy/cache/spacing-gate";
 import {
@@ -51,6 +53,7 @@ import { AuditRelay } from "./audit-relay.js";
 import { AutoTopUpRunner } from "./billing/auto-top-up-runner.js";
 import { AutoTopUpSweeper } from "./billing/auto-top-up-sweeper.js";
 import { BillingSignalConsumer } from "./billing/billing-signal-consumer.js";
+import { LiveBalance } from "./billing/live-balance.js";
 import { EmailEventEndpoint } from "./email/email-event-endpoint.js";
 import { EmailReputationBreaker } from "./email/email-reputation-breaker.js";
 import { EmailRetentionSweeper } from "./email/email-retention-sweeper.js";
@@ -245,6 +248,7 @@ async function bootstrap(): Promise<void> {
     new SpacingGate(valkey, "billing:drawdown:spacing:"),
     billingWork,
     drawdown,
+    new LiveBalance(uow, new LiveUsageSketches(valkey), new LiveBalanceCache(valkey), clock),
     autoTopUp,
     clock,
     logger,

@@ -72,7 +72,7 @@ export class TenantResolutionGuard implements CanActivate {
      * still needs a tenant.
      */
     const surface = surfaceOf(request.url);
-    if (surface === Surface.Dashboard) return true;
+    if (surface === Surface.Dashboard || surface === Surface.Operator) return true;
 
     const isPublic =
       surface === Surface.Public ||

@@ -76,6 +76,23 @@ export const configSchema = z.object({
   DASHBOARD_ORIGIN: z.url().default("https://app.idenzy.io"),
 
   /**
+   * The project Idenzy's own operators sign in through, in its public `prj_` form (ADR-0018).
+   *
+   * A second project beside the dashboard's, with Google as its only method and sign-in
+   * restricted to the idenzy.io Workspace. Operator routes verify tokens against it and refuse
+   * anything minted for the dashboard or a customer. Optional: a deployment without it serves no
+   * operator route at all — every one answers 401, closed rather than open.
+   */
+  OPERATOR_PROJECT_ID: z.string().min(1).optional(),
+
+  /**
+   * The origin the operator console is served from, and the only one `/v1/operator/*` answers a
+   * browser at. Loopback is allowed outside production by the CORS policy itself, as for the
+   * dashboard.
+   */
+  OPERATOR_ORIGIN: z.url().default("https://console.idenzy.io"),
+
+  /**
    * The retry queue for webhook deliveries, and the endpoint it calls back (ADR-0012).
    *
    * All five are optional together and required together. A deployment with none of them retries on

@@ -68,7 +68,8 @@ export class SessionTransportGuard implements CanActivate {
      * The other three global guards need no such line: each is opt-in on metadata no
      * management route carries.
      */
-    if (surfaceOf(request.url) === Surface.Dashboard) return true;
+    const surface = surfaceOf(request.url);
+    if (surface === Surface.Dashboard || surface === Surface.Operator) return true;
 
     const transport = this.declared(request);
     request.transport = transport;

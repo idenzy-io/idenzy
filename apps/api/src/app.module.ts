@@ -34,6 +34,7 @@ import { WebhooksModule } from "./management/webhooks/webhooks.module.js";
 import { MfaModule } from "./mfa/mfa.module.js";
 import { OAuthModule } from "./oauth/oauth.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
+import { OperatorModule } from "./operator/operator.module.js";
 import { OtpModule } from "./otp/otp.module.js";
 import { PasskeyModule } from "./passkey/passkey.module.js";
 import { PasswordModule } from "./password/password.module.js";
@@ -111,6 +112,11 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     DashboardUsageModule,
     UsersModule,
     WebhooksModule,
+
+    // The operator surface (ADR-0018). `StaffGuard` is opt-in on `@RequireStaff`, so it is inert
+    // on every other route, and it verifies against the operator project rather than the
+    // dashboard's, so neither audience accepts the other's tokens.
+    OperatorModule,
   ],
   controllers: [HealthController, WellKnownController, RevocationController],
 })

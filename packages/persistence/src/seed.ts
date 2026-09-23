@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
+import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
 import { hashToken } from "@idenzy/crypto/tokens/random";
 import { ApiKeyKind } from "@idenzy/protocol/enums/tenancy";
 import { ApiKeyPrefix } from "@idenzy/protocol/schemas/common";
+import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { orgs } from "./schema/organisation.js";
-import { apiKeys, projects } from "./schema/projects.js";
+import { apiKeys, oauthProviders, projects, redirectUris } from "./schema/projects.js";
 
 /**
  * What a local database needs before anything can happen in it.
@@ -49,6 +52,10 @@ import { apiKeys, projects } from "./schema/projects.js";
  */
 const IDENZY_ORG_ID = "00000000-0000-4000-8000-000000000001";
 const DASHBOARD_PROJECT_ID = "00000000-0000-4000-8000-000000000002";
+/** Idenzy's operator console (ADR-0018). `OPERATOR_PROJECT_ID` is its public form. */
+const OPERATOR_PROJECT_ID = "00000000-0000-4000-8000-000000000003";
+/** Where the operator console runs locally, and so where Google sign-in returns to. */
+const OPERATOR_CONSOLE_URL = "http://localhost:3004";
 
 async function main(): Promise<void> {
   const environment = process.env["IDENZY_ENV"] ?? "development";
@@ -74,6 +81,7 @@ async function main(): Promise<void> {
     const db = drizzle(client);
 
     await seedDashboard(client, db);
+    await seedOperatorConsole(client, db);
     process.stdout.write("seed complete\n");
   } finally {
     await client.end();
@@ -95,13 +103,18 @@ async function main(): Promise<void> {
 async function seedDashboard(client: pg.Client, db: NodePgDatabase): Promise<void> {
   await client.query("BEGIN");
   try {
-    const org = await db.select({ id: orgs.id }).from(orgs).limit(1);
+    // By id rather than "is there any": an unfiltered check was true as soon as anything existed,
+    // which is how a second project could never be seeded beside the first.
+    const org = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, IDENZY_ORG_ID));
     if (org.length === 0) {
       await db.insert(orgs).values({ id: IDENZY_ORG_ID, name: "Idenzy" });
       process.stdout.write("seeded organisation Idenzy\n");
     }
 
-    const project = await db.select({ id: projects.id }).from(projects).limit(1);
+    const project = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, DASHBOARD_PROJECT_ID));
     if (project.length === 0) {
       await db.insert(projects).values({
         id: DASHBOARD_PROJECT_ID,
@@ -112,7 +125,7 @@ async function seedDashboard(client: pg.Client, db: NodePgDatabase): Promise<voi
       process.stdout.write("seeded project Dashboard\n");
     }
 
-    await mintPublishableKey(db);
+    await mintPublishableKey(db, DASHBOARD_PROJECT_ID, "NUXT_PUBLIC_IDENZY_PUBLISHABLE_KEY");
     await client.query("COMMIT");
   } catch (error: unknown) {
     await client.query("ROLLBACK");
@@ -131,12 +144,20 @@ async function seedDashboard(client: pg.Client, db: NodePgDatabase): Promise<voi
  * is not a leak. The browser-facing header takes this prefix only, and a secret key in it
  * is refused before any lookup (PROJECT.md 4.3).
  */
-async function mintPublishableKey(db: NodePgDatabase): Promise<void> {
-  const existing = await db.select({ id: apiKeys.id }).from(apiKeys).limit(1);
+async function mintPublishableKey(
+  db: NodePgDatabase,
+  projectId: string,
+  variable: string,
+): Promise<void> {
+  const existing = await db
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(eq(apiKeys.projectId, projectId))
+    .limit(1);
   if (existing.length > 0) {
     process.stdout.write(
-      "a publishable key already exists; only its hash is stored, so it cannot be shown again.\n" +
-        "  Delete it and re-run to mint another: DELETE FROM api_keys;\n",
+      `a publishable key for ${projectId} already exists; only its hash is stored, so it cannot be shown again.\n` +
+        `  Delete it and re-run to mint another: DELETE FROM api_keys WHERE project_id = '${projectId}';\n`,
     );
     return;
   }
@@ -147,7 +168,7 @@ async function mintPublishableKey(db: NodePgDatabase): Promise<void> {
   const head = ApiKeyPrefix.Publishable;
   const key = `${head}${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
   await db.insert(apiKeys).values({
-    projectId: DASHBOARD_PROJECT_ID,
+    projectId,
     kind: ApiKeyKind.Publishable,
     prefix: key.slice(0, head.length + 8),
     hash: hashToken(key),
@@ -155,9 +176,87 @@ async function mintPublishableKey(db: NodePgDatabase): Promise<void> {
   });
 
   process.stdout.write(
-    `\n  Publishable key for the dashboard project, shown once:\n\n    ${key}\n\n` +
-      "  Put it in .env as NUXT_PUBLIC_IDENZY_PUBLISHABLE_KEY.\n\n",
+    `\n  Publishable key for ${projectId}, shown once:\n\n    ${key}\n\n` +
+      `  Put it in .env as ${variable}.\n\n`,
   );
+}
+
+/**
+ * Idenzy's operator console project (ADR-0018): Google sign-in only, idenzy.io Workspace only.
+ *
+ * The Google provider is seeded only when `OPERATOR_GOOGLE_CLIENT_ID` and
+ * `OPERATOR_GOOGLE_CLIENT_SECRET` are set, because a provider row with no credentials would be one
+ * that looks configured and cannot sign anybody in. The secret is encrypted under the project's
+ * data key exactly as the management API stores one; `hostedDomain` is what makes the provider
+ * refuse any Google account the idenzy.io Workspace does not manage.
+ */
+async function seedOperatorConsole(client: pg.Client, db: NodePgDatabase): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    const project = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, OPERATOR_PROJECT_ID));
+    if (project.length === 0) {
+      await db.insert(projects).values({
+        id: OPERATOR_PROJECT_ID,
+        orgId: IDENZY_ORG_ID,
+        name: "Operator console",
+        kmsKeyName: `projects/${OPERATOR_PROJECT_ID}/keys/signing`,
+      });
+      process.stdout.write("seeded project Operator console\n");
+    }
+
+    // Where Google sign-in hands the browser back to. The OAuth start route refuses any
+    // return address the project has not listed.
+    await db
+      .insert(redirectUris)
+      .values({
+        projectId: OPERATOR_PROJECT_ID,
+        uri: `${OPERATOR_CONSOLE_URL}/auth/callback`,
+        kind: "oauth",
+      })
+      .onConflictDoNothing();
+
+    const clientId = process.env["OPERATOR_GOOGLE_CLIENT_ID"];
+    const clientSecret = process.env["OPERATOR_GOOGLE_CLIENT_SECRET"];
+    if (clientId && clientSecret) {
+      const encryptor = new FieldEncryptor(developmentDataKey("development"));
+      const secret = encryptor.encrypt(clientSecret, OPERATOR_PROJECT_ID);
+      await db
+        .insert(oauthProviders)
+        .values({
+          projectId: OPERATOR_PROJECT_ID,
+          provider: "google",
+          clientId,
+          clientSecretEncrypted: secret,
+          settings: { hostedDomain: "idenzy.io" },
+          enabled: true,
+        })
+        .onConflictDoUpdate({
+          target: [oauthProviders.projectId, oauthProviders.provider],
+          set: {
+            clientId,
+            clientSecretEncrypted: secret,
+            settings: { hostedDomain: "idenzy.io" },
+            enabled: true,
+          },
+        });
+      process.stdout.write("seeded Google sign-in for the operator console, idenzy.io only\n");
+    } else {
+      process.stdout.write(
+        "operator console: set OPERATOR_GOOGLE_CLIENT_ID and OPERATOR_GOOGLE_CLIENT_SECRET and re-run\n" +
+          "  to enable Google sign-in. The Google client's redirect URI is\n" +
+          "  <ISSUER_BASE_URL>/v1/auth/oauth/google/callback.\n",
+      );
+    }
+
+    await mintPublishableKey(db, OPERATOR_PROJECT_ID, "NUXT_PUBLIC_OPERATOR_PUBLISHABLE_KEY");
+    await client.query("COMMIT");
+  } catch (error: unknown) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }
 
 await main();

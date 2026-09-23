@@ -134,6 +134,7 @@ export class CorsPolicy {
     // The dashboard's allowlist is one configured origin and is known without a lookup,
     // because this surface is addressed by our own panel and by nothing else.
     if (surface === Surface.Dashboard) return this.dashboardAllowed(origin);
+    if (surface === Surface.Operator) return this.operatorAllowed(origin);
     if (surface === Surface.Public) return true;
 
     const host = request.headers.host;
@@ -160,11 +161,14 @@ export class CorsPolicy {
     if (origin === null) return;
 
     const surface = surfaceOf(request.url);
-    if (surface === Surface.Dashboard) {
-      // Nothing here may sit in a shared cache either: it is one customer's dashboard data.
+    if (surface === Surface.Dashboard || surface === Surface.Operator) {
+      // Nothing here may sit in a shared cache either: it is one customer's dashboard data, or
+      // every customer's operator data.
       reply.header("cache-control", "no-store");
       appendVary(reply, "origin");
-      if (this.dashboardAllowed(origin)) {
+      const allowed =
+        surface === Surface.Operator ? this.operatorAllowed(origin) : this.dashboardAllowed(origin);
+      if (allowed) {
         reply
           .header("access-control-allow-origin", origin)
           .header("access-control-expose-headers", "retry-after");
@@ -218,6 +222,16 @@ export class CorsPolicy {
    */
   private dashboardAllowed(origin: string): boolean {
     if (origin === this.config.get("DASHBOARD_ORIGIN")) return true;
+    return !this.config.isProduction && LOCALHOST.test(origin);
+  }
+
+  /**
+   * The operator console's one origin, plus loopback outside production. Never the dashboard's:
+   * a page on the customer-facing origin must not be able to call operator routes, so the two
+   * allowlists are separate even though they have the same shape.
+   */
+  private operatorAllowed(origin: string): boolean {
+    if (origin === this.config.get("OPERATOR_ORIGIN")) return true;
     return !this.config.isProduction && LOCALHOST.test(origin);
   }
 }

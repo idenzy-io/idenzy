@@ -198,3 +198,32 @@ describe("preflight is strict wherever the project can be resolved", () => {
     expect(response.body).toBe("");
   });
 });
+
+/**
+ * The operator surface answers one origin, and never the dashboard's (ADR-0018). A page on the
+ * customer-facing origin — which runs a customer's session — must not be able to reach it.
+ */
+describe("the operator surface", () => {
+  const preflight = async (origin: string) =>
+    await app.inject({
+      method: "OPTIONS",
+      url: "/v1/operator/me",
+      headers: { origin, "access-control-request-method": "GET" },
+    });
+
+  it("allows the operator console's origin, without credentials", async () => {
+    const response = await preflight("https://console.idenzy.io");
+    expect(response.headers["access-control-allow-origin"]).toBe("https://console.idenzy.io");
+    expect(response.headers["access-control-allow-credentials"]).toBeUndefined();
+  });
+
+  it("refuses the dashboard's origin", async () => {
+    const response = await preflight("https://app.idenzy.io");
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("refuses a stranger", async () => {
+    const response = await preflight("https://evil.example");
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+});

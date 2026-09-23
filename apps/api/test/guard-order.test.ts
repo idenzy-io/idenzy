@@ -71,6 +71,8 @@ describe("global guard order", () => {
       // between the two groups therefore decides nothing — but it is pinned like the rest,
       // so that a future guard inserted in the middle of the auth chain still fails here.
       "MembershipGuard",
+      // The operator surface's, opt-in on `@RequireStaff` and independent for the same reason.
+      "StaffGuard",
     ]);
   });
 });

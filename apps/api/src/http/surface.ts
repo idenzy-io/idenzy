@@ -25,12 +25,15 @@ export const Surface = {
   Dashboard: "dashboard",
   /** Health and discovery. No tenant, cacheable, wildcard origin. */
   Public: "public",
+  /** Idenzy's operator console (ADR-0018). Operator token, one origin, no credentials. */
+  Operator: "operator",
 } as const;
 export type Surface = (typeof Surface)[keyof typeof Surface];
 
 /** Exact paths and prefixes that are not the auth API. Longest match is not needed: none nests. */
 const DASHBOARD_PREFIXES = ["/v1/me", "/v1/onboarding", "/v1/orgs", "/v1/payments"] as const;
 const PUBLIC_PREFIXES = ["/healthz", "/readyz", "/.well-known"] as const;
+const OPERATOR_PREFIXES = ["/v1/operator"] as const;
 
 /**
  * The surface a path belongs to.
@@ -48,6 +51,9 @@ export function surfaceOf(path: string | undefined): Surface {
   const url = path.split("?")[0] ?? path;
   if (PUBLIC_PREFIXES.some((prefix) => url === prefix || url.startsWith(`${prefix}/`))) {
     return Surface.Public;
+  }
+  if (OPERATOR_PREFIXES.some((prefix) => url === prefix || url.startsWith(`${prefix}/`))) {
+    return Surface.Operator;
   }
   if (DASHBOARD_PREFIXES.some((prefix) => url === prefix || url.startsWith(`${prefix}/`))) {
     return Surface.Dashboard;

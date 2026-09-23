@@ -6,6 +6,7 @@ import { PaymentProvider, type ProviderEvent } from "@idenzy/domain/ports/paymen
 import { type DisputeMovement, TopUpReversals } from "@idenzy/persistence/billing/top-up-reversals";
 import { type Settled, TopUpSettlement } from "@idenzy/persistence/billing/top-up-settlement";
 import { BillingSettingsRepository } from "@idenzy/persistence/repository/billing-settings-repository";
+import { InvoiceRepository } from "@idenzy/persistence/repository/invoice-repository";
 import { OrgBillingCustomerRepository } from "@idenzy/persistence/repository/org-billing-customer-repository";
 import { PaymentMethodRepository } from "@idenzy/persistence/repository/payment-method-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
@@ -14,6 +15,7 @@ import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import {
   AutoTopUpSuspension,
+  InvoiceStatus,
   PaymentProvider as ProviderName,
   TopUpState,
 } from "@idenzy/protocol/enums/billing";
@@ -22,11 +24,27 @@ import {
   type StripeDispute,
   type StripeRefund,
   type StripeReview,
+  stripeCustomerSchema,
   stripeDisputeSchema,
   stripeIntentSchema,
+  stripeInvoiceSchema,
   stripeRefundSchema,
   stripeReviewSchema,
 } from "./stripe-objects.js";
+
+/** Where an invoice may be paid from: issued and unpaid, or written off and then paid after all. */
+const PAYABLE: readonly InvoiceStatus[] = [
+  InvoiceStatus.Draft,
+  InvoiceStatus.Open,
+  InvoiceStatus.PastDue,
+  InvoiceStatus.Uncollectible,
+];
+const OUTSTANDING: readonly InvoiceStatus[] = [InvoiceStatus.Open, InvoiceStatus.PastDue];
+const VOIDABLE: readonly InvoiceStatus[] = [
+  InvoiceStatus.Draft,
+  InvoiceStatus.Open,
+  InvoiceStatus.PastDue,
+];
 
 /** Our own row ids are uuids; a reference that is not one is not a row of ours. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -164,13 +182,43 @@ export class PaymentWebhookService {
       case "review.closed":
         return await this.reviewed(stripeReviewSchema.parse(event.payload), requestId);
 
+      // Invoices we issued to invoiced organisations (ADR-0019). Each moves the row only from the
+      // states it may leave, so any order and any number of deliveries settle it once.
+      case "invoice.finalized":
+        return await this.forOrg(event, requestId, (context) => this.finalized(context, event));
+      case "invoice.paid":
+      case "invoice.payment_succeeded":
+        return await this.invoiceMoved(event, requestId, PAYABLE, InvoiceStatus.Paid);
+      case "invoice.overdue":
+        return await this.invoiceMoved(
+          event,
+          requestId,
+          [InvoiceStatus.Open],
+          InvoiceStatus.PastDue,
+        );
+      case "invoice.voided":
+        return await this.invoiceMoved(event, requestId, VOIDABLE, InvoiceStatus.Void);
+      case "invoice.marked_uncollectible":
+        return await this.invoiceMoved(event, requestId, OUTSTANDING, InvoiceStatus.Uncollectible);
+      case "invoice.payment_failed":
+        return await this.forOrg(event, requestId, (context) => this.invoiceFailed(context, event));
+
+      case "customer.deleted":
+        return await this.forOrg(event, requestId, (context) =>
+          this.customerDeleted(context, stripeCustomerSchema.parse(event.payload).id),
+        );
+
       default:
         // Everything else is stored and acknowledged. That includes, deliberately:
         //
         // `charge.refunded`, whose charge no longer embeds its refunds under the API version
         // we pin — the `refund.*` events carry the same money and are what acts on it.
-        // `invoice.*`, `invoiceitem.*` and `invoice_payment.*`: we never create a Stripe
-        // invoice, because the product is prepaid (ADR-0014) and `invoices` stays ours.
+        // The rest of `invoice.*` (`created`, `updated`, `sent`, `upcoming`…), `invoiceitem.*` and
+        // `invoice_payment.*`: the invoice run and the events above already say everything they
+        // would, and acting twice on one fact is how two paths come to disagree.
+        // `customer.created`/`updated`: we create the customers, and the invoice run sets the
+        // billing address each month. `customer.tax_id.*`, `tax.settings.updated`, `tax_rate.*`:
+        // nothing here applies tax yet — that is a decision recorded in ADR-0019, not an omission.
         // `issuing_dispute.*`: Issuing is for cards we would issue, and we issue none.
         //
         // An event we do not act on is not a failure, and treating it as one is how a
@@ -272,6 +320,91 @@ export class PaymentWebhookService {
         outcome: movement ?? dispute.status,
       });
     }
+  }
+
+  /**
+   * The provider finalised an invoice we drafted. The invoice run writes this down itself; this is
+   * for the case where the event beats it, and attaches onto the draft by the reference we stamped.
+   */
+  private async finalized(context: OrgContext, event: ProviderEvent): Promise<void> {
+    const invoice = stripeInvoiceSchema.parse(event.payload);
+    const reference = event.reference;
+    if (reference === null || !UUID.test(reference)) return;
+    const finalizedAt = invoice.status_transitions?.finalized_at ?? invoice.created;
+    await this.uow.transaction((tx) =>
+      new InvoiceRepository(tx, context).attachProvider(reference, {
+        providerInvoiceId: invoice.id,
+        hostedUrl: invoice.hosted_invoice_url ?? null,
+        pdfUrl: invoice.invoice_pdf ?? null,
+        issuedAt: new Date(finalizedAt * 1000),
+        dueAt: invoice.due_date == null ? null : new Date(invoice.due_date * 1000),
+      }),
+    );
+  }
+
+  private async invoiceMoved(
+    event: ProviderEvent,
+    requestId: string,
+    from: readonly InvoiceStatus[],
+    to: InvoiceStatus,
+  ): Promise<void> {
+    // Parsed inside, once the event is known to be ours: an invoice somebody else made (a
+    // `stripe trigger`, another integration on the account) is acknowledged and left, not failed
+    // and retried for days over a shape we never promised to read.
+    await this.forOrg(event, requestId, async (context) => {
+      const invoice = stripeInvoiceSchema.parse(event.payload);
+      // Events are not delivered in order: a `paid` can arrive before the `finalized` that would
+      // have attached the provider's invoice to our draft, so it is attached here first.
+      await this.finalized(context, event);
+      const paidAt = invoice.status_transitions?.paid_at;
+      const at =
+        to === InvoiceStatus.Paid && paidAt != null ? new Date(paidAt * 1000) : this.clock.now();
+      const moved = await this.uow.transaction((tx) =>
+        new InvoiceRepository(tx, context).moveByProvider(invoice.id, from, to, at),
+      );
+      if (moved) {
+        this.logger.info("invoice moved", {
+          requestId,
+          orgId: context.orgId,
+          component: "billing",
+          outcome: to,
+        });
+        await this.signals.walletMoved(context.orgId);
+      }
+    });
+  }
+
+  /**
+   * A payment attempt on an invoice failed. Nothing changes state — the invoice is still open and
+   * the customer can pay it another way — and nothing stops: this is the flag a person reads.
+   */
+  private invoiceFailed(context: OrgContext, event: ProviderEvent): Promise<void> {
+    const invoice = stripeInvoiceSchema.parse(event.payload);
+    this.logger.warn("invoice payment failed", {
+      orgId: context.orgId,
+      component: "billing",
+      outcome: invoice.status ?? "unknown",
+    });
+    return Promise.resolve();
+  }
+
+  /**
+   * Somebody deleted the organisation's customer at the provider. Its cards went with it, so our
+   * copy of them is dropped and the customer id forgotten — a new one is made on next use — and
+   * the automatic rule stops, because it has nothing it could charge.
+   */
+  private async customerDeleted(context: OrgContext, customerId: string): Promise<void> {
+    const released = await this.uow.transaction(async (tx) => {
+      if (!(await new OrgBillingCustomerRepository(tx, context).release(customerId))) return false;
+      const methods = new PaymentMethodRepository(tx, context);
+      for (const card of await methods.list()) await methods.remove(card.id);
+      await new BillingSettingsRepository(tx, context).suspendAutoTopUp(
+        AutoTopUpSuspension.NoPaymentMethod,
+        this.clock.now(),
+      );
+      return true;
+    });
+    if (released) await this.signals.ruleChanged(context.orgId);
   }
 
   /**

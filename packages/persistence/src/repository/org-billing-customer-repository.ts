@@ -55,4 +55,17 @@ export class OrgBillingCustomerRepository extends AbstractRepository {
       .returning({ id: orgs.id });
     return rows.length === 1;
   }
+
+  /**
+   * Forgets a provider customer that no longer exists, and only that one: the id in the predicate
+   * is what stops a late `customer.deleted` for an old customer from unsetting a newer one.
+   */
+  async release(billingCustomerId: string): Promise<boolean> {
+    const rows = await this.tx
+      .update(orgs)
+      .set({ billingCustomerId: null })
+      .where(and(eq(orgs.id, this.context.orgId), eq(orgs.billingCustomerId, billingCustomerId)))
+      .returning({ id: orgs.id });
+    return rows.length === 1;
+  }
 }

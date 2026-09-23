@@ -752,3 +752,177 @@ describe("refunds, disputes and reviews", () => {
     provider.chargeOwner = original;
   });
 });
+
+/**
+ * The provider's word on the invoices it issued for invoiced organisations (ADR-0019), and on the
+ * customers it holds for them. Every event is delivered in some order and some number of times;
+ * each test says what state the row must end in regardless.
+ */
+describe("invoice and customer events", () => {
+  const BILLED = "abab0000-0000-4000-8000-00000000000b";
+  const billedContext = new OrgContext(BILLED, "req_inv", "customer_staff", MEMBER);
+  let draftId = "";
+  let sequence = 0;
+
+  const status = async () =>
+    (
+      await harness.owner.query<{ status: string; provider_invoice_id: string | null }>(
+        `SELECT status, provider_invoice_id FROM invoices WHERE id = $1`,
+        [draftId],
+      )
+    ).rows[0];
+
+  function invoiceEvent(type: string, overrides: Record<string, unknown> = {}): string {
+    sequence += 1;
+    return event(
+      type,
+      {
+        id: "in_test_1",
+        status: "open",
+        created: 1_790_000_000,
+        hosted_invoice_url: "https://invoice.stripe.test/1",
+        invoice_pdf: "https://invoice.stripe.test/1.pdf",
+        due_date: 1_791_209_600,
+        status_transitions: { finalized_at: 1_790_000_100, paid_at: 1_790_100_000 },
+        ...overrides,
+      },
+      { id: `evt_inv_${String(sequence)}`, orgId: BILLED, reference: draftId },
+    );
+  }
+
+  beforeAll(async () => {
+    await harness.owner.query(
+      `INSERT INTO orgs (id, name, billing_customer_id) VALUES ($1, 'Hooli', 'cus_hooli')`,
+      [BILLED],
+    );
+  });
+
+  beforeEach(async () => {
+    await harness.owner.query(`DELETE FROM invoices WHERE org_id = $1`, [BILLED]);
+    const { rows } = await harness.owner.query<{ id: string }>(
+      `INSERT INTO invoices (org_id, number, period_start, period_end, status, total_cents, provider, issued_at)
+       VALUES ($1, 'IDZ-202609-HOOLI', '2026-09-01', '2026-09-30', 'draft', 50000, 'stripe', now())
+       RETURNING id`,
+      [BILLED],
+    );
+    draftId = rows[0]?.id ?? "";
+  });
+
+  it("opens the draft when the provider finalises it, with the provider's handle", async () => {
+    await webhooks.receive(invoiceEvent("invoice.finalized"), "sig", "i1");
+    expect(await status()).toEqual({ status: "open", provider_invoice_id: "in_test_1" });
+  });
+
+  it("marks it paid once, even when paid arrives before finalized", async () => {
+    await webhooks.receive(invoiceEvent("invoice.paid", { status: "paid" }), "sig", "i2");
+    await webhooks.receive(
+      invoiceEvent("invoice.payment_succeeded", { status: "paid" }),
+      "sig",
+      "i3",
+    );
+    await webhooks.receive(invoiceEvent("invoice.finalized"), "sig", "i4");
+    expect(await status()).toMatchObject({ status: "paid" });
+    const { rows } = await harness.owner.query<{ paid_at: Date }>(
+      `SELECT paid_at FROM invoices WHERE id = $1`,
+      [draftId],
+    );
+    expect(rows[0]?.paid_at.toISOString()).toBe(new Date(1_790_100_000 * 1000).toISOString());
+  });
+
+  it("flags overdue, and a late overdue never undoes a payment", async () => {
+    await webhooks.receive(invoiceEvent("invoice.finalized"), "sig", "i5");
+    await webhooks.receive(invoiceEvent("invoice.overdue"), "sig", "i6");
+    expect(await status()).toMatchObject({ status: "past_due" });
+    await webhooks.receive(invoiceEvent("invoice.paid", { status: "paid" }), "sig", "i7");
+    await webhooks.receive(invoiceEvent("invoice.overdue"), "sig", "i8");
+    expect(await status()).toMatchObject({ status: "paid" });
+  });
+
+  it("voids, and a voided invoice stays void", async () => {
+    await webhooks.receive(invoiceEvent("invoice.finalized"), "sig", "i9");
+    await webhooks.receive(invoiceEvent("invoice.voided", { status: "void" }), "sig", "i10");
+    await webhooks.receive(invoiceEvent("invoice.paid", { status: "paid" }), "sig", "i11");
+    expect(await status()).toMatchObject({ status: "void" });
+  });
+
+  it("writes off, and a written-off invoice paid after all is paid", async () => {
+    await webhooks.receive(invoiceEvent("invoice.finalized"), "sig", "i12");
+    await webhooks.receive(
+      invoiceEvent("invoice.marked_uncollectible", { status: "uncollectible" }),
+      "sig",
+      "i13",
+    );
+    expect(await status()).toMatchObject({ status: "uncollectible" });
+    await webhooks.receive(invoiceEvent("invoice.paid", { status: "paid" }), "sig", "i14");
+    expect(await status()).toMatchObject({ status: "paid" });
+  });
+
+  it("changes nothing on a failed payment attempt: the invoice is still owed, and nothing stops", async () => {
+    await webhooks.receive(invoiceEvent("invoice.finalized"), "sig", "i15");
+    await webhooks.receive(invoiceEvent("invoice.payment_failed"), "sig", "i16");
+    expect(await status()).toMatchObject({ status: "open" });
+  });
+
+  it("acknowledges the invoice, customer and tax events it does not act on", async () => {
+    for (const type of [
+      "invoice.created",
+      "invoice.updated",
+      "invoice.sent",
+      "invoice.upcoming",
+      "invoiceitem.created",
+      "invoice_payment.paid",
+      "customer.created",
+      "customer.updated",
+      "customer.tax_id.created",
+      "tax.settings.updated",
+      "tax_rate.created",
+    ]) {
+      await expect(
+        webhooks.receive(event(type, { id: "x" }, { orgId: BILLED }), "sig", type),
+      ).resolves.toBeUndefined();
+    }
+    expect(await status()).toMatchObject({ status: "draft" });
+  });
+
+  it("forgets a deleted customer and its cards, and stops the automatic rule", async () => {
+    await harness.owner.query(
+      `INSERT INTO payment_methods (org_id, provider, provider_method_id, brand, last4, expiry_month, expiry_year, is_default)
+       VALUES ($1, 'stripe', 'pm_hooli', 'visa', '4242', 12, 2030, true)`,
+      [BILLED],
+    );
+    await uow.transaction((tx) =>
+      new BillingSettingsRepository(tx, billedContext).setAutoTopUp(
+        { enabled: true, thresholdCents: 100, amountCents: 1000, methodId: null },
+        MEMBER,
+      ),
+    );
+    // A stale event about some other customer first: it must not unset this one.
+    await webhooks.receive(
+      event("customer.deleted", { id: "cus_other" }, { orgId: BILLED }),
+      "sig",
+      "c0",
+    );
+    expect(
+      (await harness.owner.query(`SELECT billing_customer_id FROM orgs WHERE id = $1`, [BILLED]))
+        .rows[0],
+    ).toEqual({ billing_customer_id: "cus_hooli" });
+
+    await webhooks.receive(
+      event("customer.deleted", { id: "cus_hooli" }, { orgId: BILLED }),
+      "sig",
+      "c1",
+    );
+    const org = await harness.owner.query(`SELECT billing_customer_id FROM orgs WHERE id = $1`, [
+      BILLED,
+    ]);
+    expect(org.rows[0]).toEqual({ billing_customer_id: null });
+    const cards = await harness.owner.query(`SELECT 1 FROM payment_methods WHERE org_id = $1`, [
+      BILLED,
+    ]);
+    expect(cards.rows).toEqual([]);
+    const rule = await uow.transaction((tx) =>
+      new BillingSettingsRepository(tx, billedContext).current(),
+    );
+    expect(rule.autoTopUpState.suspendedReason).toBe(AutoTopUpSuspension.NoPaymentMethod);
+  });
+});

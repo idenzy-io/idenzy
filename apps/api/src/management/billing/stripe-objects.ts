@@ -65,3 +65,23 @@ export const stripeIntentSchema = z.object({
   last_payment_error: z.object({ code: z.string().optional() }).nullable().optional(),
 });
 export type StripeIntent = z.infer<typeof stripeIntentSchema>;
+
+/** `invoice.*`: an invoice we issued, carrying our row id and organisation in its metadata. */
+export const stripeInvoiceSchema = z.object({
+  id: z.string().startsWith("in_"),
+  status: z.string().nullable(),
+  hosted_invoice_url: z.string().nullable().optional(),
+  invoice_pdf: z.string().nullable().optional(),
+  created: z.number().int(),
+  due_date: z.number().int().nullable().optional(),
+  status_transitions: z
+    .object({
+      finalized_at: z.number().int().nullable().optional(),
+      paid_at: z.number().int().nullable().optional(),
+    })
+    .optional(),
+});
+export type StripeInvoice = z.infer<typeof stripeInvoiceSchema>;
+
+/** `customer.*`: only the id is acted on; the organisation comes from our metadata on it. */
+export const stripeCustomerSchema = z.object({ id: z.string().startsWith("cus_") });

@@ -4,7 +4,7 @@ import type {
   InvoiceStatus,
   PaymentProvider,
 } from "@idenzy/protocol/enums/billing";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { invoiceLines, invoices } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -197,6 +197,68 @@ export class InvoiceRepository extends OrgRepository<typeof invoices> {
           dueAt: issued.dueAt,
         })
         .where(and(this.orgScope(), eq(invoices.id, id), eq(invoices.status, "draft")))
+        .returning({ id: invoices.id }),
+    );
+    return rows.length === 1;
+  }
+
+  /**
+   * Moves an issued invoice to `to`, by the provider's id, only from the states in `from`.
+   *
+   * Every provider event about an invoice goes through here, and the `from` set is what makes
+   * them safe in any order and any number of times: `paid` and `void` are final, so a late
+   * `overdue` for an invoice already paid moves nothing, and a second `paid` finds nothing to move.
+   * Answers whether this call moved it.
+   */
+  async moveByProvider(
+    providerInvoiceId: string,
+    from: readonly InvoiceStatus[],
+    to: InvoiceStatus,
+    at: Date,
+  ): Promise<boolean> {
+    const rows = await this.tx
+      .update(invoices)
+      .set({
+        status: to,
+        ...(to === "paid" ? { paidAt: at } : {}),
+        ...(to === "void" ? { voidedAt: at } : {}),
+      })
+      .where(
+        and(
+          this.orgScope(),
+          eq(invoices.providerInvoiceId, providerInvoiceId),
+          inArray(invoices.status, [...from]),
+        ),
+      )
+      .returning({ id: invoices.id });
+    return rows.length === 1;
+  }
+
+  /**
+   * Attaches the provider's invoice to the draft that asked for it, for a `finalized` event that
+   * reaches us before the invoice run wrote the answer down. Keyed on our own id, which the
+   * provider's invoice carries as its reference, and only onto a row with no handle yet.
+   */
+  async attachProvider(id: string, issued: IssuedInvoiceRecord): Promise<boolean> {
+    const rows = await this.guard(() =>
+      this.tx
+        .update(invoices)
+        .set({
+          status: "open",
+          providerInvoiceId: issued.providerInvoiceId,
+          hostedUrl: issued.hostedUrl,
+          pdfUri: issued.pdfUrl,
+          issuedAt: issued.issuedAt,
+          dueAt: issued.dueAt,
+        })
+        .where(
+          and(
+            this.orgScope(),
+            eq(invoices.id, id),
+            eq(invoices.status, "draft"),
+            isNull(invoices.providerInvoiceId),
+          ),
+        )
         .returning({ id: invoices.id }),
     );
     return rows.length === 1;

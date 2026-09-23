@@ -18,7 +18,7 @@ import { BillingLineItem } from "@idenzy/protocol/enums/billing";
 
 export interface UsageDrawdownOptions {
   readonly intervalMs?: number;
-  /** Organisations per pass. A pass is a pass; the next one is minutes away. */
+  /** Organisations per page. A pass walks every page. */
   readonly orgsPerPass?: number;
   /** How long a published spend decision stands before a cell ignores it and sends anyway. */
   readonly spendStateTtlMs?: number;
@@ -83,6 +83,7 @@ function monthEnd(period: string): string {
  */
 export class UsageDrawdown {
   private timer: NodeJS.Timeout | null = null;
+  private running = false;
 
   constructor(
     private readonly uow: UnitOfWork,
@@ -108,21 +109,37 @@ export class UsageDrawdown {
 
   /** One pass. Returns how many organisations were charged something. */
   async runOnce(): Promise<number> {
+    // A pass still running when the next is due is not joined by it. Walking every page can
+    // outlast the interval at volume, and two passes over the same organisations would only
+    // compute zero twice — safe, and wasted.
+    if (this.running) return 0;
+    this.running = true;
     const period = monthStart(this.clock.now());
-    let orgs: readonly string[];
+    const page = this.options.orgsPerPass ?? DEFAULT_ORGS;
+    let charged = 0;
+    let after: string | null = null;
     try {
-      orgs = await this.activity.withActivity(period, this.options.orgsPerPass ?? DEFAULT_ORGS);
+      // Every page. The first alone never reached the 201st organisation by id, which was then
+      // never charged by this pass at all.
+      for (;;) {
+        const orgs: readonly string[] = await this.activity.withActivity(period, page, after);
+        charged += await this.runFor(orgs);
+        const last = orgs.at(-1);
+        if (orgs.length < page || last === undefined) break;
+        after = last;
+      }
     } catch (cause: unknown) {
       // This runs on a timer through `void`, so a rejection here would have nobody to catch it
-      // and would take the worker down. Nothing is lost by skipping a pass.
-      this.logger.error("usage drawdown pass skipped", {
+      // and would take the worker down. Nothing is lost by cutting a pass short.
+      this.logger.error("usage drawdown pass cut short", {
         component: "billing",
         outcome: "deferred",
         errorName: cause instanceof Error ? cause.name : "unknown",
       });
-      return 0;
+    } finally {
+      this.running = false;
     }
-    return await this.runFor(orgs);
+    return charged;
   }
 
   /**

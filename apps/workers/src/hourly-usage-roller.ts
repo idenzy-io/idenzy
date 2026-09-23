@@ -82,14 +82,29 @@ export class HourlyUsageRoller {
     // Yesterday as well as today, so an hour of the previous day that ended moments ago is still
     // found after midnight.
     const since = utcDay(new Date(hour.getTime() - 24 * HOUR_MS));
-    const projects = await this.active.withActivity(
-      since,
-      this.options.projectsPerPass ?? DEFAULT_PROJECTS,
-    );
+    const page = this.options.projectsPerPass ?? DEFAULT_PROJECTS;
 
+    // Every page, not the first: the first alone left every project past the 500th by id without
+    // an hour, silently. And caught, because this runs on a timer through `void`, where a rejected
+    // read would take the whole worker down.
     let written = 0;
-    for (const projectId of projects) {
-      if (await this.rollOne(projectId, hour)) written += 1;
+    let after: string | null = null;
+    try {
+      for (;;) {
+        const projects: readonly string[] = await this.active.withActivity(since, page, after);
+        for (const projectId of projects) {
+          if (await this.rollOne(projectId, hour)) written += 1;
+        }
+        const last = projects.at(-1);
+        if (projects.length < page || last === undefined) break;
+        after = last;
+      }
+    } catch (cause: unknown) {
+      this.logger.error("hourly usage pass cut short", {
+        component: "usage",
+        outcome: "deferred",
+        errorName: cause instanceof Error ? cause.name : "unknown",
+      });
     }
     return written;
   }

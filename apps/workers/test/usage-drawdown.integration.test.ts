@@ -399,6 +399,39 @@ describe("keeping one organisation out of another's wallet", () => {
   });
 });
 
+describe("reaching every organisation", () => {
+  /**
+   * A page of one, so the second organisation by id is on the second page. The pass used to read
+   * the first page and stop, which at the default page size left the 201st organisation by uuid
+   * uncharged by this pass for ever.
+   */
+  it("charges organisations beyond the first page", async () => {
+    await seedUsage(PROJECT_A, "2026-03-02", sketchOf(80_000));
+    await seedUsage(OTHER_PROJECT, "2026-03-02", sketchOf(80_000, 9_000_000));
+    const paged = new UsageDrawdown(
+      uow,
+      new OrgUsageActivityReader(harness.db),
+      clock,
+      new SilentLogger(),
+      undefined,
+      { orgsPerPass: 1 },
+    );
+
+    expect(await paged.runOnce()).toBe(2);
+
+    const theirs = new OrgContext(OTHER_ORG, "req_test", "system");
+    for (const org of [context, theirs]) {
+      const state = await uow.transaction((tx) =>
+        new UsageDrawdownRepository(tx, org).stateFor(PERIOD),
+      );
+      expect(state.billedCents).toBeGreaterThan(0);
+    }
+    for (const table of ["usage_charges", "usage_billing_state", "org_debts"]) {
+      await harness.owner.query(`DELETE FROM ${table} WHERE org_id = $1`, [OTHER_ORG]);
+    }
+  });
+});
+
 describe("the price the job charges", () => {
   /** The job must not hold a second opinion about what a month costs. */
   it("is the price list's, not one of its own", () => {

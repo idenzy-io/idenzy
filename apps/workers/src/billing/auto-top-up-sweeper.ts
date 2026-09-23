@@ -4,6 +4,7 @@ import type { AutoTopUpRunner } from "./auto-top-up-runner.js";
 
 export interface AutoTopUpSweeperOptions {
   readonly intervalMs?: number;
+  /** Rules per page. A pass walks every page. */
   readonly rulesPerPass?: number;
 }
 
@@ -21,6 +22,7 @@ const DEFAULT_RULES = 500;
  */
 export class AutoTopUpSweeper {
   private timer: NodeJS.Timeout | null = null;
+  private running = false;
 
   constructor(
     private readonly runner: AutoTopUpRunner,
@@ -43,24 +45,42 @@ export class AutoTopUpSweeper {
   }
 
   async runOnce(): Promise<void> {
+    // Not joined by the next tick when it outlasts the interval, which walking every page can.
+    if (this.running) return;
+    this.running = true;
     try {
       // Reconcile first: an open charge blocks its organisation's rule, so finishing it is what
       // lets the look below decide anything.
       await this.runner.reconcile();
-      for (const orgId of await this.work.armedRules(this.options.rulesPerPass ?? DEFAULT_RULES)) {
-        try {
-          await this.runner.evaluate(orgId, false);
-        } catch (cause: unknown) {
-          this.logger.error("automatic top-up failed", {
-            orgId,
-            component: "billing",
-            outcome: "deferred",
-            errorName: cause instanceof Error ? cause.name : "unknown",
-          });
-        }
+      const page = this.options.rulesPerPass ?? DEFAULT_RULES;
+      let after: string | null = null;
+      // Every page: an organisation past the first page's end would otherwise never be swept,
+      // and the sweep is what catches every signal that was lost.
+      for (;;) {
+        const orgs: readonly string[] = await this.work.armedRules(page, after);
+        for (const orgId of orgs) await this.look(orgId);
+        const last = orgs.at(-1);
+        if (orgs.length < page || last === undefined) break;
+        after = last;
       }
     } catch (cause: unknown) {
       this.logger.error("automatic top-up sweep failed", {
+        component: "billing",
+        outcome: "deferred",
+        errorName: cause instanceof Error ? cause.name : "unknown",
+      });
+    } finally {
+      this.running = false;
+    }
+  }
+
+  /** One organisation, whose failure is not the pass's. */
+  private async look(orgId: string): Promise<void> {
+    try {
+      await this.runner.evaluate(orgId, false);
+    } catch (cause: unknown) {
+      this.logger.error("automatic top-up failed", {
+        orgId,
         component: "billing",
         outcome: "deferred",
         errorName: cause instanceof Error ? cause.name : "unknown",

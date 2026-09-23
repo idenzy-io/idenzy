@@ -20,10 +20,18 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 export class OrgUsageActivityReader {
   constructor(private readonly db: NodePgDatabase) {}
 
-  /** Organisations with a `usage_daily` row on or after `since`, as `YYYY-MM-DD`. */
-  async withActivity(since: string, limit: number): Promise<readonly string[]> {
+  /**
+   * One page of organisations with a `usage_daily` row on or after `since` (`YYYY-MM-DD`), in id
+   * order, starting after `after`. A caller walks pages until one comes back short: a caller that
+   * read only the first page is how the 201st organisation was never charged.
+   */
+  async withActivity(
+    since: string,
+    limit: number,
+    after: string | null = null,
+  ): Promise<readonly string[]> {
     const rows = await this.db.execute<{ org_id: string }>(
-      sql`select * from orgs_with_recent_usage(${since}::date, ${limit})`,
+      sql`select * from orgs_with_recent_usage(${since}::date, ${after}::uuid, ${limit})`,
     );
     return rows.rows.map((row) => row.org_id);
   }

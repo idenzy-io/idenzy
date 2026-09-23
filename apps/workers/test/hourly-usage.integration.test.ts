@@ -146,6 +146,35 @@ describe("rolling an hour up", () => {
     expect(hours[0]?.emailsSent).toBe(15);
   });
 
+  /**
+   * The reader answers one page, in id order, after a cursor. The roller walks them; before the
+   * cursor existed it read the first page and stopped, so project 501 by id never had an hour.
+   */
+  it("pages through projects by id, so none is beyond reach", async () => {
+    const orgs = await harness.owner.query<{ org_id: string }>(
+      `SELECT org_id FROM projects WHERE id = $1`,
+      [PROJECT],
+    );
+    const second = "22222222-2222-2222-2222-222222222222";
+    await harness.owner.query(
+      `INSERT INTO projects (id, org_id, name, kms_key_name) VALUES ($1, $2, 'q', 'k')`,
+      [second, orgs.rows[0]?.org_id],
+    );
+    await harness.owner.query(
+      `INSERT INTO usage_daily (project_id, day, emails_sent) VALUES ($1, '2031-01-01', 1), ($2, '2031-01-01', 1)`,
+      [PROJECT, second],
+    );
+    const reader = new UsageActiveProjectsReader(harness.db);
+
+    const first = await reader.withActivity("2031-01-01", 1);
+    expect(first).toEqual([PROJECT]);
+    expect(await reader.withActivity("2031-01-01", 1, PROJECT)).toEqual([second]);
+    expect(await reader.withActivity("2031-01-01", 1, second)).toEqual([]);
+
+    await harness.owner.query(`DELETE FROM usage_daily WHERE day = '2031-01-01'`);
+    await harness.owner.query(`DELETE FROM projects WHERE id = $1`, [second]);
+  });
+
   it("never visits a project with nothing metered", async () => {
     const projects = await new UsageActiveProjectsReader(harness.db).withActivity("2030-01-01", 50);
     expect(projects).toEqual([]);

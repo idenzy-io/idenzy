@@ -16,10 +16,17 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 export class UsageActiveProjectsReader {
   constructor(private readonly db: NodePgDatabase) {}
 
-  /** Projects with a `usage_daily` row on or after `since`, as `YYYY-MM-DD`. */
-  async withActivity(since: string, limit: number): Promise<readonly string[]> {
+  /**
+   * One page of projects with a `usage_daily` row on or after `since` (`YYYY-MM-DD`), in id
+   * order, starting after `after`. Walk pages until one comes back short.
+   */
+  async withActivity(
+    since: string,
+    limit: number,
+    after: string | null = null,
+  ): Promise<readonly string[]> {
     const rows = await this.db.execute<{ project_id: string }>(
-      sql`select * from usage_projects_with_activity(${since}::date, ${limit})`,
+      sql`select * from usage_projects_with_activity(${since}::date, ${after}::uuid, ${limit})`,
     );
     return rows.rows.map((row) => row.project_id);
   }

@@ -41,15 +41,16 @@ export class BillingWorkReader {
   }
 
   /**
-   * Organisations whose rule could fire: on, and not suspended.
+   * One page of organisations whose rule could fire — on, and not suspended — after `after`.
    *
    * The periodic pass reads this and not the cache, so a signal lost to a Valkey restart and a
    * cached "off" that went stale are both caught here within one pass.
    */
-  async armedRules(limit: number): Promise<readonly string[]> {
+  async armedRules(limit: number, after: string | null = null): Promise<readonly string[]> {
     const rows = await this.db.execute<{ org_id: string }>(
       sql`select org_id from billing_settings
           where auto_top_up_enabled and auto_top_up_suspended_at is null
+            and (${after}::uuid is null or org_id > ${after}::uuid)
           order by org_id limit ${limit}`,
     );
     return rows.rows.map((row) => row.org_id);

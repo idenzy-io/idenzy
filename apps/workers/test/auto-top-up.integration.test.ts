@@ -512,3 +512,26 @@ describe("the five-second tick", () => {
     expect(await drawdownDue.size()).toBe(1);
   });
 });
+
+describe("the sweep's reach", () => {
+  /** A page of one: the second armed organisation by id is only reachable by the cursor. */
+  it("pages through every armed rule", async () => {
+    await enableRule();
+    const second = "ffff0000-0000-4000-8000-0000000000b9";
+    await pg.owner.query(`INSERT INTO orgs (id, name) VALUES ($1, 'Second')`, [second]);
+    await pg.owner.query(
+      `INSERT INTO billing_settings (org_id, auto_top_up_enabled, auto_top_up_threshold_cents, auto_top_up_amount_cents)
+       VALUES ($1, true, 1000, 5000)`,
+      [second],
+    );
+    const reader = new BillingWorkReader(pg.db);
+    const first = await reader.armedRules(1);
+    expect(first).toHaveLength(1);
+    const next = await reader.armedRules(1, first[0] ?? null);
+    expect([...first, ...next].sort()).toEqual([ORG, second].sort());
+    expect(await reader.armedRules(1, next[0] ?? null)).toEqual([]);
+
+    await pg.owner.query(`DELETE FROM billing_settings WHERE org_id = $1`, [second]);
+    await pg.owner.query(`DELETE FROM orgs WHERE id = $1`, [second]);
+  });
+});

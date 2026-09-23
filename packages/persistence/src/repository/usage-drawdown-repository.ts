@@ -99,6 +99,24 @@ export class UsageDrawdownRepository extends OrgRepository<typeof usageBillingSt
   }
 
   /**
+   * What is owed, with the row locked until the transaction ends.
+   *
+   * For a settlement, which reads the debt to decide how much of a payment clears it. Two
+   * payments reading the same figure at once would each clear all of it, `greatest(0, …)`
+   * would floor the second at zero, and the customer would be granted less credit than they
+   * paid for. The lock makes the second read what the first left.
+   */
+  async lockedDebtCents(): Promise<number> {
+    const rows = await this.tx
+      .select({ debtCents: orgDebts.debtCents })
+      .from(orgDebts)
+      .where(eq(orgDebts.orgId, this.context.orgId))
+      .limit(1)
+      .for("update");
+    return rows[0]?.debtCents ?? 0;
+  }
+
+  /**
    * Adds to the debt, or takes from it, in one statement.
    *
    * `greatest(0, …)` rather than a check the caller makes first: a settlement racing a

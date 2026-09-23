@@ -2,6 +2,7 @@ import type { Logger } from "@idenzy/core/logging/logger";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
 import type { Clock } from "@idenzy/core/time/clock";
 import { SpendTolerance } from "@idenzy/domain/policies/spend-tolerance";
+import { WalletLedger } from "@idenzy/persistence/billing/wallet-ledger";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
 import type { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
@@ -144,25 +145,17 @@ export class UsageDrawdown {
       // five minutes and only moves when somebody new signs in.
       if (owed <= 0) return false;
 
-      // Credit first, and only what is actually there. `draw` is itself a conditional
-      // statement per grant, so a grant being spent by something else cannot be
-      // over-drawn — what comes back is what was really taken.
-      const grants = new CreditGrantRepository(tx, context);
-      let remaining = owed;
-      for (const grant of await grants.spendable(now)) {
-        if (remaining <= 0) break;
-        remaining -= await grants.draw(grant.id, Math.min(remaining, grant.remainingCents));
-      }
-
-      const fromCredit = owed - remaining;
-      if (remaining > 0) await drawdown.adjustDebt(remaining);
+      // Credit first, and only what is actually there; what it cannot cover becomes debt.
+      // The ledger draws each grant in one conditional statement, so a grant being spent by
+      // something else cannot be over-drawn — what comes back is what was really taken.
+      const debited = await new WalletLedger(tx, context).debit(owed, now);
       await drawdown.record({
         period,
         item: BillingLineItem.Mau,
         quantity: mau,
         chargedCents: owed,
-        fromCreditCents: fromCredit,
-        toDebtCents: remaining,
+        fromCreditCents: debited.fromCreditCents,
+        toDebtCents: debited.toDebtCents,
       });
 
       // Last, and inside the same transaction. If this loses the race the whole thing

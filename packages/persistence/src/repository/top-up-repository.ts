@@ -5,7 +5,7 @@ import type {
   TopUpState,
   TopUpTrigger,
 } from "@idenzy/protocol/enums/billing";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { topUps } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -108,6 +108,72 @@ export class TopUpRepository extends OrgRepository<typeof topUps> {
       .where(and(this.orgScope(), inArray(topUps.state, [...IN_FLIGHT])))
       .orderBy(desc(topUps.createdAt));
     return rows.map(toRow);
+  }
+
+  /** One charge, by our own id. */
+  async byId(id: string): Promise<TopUpRow | null> {
+    const rows = await this.tx
+      .select()
+      .from(topUps)
+      .where(and(this.orgScope(), eq(topUps.id, id)))
+      .limit(1);
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /** One charge, by the provider's handle for it. */
+  async byIntent(providerIntentId: string): Promise<TopUpRow | null> {
+    const rows = await this.tx
+      .select()
+      .from(topUps)
+      .where(and(this.orgScope(), eq(topUps.providerIntentId, providerIntentId)))
+      .limit(1);
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /** The automatic charge still open, if there is one. The index allows at most one. */
+  async openAutomatic(): Promise<TopUpRow | null> {
+    const rows = await this.tx
+      .select()
+      .from(topUps)
+      .where(and(this.orgScope(), eq(topUps.trigger, "automatic"), isNull(topUps.settledAt)))
+      .limit(1);
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /**
+   * Automatic charges opened since an instant, whatever became of them.
+   *
+   * Every attempt counts toward the daily limit, declines included, because a decline is what
+   * an issuer's fraud model is counting too.
+   */
+  async automaticAttemptsSince(since: Date): Promise<number> {
+    const rows = await this.tx
+      .select({ total: count() })
+      .from(topUps)
+      .where(and(this.orgScope(), eq(topUps.trigger, "automatic"), gte(topUps.createdAt, since)));
+    return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Records the provider's handle on a charge that has none yet, and answers whether it did.
+   *
+   * For an event that reaches us before the worker that made the charge has written down what
+   * the provider answered: the intent carries our row id as its reference, and this is what
+   * lets that event settle the row instead of finding nothing. `is null` makes it a no-op on
+   * a row that already has a handle, which is what keeps a stale event from re-pointing one.
+   */
+  async attachIfUnset(id: string, providerIntentId: string): Promise<boolean> {
+    const rows = await this.guard(() =>
+      this.tx
+        .update(topUps)
+        .set({ providerIntentId })
+        .where(and(this.orgScope(), eq(topUps.id, id), isNull(topUps.providerIntentId)))
+        .returning({ id: topUps.id }),
+    );
+    return rows.length === 1;
   }
 
   /**

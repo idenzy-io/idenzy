@@ -1,4 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { AUTO_TOP_UP_DAILY_LIMIT } from "@idenzy/protocol/billing/price-list";
+import type { AutoTopUpSuspension } from "@idenzy/protocol/enums/billing";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { billingSettings } from "../schema/billing.js";
 import type { OrgContext } from "../tenancy/org-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -11,6 +13,15 @@ export interface AutoTopUpRow {
   readonly methodId: string | null;
 }
 
+/** What the rule remembers about its own attempts. Written by the rule, never over the wire. */
+export interface AutoTopUpStateRow {
+  readonly dailyLimit: number;
+  readonly failures: number;
+  readonly lastAttemptAt: Date | null;
+  readonly suspendedAt: Date | null;
+  readonly suspendedReason: AutoTopUpSuspension | null;
+}
+
 export interface SpendAlertRow {
   readonly enabled: boolean;
   readonly thresholdCents: number;
@@ -20,6 +31,7 @@ export interface SpendAlertRow {
 export interface BillingSettingsRow {
   readonly currency: string;
   readonly autoTopUp: AutoTopUpRow;
+  readonly autoTopUpState: AutoTopUpStateRow;
   readonly spendAlert: SpendAlertRow;
   readonly updatedBy: string | null;
   readonly updatedAt: Date;
@@ -29,9 +41,43 @@ export interface BillingSettingsRow {
 const DEFAULTS: Omit<BillingSettingsRow, "updatedAt"> = {
   currency: "USD",
   autoTopUp: { enabled: false, thresholdCents: 0, amountCents: 0, methodId: null },
+  autoTopUpState: {
+    dailyLimit: AUTO_TOP_UP_DAILY_LIMIT,
+    failures: 0,
+    lastAttemptAt: null,
+    suspendedAt: null,
+    suspendedReason: null,
+  },
   spendAlert: { enabled: false, thresholdCents: 0, sentForMonth: null },
   updatedBy: null,
 };
+
+function toRow(row: typeof billingSettings.$inferSelect): BillingSettingsRow {
+  return {
+    currency: row.currency,
+    autoTopUp: {
+      enabled: row.autoTopUpEnabled,
+      thresholdCents: row.autoTopUpThresholdCents,
+      amountCents: row.autoTopUpAmountCents,
+      methodId: row.autoTopUpMethodId,
+    },
+    autoTopUpState: {
+      dailyLimit: row.autoTopUpDailyLimit,
+      failures: row.autoTopUpFailures,
+      lastAttemptAt: row.autoTopUpLastAttemptAt,
+      suspendedAt: row.autoTopUpSuspendedAt,
+      // Safe: the column is written only from AutoTopUpSuspension.
+      suspendedReason: row.autoTopUpSuspendedReason as AutoTopUpSuspension | null,
+    },
+    spendAlert: {
+      enabled: row.spendAlertEnabled,
+      thresholdCents: row.spendAlertThresholdCents,
+      sentForMonth: row.spendAlertSentForMonth,
+    },
+    updatedBy: row.updatedBy,
+    updatedAt: row.updatedAt,
+  };
+}
 
 /**
  * The rules an organisation has set about its own money (ADR-0011, PROJECT.md 5.1).
@@ -49,23 +95,70 @@ export class BillingSettingsRepository extends OrgRepository<typeof billingSetti
   async current(): Promise<BillingSettingsRow> {
     const rows = await this.tx.select().from(billingSettings).where(this.orgScope()).limit(1);
     const row = rows[0];
-    if (row === undefined) return { ...DEFAULTS, updatedAt: new Date(0) };
-    return {
-      currency: row.currency,
-      autoTopUp: {
-        enabled: row.autoTopUpEnabled,
-        thresholdCents: row.autoTopUpThresholdCents,
-        amountCents: row.autoTopUpAmountCents,
-        methodId: row.autoTopUpMethodId,
-      },
-      spendAlert: {
-        enabled: row.spendAlertEnabled,
-        thresholdCents: row.spendAlertThresholdCents,
-        sentForMonth: row.spendAlertSentForMonth,
-      },
-      updatedBy: row.updatedBy,
-      updatedAt: row.updatedAt,
-    };
+    return row === undefined ? { ...DEFAULTS, updatedAt: new Date(0) } : toRow(row);
+  }
+
+  /**
+   * The settings, with the row locked until the transaction ends.
+   *
+   * What serialises the automatic rule per organisation. Two workers asking at once both
+   * reach this statement and the second waits for the first to commit — by which time the
+   * charge the first opened is visible, and the second sees it and stands down. Null means no
+   * row, which means the rule was never switched on and there is nothing to lock.
+   */
+  async lockForAutoTopUp(): Promise<BillingSettingsRow | null> {
+    const rows = await this.tx
+      .select()
+      .from(billingSettings)
+      .where(this.orgScope())
+      .limit(1)
+      .for("update");
+    const row = rows[0];
+    return row === undefined ? null : toRow(row);
+  }
+
+  /** Stamps the attempt the rule is about to make. Inside the transaction that opens it. */
+  async recordAutoTopUpAttempt(at: Date): Promise<void> {
+    await this.tx
+      .update(billingSettings)
+      .set({ autoTopUpLastAttemptAt: at })
+      .where(this.orgScope());
+  }
+
+  /** A charge the rule made went through, so the next failure starts counting from one. */
+  async recordAutoTopUpSuccess(): Promise<void> {
+    await this.tx.update(billingSettings).set({ autoTopUpFailures: 0 }).where(this.orgScope());
+  }
+
+  /**
+   * Counts a charge the rule made that did not succeed, and answers the new count.
+   *
+   * In the statement rather than read-then-write, so a webhook and the worker settling the
+   * same organisation's charges cannot both write the same figure.
+   */
+  async recordAutoTopUpFailure(): Promise<number> {
+    const rows = await this.tx
+      .update(billingSettings)
+      .set({ autoTopUpFailures: sql`least(${billingSettings.autoTopUpFailures} + 1, 100)` })
+      .where(this.orgScope())
+      .returning({ failures: billingSettings.autoTopUpFailures });
+    return rows[0]?.failures ?? 0;
+  }
+
+  /**
+   * Stops the rule until a person saves it again, and answers whether this call did.
+   *
+   * The first reason stands. A rule suspended because a card needs authentication and then
+   * disputed is still, first, a card that needs authentication — and the person who clears
+   * it should see what stopped it rather than whatever happened last.
+   */
+  async suspendAutoTopUp(reason: AutoTopUpSuspension, at: Date): Promise<boolean> {
+    const rows = await this.tx
+      .update(billingSettings)
+      .set({ autoTopUpSuspendedAt: at, autoTopUpSuspendedReason: reason })
+      .where(and(this.orgScope(), isNull(billingSettings.autoTopUpSuspendedAt)))
+      .returning({ orgId: billingSettings.orgId });
+    return rows.length === 1;
   }
 
   /**
@@ -73,13 +166,23 @@ export class BillingSettingsRepository extends OrgRepository<typeof billingSetti
    * balance it had just created. `billing_settings_auto_top_up_ck` refuses that pair, so
    * this surfaces as a constraint violation rather than as a charge loop.
    */
-  async setAutoTopUp(setting: AutoTopUpRow, updatedBy: string | null): Promise<void> {
+  async setAutoTopUp(
+    setting: AutoTopUpRow,
+    updatedBy: string | null,
+    options: { readonly clearSuspension: boolean } = { clearSuspension: true },
+  ): Promise<void> {
     await this.upsert(
       {
         autoTopUpEnabled: setting.enabled,
         autoTopUpThresholdCents: setting.thresholdCents,
         autoTopUpAmountCents: setting.amountCents,
         autoTopUpMethodId: setting.methodId,
+        // A person saving the rule is the person clearing whatever stopped it: they have
+        // seen the reason on the screen they saved from, and the count starts again. A side
+        // effect of removing a card is not that, so its caller keeps the suspension.
+        ...(options.clearSuspension
+          ? { autoTopUpSuspendedAt: null, autoTopUpSuspendedReason: null, autoTopUpFailures: 0 }
+          : {}),
       },
       updatedBy,
     );

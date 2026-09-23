@@ -55,9 +55,15 @@ export class CreditGrantRepository extends OrgRepository<typeof creditGrants> {
     super(tx, context, creditGrants);
   }
 
-  /** Unexpired grants with something left, in the order they are drawn down. */
-  async spendable(now: Date): Promise<CreditGrantRow[]> {
-    const rows = await this.tx
+  /**
+   * Unexpired grants with something left, in the order they are drawn down.
+   *
+   * `lock` takes every one of them in that same order before anything is drawn. Two debits
+   * that each locked grants one at a time, in different orders — a refund reaches for its own
+   * purchase first — could each hold what the other wants next.
+   */
+  async spendable(now: Date, options: { readonly lock?: boolean } = {}): Promise<CreditGrantRow[]> {
+    const query = this.tx
       .select()
       .from(creditGrants)
       .where(
@@ -75,7 +81,9 @@ export class CreditGrantRepository extends OrgRepository<typeof creditGrants> {
         sql`case when ${creditGrants.kind} = ${CreditKind.Promotional} then 0 else 1 end`,
         sql`${creditGrants.expiresAt} asc nulls last`,
         asc(creditGrants.grantedAt),
+        asc(creditGrants.id),
       );
+    const rows = options.lock === true ? await query.for("update") : await query;
     return rows.map(toRow);
   }
 

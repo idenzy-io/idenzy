@@ -2,19 +2,14 @@ import { WebhookSignatureInvalidError } from "@idenzy/core/errors";
 import { Logger } from "@idenzy/core/logging/logger";
 import { Clock } from "@idenzy/core/time/clock";
 import { PaymentProvider, type ProviderEvent } from "@idenzy/domain/ports/payment-provider";
-import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
+import { TopUpSettlement } from "@idenzy/persistence/billing/top-up-settlement";
 import { OrgBillingCustomerRepository } from "@idenzy/persistence/repository/org-billing-customer-repository";
 import { PaymentMethodRepository } from "@idenzy/persistence/repository/payment-method-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
 import { TopUpRepository } from "@idenzy/persistence/repository/top-up-repository";
-import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import {
-  CreditKind,
-  PaymentProvider as ProviderName,
-  TopUpState,
-} from "@idenzy/protocol/enums/billing";
+import { PaymentProvider as ProviderName, TopUpState } from "@idenzy/protocol/enums/billing";
 import { Inject, Injectable, Optional } from "@nestjs/common";
 
 /**
@@ -168,10 +163,10 @@ export class PaymentWebhookService {
   /**
    * Settles a charge and, where it succeeded, grants the credit it bought.
    *
-   * One transaction, and the `settled_at is null` predicate inside `settle` is what decides
-   * whether the grant happens at all: a second delivery takes no row, so `settled` is null
-   * and nothing is granted. Purchased credit never expires, which is why `expiresAt` is
-   * null rather than a date nobody chose.
+   * `TopUpSettlement` does the work, because the automatic top-up worker settles charges too
+   * and one of the two will get there first. The `settled_at is null` predicate inside it is
+   * what decides whether anything happens at all: a second delivery takes no row and grants
+   * nothing.
    */
   private async settleIntent(
     context: OrgContext,
@@ -179,38 +174,15 @@ export class PaymentWebhookService {
     state: TopUpState,
     failureCode: string | null,
   ): Promise<void> {
-    const now = this.clock.now();
-    await this.uow.transaction(async (tx) => {
-      const topUps = new TopUpRepository(tx, context);
-      const settled = await topUps.settle(intentId, state, failureCode, now);
-      if (settled === null || state !== TopUpState.Succeeded) return;
-
-      // Debt first, and only what is left becomes spendable (ADR-0014 section 3). Until this
-      // existed `adjustDebt` had one caller in the repository and it only ever added, so debt
-      // was write-only: an organisation $300 down that paid $1,000 got $1,000 to spend and
-      // still owed the $300, which nothing would ever collect. What a customer expects, and
-      // what an accountant expects, is $700.
-      const drawdown = new UsageDrawdownRepository(tx, context);
-      const debt = await drawdown.debtCents();
-      const applied = Math.min(settled.amountCents, debt);
-      if (applied > 0) await drawdown.adjustDebt(-applied);
-      await topUps.recordDebtSettled(settled.id, applied);
-
-      const spendable = settled.amountCents - applied;
-      // A top-up wholly consumed by debt grants nothing, and must not try: `credit_grants`
-      // checks `amount_cents > 0`, so a zero grant would violate the constraint and roll back
-      // a payment the provider has already taken.
-      if (spendable === 0) return;
-
-      await new CreditGrantRepository(tx, context).grant({
-        kind: CreditKind.Purchased,
-        amountCents: spendable,
-        currency: settled.currency,
-        topUpId: settled.id,
-        note: applied === 0 ? "Top-up" : "Top-up, after settling outstanding usage",
-        expiresAt: null,
-      });
-    });
+    const at = this.clock.now();
+    await this.uow.transaction((tx) =>
+      new TopUpSettlement(tx, context).settle({
+        providerIntentId: intentId,
+        state,
+        failureCode,
+        at,
+      }),
+    );
   }
 
   /**

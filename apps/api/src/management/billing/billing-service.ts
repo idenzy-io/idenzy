@@ -220,9 +220,13 @@ export class BillingService {
       const settings = new BillingSettingsRepository(tx, context);
       const current = await settings.current();
       if (left.length === 0 && current.autoTopUp.enabled) {
-        await settings.setAutoTopUp({ ...current.autoTopUp, enabled: false }, null);
+        await settings.setAutoTopUp({ ...current.autoTopUp, enabled: false }, null, {
+          clearSuspension: false,
+        });
       } else if (current.autoTopUp.methodId === id) {
-        await settings.setAutoTopUp({ ...current.autoTopUp, methodId: null }, null);
+        await settings.setAutoTopUp({ ...current.autoTopUp, methodId: null }, null, {
+          clearSuspension: false,
+        });
       }
     });
   }

@@ -1,9 +1,11 @@
+import { AutoTopUpSuspension } from "@idenzy/protocol/enums/billing";
 import { describe, expect, it } from "vitest";
 import {
   AUTO_TOPUP_ISSUE_LABELS,
   type AutoTopUp,
   alertReached,
   autoTopUpEffect,
+  autoTopUpPausedWords,
   type Balance,
   CHECKOUT_STATE_LABELS,
   CHECKOUT_STATE_NOTES,
@@ -656,5 +658,15 @@ describe("the spend alert", () => {
     expect(alertReached({ enabled: true, thresholdCents: 5000 }, 5000)).toBe(true);
     expect(alertReached({ enabled: true, thresholdCents: 5000 }, 4999)).toBe(false);
     expect(alertReached({ enabled: false, thresholdCents: 1 }, 9999)).toBe(false);
+  });
+});
+
+describe("a paused automatic top-up", () => {
+  it("says why and how to resume, for every reason the server can give", () => {
+    for (const reason of Object.values(AutoTopUpSuspension)) {
+      const words = autoTopUpPausedWords(reason);
+      expect(words.startsWith("Paused")).toBe(true);
+      expect(words).toContain("Save the rule again to resume it.");
+    }
   });
 });

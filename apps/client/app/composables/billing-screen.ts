@@ -50,6 +50,7 @@ export function useBillingScreen() {
   const wallet = computed(() => walletOf(grants.value, now.value, store.debtFor(org.value.id)));
   const methods = computed(() => store.methodsFor(org.value.id));
   const autoTopUp = computed(() => store.autoTopUpFor(org.value.id));
+  const autoStatus = computed(() => store.autoTopUpStatusFor(org.value.id));
   const alert = computed(() => store.alertFor(org.value.id));
   const invoices = computed(() => store.invoicesFor(org.value.id));
   const lastSaved = computed(() => store.lastSavedAt(org.value.id));
@@ -233,6 +234,7 @@ export function useBillingScreen() {
     wallet,
     methods,
     autoTopUp,
+    autoStatus,
     alert,
     invoices,
     lastSaved,

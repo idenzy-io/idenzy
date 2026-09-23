@@ -22,6 +22,7 @@ import type { Fact } from "~/components/FactGrid.vue";
 import type { RecordColumn } from "~/components/RecordTable.vue";
 import {
   type AutoTopUp,
+  autoTopUpPausedWords,
   CREDIT_KIND_LABELS,
   CREDIT_KIND_NOTES,
   CREDIT_KIND_TONES,
@@ -71,6 +72,7 @@ const {
   wallet,
   methods,
   autoTopUp,
+  autoStatus,
   alert,
   lastSaved,
   balance,
@@ -149,8 +151,15 @@ const spendQueue = computed(() => drawOrder(grants.value, now.value));
 
 const autoWords = computed(() => {
   const setting = autoTopUp.value;
+  const status = autoStatus.value;
+  /* A paused rule says why before anything else: it reads as protection while it is doing
+     nothing, and the fix is always somebody's to make. */
+  if (setting.enabled && status?.suspendedReason != null) {
+    return autoTopUpPausedWords(status.suspendedReason);
+  }
   if (setting.enabled && autoMethod.value) {
-    return `Adds ${formatCents(setting.amountCents)} when the balance falls under ${formatCents(setting.thresholdCents)}, charged to ${cardLabel(autoMethod.value).toLowerCase()}. ${topUpEveryWords(setting.amountCents, balance.value.projectedMonthCents)}`;
+    const limit = status === null ? "" : ` At most ${status.dailyLimit} automatic charges a day.`;
+    return `Adds ${formatCents(setting.amountCents)} when the balance falls under ${formatCents(setting.thresholdCents)}, charged to ${cardLabel(autoMethod.value).toLowerCase()}. ${topUpEveryWords(setting.amountCents, balance.value.projectedMonthCents)}${limit}`;
   }
   return `Would add ${formatCents(setting.amountCents)} when the balance falls under ${formatCents(setting.thresholdCents)}. Off, a balance that runs out stops SMS and leaves the rest owing.`;
 });

@@ -28,6 +28,7 @@ import type {
   PaymentMethod as ApiPaymentMethod,
   SpendAlert as ApiSpendAlert,
   Wallet as ApiWallet,
+  AutoTopUpStatus,
   HostedCheckout,
   InvoiceList,
 } from "@idenzy/protocol/schemas/billing";
@@ -185,6 +186,11 @@ export const useBillingStore = defineStore("billing", () => {
   function autoTopUpFor(orgId: string): AutoTopUp {
     const rule = walletOfOrg(orgId)?.autoTopUp;
     return rule === undefined ? { ...AUTO_TOPUP_DEFAULT } : { ...rule };
+  }
+
+  /** What the rule has been doing. Null until the wallet has loaded, or from an older API. */
+  function autoTopUpStatusFor(orgId: string): AutoTopUpStatus | null {
+    return walletOfOrg(orgId)?.autoTopUpStatus ?? null;
   }
 
   function alertFor(orgId: string): SpendAlert {
@@ -361,6 +367,7 @@ export const useBillingStore = defineStore("billing", () => {
     methodsFor,
     defaultMethodFor,
     autoTopUpFor,
+    autoTopUpStatusFor,
     alertFor,
     checkoutFor,
     invoicesFor,

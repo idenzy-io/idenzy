@@ -28,6 +28,8 @@
  * can be shown and all that is worth storing.
  */
 
+import type { AutoTopUpSuspension } from "@idenzy/protocol/enums/billing";
+
 /*
  * Whether a charge can happen at all.
  */
@@ -449,6 +451,32 @@ export function topUpEveryWords(amountCents: number, projectedMonthCents: number
   if (days > 365) return "That would last more than a year at this month's rate.";
   const whole = Math.round(days);
   return `About once every ${whole} ${whole === 1 ? "day" : "days"} at this month's rate.`;
+}
+
+/**
+ * Why the automatic rule stopped itself, and what to do about it, in one sentence.
+ *
+ * Every reason is a case where charging again could not help or would do harm, so the fix is
+ * always a person's: a different card, a word with the bank, or a look at a dispute. Saving
+ * the rule is what resumes it, and the sentence says so because nothing else on the screen
+ * would.
+ */
+export function autoTopUpPausedWords(reason: AutoTopUpSuspension): string {
+  const resume = "Save the rule again to resume it.";
+  switch (reason) {
+    case "authentication_required":
+      return `Paused: the bank wants the cardholder to approve each charge, which cannot happen unattended. Add credit by hand once, or use another card. ${resume}`;
+    case "repeated_failure":
+      return `Paused after three declines in a row, so the card is not tried again unattended. Check the card or choose another. ${resume}`;
+    case "no_payment_method":
+      return `Paused: there is no card it can charge, or the card has expired. Add or choose a card. ${resume}`;
+    case "dispute":
+      return `Paused because a charge on this account is disputed with the bank. ${resume}`;
+    case "fraud_review":
+      return `Paused because a payment was flagged in a fraud review. ${resume}`;
+    case "refunded":
+      return `Paused because a top-up was refunded, so the card is not charged straight back. ${resume}`;
+  }
 }
 
 /**

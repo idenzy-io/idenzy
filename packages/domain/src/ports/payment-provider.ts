@@ -45,6 +45,20 @@ export interface OffSessionCharge {
   readonly amountCents: number;
   readonly currency: string;
   readonly reference: string;
+  /**
+   * Sent with the request so that asking twice charges once.
+   *
+   * Derived from our own row and never random: a worker that crashed after the provider
+   * charged the card and before it wrote down the answer asks again with the same key, and is
+   * handed the first charge back instead of making a second.
+   */
+  readonly idempotencyKey: string;
+}
+
+/** Whose charge an intent is, read from what we stamped on it when we made it. */
+export interface ChargeOwner {
+  readonly orgId: string;
+  readonly reference: string | null;
 }
 
 /** What a charge came back as, in our vocabulary rather than the provider's. */
@@ -122,6 +136,27 @@ export abstract class PaymentProvider {
    * rule could not fire and a person has to be told rather than retried at.
    */
   abstract chargeOffSession(charge: OffSessionCharge): Promise<ChargeOutcome>;
+
+  /** Where a charge has got, asked of the provider rather than waited for on a webhook. */
+  abstract chargeStatus(providerIntentId: string): Promise<ChargeOutcome>;
+
+  /**
+   * The charge made under one of our references, if the provider has one.
+   *
+   * For a charge whose answer we never wrote down and can no longer replay: an idempotency key
+   * is honoured for a day, and after that the only way to learn whether a card was charged is
+   * to search for the reference we stamped on it.
+   */
+  abstract findCharge(reference: string): Promise<ChargeOutcome | null>;
+
+  /**
+   * Whose charge this is, for an event that does not say.
+   *
+   * A refund, a dispute and a fraud review each name the intent they concern and carry none
+   * of our metadata, so the only trusted way from one of them to an organisation is to ask the
+   * provider for the intent and read what we stamped on it. Null for an intent we did not make.
+   */
+  abstract chargeOwner(providerIntentId: string): Promise<ChargeOwner | null>;
 
   /**
    * Verifies a webhook's signature and returns what it says.

@@ -1,20 +1,12 @@
 import { SystemClock } from "@idenzy/core/time/clock";
-import type {
-  BillingCustomer,
-  ChargeOutcome,
-  CheckoutRequest,
-  HostedCheckout,
-  OffSessionCharge,
-  ProviderCard,
-  ProviderEvent,
-} from "@idenzy/domain/ports/payment-provider";
-import { PaymentProvider } from "@idenzy/domain/ports/payment-provider";
+import type { ProviderEvent } from "@idenzy/domain/ports/payment-provider";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { PaymentProviderEventRepository } from "@idenzy/persistence/repository/payment-provider-event-repository";
 import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
-import { CardBrand, TopUpState } from "@idenzy/protocol/enums/billing";
+import { CardBrand } from "@idenzy/protocol/enums/billing";
+import { FakePaymentProvider } from "@idenzy/testing/fake-payment-provider";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // From `dist`, like every other app test: Rolldown does not apply the decorator semantics
@@ -51,51 +43,7 @@ const context = new OrgContext(ORG, "req_billing", "customer_staff", MEMBER);
    here would be written into a uuid column. */
 const actingMember = MEMBER;
 
-/** Answers like a provider and records what it was asked, so an ordering can be asserted. */
-class FakeProvider extends PaymentProvider {
-  override readonly id = "stripe";
-  readonly detached: string[] = [];
-  cards: ProviderCard[] = [];
-
-  override ensureCustomer(orgId: string): Promise<BillingCustomer> {
-    return Promise.resolve({ providerCustomerId: `cus_${orgId.slice(0, 8)}` });
-  }
-  override startCheckout(request: CheckoutRequest): Promise<HostedCheckout> {
-    return Promise.resolve({
-      providerSessionId: `cs_${request.reference.slice(0, 8)}`,
-      url: "https://checkout.test/pay",
-    });
-  }
-  override startCardSetup(request: CheckoutRequest): Promise<HostedCheckout> {
-    return Promise.resolve({
-      providerSessionId: `cs_setup_${request.orgId.slice(0, 8)}`,
-      url: "https://checkout.test/save",
-    });
-  }
-  override listCards(): Promise<readonly ProviderCard[]> {
-    return Promise.resolve(this.cards);
-  }
-  override removeCard(providerMethodId: string): Promise<void> {
-    this.detached.push(providerMethodId);
-    this.cards = this.cards.filter((card) => card.providerMethodId !== providerMethodId);
-    return Promise.resolve();
-  }
-  override chargeOffSession(_charge: OffSessionCharge): Promise<ChargeOutcome> {
-    return Promise.resolve({
-      providerIntentId: "pi_auto",
-      state: TopUpState.Succeeded,
-      failureCode: null,
-      card: null,
-    });
-  }
-  override readEvent(rawBody: string): ProviderEvent {
-    // The fake does no signature check; what it must not do is invent the stamps, since
-    // the whole point of them is that they came back from the provider unchanged.
-    return JSON.parse(rawBody) as ProviderEvent;
-  }
-}
-
-const provider = new FakeProvider();
+const provider = new FakePaymentProvider();
 
 function event(
   type: string,

@@ -1,6 +1,7 @@
 import {
   type BillingCustomer,
   type ChargeOutcome,
+  type ChargeOwner,
   type CheckoutRequest,
   type HostedCheckout,
   type OffSessionCharge,
@@ -159,21 +160,21 @@ export class StripePaymentProvider extends PaymentProvider {
    */
   override async chargeOffSession(charge: OffSessionCharge): Promise<ChargeOutcome> {
     try {
-      const intent = await this.stripe.paymentIntents.create({
-        amount: charge.amountCents,
-        currency: charge.currency.toLowerCase(),
-        customer: charge.providerCustomerId,
-        payment_method: charge.providerMethodId,
-        off_session: true,
-        confirm: true,
-        metadata: { [REFERENCE]: charge.reference, [ORG]: charge.orgId },
-      });
-      return {
-        providerIntentId: intent.id,
-        state: stateOf(intent.status),
-        failureCode: intent.last_payment_error?.code ?? null,
-        card: null,
-      };
+      const intent = await this.stripe.paymentIntents.create(
+        {
+          amount: charge.amountCents,
+          currency: charge.currency.toLowerCase(),
+          customer: charge.providerCustomerId,
+          payment_method: charge.providerMethodId,
+          off_session: true,
+          confirm: true,
+          metadata: { [REFERENCE]: charge.reference, [ORG]: charge.orgId },
+        },
+        // Stripe replays the first response for a key it has seen in the last day, declines
+        // included, so a worker that asks again after a crash gets the original charge back.
+        { idempotencyKey: charge.idempotencyKey },
+      );
+      return outcomeOf(intent);
     } catch (error: unknown) {
       // A refused card arrives as a thrown `StripeCardError` carrying the intent it was
       // refusing, not as a returned status. Reading the intent back off the error is what
@@ -187,8 +188,46 @@ export class StripePaymentProvider extends PaymentProvider {
           card: null,
         };
       }
+      // A request Stripe refused as malformed charged nothing — a card detached since we
+      // listed it, a currency the card cannot take — and asking again will be refused again.
+      // Anything else (a timeout, a 5xx, a rate limit) is unknown: the charge may have gone
+      // through, so it propagates and the caller retries under the same idempotency key.
+      if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+        const intent = error.payment_intent;
+        return {
+          providerIntentId: intent?.id ?? "",
+          state: intent === undefined ? TopUpState.Failed : stateOf(intent.status),
+          failureCode: error.code ?? "invalid_request",
+          card: null,
+        };
+      }
       throw error;
     }
+  }
+
+  override async chargeStatus(providerIntentId: string): Promise<ChargeOutcome> {
+    return outcomeOf(await this.stripe.paymentIntents.retrieve(providerIntentId));
+  }
+
+  /**
+   * Stripe's search over metadata. Eventually consistent — an intent can take about a minute to
+   * appear — which is fine for the only caller, a sweep over charges a day old.
+   */
+  override async findCharge(reference: string): Promise<ChargeOutcome | null> {
+    const found = await this.stripe.paymentIntents.search({
+      query: `metadata['${REFERENCE}']:'${reference}'`,
+      limit: 1,
+    });
+    const intent = found.data[0];
+    return intent === undefined ? null : outcomeOf(intent);
+  }
+
+  override async chargeOwner(providerIntentId: string): Promise<ChargeOwner | null> {
+    const intent = await this.stripe.paymentIntents.retrieve(providerIntentId);
+    const org = intent.metadata[ORG];
+    if (typeof org !== "string" || org.length === 0) return null;
+    const reference = intent.metadata[REFERENCE];
+    return { orgId: org, reference: typeof reference === "string" ? reference : null };
   }
 
   /**
@@ -258,6 +297,16 @@ function brandOf(brand: string): CardBrand {
     default:
       return CardBrand.Other;
   }
+}
+
+/** An intent, in our vocabulary. The card is filled in by the webhook, not here. */
+function outcomeOf(intent: Stripe.PaymentIntent): ChargeOutcome {
+  return {
+    providerIntentId: intent.id,
+    state: stateOf(intent.status),
+    failureCode: intent.last_payment_error?.code ?? null,
+    card: null,
+  };
 }
 
 /**

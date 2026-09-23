@@ -1,6 +1,7 @@
 import { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import { createValkeyClient, type ValkeyClient } from "@idenzy/cache/connection/client";
 import { DueSet } from "@idenzy/cache/due-set";
+import { LiveUsageSketches } from "@idenzy/cache/live-usage-sketches";
 import { RateLimitStrategy } from "@idenzy/cache/rate-limit-strategy";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
 import { SlidingWindowStrategy } from "@idenzy/cache/sliding-window-strategy";
@@ -109,8 +110,14 @@ export class ValkeyLifecycle implements OnApplicationShutdown {
           },
         ),
     },
+    {
+      // Each instance's view of every project's month, for the live balance (ADR-0017).
+      provide: LiveUsageSketches,
+      inject: [VALKEY],
+      useFactory: (valkey: ValkeyClient): LiveUsageSketches => new LiveUsageSketches(valkey),
+    },
     ValkeyLifecycle,
   ],
-  exports: [VALKEY, RevocationSet, RateLimitStrategy, BillingSignals],
+  exports: [VALKEY, RevocationSet, RateLimitStrategy, BillingSignals, LiveUsageSketches],
 })
 export class CacheModule {}

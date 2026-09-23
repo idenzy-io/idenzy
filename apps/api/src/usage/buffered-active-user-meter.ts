@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { LiveUsageSketches } from "@idenzy/cache/live-usage-sketches";
 import { AppConfig } from "@idenzy/config/app-config";
 import { Logger } from "@idenzy/core/logging/logger";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
@@ -17,6 +19,34 @@ import {
 function utcDay(at: Date): string {
   return at.toISOString().slice(0, 10);
 }
+
+/** The first day of the month before `period`. */
+function previousMonth(period: string): string {
+  const start = new Date(`${period}T00:00:00.000Z`);
+  return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** The month a day falls in, as the first day's `YYYY-MM-DD`: the period the ledger prices. */
+function monthOf(day: string): string {
+  return `${day.slice(0, 7)}-01`;
+}
+
+/** One project's month, as this instance has seen it, for the live balance. */
+interface MonthView {
+  readonly projectId: string;
+  readonly period: string;
+  readonly sketch: HyperLogLog;
+  /** Whether anything has been added since the last publish that succeeded. */
+  dirty: boolean;
+}
+
+/**
+ * Five seconds: the cadence the live balance is computed at. A publish is one hash field
+ * overwritten in Valkey, only for a month that gained somebody, and nothing in Postgres.
+ */
+const LIVE_PUBLISH_MS = 5_000;
 
 /** One project's day, as this instance has seen it so far. */
 interface DayBuffer {
@@ -59,8 +89,12 @@ export class BufferedActiveUserMeter
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly buffers = new Map<string, DayBuffer>();
+  private readonly months = new Map<string, MonthView>();
   private readonly intervalMs: number;
+  /** This process's field in each live hash. A restart starts a fresh one; the old one expires. */
+  private readonly instanceId = randomUUID();
   private timer: NodeJS.Timeout | null = null;
+  private liveTimer: NodeJS.Timeout | null = null;
 
   constructor(
     clock: Clock,
@@ -68,11 +102,13 @@ export class BufferedActiveUserMeter
     private readonly logger: Logger,
     config: AppConfig,
     /**
-     * Told after a flush that wrote something, so the organisation's month is repriced within a
-     * tick rather than on the drawdown's five-minute pass (ADR-0017). A hint and never a record:
-     * it cannot fail the flush, and a lost one only waits for the pass.
+     * Told after each live publish, so the organisation's live balance is recomputed within a
+     * tick (ADR-0017). A hint and never a record: it cannot fail anything, and a lost one only
+     * waits for the next publish or the drawdown's own pass.
      */
     private readonly signals: BillingSignals,
+    /** Where this instance's view of each month goes every five seconds. */
+    private readonly live: LiveUsageSketches,
   ) {
     super(clock);
     this.intervalMs = config.get("USAGE_FLUSH_INTERVAL_SECONDS") * 1000;
@@ -85,11 +121,16 @@ export class BufferedActiveUserMeter
     // Nothing here should hold the process open: a worker with an empty buffer has no reason
     // to keep a service alive past the last request.
     this.timer.unref();
+    this.liveTimer = setInterval(() => {
+      void this.publishLive();
+    }, LIVE_PUBLISH_MS);
+    this.liveTimer.unref();
   }
 
   /** The last flush, and the only one that is not optional: after this the buffer is gone. */
   async onApplicationShutdown(): Promise<void> {
     if (this.timer !== null) clearInterval(this.timer);
+    if (this.liveTimer !== null) clearInterval(this.liveTimer);
     for (const buffer of this.buffers.values()) {
       if (buffer.dirty) await this.flush(buffer);
     }
@@ -108,6 +149,7 @@ export class BufferedActiveUserMeter
     // minutes for a day reaches the database once.
     if (!buffer.sketch.add(userId)) return;
     buffer.dirty = true;
+    this.monthOf(projectId, day, userId);
     if (at.getTime() >= buffer.dueAt) await this.flush(buffer);
   }
 
@@ -136,9 +178,51 @@ export class BufferedActiveUserMeter
         outcome: "deferred",
         errorCode: error instanceof Error ? error.name : "unknown",
       });
-      return;
     }
-    await this.signals.usageMoved(buffer.projectId);
+  }
+
+  /** Adds somebody to this instance's view of the month, and marks it for the next publish. */
+  private monthOf(projectId: string, day: string, userId: string): void {
+    const period = monthOf(day);
+    const key = `${projectId}:${period}`;
+    let month = this.months.get(key);
+    if (month === undefined) {
+      month = { projectId, period, sketch: HyperLogLog.empty(), dirty: false };
+      this.months.set(key, month);
+    }
+    if (month.sketch.add(userId)) month.dirty = true;
+  }
+
+  /**
+   * Publishes every month that gained somebody since the last publish, and never rethrows.
+   *
+   * Valkey is a hint here: a publish that fails keeps the month dirty for the next one, and the
+   * ledger prices Postgres whatever happened. Months before the previous one are let go, because
+   * nothing prices them live any more.
+   */
+  async publishLive(): Promise<void> {
+    const oldest = previousMonth(monthOf(utcDay(this.clock.now())));
+    for (const [key, month] of [...this.months]) {
+      if (month.period < oldest) {
+        this.months.delete(key);
+        continue;
+      }
+      if (!month.dirty) continue;
+      month.dirty = false;
+      try {
+        await this.live.publish(month.projectId, month.period, this.instanceId, month.sketch);
+      } catch (error) {
+        month.dirty = true;
+        this.logger.warn("live usage not published", {
+          projectId: month.projectId,
+          component: "usage",
+          outcome: "deferred",
+          errorCode: error instanceof Error ? error.name : "unknown",
+        });
+        continue;
+      }
+      await this.signals.usageMoved(month.projectId);
+    }
   }
 
   /** The backstop, and where a day that is over is written one last time and let go. */

@@ -399,6 +399,40 @@ describe("keeping one organisation out of another's wallet", () => {
   });
 });
 
+describe("the month that just ended", () => {
+  const at = (iso: string): UsageDrawdown =>
+    new UsageDrawdown(
+      uow,
+      new OrgUsageActivityReader(harness.db),
+      new FixedClock(new Date(iso)),
+      new SilentLogger(),
+    );
+
+  /**
+   * Usage flushed after the last pass before midnight used to be free: the drawdown only ever
+   * priced the current month, and at 00:00 on the 1st the current month changed under it.
+   */
+  it("charges usage from the last hours of the month on the 1st", async () => {
+    await seedUsage(PROJECT_A, "2026-03-31", sketchOf(80_000));
+    await grant(1_000_000);
+
+    expect(await at("2026-04-01T03:00:00Z").runOnce()).toBe(1);
+    const after = await wallet();
+    expect(after.billed).toBe(mauCents(sketchOf(80_000).count));
+  });
+
+  it("leaves the month alone once the grace is over", async () => {
+    await seedUsage(PROJECT_A, "2026-03-31", sketchOf(60_000));
+    await grant(1_000_000);
+    await at("2026-04-01T03:00:00Z").runOnce();
+    const settled = await wallet();
+
+    await seedUsage(PROJECT_A, "2026-03-30", sketchOf(60_000, 7_000_000));
+    await at("2026-04-05T03:00:00Z").runOnce();
+    expect((await wallet()).billed).toBe(settled.billed);
+  });
+});
+
 describe("reaching every organisation", () => {
   /**
    * A page of one, so the second organisation by id is on the second page. The pass used to read

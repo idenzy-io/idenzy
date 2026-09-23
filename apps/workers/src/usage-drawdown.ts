@@ -51,6 +51,27 @@ function monthStart(at: Date): string {
   return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)).toISOString().slice(0, 10);
 }
 
+/**
+ * How long into a month the previous one is still repriced.
+ *
+ * A meter holds active users in memory and flushes on an interval, and the period closer waits
+ * six hours past the month end for exactly that reason. Until this existed the drawdown only ever
+ * priced the current month, so whatever was flushed after its last pass before midnight on the
+ * 1st was never charged at all. Three days covers the closer's grace with a wide margin: once a
+ * month is closed its days carry the frozen `mau_to_date`, which is what repricing then reads,
+ * and the watermark makes every repricing after the final one charge nothing.
+ */
+const PREVIOUS_MONTH_GRACE_MS = 3 * DAY_MS;
+
+/** The periods still being billed at `now`, oldest first: last month during the grace, then this one. */
+function openPeriods(now: Date): readonly string[] {
+  const current = monthStart(now);
+  const start = new Date(`${current}T00:00:00.000Z`);
+  if (now.getTime() - start.getTime() >= PREVIOUS_MONTH_GRACE_MS) return [current];
+  const previous = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
+  return [previous.toISOString().slice(0, 10), current];
+}
+
 /** The last day of the month beginning at `period`. */
 function monthEnd(period: string): string {
   const start = new Date(`${period}T00:00:00.000Z`);
@@ -114,7 +135,9 @@ export class UsageDrawdown {
     // compute zero twice — safe, and wasted.
     if (this.running) return 0;
     this.running = true;
-    const period = monthStart(this.clock.now());
+    // From the oldest period still being billed, so an organisation active only last month is
+    // still found while last month is being finished.
+    const since = openPeriods(this.clock.now())[0] ?? monthStart(this.clock.now());
     const page = this.options.orgsPerPass ?? DEFAULT_ORGS;
     let charged = 0;
     let after: string | null = null;
@@ -122,7 +145,7 @@ export class UsageDrawdown {
       // Every page. The first alone never reached the 201st organisation by id, which was then
       // never charged by this pass at all.
       for (;;) {
-        const orgs: readonly string[] = await this.activity.withActivity(period, page, after);
+        const orgs: readonly string[] = await this.activity.withActivity(since, page, after);
         charged += await this.runFor(orgs);
         const last = orgs.at(-1);
         if (orgs.length < page || last === undefined) break;
@@ -151,12 +174,17 @@ export class UsageDrawdown {
    */
   async runFor(orgs: readonly string[]): Promise<number> {
     const now = this.clock.now();
-    const period = monthStart(now);
+    const periods = openPeriods(now);
 
     let charged = 0;
     for (const orgId of orgs) {
       try {
-        if (await this.chargeOne(orgId, period, now)) {
+        let moved = false;
+        // Oldest first, so last month's final figure is settled before this month's first.
+        for (const period of periods) {
+          if (await this.chargeOne(orgId, period, now)) moved = true;
+        }
+        if (moved) {
           charged += 1;
           // The balance just fell, which is the moment the automatic top-up exists for.
           await this.signals.walletMoved(orgId);

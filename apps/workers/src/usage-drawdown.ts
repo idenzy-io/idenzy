@@ -109,9 +109,20 @@ export class UsageDrawdown {
   /** One pass. Returns how many organisations were charged something. */
   async runOnce(): Promise<number> {
     const period = monthStart(this.clock.now());
-    return await this.runFor(
-      await this.activity.withActivity(period, this.options.orgsPerPass ?? DEFAULT_ORGS),
-    );
+    let orgs: readonly string[];
+    try {
+      orgs = await this.activity.withActivity(period, this.options.orgsPerPass ?? DEFAULT_ORGS);
+    } catch (cause: unknown) {
+      // This runs on a timer through `void`, so a rejection here would have nobody to catch it
+      // and would take the worker down. Nothing is lost by skipping a pass.
+      this.logger.error("usage drawdown pass skipped", {
+        component: "billing",
+        outcome: "deferred",
+        errorName: cause instanceof Error ? cause.name : "unknown",
+      });
+      return 0;
+    }
+    return await this.runFor(orgs);
   }
 
   /**

@@ -191,3 +191,29 @@ describe("a worker that died mid-batch", () => {
     expect(pass.inserted).toBe(1);
   });
 });
+
+describe("a stream command that fails on the timer", () => {
+  /**
+   * Found by the billing tick's end-to-end run: one Valkey command past its 250ms timeout
+   * rejected out of `sweep`, the interval dropped it with `void`, and the rejection with nobody
+   * listening took the whole worker process down.
+   */
+  it("is logged, and is not left for the process to die of", async () => {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", listener);
+    const worker = workerWith({ idleMs: 5 });
+    // The first sweep is awaited by `start` and fails the boot, which is right; it is every one
+    // after it, on the timer, that had nobody to hand a failure to.
+    await worker.start("c1");
+    streams.xreadgroup = () => Promise.reject(new Error("Command timed out"));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    worker.close();
+    process.off("unhandledRejection", listener);
+
+    expect(unhandled).toEqual([]);
+    expect(logger.lines.some((line) => line.message === "analytics ingest deferred")).toBe(true);
+  });
+});

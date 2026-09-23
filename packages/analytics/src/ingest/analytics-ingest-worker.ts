@@ -107,7 +107,16 @@ export class AnalyticsIngestWorker {
   async start(consumer: string): Promise<void> {
     await this.sweep(consumer);
     this.timer = setInterval(() => {
-      void this.sweep(consumer);
+      // Caught here and not only inside: `sweep` rethrows what its stream commands throw, and a
+      // rejection with nobody listening takes the whole worker process down — every sweeper
+      // and the billing tick with it — over one Valkey command that took longer than 250ms.
+      this.sweep(consumer).catch((cause: unknown) => {
+        this.logger.warn("analytics ingest deferred", {
+          component: "analytics",
+          outcome: "deferred",
+          errorName: cause instanceof Error ? cause.name : "unknown",
+        });
+      });
     }, this.options.idleMs ?? DEFAULT_IDLE_MS);
     this.timer.unref();
   }

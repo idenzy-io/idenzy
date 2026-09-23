@@ -1336,6 +1336,25 @@ template pipeline of its own rather than a branch in the OTP flow.
       which projects' usage moved, which wallets did — drained every five seconds, so a month
       is repriced within about a minute and the rule looks within a tick of a charge, but no
       amount ever travels through it. Verified against Stripe test mode end to end.
+- [x] **The balance is live, and the ledger is not written every tick** (ADR-0017 amendment).
+      The API publishes month sketches to Valkey every five seconds and the worker turns them
+      into `billing:live:{org}`; `usage_charges` gains at most one row per organisation per
+      five minutes. `/v1/me` carries each organisation's figure, read on the visit — no SSE,
+      no polling. The drawdown also finishes the previous month now, which it never did.
+- [x] **Selected organisations are invoiced monthly in arrears** (ADR-0019): Stripe Invoicing,
+      net 14 by default and per organisation, drafted in Postgres before Stripe hears of it,
+      overdue flagged and never acted on automatically.
+- [x] **Idenzy staff exist** (ADR-0018): a `staff` table the application cannot write, managed
+      with `pnpm staff`, Google sign-in restricted to the idenzy.io Workspace by `hd`, and an
+      operator console (`apps/admin`) for organisation billing and overdue invoices.
+- [ ] Sign into the operator console end to end: needs a Google OAuth client for the operator
+      project (`OPERATOR_GOOGLE_CLIENT_ID`/`SECRET`) and an idenzy.io Workspace account.
+      Covered by integration tests until then.
+- [ ] Tax on invoices (ADR-0019 section 6, risks.md open decision 8). Stripe Tax is the likely
+      answer; `customer.tax_id.*`, `tax.settings.updated` and `tax_rate.*` are acknowledged
+      and not acted on until it is decided.
+- [ ] Email the invoice contact before an invoice falls overdue, and staff when it does. Waits on
+      SES, like the rest of risks.md 4.
 - [ ] Charge SMS, WhatsApp and email to the wallet, not only MAU. Blocked on the rates in the
       price list being real rather than placeholders (risks.md open decision 5). The shape is
       the drawdown's: a watermark per meter per month, repriced from `usage_daily`'s counters,

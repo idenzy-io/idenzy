@@ -337,7 +337,10 @@ existed and no code had ever written a row. Five rules.
 The wallet, the automatic top-up, and the payment webhook. Read
 [ADR-0014](../adr/0014-usage-is-drawn-from-a-prepaid-wallet-by-repricing-the-month.md) for how
 money leaves and [ADR-0017](../adr/0017-automatic-top-up-and-billing-signals.md) for how it
-comes back in on its own; risks.md 1 to 7 is what is still exposed.
+comes back in on its own, including its amendment on the live figure;
+[ADR-0019](../adr/0019-selected-organisations-are-invoiced-in-arrears.md) for organisations billed
+in arrears; and [ADR-0018](../adr/0018-operators-are-staff-rows-signed-in-with-google.md) for
+the staff who choose them. risks.md 1 to 7 is what is still exposed.
 
 - **Every movement of a wallet goes through `WalletLedger`.** Debit is credit first, then debt;
   credit is debt first, then spendable. The drawdown, a settlement, a refund and a dispute all
@@ -373,12 +376,34 @@ comes back in on its own; risks.md 1 to 7 is what is still exposed.
 - **A webhook handler that throws answers 500 on purpose**, so Stripe retries; a redelivery of an
   unfinished event is handled again. So every handler must be idempotent by its own predicates.
   An event type we do not act on answers 200 and is stored.
+- **The live figure and the ledger are different writes on different clocks.** `LiveBalance`
+  writes Valkey every five seconds; the drawdown writes `usage_charges` at most every five minutes
+  per organisation. Do not shorten the second to make a number look fresher: the page already
+  reads the first. Every term of the live figure has to be rebuildable from Postgres and the
+  sketches — a field that exists only in `billing:live:*` is money a restart deletes.
+- **The balance reaches the page on `/v1/me`, read once per visit.** No SSE, no WebSocket, no
+  polling timer; that is a product decision, not a gap. `OrgBalanceReader` falls back from the
+  live figure to the ledger snapshot to Postgres, and a Valkey error is a fallback, never a 500.
+- **Every path that touches money asks the billing mode.** An invoiced organisation is skipped by
+  the drawdown and the automatic rule, and the spend gate stays open for it. A new path that
+  charges, stops or tops up must do the same, and say so in a test.
+- **An invoice is drafted in Postgres before Stripe hears of it**, and the watermark moves in the
+  same transaction. Issuing searches Stripe for our reference before creating anything. An
+  invoice's status only moves forward, from the states each event names — keep the `from` lists
+  when adding an event.
+- **Operator routes are `/v1/operator/*` behind `@RequireStaff`.** The application cannot write
+  `staff`; staff are added with `pnpm staff add <email> <role>`. An operator write records an
+  `operator_actions` row in its own transaction, with a reason when it changes how a customer is
+  billed.
 - **Trying it for real**: `stripe listen --events <list> --forward-to localhost:<port>/v1/payments/stripe/webhook`
   signs with the CLI's own secret (`stripe listen --print-secret`), not the one in `.env`, so run
   a second API on another port with `API_PORT` and `STRIPE_WEBHOOK_SECRET` in the environment
   rather than editing `.env`. Useful test cards: `pm_card_visa`, `pm_card_chargeCustomerFail`
   (attaches, then declines), `pm_card_authenticationRequired`, `pm_card_createDispute`, and a
-  dispute is won by updating its evidence with `uncategorized_text=winning_evidence`.
+  dispute is won by updating its evidence with `uncategorized_text=winning_evidence`. For
+  invoices, add `invoice.*` and `customer.*` to the event list; an invoice sent with
+  `send_invoice` is paid from its hosted page with test card 4242, or with
+  `stripe invoices pay <id> --paid-out-of-band`.
 
 ## Working on metering
 

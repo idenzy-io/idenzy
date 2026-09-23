@@ -56,6 +56,9 @@ settings save must not fail over a hint.
 
 ### 2. A five-second tick, and repricing at most once a minute per organisation
 
+*Superseded in part by the amendment below: the ledger is now written at most every five
+minutes, and a live figure is computed every five seconds instead.*
+
 `BillingSignalConsumer` drains both sets every five seconds. Usage marks are resolved to
 organisations and repriced through the drawdown's existing `runFor`, gated by a Valkey
 `SET NX PX` so an organisation is repriced at most once a minute across every worker —
@@ -145,3 +148,40 @@ that safe.
   a repricing change in the drawdown. Deferred until the rates stop being placeholders.
 - Nobody is emailed when the rule charges, fails, or suspends itself. The panel says so; the
   email is risks.md 4 and waits on SES.
+
+## Amendments
+
+**A live figure every five seconds, and the ledger every five minutes.** Repricing on every
+tick wrote a `usage_charges` row per active organisation per tick, which is up to 8.6 million
+rows a day at the volume we plan for. That is the wrong price for a number that is mostly read by
+a person opening a page. The two are now separate:
+
+- The API meter publishes each instance's month sketch per project to
+  `usage:live:{project}:{period}` every five seconds. The Postgres flush stays at sixty seconds.
+- On the usage marks, `LiveBalance` unions those sketches with the month's base from Postgres,
+  which it caches in worker memory. It prices the result and writes
+  `billing:live:{org} = {mode, balanceCents, pendingCents, asOf}` with a ten-minute TTL:
+  - `live = ledger balance − pending`;
+  - `pending = max(0, mauCents(month MAU) − billed_cents)`.
+- The ledger figure comes from a Valkey snapshot, `billing:ledger:{org}`. It is refreshed when the
+  wallet moves or when it is five minutes old, so Postgres is read when the ledger changes, not on
+  every tick.
+- The drawdown writes the ledger at most once every five minutes per organisation
+  (`SpacingGate`): at most 288 rows per organisation per day, with the same watermark as before.
+- The automatic rule decides on the live figure, so it still reacts within seconds of the usage
+  that ran the wallet low.
+
+**Valkey still carries no money.** Every term of the live figure can be rebuilt from Postgres
+and the sketches. The published sketches are copies of what the API flushes to Postgres
+anyway, so losing Valkey loses no usage. The figure shown falls back to the ledger, at most five
+minutes behind.
+
+**The balance is read when the page is opened, not pushed.** `GET /v1/me`, which the panel
+already loads on every visit, carries each organisation's figure for owners and admins. It reads
+the live figure, falling back to the ledger snapshot and then to Postgres (`OrgBalanceReader`).
+There is no SSE, no WebSocket and no polling timer. A person who wants a newer figure reloads the
+page, and the figure they get is at most five seconds old.
+
+**The drawdown also finishes the previous month**, for three days after it ends, until every
+project in it is closed. Before this, usage flushed after the last pass of the month was never
+charged.

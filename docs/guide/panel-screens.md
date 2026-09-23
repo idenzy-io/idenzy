@@ -1037,6 +1037,16 @@ still shows one item, pointed at `/billing`.
 - **`BillingAddCredit` is the one funding control**, on the overview beside the balance (as
   the note asks) and on the wallet. One component rather than the same disabled button and
   tooltip twice, so the reason text cannot drift.
+- **The balance comes from `/v1/me`, loaded on the visit.** The bootstrap store holds each
+  organisation's figure (`balanceOf`), and the header and the wallet read it from there. It is
+  the worker's live figure, at most five seconds old, with the part not yet on the statement as
+  `pendingCents` ("includes $X of usage not yet on your statement"). Do not add a refresh timer,
+  SSE or a socket to make it fresher: the product answer is a reload (ADR-0017, amendment).
+- **An invoiced organisation has no balance** (ADR-0019). `orgBalanceSchema` is a union on
+  `mode`. The header shows "Unbilled", the wallet replaces its prepaid controls with a banner
+  naming the terms, and the invoices tab gains a Due column and a Pay button that opens the
+  provider's hosted page (`isPayable`). The customer cannot change the mode; staff do, in the
+  operator console.
 
 - **Nothing charges anything, and the page says so first.** `PAYMENTS.running` is false:
   Stripe is not integrated, `orgs.billing_customer_id` is the only billing column in the

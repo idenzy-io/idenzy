@@ -220,6 +220,11 @@ again.
 **Status: accepted.** Worth revisiting only if a customer ever appears whose five-minute
 delta is material.
 
+**Since ADR-0017's amendment** the automatic rule and the figure a customer sees no longer wait
+for the ledger. Both read the live figure, which prices the month's sketches every five
+seconds. The ledger itself is still written at most every five minutes per organisation. That
+is deliberate: a row every five seconds is millions of rows a day for no reader.
+
 ---
 
 ## 6. A Stripe webhook that never arrives is money taken and credit not granted
@@ -300,6 +305,25 @@ each suspend the automatic rule.
 it. That is the same exposure as any other debt and is bounded by the same tolerance.
 
 **Status: closed.**
+
+---
+
+## 6d. An invoiced organisation is extended credit, and nothing stops it
+
+**Risk.** An organisation billed in arrears (ADR-0019) runs without a wallet. The spend gate is
+open for it and nothing acts on an overdue invoice. It can therefore run up a month of usage,
+plus its terms, before anyone is owed anything, and then keep going.
+
+**Exposure.** The exposure is whatever staff chose to trust, and nothing else bounds it: there
+is no credit limit. One large customer's month at the top band is real money.
+
+**Today.** Only billing staff can switch an organisation, with a reason that is recorded
+(ADR-0018). Overdue invoices are listed in the operator console. Nobody is emailed when one falls
+overdue (section 4).
+
+**Status: open, deliberately.** A credit limit per invoiced organisation, and a warning before
+the due date, are the two controls worth building before this is used for anyone who is not
+already a known customer.
 
 ---
 
@@ -404,6 +428,8 @@ each project's contribution to the account-wide rate AWS reviews (2).
 | 5 | Email and SMS rates, which are placeholders in the price list pending a margin study | 5.1 |
 | 6 | Whether to read SES's account-level reputation directly, now that each project's share is bounded | 2 |
 | 7 | Whether customers get a monthly cap on automatic top-ups, and what it defaults to | 6b |
+| 8 | Whether and how invoices carry tax (Stripe Tax, VAT on EU customers) | 6d |
+| 9 | Whether invoiced organisations get a credit limit, and who sets it | 6d |
 
 Closed: **2**, the per-project bounce-rate breaker, built alongside the SNS receiver (section 2).
 **3**, the authentication tolerance, at 30% of charges over thirty days against the metered 20%

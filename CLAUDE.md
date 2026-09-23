@@ -36,6 +36,7 @@ pnpm turbo run typecheck build test
 pnpm lint                          # biome, a root script and not a turbo task
 pnpm turbo run test:integration    # Testcontainers, needs Docker
 pnpm compliance:generate           # after any schema change; CI fails if stale
+pnpm staff add <email> <role>      # the only way into the operator console (ADR-0018)
 ```
 
 The `api` profile is an alternative to `pnpm dev` for that service and not an addition to it:
@@ -54,6 +55,7 @@ deployment is still deferred.
 | `@idenzy/js`, a framework binding, an SSR helper, `@idenzy/node`, the CLI | [docs/guide/sdk.md](./docs/guide/sdk.md) |
 | `apps/client` generally — its stack, shared components, charts, code blocks | [docs/guide/panel.md](./docs/guide/panel.md) |
 | one screen of the panel | its `notes/` file, then [docs/guide/panel-screens.md](./docs/guide/panel-screens.md) |
+| `apps/admin`, the operator console, or anything under `/v1/operator` | [docs/adr/0018-operators-are-staff-rows-signed-in-with-google.md](./docs/adr/0018-operators-are-staff-rows-signed-in-with-google.md), then the billing section of backend.md |
 
 `notes/` holds one file per screen, plus `notes/layout-blueprint.md`,
 `notes/dialogs.md` and `notes/shared-experience.md`. They are proposed specifications
@@ -68,7 +70,9 @@ control plane has its own tenant key), 0013 (ClickHouse has no RLS, so a row pol
 client that cannot exist without a tenant stand in for it), 0014 (usage is drawn from a
 prepaid wallet by repricing the month, which is what makes it idempotent and makes
 volume bands correct), 0017 (the automatic top-up never charges twice, and Valkey carries
-billing signals but never an amount).
+billing signals and a live figure but never an amount), 0018 (operators are `staff` rows the
+application cannot write, signed in with Google), 0019 (selected organisations are invoiced
+monthly in arrears, and nothing stops over an unpaid invoice).
 
 ## What can cost us money or take a customer down
 

@@ -288,7 +288,8 @@
         "packages/persistence/src/migrate.ts",
         "packages/persistence/src/seed.ts",
         "packages/persistence/src/staff-cli.ts",
-        "packages/persistence/drizzle.config.ts"
+        "packages/persistence/drizzle.config.ts",
+        "apps/admin/nuxt.config.ts"
       ],
       "linter": {
         "rules": {

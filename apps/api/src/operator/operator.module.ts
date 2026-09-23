@@ -1,6 +1,7 @@
 import { AppConfig } from "@idenzy/config/app-config";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
 import { AccessTokenVerifier } from "@idenzy/node";
+import { OperatorOrgReader } from "@idenzy/persistence/repository/operator-org-reader";
 import { StaffReader } from "@idenzy/persistence/repository/staff-reader";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Global, Module } from "@nestjs/common";
@@ -45,9 +46,14 @@ import { OPERATOR_PROJECT, OPERATOR_VERIFIER, StaffGuard } from "./staff.guard.j
       inject: [DATABASE],
       useFactory: (db: NodePgDatabase) => new StaffReader(db),
     },
+    {
+      provide: OperatorOrgReader,
+      inject: [DATABASE],
+      useFactory: (db: NodePgDatabase) => new OperatorOrgReader(db),
+    },
     StaffGuard,
     { provide: APP_GUARD, useExisting: StaffGuard },
   ],
-  exports: [StaffReader],
+  exports: [StaffReader, OperatorOrgReader],
 })
 export class OperatorModule {}

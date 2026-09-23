@@ -12,6 +12,12 @@
     "clean": "rm -rf .nuxt .output dist .turbo"
   },
   "dependencies": {
+    "@idenzy/js": "workspace:*",
+    "@idenzy/nuxt": "workspace:*",
+    "@idenzy/protocol": "workspace:*",
+    "@idenzy/vue": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "@vueuse/nuxt": "catalog:",
     "nuxt": "catalog:",
     "vue": "catalog:"
   },

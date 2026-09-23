@@ -70,6 +70,13 @@ describe("deciding whether to charge", () => {
     );
   });
 
+  it("does nothing for an organisation that is invoiced rather than prepaid", () => {
+    expect(policy.decide(rule({ invoiced: true }), position({ balanceCents: -99_999 }))).toEqual({
+      kind: "skip",
+      reason: AutoTopUpSkip.Invoiced,
+    });
+  });
+
   it("does nothing while suspended, whatever the balance", () => {
     expect(
       policy.decide(

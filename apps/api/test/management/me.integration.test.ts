@@ -45,8 +45,18 @@ beforeAll(async () => {
     new OrgMembershipReader(harness.db),
     new OrgBalanceReader(uow, cache, new SystemClock(), new SilentLogger()),
   );
-  await cache.putLive(ADMIN_ORG, { balanceCents: 1234, pendingCents: 66, asOf: Date.now() });
-  await cache.putLive(VIEWER_ORG, { balanceCents: 999, pendingCents: 1, asOf: Date.now() });
+  await cache.putLive(ADMIN_ORG, {
+    mode: "prepaid",
+    balanceCents: 1234,
+    pendingCents: 66,
+    asOf: Date.now(),
+  });
+  await cache.putLive(VIEWER_ORG, {
+    mode: "prepaid",
+    balanceCents: 999,
+    pendingCents: 1,
+    asOf: Date.now(),
+  });
 }, 180_000);
 
 afterAll(async () => {

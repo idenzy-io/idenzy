@@ -3,6 +3,8 @@ import { AutoTopUpSuspension, TopUpState } from "@idenzy/protocol/enums/billing"
 /** The rule as the organisation set it, plus what the rule itself remembers. */
 export interface AutoTopUpRule {
   readonly enabled: boolean;
+  /** An invoiced organisation pays in arrears and has no wallet to top up (ADR-0019). */
+  readonly invoiced?: boolean;
   readonly thresholdCents: number;
   readonly amountCents: number;
   readonly dailyLimit: number;
@@ -28,6 +30,7 @@ export interface AutoTopUpPosition {
 /** Why the rule did nothing this time, for the log. None of these need a person. */
 export const AutoTopUpSkip = {
   Disabled: "disabled",
+  Invoiced: "invoiced",
   Suspended: "suspended",
   AboveThreshold: "above_threshold",
   InFlight: "in_flight",
@@ -87,6 +90,7 @@ const CARD_UNUSABLE = new Set([
 export class AutoTopUpPolicy {
   decide(rule: AutoTopUpRule, position: AutoTopUpPosition): AutoTopUpDecision {
     if (!rule.enabled) return skip(AutoTopUpSkip.Disabled);
+    if (rule.invoiced === true) return skip(AutoTopUpSkip.Invoiced);
     if (rule.suspendedReason !== null) return skip(AutoTopUpSkip.Suspended);
     if (position.balanceCents >= rule.thresholdCents) return skip(AutoTopUpSkip.AboveThreshold);
     if (position.openCharge) return skip(AutoTopUpSkip.InFlight);

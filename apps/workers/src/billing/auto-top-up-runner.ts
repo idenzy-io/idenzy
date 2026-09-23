@@ -22,6 +22,7 @@ import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import {
   type AutoTopUpSuspension,
+  BillingMode,
   PaymentProvider as ProviderName,
   TopUpState,
   TopUpTrigger,
@@ -118,7 +119,10 @@ export class AutoTopUpRunner {
         return { result: skipped("disabled"), armed: false, thresholdCents: 0 } as const;
       }
       const thresholdCents = current.autoTopUp.thresholdCents;
-      const armed = current.autoTopUp.enabled && current.autoTopUpState.suspendedReason === null;
+      const armed =
+        current.autoTopUp.enabled &&
+        current.autoTopUpState.suspendedReason === null &&
+        current.mode === BillingMode.Prepaid;
 
       const methods = await new PaymentMethodRepository(tx, context).list();
       const method =
@@ -131,6 +135,7 @@ export class AutoTopUpRunner {
       const decision = this.policy.decide(
         {
           ...current.autoTopUp,
+          invoiced: current.mode === BillingMode.Invoiced,
           dailyLimit: current.autoTopUpState.dailyLimit,
           failures: current.autoTopUpState.failures,
           lastAttemptAt: current.autoTopUpState.lastAttemptAt,

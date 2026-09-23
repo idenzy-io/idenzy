@@ -140,7 +140,12 @@ describe("the balance a visit shows", () => {
   /** The live figure wins when the worker has one, pending usage and all. */
   it("is the live figure when the billing worker has computed one", async () => {
     const asOf = Date.now();
-    await liveBalances.putLive(ORG, { balanceCents: -4200, pendingCents: 900, asOf });
+    await liveBalances.putLive(ORG, {
+      mode: "prepaid",
+      balanceCents: -4200,
+      pendingCents: 900,
+      asOf,
+    });
     const wallet = await billing.wallet(context);
     expect(wallet.balanceCents).toBe(-4200);
     expect(wallet.pendingCents).toBe(900);
@@ -155,12 +160,52 @@ describe("the balance a visit shows", () => {
       new SilentLogger(),
     );
     const figure = await reader.read(context);
+    if (figure.mode !== "prepaid") throw new InternalError({ detail: { mode: figure.mode } });
     expect(figure.live).toBe(false);
     expect(figure.pendingCents).toBeNull();
     const debt = await uow.transaction((tx) =>
       new UsageDrawdownRepository(tx, context).debtCents(),
     );
     expect(figure.balanceCents).toBe((await balance()) - debt);
+  });
+
+  /**
+   * An invoiced organisation has no balance to show (ADR-0019): it is shown what it has used that
+   * no invoice covers yet, from the live figure, and what it owes on invoices already issued.
+   */
+  it("is usage not yet invoiced, and what is owed, for an invoiced organisation", async () => {
+    const INVOICED = "99990000-0000-4000-8000-000000000009";
+    await harness.owner.query(`INSERT INTO orgs (id, name) VALUES ($1, 'Initech')`, [INVOICED]);
+    await harness.owner.query(
+      `INSERT INTO billing_settings (org_id, billing_mode, invoice_terms_days) VALUES ($1, 'invoiced', 30)`,
+      [INVOICED],
+    );
+    await harness.owner.query(
+      `INSERT INTO invoices (org_id, number, period_start, period_end, status, total_cents, provider, issued_at)
+       VALUES ($1, 'IDZ-1', '2026-07-01', '2026-07-31', 'past_due', 12000, 'stripe', now()),
+              ($1, 'IDZ-2', '2026-08-01', '2026-08-31', 'open', 8000, 'stripe', now()),
+              ($1, 'IDZ-3', '2026-06-01', '2026-06-30', 'paid', 5000, 'stripe', now())`,
+      [INVOICED],
+    );
+    const store = new InMemoryKeyValue();
+    const cache = new LiveBalanceCache(store);
+    await cache.putLive(INVOICED, {
+      mode: "invoiced",
+      balanceCents: -3300,
+      pendingCents: 3300,
+      asOf: Date.now(),
+    });
+    const reader = new OrgBalanceReader(uow, cache, new SystemClock(), new SilentLogger());
+    const invoicedContext = new OrgContext(INVOICED, "req", "customer_staff", MEMBER);
+
+    expect(await reader.read(invoicedContext)).toMatchObject({
+      mode: "invoiced",
+      unbilledCents: 3300,
+      outstandingCents: 20_000,
+      overdueCents: 12_000,
+      invoiceTermsDays: 30,
+      live: true,
+    });
   });
 });
 

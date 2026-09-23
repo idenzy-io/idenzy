@@ -4,6 +4,7 @@ import type { Clock } from "@idenzy/core/time/clock";
 import { SpendTolerance } from "@idenzy/domain/policies/spend-tolerance";
 import { type BillingSignals, NullBillingSignals } from "@idenzy/domain/ports/billing-signals";
 import { WalletLedger } from "@idenzy/persistence/billing/wallet-ledger";
+import { BillingSettingsRepository } from "@idenzy/persistence/repository/billing-settings-repository";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
 import type { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
@@ -14,7 +15,7 @@ import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import type { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { mauCents, TOLERANCE_WINDOW_DAYS } from "@idenzy/protocol/billing/price-list";
-import { BillingLineItem } from "@idenzy/protocol/enums/billing";
+import { BillingLineItem, BillingMode } from "@idenzy/protocol/enums/billing";
 import { monthEnd, monthStart, openPeriods } from "./billing/periods.js";
 
 export interface UsageDrawdownOptions {
@@ -180,6 +181,14 @@ export class UsageDrawdown {
     const priced = mauCents(mau);
 
     return await this.uow.transaction(async (tx) => {
+      // An invoiced organisation is billed in arrears by the invoice run, which prices the month
+      // less this same watermark — so nothing is drawn here and the watermark is left where the
+      // prepaid part of the month put it (ADR-0019).
+      if (
+        (await new BillingSettingsRepository(tx, context).current()).mode === BillingMode.Invoiced
+      ) {
+        return false;
+      }
       const drawdown = new UsageDrawdownRepository(tx, context);
       const state = await drawdown.stateFor(period);
       const owed = priced - state.billedCents;
@@ -229,6 +238,12 @@ export class UsageDrawdown {
     const context = new OrgContext(orgId, "usage-drawdown", "system");
 
     const decision = await this.uow.transaction(async (tx) => {
+      // Invoiced: nothing stops over money owed; a person decides (ADR-0019).
+      if (
+        (await new BillingSettingsRepository(tx, context).current()).mode === BillingMode.Invoiced
+      ) {
+        return { spendable: true, reason: "" };
+      }
       const drawdown = new UsageDrawdownRepository(tx, context);
       const since = new Date(now.getTime() - TOLERANCE_WINDOW_DAYS * DAY_MS);
       return new SpendTolerance().decide({

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   AutoTopUpSuspension,
+  BillingMode,
   CardBrand,
   CreditKind,
   InvoiceStatus,
@@ -188,7 +189,7 @@ export type SpendAlert = z.infer<typeof spendAlertSchema>;
  * used lately or while Valkey is unavailable. Only the total is live; the split between purchased
  * and promotional credit is the ledger's.
  */
-export const orgBalanceSchema = z.object({
+const prepaidBalanceSchema = z.object({
   orgId: z.string(),
   mode: z.literal("prepaid"),
   /** Negative for an organisation inside its tolerance. */
@@ -198,6 +199,30 @@ export const orgBalanceSchema = z.object({
   asOf: isoDateTimeSchema,
   live: z.boolean(),
 });
+
+/**
+ * An invoiced organisation (ADR-0019) has no balance to show: it is billed monthly in arrears.
+ * What it is shown instead is what it has used that no invoice covers yet, and what it owes on the
+ * invoices already issued.
+ */
+const invoicedBalanceSchema = z.object({
+  orgId: z.string(),
+  mode: z.literal("invoiced"),
+  /** Usage priced and not yet invoiced. Null when there is no live figure to read it from. */
+  unbilledCents: centsSchema.nullable(),
+  /** Open and past-due invoices, together. */
+  outstandingCents: centsSchema,
+  /** The past-due part of the above. Shown, and never acted on automatically. */
+  overdueCents: centsSchema,
+  invoiceTermsDays: z.number().int(),
+  asOf: isoDateTimeSchema,
+  live: z.boolean(),
+});
+
+export const orgBalanceSchema = z.discriminatedUnion("mode", [
+  prepaidBalanceSchema,
+  invoicedBalanceSchema,
+]);
 export type OrgBalance = z.infer<typeof orgBalanceSchema>;
 
 /**
@@ -219,6 +244,9 @@ export const walletSchema = z.object({
   balanceCents: signedCentsSchema,
   /** Usage priced but not yet on the statement. Null when the balance is the ledger's alone. */
   pendingCents: centsSchema.nullable(),
+  /** How the organisation pays. Invoiced organisations are billed monthly, not drawn (ADR-0019). */
+  billingMode: enumOf(BillingMode),
+  invoiceTermsDays: z.number().int(),
   purchasedCents: centsSchema,
   promotionalCents: centsSchema,
   /**

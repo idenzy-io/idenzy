@@ -7,6 +7,7 @@ import type { LiveUsageSketches } from "@idenzy/cache/live-usage-sketches";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
 import type { Clock } from "@idenzy/core/time/clock";
 import { WalletLedger } from "@idenzy/persistence/billing/wallet-ledger";
+import { BillingSettingsRepository } from "@idenzy/persistence/repository/billing-settings-repository";
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
 import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-drawdown-repository";
 import { UsageRepository } from "@idenzy/persistence/repository/usage-repository";
@@ -50,6 +51,10 @@ const PROJECTS_MAX_AGE_MS = 5 * 60 * 1000;
 /**
  * An organisation's balance as it stands this second, computed every five seconds (ADR-0017).
  *
+ * For an invoiced organisation (ADR-0019) the same arithmetic answers a different question:
+ * nothing is drawn from its wallet, so `pending` is its usage so far this month — what its next
+ * invoice will bill — and that is the figure a visit shows it.
+ *
  * ```
  * live balance = ledger balance − pending
  * pending      = Σ over open periods of max(0, price(month MAU now) − billed so far)
@@ -92,6 +97,7 @@ export class LiveBalance {
     }
 
     const live: LiveFigure = {
+      mode: ledger.mode,
       balanceCents: ledger.balanceCents - pending,
       pendingCents: pending,
       asOf: now.getTime(),
@@ -126,7 +132,9 @@ export class LiveBalance {
       const billedCents: Record<string, number> = {};
       for (const period of periods)
         billedCents[period] = (await drawdown.stateFor(period)).billedCents;
+      const settings = await new BillingSettingsRepository(tx, context).current();
       return {
+        mode: settings.mode,
         balanceCents: await new WalletLedger(tx, context).balanceCents(now),
         billedCents,
         readAt: now.getTime(),

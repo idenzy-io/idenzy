@@ -106,7 +106,13 @@ beforeAll(async () => {
 }, 180_000);
 
 beforeEach(async () => {
-  for (const table of ["usage_charges", "usage_billing_state", "org_debts", "credit_grants"]) {
+  for (const table of [
+    "usage_charges",
+    "usage_billing_state",
+    "org_debts",
+    "credit_grants",
+    "billing_settings",
+  ]) {
     await pg.owner.query(`DELETE FROM ${table} WHERE org_id = $1`, [ORG]);
   }
   await pg.owner.query(`DELETE FROM usage_daily WHERE project_id = $1`, [PROJECT]);
@@ -185,6 +191,20 @@ describe("the live balance", () => {
     await grant(10_000);
     const figure = await live().refresh(ORG);
     expect(await new LiveBalanceCache(valkey).live(ORG)).toEqual(figure);
+  });
+});
+
+describe("for an invoiced organisation", () => {
+  it("is its usage not yet invoiced, marked as invoiced", async () => {
+    await pg.owner.query(
+      `INSERT INTO billing_settings (org_id, billing_mode) VALUES ($1, 'invoiced')`,
+      [ORG],
+    );
+    await publish(sketchOf(0, 80_000));
+    const figure = await live().refresh(ORG);
+    expect(figure.mode).toBe("invoiced");
+    expect(figure.pendingCents).toBe(mauCents(sketchOf(0, 80_000).count));
+    await pg.owner.query(`DELETE FROM billing_settings WHERE org_id = $1`, [ORG]);
   });
 });
 

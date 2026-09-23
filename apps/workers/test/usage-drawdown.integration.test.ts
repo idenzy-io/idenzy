@@ -399,6 +399,43 @@ describe("keeping one organisation out of another's wallet", () => {
   });
 });
 
+describe("an invoiced organisation", () => {
+  const invoice = async () =>
+    await harness.owner.query(
+      `INSERT INTO billing_settings (org_id, billing_mode) VALUES ($1, 'invoiced')
+       ON CONFLICT (org_id) DO UPDATE SET billing_mode = 'invoiced'`,
+      [ORG],
+    );
+  const prepay = async () =>
+    await harness.owner.query(`DELETE FROM billing_settings WHERE org_id = $1`, [ORG]);
+
+  /** Billed monthly in arrears by the invoice run, so nothing is drawn and the watermark stays. */
+  it("is not drawn on, and its watermark stays where it was", async () => {
+    await invoice();
+    await seedUsage(PROJECT_A, "2026-03-02", sketchOf(90_000));
+    await grant(1_000_000);
+
+    expect(await drawdown().runOnce()).toBe(0);
+    const after = await wallet();
+    expect(after).toMatchObject({ credit: 1_000_000, debt: 0, billed: 0 });
+    await prepay();
+  });
+
+  /** Nothing stops over money owed; a person decides. */
+  it("is never refused by the spend gate, whatever it owes", async () => {
+    await invoice();
+    await seedUsage(PROJECT_A, "2026-03-02", sketchOf(10));
+    await uow.transaction((tx) => new UsageDrawdownRepository(tx, context).adjustDebt(10_000_000));
+    await drawdown().runOnce();
+    const { rows } = await harness.owner.query<{ spendable: boolean }>(
+      `SELECT spendable FROM project_spend_state WHERE project_id = $1`,
+      [PROJECT_A],
+    );
+    expect(rows[0]?.spendable).toBe(true);
+    await prepay();
+  });
+});
+
 describe("publishing the spend decision", () => {
   const rowVersion = async (): Promise<string | undefined> =>
     (

@@ -37,6 +37,14 @@ const { isDark, toggle: toggleScheme } = useColorScheme();
    than a bar quoting none. */
 const balance = computed(() => formatCents(billing.balanceFor(projects.currentOrg.id)));
 
+/* An invoiced organisation has no balance to quote: it is billed monthly in arrears, so the bar
+   says what it has used that no invoice covers yet (ADR-0019). */
+const bootstrap = useBootstrapStore();
+const invoiced = computed(() => {
+  const known = bootstrap.balanceOf(projects.currentOrg.id);
+  return known?.mode === "invoiced" ? known : null;
+});
+
 /** The docs shell on the landing site (PROJECT.md 10.1). The host is a placeholder. */
 const DOCS_URL = "https://idenzy.io/docs";
 </script>
@@ -52,8 +60,16 @@ const DOCS_URL = "https://idenzy.io/docs";
         class="mr-2 flex items-baseline gap-1.5 rounded-(--idenzy-radius-x-small) px-1 py-0.5 text-xs no-underline transition-colors duration-150 hover:bg-ink/6 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         to="/billing"
       >
-        <span class="text-ink/55">Balance</span>
-        <span class="font-mono text-ink tabular-nums">{{ balance }}</span>
+        <template v-if="invoiced">
+          <span class="text-ink/55">Unbilled</span>
+          <span class="font-mono text-ink tabular-nums">
+            {{ invoiced.unbilledCents === null ? "—" : formatCents(invoiced.unbilledCents) }}
+          </span>
+        </template>
+        <template v-else>
+          <span class="text-ink/55">Balance</span>
+          <span class="font-mono text-ink tabular-nums">{{ balance }}</span>
+        </template>
       </NuxtLink>
       <span aria-hidden="true" class="mr-1 h-4 w-px bg-shell-line" />
     </template>

@@ -19,6 +19,7 @@ import { UsageDrawdownRepository } from "@idenzy/persistence/repository/usage-dr
 import type { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import {
+  BillingMode,
   CreditKind,
   PaymentProvider as ProviderName,
   TopUpState,
@@ -110,8 +111,15 @@ export class BillingService {
       const promotionalCents = sum(grants, CreditKind.Promotional);
       return {
         currency: settings.currency,
-        balanceCents: balance.balanceCents,
-        pendingCents: balance.pendingCents,
+        // An invoiced organisation's wallet is whatever credit it held from before it was
+        // switched, less debt; usage is invoiced rather than drawn from it (ADR-0019).
+        balanceCents:
+          balance.mode === BillingMode.Prepaid
+            ? balance.balanceCents
+            : purchasedCents + promotionalCents - debtCents,
+        pendingCents: balance.mode === BillingMode.Prepaid ? balance.pendingCents : null,
+        billingMode: settings.mode,
+        invoiceTermsDays: settings.invoiceTermsDays,
         purchasedCents,
         promotionalCents,
         debtCents,

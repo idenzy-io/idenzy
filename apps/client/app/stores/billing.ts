@@ -170,14 +170,16 @@ export const useBillingStore = defineStore("billing", () => {
   function balanceFor(orgId: string): number {
     const wallet = walletOfOrg(orgId);
     if (wallet !== null) return wallet.balanceCents;
-    return bootstrap.balanceOf(orgId)?.balanceCents ?? 0;
+    const known = bootstrap.balanceOf(orgId);
+    return known?.mode === "prepaid" ? known.balanceCents : 0;
   }
 
   /** Usage priced live and not yet on the statement, in cents. Nought when unknown. */
   function pendingFor(orgId: string): number {
     const wallet = walletOfOrg(orgId);
     if (wallet !== null) return wallet.pendingCents ?? 0;
-    return bootstrap.balanceOf(orgId)?.pendingCents ?? 0;
+    const known = bootstrap.balanceOf(orgId);
+    return known?.mode === "prepaid" ? (known.pendingCents ?? 0) : 0;
   }
 
   /**

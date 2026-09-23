@@ -172,6 +172,15 @@ export class InvoiceRepository extends OrgRepository<typeof invoices> {
   }
 
   /** Everything unsettled, in cents. What the past-due banner is built from. */
+  /** What is past due, in cents: the part of `outstandingCents` somebody should be told about. */
+  async overdueCents(): Promise<number> {
+    const rows = await this.tx
+      .select({ total: sql<string>`coalesce(sum(${invoices.totalCents}), 0)` })
+      .from(invoices)
+      .where(and(this.orgScope(), eq(invoices.status, "past_due")));
+    return Number(rows[0]?.total ?? 0);
+  }
+
   async outstandingCents(): Promise<number> {
     const rows = await this.tx
       .select({ total: sql<string>`coalesce(sum(${invoices.totalCents}), 0)` })

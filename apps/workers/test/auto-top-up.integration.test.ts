@@ -579,6 +579,22 @@ describe("deciding on the live balance", () => {
   });
 });
 
+describe("an invoiced organisation", () => {
+  it("is never topped up: it pays by invoice, not from a wallet", async () => {
+    await enableRule();
+    await pg.owner.query(
+      `UPDATE billing_settings SET billing_mode = 'invoiced' WHERE org_id = $1`,
+      [ORG],
+    );
+    expect(await runner().evaluate(ORG, false, 99_999)).toEqual({
+      kind: "skipped",
+      reason: "invoiced",
+    });
+    expect(provider.requests).toHaveLength(0);
+    expect(await rules.get(ORG)).toMatchObject({ armed: false });
+  });
+});
+
 describe("the sweep's reach", () => {
   /** A page of one: the second armed organisation by id is only reachable by the cursor. */
   it("pages through every armed rule", async () => {

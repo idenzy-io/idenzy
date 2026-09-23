@@ -22,6 +22,20 @@
       "when": 1790001976320,
       "tag": "0002_purge_project_ownership_comment",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790151912270,
+      "tag": "0003_auto_top_up_refunds_disputes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790151922310,
+      "tag": "0004_refund_dispute_grants",
+      "breakpoints": true
     }
   ]
 }

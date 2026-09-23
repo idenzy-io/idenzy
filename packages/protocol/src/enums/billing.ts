@@ -38,6 +38,53 @@ export const TopUpTrigger = {
 } as const;
 export type TopUpTrigger = (typeof TopUpTrigger)[keyof typeof TopUpTrigger];
 
+/**
+ * Why the automatic rule stopped firing on its own, pending a person.
+ *
+ * Every one of these is a case where charging again cannot help or would do harm. A bank
+ * that wants 3-D Secure off-session has nobody to ask; three declines in a row is what card
+ * testing looks like to an issuer; and charging a card whose holder is disputing us is the
+ * fastest way to lose the merchant account every customer pays through. Saving the rule
+ * again clears it, because that is a person looking at it.
+ */
+export const AutoTopUpSuspension = {
+  AuthenticationRequired: "authentication_required",
+  RepeatedFailure: "repeated_failure",
+  NoPaymentMethod: "no_payment_method",
+  Dispute: "dispute",
+  FraudReview: "fraud_review",
+} as const;
+export type AutoTopUpSuspension = (typeof AutoTopUpSuspension)[keyof typeof AutoTopUpSuspension];
+
+/**
+ * Where a refund of a top-up has got, in the provider's vocabulary because it is the
+ * provider's state. `failed` and `canceled` are final: the money came back to us.
+ */
+export const RefundState = {
+  Pending: "pending",
+  RequiresAction: "requires_action",
+  Succeeded: "succeeded",
+  Failed: "failed",
+  Canceled: "canceled",
+} as const;
+export type RefundState = (typeof RefundState)[keyof typeof RefundState];
+
+/**
+ * Where a cardholder's dispute of a top-up has got. The `warning_*` states are an inquiry
+ * that has not (yet) taken any money; the rest are a chargeback.
+ */
+export const DisputeStatus = {
+  WarningNeedsResponse: "warning_needs_response",
+  WarningUnderReview: "warning_under_review",
+  WarningClosed: "warning_closed",
+  NeedsResponse: "needs_response",
+  UnderReview: "under_review",
+  Won: "won",
+  Lost: "lost",
+  Prevented: "prevented",
+} as const;
+export type DisputeStatus = (typeof DisputeStatus)[keyof typeof DisputeStatus];
+
 /** Card networks we can name. `other` is honest about the ones we cannot. */
 export const CardBrand = {
   Visa: "visa",

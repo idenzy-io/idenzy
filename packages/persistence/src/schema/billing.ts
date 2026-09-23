@@ -5,6 +5,7 @@ import {
   Purpose,
   Retention,
 } from "@idenzy/compliance/classification/vocabulary";
+import { AUTO_TOP_UP_DAILY_LIMIT } from "@idenzy/protocol/billing/price-list";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -222,6 +223,40 @@ export const billingSettings = classifiedTable(
       ...billingConfig,
       note: "Which card it charges. Null falls back to the default, and the panel says so.",
     }),
+    autoTopUpDailyLimit: classified(
+      smallint("auto_top_up_daily_limit").notNull().default(AUTO_TOP_UP_DAILY_LIMIT),
+      {
+        ...billingConfig,
+        loggable: true,
+        note: "Attempts allowed in any rolling day. Set by support, never over the wire.",
+      },
+    ),
+    autoTopUpFailures: classified(smallint("auto_top_up_failures").notNull().default(0), {
+      ...billingConfig,
+      loggable: true,
+      note: "Consecutive automatic charges that did not succeed. A success resets it.",
+    }),
+    autoTopUpLastAttemptAt: classified(
+      timestamp("auto_top_up_last_attempt_at", { withTimezone: true }),
+      {
+        ...billingConfig,
+        loggable: true,
+        note: "When the rule last opened a charge, which is what spaces the next one out.",
+      },
+    ),
+    autoTopUpSuspendedAt: classified(
+      timestamp("auto_top_up_suspended_at", { withTimezone: true }),
+      {
+        ...billingConfig,
+        loggable: true,
+        note: "Set when charging again cannot help. Cleared only by a person saving the rule.",
+      },
+    ),
+    autoTopUpSuspendedReason: classified(text("auto_top_up_suspended_reason"), {
+      ...billingConfig,
+      loggable: true,
+      note: "AutoTopUpSuspension: what the person who clears it has to fix first.",
+    }),
     spendAlertEnabled: classified(boolean("spend_alert_enabled").notNull().default(false), {
       ...billingConfig,
       loggable: true,
@@ -248,6 +283,11 @@ export const billingSettings = classifiedTable(
     check(
       "billing_settings_auto_top_up_ck",
       sql`not auto_top_up_enabled or auto_top_up_amount_cents >= auto_top_up_threshold_cents`,
+    ),
+    check("billing_settings_auto_top_up_limit_ck", sql`auto_top_up_daily_limit between 1 and 10`),
+    check(
+      "billing_settings_auto_top_up_suspension_ck",
+      sql`(auto_top_up_suspended_at is null) = (auto_top_up_suspended_reason is null)`,
     ),
   ],
 );
@@ -323,6 +363,13 @@ export const topUps = classifiedTable(
   },
   (t) => [
     uniqueIndex("top_ups_provider_intent_key").on(t.provider, t.providerIntentId),
+    // At most one automatic charge open per organisation, whatever the code above it
+    // believes. The worker takes a row lock before opening one; this is what still holds
+    // if two workers, a retry and a bug all arrive at once. A manual checkout is not in it:
+    // a page somebody abandoned stays pending and must not block the rule.
+    uniqueIndex("top_ups_org_automatic_open_key")
+      .on(t.orgId)
+      .where(sql`trigger = 'automatic' and settled_at is null`),
     index("top_ups_org_created_idx").on(t.orgId, t.createdAt),
     check("top_ups_amount_ck", sql`amount_cents > 0`),
     check("top_ups_settled_debt_ck", sql`settled_debt_cents between 0 and amount_cents`),
@@ -608,5 +655,157 @@ export const usageCharges = classifiedTable(
       "usage_charges_covered",
       sql`from_credit_cents + to_debt_cents = charged_cents and charged_cents >= 0`,
     ),
+  ],
+);
+
+/**
+ * A refund of a top-up, and what it did to the wallet.
+ *
+ * Credit bought with money that has been handed back is credit nobody paid for, so a refund
+ * takes it out again — from the grant that purchase created first, then from anything else
+ * spendable, and whatever is already spent becomes debt. `reversed_from_credit_cents` and
+ * `reversed_to_debt_cents` say which, for the same reason `usage_charges` says it: a moving
+ * total cannot be asked afterwards where a figure went.
+ *
+ * Keyed on the provider's refund id, because every refund event (`refund.created`,
+ * `refund.updated`, `refund.failed`, `charge.refund.updated`) carries the same object and any
+ * of them may arrive first, twice, or out of order. `clawed_back_at` and `restored_at` are the
+ * two one-way doors: taken once, given back once, and only in that order. `failed` and
+ * `canceled` are final — the money came back to us — so a late `pending` for a refund already
+ * known to have failed changes nothing.
+ */
+export const paymentRefunds = classifiedTable(
+  "payment_refunds",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
+    orgId: orgIdColumn(),
+    topUpId: classified(
+      uuid("top_up_id")
+        .notNull()
+        .references(() => topUps.id, { onDelete: "restrict" }),
+      { ...financialRecord, loggable: true },
+    ),
+    provider: classified(text("provider").notNull(), { ...financialRecord, loggable: true }),
+    providerRefundId: classified(text("provider_refund_id").notNull(), {
+      ...financialRecord,
+      loggable: true,
+      note: "Unique per provider. Every refund event carries it, in whatever order they arrive.",
+    }),
+    amountCents: classified(bigint("amount_cents", { mode: "number" }).notNull(), financialRecord),
+    state: classified(text("state").notNull(), {
+      ...financialRecord,
+      loggable: true,
+      note: "RefundState. `failed` and `canceled` are final and nothing moves a row out of them.",
+    }),
+    reversedFromCreditCents: classified(
+      bigint("reversed_from_credit_cents", { mode: "number" }).notNull().default(0),
+      { ...financialRecord, note: "How much of the refund came out of spendable credit." },
+    ),
+    reversedToDebtCents: classified(
+      bigint("reversed_to_debt_cents", { mode: "number" }).notNull().default(0),
+      { ...financialRecord, note: "How much had already been spent, and so became debt." },
+    ),
+    clawedBackAt: classified(timestamp("clawed_back_at", { withTimezone: true }), {
+      ...financialRecord,
+      loggable: true,
+      note: "When the credit was taken back. Set once.",
+    }),
+    restoredAt: classified(timestamp("restored_at", { withTimezone: true }), {
+      ...financialRecord,
+      loggable: true,
+      note: "When a refund that failed gave the credit back. Set once, and only after the above.",
+    }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("payment_refunds_provider_refund_key").on(t.provider, t.providerRefundId),
+    index("payment_refunds_org_created_idx").on(t.orgId, t.createdAt),
+    check("payment_refunds_amount_ck", sql`amount_cents > 0`),
+    check(
+      "payment_refunds_reversal_ck",
+      sql`reversed_from_credit_cents >= 0 and reversed_to_debt_cents >= 0
+          and reversed_from_credit_cents + reversed_to_debt_cents in (0, amount_cents)`,
+    ),
+    check("payment_refunds_order_ck", sql`restored_at is null or clawed_back_at is not null`),
+  ],
+);
+
+/**
+ * A cardholder's dispute of a top-up, and what it did to the wallet.
+ *
+ * The provider takes the disputed amount from us when the dispute opens (`funds_withdrawn`)
+ * and gives it back only if we win (`funds_reinstated`). The wallet follows the money rather
+ * than the verdict: credit comes out when the funds leave and goes back when they return, so
+ * a dispute still under review is never credit we are extending on money we do not hold.
+ *
+ * `withdrawn_at` and `reinstated_at` are the one-way doors, as on `payment_refunds`, because a
+ * dispute sends up to five event types and several can describe the same movement. The
+ * automatic rule is suspended the moment one exists: charging again a card whose holder is
+ * disputing a charge is the pattern that ends a merchant account.
+ */
+export const paymentDisputes = classifiedTable(
+  "payment_disputes",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), { ...financialRecord, loggable: true }),
+    orgId: orgIdColumn(),
+    topUpId: classified(
+      uuid("top_up_id")
+        .notNull()
+        .references(() => topUps.id, { onDelete: "restrict" }),
+      { ...financialRecord, loggable: true },
+    ),
+    provider: classified(text("provider").notNull(), { ...financialRecord, loggable: true }),
+    providerDisputeId: classified(text("provider_dispute_id").notNull(), {
+      ...financialRecord,
+      loggable: true,
+      note: "Unique per provider.",
+    }),
+    amountCents: classified(bigint("amount_cents", { mode: "number" }).notNull(), financialRecord),
+    status: classified(text("status").notNull(), {
+      ...financialRecord,
+      loggable: true,
+      note: "DisputeStatus, as the provider last reported it.",
+    }),
+    reason: classified(text("reason").notNull().default(""), {
+      ...financialRecord,
+      loggable: true,
+      note: "The cardholder's stated reason, in the provider's vocabulary: fraudulent, duplicate…",
+    }),
+    withdrawnFromCreditCents: classified(
+      bigint("withdrawn_from_credit_cents", { mode: "number" }).notNull().default(0),
+      financialRecord,
+    ),
+    withdrawnToDebtCents: classified(
+      bigint("withdrawn_to_debt_cents", { mode: "number" }).notNull().default(0),
+      financialRecord,
+    ),
+    withdrawnAt: classified(timestamp("withdrawn_at", { withTimezone: true }), {
+      ...financialRecord,
+      loggable: true,
+      note: "When the provider took the funds and the wallet followed. Set once.",
+    }),
+    reinstatedAt: classified(timestamp("reinstated_at", { withTimezone: true }), {
+      ...financialRecord,
+      loggable: true,
+      note: "When the funds came back and so did the credit. Set once, only after the above.",
+    }),
+    closedAt: classified(timestamp("closed_at", { withTimezone: true }), {
+      ...financialRecord,
+      loggable: true,
+    }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("payment_disputes_provider_dispute_key").on(t.provider, t.providerDisputeId),
+    index("payment_disputes_org_created_idx").on(t.orgId, t.createdAt),
+    check("payment_disputes_amount_ck", sql`amount_cents > 0`),
+    check(
+      "payment_disputes_withdrawal_ck",
+      sql`withdrawn_from_credit_cents >= 0 and withdrawn_to_debt_cents >= 0
+          and withdrawn_from_credit_cents + withdrawn_to_debt_cents in (0, amount_cents)`,
+    ),
+    check("payment_disputes_order_ck", sql`reinstated_at is null or withdrawn_at is not null`),
   ],
 );

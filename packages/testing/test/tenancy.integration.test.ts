@@ -124,6 +124,9 @@ describe("the grants the app role holds", () => {
            -- DELETE: two age out on a retention tier through a SECURITY DEFINER function,
            -- and a hold is a record of a decision that outlives the block. Asserted below.
            'email_delivery_stats', 'email_sending_holds', 'email_provider_events',
+           -- Refunds and disputes of a top-up (migration 0004). Each records money that moved
+           -- and how the wallet followed it, so neither gets DELETE. Asserted below.
+           'payment_refunds', 'payment_disputes',
            -- The app role holds nothing at all on this one (migration 0062). It is written by
            -- purge_project running as the owner and read by an auditor, and it could not be
            -- tenant-scoped even in principle: the row exists because the tenant does not.
@@ -286,6 +289,28 @@ describe("the grants the app role holds", () => {
       { priv: "DELETE", granted: false },
     ]);
   });
+
+  /**
+   * The same claim for the two tables that record what a refund or a dispute did to a wallet.
+   * The provider may correct either as a case develops, so they update; nothing may remove one,
+   * because the credit it took or gave back cannot be reconciled without it.
+   */
+  it.each(["payment_refunds", "payment_disputes"])(
+    "withholds delete on %s while granting the rest",
+    async (table) => {
+      const { rows } = await harness.owner.query<{ priv: string; granted: boolean }>(
+        `SELECT p.priv, has_table_privilege('idenzy_app', $1::text, p.priv) AS granted
+         FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)`,
+        [table],
+      );
+      expect(rows).toEqual([
+        { priv: "SELECT", granted: true },
+        { priv: "INSERT", granted: true },
+        { priv: "UPDATE", granted: true },
+        { priv: "DELETE", granted: false },
+      ]);
+    },
+  );
 
   /**
    * The same claim for `usage_periods`, which withholds both verbs rather than one (0046).

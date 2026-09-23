@@ -93,7 +93,7 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_b_contract
 - **Retention:** project_lifetime, years_2, years_6
-- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_methods`, `payment_provider_events`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
+- **Tables:** `credit_grants`, `invoice_lines`, `invoices`, `org_debts`, `orgs`, `payment_disputes`, `payment_methods`, `payment_provider_events`, `payment_refunds`, `top_ups`, `usage_billing_state`, `usage_charges`, `usage_daily`
 - **Categories of personal data:**
 
   - pii: name
@@ -104,6 +104,8 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: cardBrand
   - pseudonymous: cardLast4
   - pseudonymous: chargedCents
+  - pseudonymous: clawedBackAt
+  - pseudonymous: closedAt
   - pseudonymous: currency
   - pseudonymous: debtCents
   - pseudonymous: dueAt
@@ -131,13 +133,20 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: processedAt
   - pseudonymous: projectId
   - pseudonymous: provider
+  - pseudonymous: providerDisputeId
   - pseudonymous: providerEventId
   - pseudonymous: providerIntentId
   - pseudonymous: providerInvoiceId
   - pseudonymous: providerMethodId
+  - pseudonymous: providerRefundId
   - pseudonymous: quantity
+  - pseudonymous: reason
   - pseudonymous: receivedAt
+  - pseudonymous: reinstatedAt
   - pseudonymous: remainingCents
+  - pseudonymous: restoredAt
+  - pseudonymous: reversedFromCreditCents
+  - pseudonymous: reversedToDebtCents
   - pseudonymous: settledAt
   - pseudonymous: settledDebtCents
   - pseudonymous: state
@@ -149,6 +158,9 @@ certification; see PROJECT.md 4.13.10.
   - pseudonymous: type
   - pseudonymous: unitRateMillicents
   - pseudonymous: voidedAt
+  - pseudonymous: withdrawnAt
+  - pseudonymous: withdrawnFromCreditCents
+  - pseudonymous: withdrawnToDebtCents
 
 ## message_delivery
 

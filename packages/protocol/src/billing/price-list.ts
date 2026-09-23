@@ -135,6 +135,17 @@ export function toleranceCents(chargedInWindowCents: number): number {
 export const AUTH_TOLERANCE_SHARE_OF_RECENT_CHARGES = 0.3;
 export const AUTH_TOLERANCE_FLOOR_CENTS = TOLERANCE_FLOOR_CENTS * 2;
 
+/**
+ * How many automatic top-ups an organisation may make in any rolling day, by default.
+ *
+ * Attempts and not successes: a declined charge is what an issuer counts, and a card charged
+ * five times in an afternoon reads as card testing whether or not any of them went through.
+ * Three covers a customer burning through a small top-up amount in a busy day; anything past
+ * it wants a larger amount, not a fourth charge. A per-organisation override exists for
+ * support to set, and nothing on the wire can.
+ */
+export const AUTO_TOP_UP_DAILY_LIMIT = 3;
+
 /** What an organisation may owe before authentication itself would refuse, in whole cents. */
 export function authToleranceCents(chargedInWindowCents: number): number {
   const share = Math.round(

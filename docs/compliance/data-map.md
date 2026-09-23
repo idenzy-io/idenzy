@@ -15,8 +15,8 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 | pii | 35 |
 | phi | 0 |
 | secret | 21 |
-| pseudonymous | 100 |
-| operational | 398 |
+| pseudonymous | 122 |
+| operational | 409 |
 
 ## `analytics.auth_events`
 
@@ -117,8 +117,13 @@ Notes:
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `autoTopUpAmountCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpDailyLimit` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `autoTopUpEnabled` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpFailures` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpLastAttemptAt` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `autoTopUpMethodId` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpSuspendedAt` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
+| `autoTopUpSuspendedReason` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `autoTopUpThresholdCents` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `currency` | operational | billing_and_metering | project_lifetime | no | not_applicable | no |
 | `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
@@ -131,7 +136,12 @@ Notes:
 Notes:
 
 - `autoTopUpAmountCents`: How much to add. Below the threshold it would fire on itself.
+- `autoTopUpDailyLimit`: Attempts allowed in any rolling day. Set by support, never over the wire.
+- `autoTopUpFailures`: Consecutive automatic charges that did not succeed. A success resets it.
+- `autoTopUpLastAttemptAt`: When the rule last opened a charge, which is what spaces the next one out.
 - `autoTopUpMethodId`: Which card it charges. Null falls back to the default, and the panel says so.
+- `autoTopUpSuspendedAt`: Set when charging again cannot help. Cleared only by a person saving the rule.
+- `autoTopUpSuspendedReason`: AutoTopUpSuspension: what the person who clears it has to fix first.
 - `autoTopUpThresholdCents`: Charge when the spendable balance falls below this.
 - `currency`: Set at the provider and not from here. One currency per account.
 - `orgId`: Organisation discriminator. Enforced by the repository layer.
@@ -696,6 +706,35 @@ Notes:
 - `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `seq`: Total order for consumers, from one cluster sequence. A consumer's watermark cannot be created_at: it ties at millisecond precision, so an event sharing the last instant would be skipped by an exclusive bound and never relayed (PROJECT.md 4.13.3).
 
+## `payment_disputes`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `amountCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `closedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `provider` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `providerDisputeId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `reason` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `reinstatedAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `status` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `topUpId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `withdrawnAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `withdrawnFromCreditCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `withdrawnToDebtCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+
+Notes:
+
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
+- `providerDisputeId`: Unique per provider.
+- `reason`: The cardholder's stated reason, in the provider's vocabulary: fraudulent, duplicate…
+- `reinstatedAt`: When the funds came back and so did the credit. Set once, only after the above.
+- `status`: DisputeStatus, as the provider last reported it.
+- `withdrawnAt`: When the provider took the funds and the wallet followed. Set once.
+
 ## `payment_methods`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -738,6 +777,34 @@ Notes:
 - `payload`: The provider's body, verbatim. A re-serialised copy is not evidence of a charge.
 - `processedAt`: Null means received and not yet acted on, which is what the retry sweep looks for.
 - `providerEventId`: Unique per provider. The insert is the idempotency check, not a lookup before it.
+
+## `payment_refunds`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `amountCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `clawedBackAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `id` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `orgId` | operational | billing_and_metering | years_6 | no | not_applicable | no |
+| `provider` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `providerRefundId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `restoredAt` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `reversedFromCreditCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `reversedToDebtCents` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `state` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `topUpId` | pseudonymous | billing_and_metering | years_6 | no | retain_pseudonymous | no |
+| `updatedAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+
+Notes:
+
+- `clawedBackAt`: When the credit was taken back. Set once.
+- `orgId`: Organisation discriminator. Enforced by the repository layer.
+- `providerRefundId`: Unique per provider. Every refund event carries it, in whatever order they arrive.
+- `restoredAt`: When a refund that failed gave the credit back. Set once, and only after the above.
+- `reversedFromCreditCents`: How much of the refund came out of spendable credit.
+- `reversedToDebtCents`: How much had already been spent, and so became debt.
+- `state`: RefundState. `failed` and `canceled` are final and nothing moves a row out of them.
 
 ## `project_domains`
 

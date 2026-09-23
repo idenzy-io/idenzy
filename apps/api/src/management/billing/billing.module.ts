@@ -4,6 +4,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { DATABASE } from "../../persistence/persistence.module.js";
 import { BillingController } from "./billing.controller.js";
 import { BillingService } from "./billing-service.js";
+import { OrgBalanceReader } from "./org-balance-reader.js";
 import { PaymentWebhookController } from "./payment-webhook.controller.js";
 import { PaymentWebhookService } from "./payment-webhook-service.js";
 
@@ -20,6 +21,7 @@ import { PaymentWebhookService } from "./payment-webhook-service.js";
   controllers: [BillingController, PaymentWebhookController],
   providers: [
     BillingService,
+    OrgBalanceReader,
     PaymentWebhookService,
     {
       provide: PaymentProviderEventRepository,
@@ -27,5 +29,8 @@ import { PaymentWebhookService } from "./payment-webhook-service.js";
       useFactory: (db: NodePgDatabase) => new PaymentProviderEventRepository(db),
     },
   ],
+  // The balance a visit shows is read the same way for `/v1/me` and for the wallet, so the header
+  // and the billing screen cannot quote two figures.
+  exports: [OrgBalanceReader],
 })
 export class BillingModule {}

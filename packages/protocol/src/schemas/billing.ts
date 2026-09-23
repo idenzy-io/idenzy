@@ -179,6 +179,28 @@ export const spendAlertSchema = z.object({
 export type SpendAlert = z.infer<typeof spendAlertSchema>;
 
 /**
+ * An organisation's balance as it stands now: the ledger less usage priced live and not yet
+ * booked (ADR-0017).
+ *
+ * `live` says which it is. True is the figure the billing worker computed within the last few
+ * seconds; false is the ledger alone, which trails by up to five minutes and carries no pending
+ * figure — what is shown when the live figure is missing, as it is for an organisation nobody has
+ * used lately or while Valkey is unavailable. Only the total is live; the split between purchased
+ * and promotional credit is the ledger's.
+ */
+export const orgBalanceSchema = z.object({
+  orgId: z.string(),
+  mode: z.literal("prepaid"),
+  /** Negative for an organisation inside its tolerance. */
+  balanceCents: signedCentsSchema,
+  /** Usage priced but not yet on the statement. Null when the figure is the ledger's alone. */
+  pendingCents: centsSchema.nullable(),
+  asOf: isoDateTimeSchema,
+  live: z.boolean(),
+});
+export type OrgBalance = z.infer<typeof orgBalanceSchema>;
+
+/**
  * Everything one screen needs about the money, in one answer.
  *
  * One document rather than five routes because the wallet reads all of it at once and a
@@ -189,8 +211,14 @@ export type SpendAlert = z.infer<typeof spendAlertSchema>;
  */
 export const walletSchema = z.object({
   currency: currencySchema,
-  /** Spendable credit less debt, so it is negative for an organisation inside its tolerance. */
+  /**
+   * The live balance: spendable credit less debt less usage not yet booked, so it is negative for
+   * an organisation inside its tolerance. The same figure `/v1/me` answers, so the header and this
+   * screen never disagree. The grants below are the ledger's and may trail it by minutes.
+   */
   balanceCents: signedCentsSchema,
+  /** Usage priced but not yet on the statement. Null when the balance is the ledger's alone. */
+  pendingCents: centsSchema.nullable(),
   purchasedCents: centsSchema,
   promotionalCents: centsSchema,
   /**

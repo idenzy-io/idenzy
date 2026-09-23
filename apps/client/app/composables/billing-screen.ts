@@ -47,7 +47,9 @@ export function useBillingScreen() {
   const kind = computed(() => orgKindOf(members.forOrg(org.value.id).length));
 
   const grants = computed(() => store.grantsFor(org.value.id));
-  const wallet = computed(() => walletOf(grants.value, now.value, store.debtFor(org.value.id)));
+  const wallet = computed(() =>
+    walletOf(grants.value, now.value, store.debtFor(org.value.id), store.pendingFor(org.value.id)),
+  );
   const methods = computed(() => store.methodsFor(org.value.id));
   const autoTopUp = computed(() => store.autoTopUpFor(org.value.id));
   const autoStatus = computed(() => store.autoTopUpStatusFor(org.value.id));

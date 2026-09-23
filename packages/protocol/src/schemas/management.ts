@@ -13,6 +13,7 @@ import {
   ProjectDomainStatus,
   ProjectDomainType,
 } from "../enums/tenancy.js";
+import { orgBalanceSchema } from "./billing.js";
 import {
   emailSchema,
   isoDateTimeSchema,
@@ -106,15 +107,16 @@ export type OnboardingResult = z.infer<typeof onboardingResultSchema>;
  * presented, and `@idenzy/js` hands it to the panel as `useUser()`; repeating it here
  * would be a second copy of a fact, which is a second thing to keep true.
  *
- * Balance is absent too, and that is a decision rather than an omission. Nothing can fund
- * an account yet, so every figure would be a real zero where the billing screens currently
- * show a fixture — a regression dressed as progress. It joins this shape when a top-up can
- * actually happen.
+ * The balance joined this shape once money could actually move (ADR-0017): one per
+ * organisation whose billing the caller may see — owners and admins, the same people the wallet
+ * answers — and live to the last five-second tick, because this is what a visit loads.
  */
 export const meSchema = z.object({
   organisations: z.array(orgSummarySchema),
   /** Every project across every organisation the caller belongs to. */
   projects: z.array(projectSummarySchema),
+  /** Each organisation's balance, where the caller's role may see it. */
+  balances: z.array(orgBalanceSchema),
 });
 export type Me = z.infer<typeof meSchema>;
 

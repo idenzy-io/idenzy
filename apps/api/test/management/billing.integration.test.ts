@@ -1,3 +1,4 @@
+import { LiveBalanceCache } from "@idenzy/cache/live-balance-cache";
 import { InternalError } from "@idenzy/core/errors";
 import { SystemClock } from "@idenzy/core/time/clock";
 import type { ProviderEvent } from "@idenzy/domain/ports/payment-provider";
@@ -15,12 +16,13 @@ import {
   TopUpTrigger,
 } from "@idenzy/protocol/enums/billing";
 import { FakePaymentProvider } from "@idenzy/testing/fake-payment-provider";
-import { RecordingBillingSignals } from "@idenzy/testing/fakes";
+import { InMemoryKeyValue, RecordingBillingSignals } from "@idenzy/testing/fakes";
 import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // From `dist`, like every other app test: Rolldown does not apply the decorator semantics
 // NestJS DI depends on.
 import { BillingService } from "../../dist/management/billing/billing-service.js";
+import { OrgBalanceReader } from "../../dist/management/billing/org-balance-reader.js";
 import { PaymentWebhookService } from "../../dist/management/billing/payment-webhook-service.js";
 import { SilentLogger } from "./fixtures.js";
 
@@ -54,6 +56,12 @@ const actingMember = MEMBER;
 
 const provider = new FakePaymentProvider();
 const signals = new RecordingBillingSignals();
+const liveStore = new InMemoryKeyValue();
+const liveBalances = new LiveBalanceCache(liveStore);
+
+function balances(clock: SystemClock): OrgBalanceReader {
+  return new OrgBalanceReader(uow, liveBalances, clock, new SilentLogger());
+}
 
 function event(
   type: string,
@@ -82,7 +90,7 @@ beforeAll(async () => {
   events = new PaymentProviderEventRepository(harness.db);
   const clock = new SystemClock();
   const urls = { successUrl: "https://app.test/ok", cancelUrl: "https://app.test/no" };
-  billing = new BillingService(uow, clock, signals, provider, urls);
+  billing = new BillingService(uow, clock, signals, balances(clock), provider, urls);
   webhooks = new PaymentWebhookService(uow, events, clock, new SilentLogger(), signals, provider);
 
   for (const org of [ORG, OTHER_ORG]) {
@@ -113,11 +121,46 @@ describe("the wallet a screen reads", () => {
 
   /** A deployment with no keys is correct, and the screen is built to say so. */
   it("answers a null provider where nothing can take a card", async () => {
-    const unpaid = new BillingService(uow, new SystemClock(), signals, null, null);
+    const unpaid = new BillingService(
+      uow,
+      new SystemClock(),
+      signals,
+      balances(new SystemClock()),
+      null,
+      null,
+    );
     expect((await unpaid.wallet(context)).provider).toBeNull();
     await expect(unpaid.startTopUp(context, 2500, actingMember)).rejects.toMatchObject({
       code: "payments_unavailable",
     });
+  });
+});
+
+describe("the balance a visit shows", () => {
+  /** The live figure wins when the worker has one, pending usage and all. */
+  it("is the live figure when the billing worker has computed one", async () => {
+    const asOf = Date.now();
+    await liveBalances.putLive(ORG, { balanceCents: -4200, pendingCents: 900, asOf });
+    const wallet = await billing.wallet(context);
+    expect(wallet.balanceCents).toBe(-4200);
+    expect(wallet.pendingCents).toBe(900);
+    await liveStore.del(`billing:live:${ORG}`);
+  });
+
+  it("falls back to the ledger, with no pending figure, when there is no live one", async () => {
+    const reader = new OrgBalanceReader(
+      uow,
+      new LiveBalanceCache(new InMemoryKeyValue()),
+      new SystemClock(),
+      new SilentLogger(),
+    );
+    const figure = await reader.read(context);
+    expect(figure.live).toBe(false);
+    expect(figure.pendingCents).toBeNull();
+    const debt = await uow.transaction((tx) =>
+      new UsageDrawdownRepository(tx, context).debtCents(),
+    );
+    expect(figure.balanceCents).toBe((await balance()) - debt);
   });
 });
 

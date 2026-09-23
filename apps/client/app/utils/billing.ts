@@ -259,6 +259,11 @@ export interface Wallet {
   creditCents: number;
   /** What usage has cost beyond the credit that covered it. Never negative. */
   debtCents: number;
+  /**
+   * Usage priced live and not yet on the statement (ADR-0017). Already taken off `totalCents`,
+   * so the headline is the live balance while the grants below it are the ledger's.
+   */
+  pendingCents: number;
   purchasedCents: number;
   promotionalCents: number;
   /** What expires inside `EXPIRY_SOON_DAYS`, in cents. */
@@ -275,7 +280,12 @@ export interface Wallet {
  * is read at the moment the screen is, which is the one thing a stale server figure gets wrong
  * on a tab left open overnight.
  */
-export function walletOf(grants: readonly CreditGrant[], now: Date, debtCents = 0): Wallet {
+export function walletOf(
+  grants: readonly CreditGrant[],
+  now: Date,
+  debtCents = 0,
+  pendingCents = 0,
+): Wallet {
   const live = liveGrants(grants, now);
   const sum = (kind: CreditKind) =>
     live
@@ -286,11 +296,13 @@ export function walletOf(grants: readonly CreditGrant[], now: Date, debtCents = 
   const next = drawOrder(grants, now).find((grant) => grant.expiresAt !== null) ?? null;
   const creditCents = live.reduce((total, grant) => total + spendableCents(grant, now), 0);
   const debt = Math.max(0, debtCents);
+  const pending = Math.max(0, pendingCents);
 
   return {
-    totalCents: creditCents - debt,
+    totalCents: creditCents - debt - pending,
     creditCents,
     debtCents: debt,
+    pendingCents: pending,
     purchasedCents: sum("purchased"),
     promotionalCents: sum("promotional"),
     expiringSoonCents: expiring.reduce((total, grant) => total + spendableCents(grant, now), 0),
@@ -451,6 +463,12 @@ export function topUpEveryWords(amountCents: number, projectedMonthCents: number
   if (days > 365) return "That would last more than a year at this month's rate.";
   const whole = Math.round(days);
   return `About once every ${whole} ${whole === 1 ? "day" : "days"} at this month's rate.`;
+}
+
+/** The line under the balance while some of it is usage the statement has not caught up with. */
+export function pendingWords(pendingCents: number): string | null {
+  if (pendingCents <= 0) return null;
+  return `Includes ${formatCents(pendingCents)} of usage not yet on your statement.`;
 }
 
 /**

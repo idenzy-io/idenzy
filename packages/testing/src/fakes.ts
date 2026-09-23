@@ -146,3 +146,23 @@ export class RecordingBillingSignals extends BillingSignals {
 
   protected override failed(): void {}
 }
+
+/** A key-value store with expiry, for caches whose commands are get/set PX/del. */
+export class InMemoryKeyValue {
+  private readonly entries = new Map<string, { value: string; expiresAt: number }>();
+
+  get(key: string): Promise<string | null> {
+    const entry = this.entries.get(key);
+    if (entry === undefined || entry.expiresAt <= Date.now()) return Promise.resolve(null);
+    return Promise.resolve(entry.value);
+  }
+
+  set(key: string, value: string, _mode: "PX", milliseconds: number): Promise<unknown> {
+    this.entries.set(key, { value, expiresAt: Date.now() + milliseconds });
+    return Promise.resolve("OK");
+  }
+
+  del(key: string): Promise<number> {
+    return Promise.resolve(this.entries.delete(key) ? 1 : 0);
+  }
+}

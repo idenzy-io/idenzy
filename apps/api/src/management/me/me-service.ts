@@ -3,9 +3,12 @@ import { OrgMembershipReader } from "@idenzy/persistence/repository/org-membersh
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
 import { OrgContext } from "@idenzy/persistence/tenancy/org-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { MemberRole } from "@idenzy/protocol/enums/tenancy";
+import type { OrgBalance } from "@idenzy/protocol/schemas/billing";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import type { Me, OrgSummary, ProjectSummary } from "@idenzy/protocol/schemas/management";
 import { Injectable } from "@nestjs/common";
+import { OrgBalanceReader } from "../billing/org-balance-reader.js";
 
 /**
  * What the panel's shell needs about the signed-in person, assembled once.
@@ -26,6 +29,7 @@ export class MeService {
   constructor(
     private readonly uow: UnitOfWork,
     private readonly memberships: OrgMembershipReader,
+    private readonly balances: OrgBalanceReader,
   ) {}
 
   async load(userId: string, requestId: string): Promise<Me> {
@@ -33,6 +37,7 @@ export class MeService {
 
     const organisations: OrgSummary[] = [];
     const projects: ProjectSummary[] = [];
+    const balances: OrgBalance[] = [];
 
     for (const membership of memberships) {
       const orgId = PublicId.encode(IdPrefix.Org, membership.orgId).value;
@@ -54,6 +59,11 @@ export class MeService {
         "customer_staff",
         membership.memberId,
       );
+      // Owners and admins only: the wallet answers them and nobody else, and a balance in the
+      // header is the wallet's headline.
+      if (membership.role === MemberRole.Owner || membership.role === MemberRole.Admin) {
+        balances.push(await this.balances.read(context));
+      }
       const rows = await this.uow.transaction((tx) => new OrgProjectRepository(tx, context).list());
       for (const row of rows) {
         projects.push({
@@ -67,6 +77,6 @@ export class MeService {
       }
     }
 
-    return { organisations, projects };
+    return { organisations, projects, balances };
   }
 }

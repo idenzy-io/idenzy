@@ -39,6 +39,7 @@ import {
   type PaymentCard,
   type PaymentMethod,
   paymentRepair,
+  pendingWords,
   RUNWAY_HORIZON_DAYS,
   runwayDays,
   runwayTone,
@@ -668,5 +669,15 @@ describe("a paused automatic top-up", () => {
       expect(words.startsWith("Paused")).toBe(true);
       expect(words).toContain("Save the rule again to resume it.");
     }
+  });
+});
+
+describe("a live balance", () => {
+  it("takes usage not yet on the statement off the headline, and says so", () => {
+    const shown = walletOf([], new Date("2026-09-10T00:00:00Z"), 0, 420);
+    expect(shown.totalCents).toBe(-420);
+    expect(shown.pendingCents).toBe(420);
+    expect(pendingWords(420)).toBe("Includes $4.20 of usage not yet on your statement.");
+    expect(pendingWords(0)).toBeNull();
   });
 });

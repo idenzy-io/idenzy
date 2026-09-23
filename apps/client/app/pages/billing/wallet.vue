@@ -34,6 +34,7 @@ import {
   isGrantExpiringSoon,
   MIN_TOPUP_CENTS,
   PAYMENTS_UNAVAILABLE,
+  pendingWords,
   runwayTone,
   runwayWords,
   type TopUpRequest,
@@ -99,7 +100,9 @@ const facts = computed<Fact[]>(() => [
     label: "Balance",
     value: formatCents(wallet.value.totalCents),
     mono: true,
-    note: repair.value ? `${formatCents(owed.value)} past due` : runwayWords(balance.value),
+    note: repair.value
+      ? `${formatCents(owed.value)} past due`
+      : (pendingWords(wallet.value.pendingCents) ?? runwayWords(balance.value)),
     dot: repair.value ? TONE_DOTS.error : TONE_DOTS[runwayTone(balance.value)],
     info: "Everything spendable, across every project this organisation holds. It is drawn down as the month runs, and the runway is how long it lasts at this month's projected rate.",
   },

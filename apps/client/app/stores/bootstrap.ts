@@ -18,6 +18,7 @@
  * perfectly good project to getting started — the same mistake `useSession` avoids one
  * layer down, for the same reason.
  */
+import type { OrgBalance } from "@idenzy/protocol/schemas/billing";
 import type { Me, OrgSummary, ProjectSummary } from "@idenzy/protocol/schemas/management";
 
 export type BootstrapStatus = "idle" | "loading" | "ready" | "failed";
@@ -26,6 +27,8 @@ export const useBootstrapStore = defineStore("bootstrap", () => {
   const status = ref<BootstrapStatus>("idle");
   const organisations = ref<OrgSummary[]>([]);
   const projects = ref<ProjectSummary[]>([]);
+  /** Each organisation's live balance as this visit loaded it, where the caller may see it. */
+  const balances = ref<OrgBalance[]>([]);
   /** What went wrong, for a screen that has to say something rather than sit blank. */
   const refusal = ref<string | null>(null);
 
@@ -53,6 +56,7 @@ export const useBootstrapStore = defineStore("bootstrap", () => {
         const me = data.value;
         organisations.value = me?.organisations ?? [];
         projects.value = me?.projects ?? [];
+        balances.value = me?.balances ?? [];
         status.value = "ready";
       } catch (cause: unknown) {
         // Left as `failed` rather than as an empty `ready`. An account whose bootstrap
@@ -80,9 +84,15 @@ export const useBootstrapStore = defineStore("bootstrap", () => {
     status.value = "idle";
     organisations.value = [];
     projects.value = [];
+    balances.value = [];
     refusal.value = null;
     inFlight = null;
   }
 
-  return { status, organisations, projects, refusal, load, reload, clear };
+  /** One organisation's balance from this visit's bootstrap, or null where it has none. */
+  function balanceOf(orgId: string): OrgBalance | null {
+    return balances.value.find((balance) => balance.orgId === orgId) ?? null;
+  }
+
+  return { status, organisations, projects, balances, refusal, load, reload, clear, balanceOf };
 });

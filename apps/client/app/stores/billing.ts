@@ -58,6 +58,7 @@ const AUTO_TOPUP_DEFAULT: AutoTopUp = {
 const ALERT_DEFAULT: SpendAlert = { enabled: false, thresholdCents: 5000 };
 
 export const useBillingStore = defineStore("billing", () => {
+  const bootstrap = useBootstrapStore();
   const projects = useProjectStore();
   const members = useMembersStore();
 
@@ -161,8 +162,22 @@ export const useBillingStore = defineStore("billing", () => {
    * same grants, with one difference that matters: expiry is decided against the database's
    * clock, so a browser left open overnight does not go on counting credit that has run out.
    */
+  /**
+   * The live balance: the wallet's when this session has loaded it, and otherwise the one
+   * `/v1/me` answered on this visit — the same figure either way (ADR-0017), so the header can
+   * show it without fetching a wallet it does not need.
+   */
   function balanceFor(orgId: string): number {
-    return walletOfOrg(orgId)?.balanceCents ?? 0;
+    const wallet = walletOfOrg(orgId);
+    if (wallet !== null) return wallet.balanceCents;
+    return bootstrap.balanceOf(orgId)?.balanceCents ?? 0;
+  }
+
+  /** Usage priced live and not yet on the statement, in cents. Nought when unknown. */
+  function pendingFor(orgId: string): number {
+    const wallet = walletOfOrg(orgId);
+    if (wallet !== null) return wallet.pendingCents ?? 0;
+    return bootstrap.balanceOf(orgId)?.pendingCents ?? 0;
   }
 
   /**
@@ -363,6 +378,7 @@ export const useBillingStore = defineStore("billing", () => {
     running,
     grantsFor,
     balanceFor,
+    pendingFor,
     debtFor,
     methodsFor,
     defaultMethodFor,

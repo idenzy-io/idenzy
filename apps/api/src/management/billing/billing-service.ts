@@ -34,6 +34,7 @@ import type {
 } from "@idenzy/protocol/schemas/billing";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { Inject, Injectable, Optional } from "@nestjs/common";
+import { OrgBalanceReader } from "./org-balance-reader.js";
 import { CHECKOUT_URLS, type CheckoutUrls } from "./payment-provider.module.js";
 import { present } from "./present.js";
 
@@ -66,6 +67,8 @@ export class BillingService {
      * while already under their threshold, who should not wait five minutes for it to fire.
      */
     private readonly signals: BillingSignals,
+    /** The live balance, so this screen's headline is the one `/v1/me` answers. */
+    private readonly balances: OrgBalanceReader,
     /**
      * `@Inject` by token and not by type, which is not decoration.
      *
@@ -83,6 +86,7 @@ export class BillingService {
   /** Everything one screen needs about the money, in one read. */
   async wallet(context: OrgContext): Promise<Wallet> {
     const now = this.clock.now();
+    const balance = await this.balances.read(context);
     return await this.uow.transaction(async (tx) => {
       const settings = await new BillingSettingsRepository(tx, context).current();
       const grants = await new CreditGrantRepository(tx, context).spendable(now);
@@ -106,7 +110,8 @@ export class BillingService {
       const promotionalCents = sum(grants, CreditKind.Promotional);
       return {
         currency: settings.currency,
-        balanceCents: purchasedCents + promotionalCents - debtCents,
+        balanceCents: balance.balanceCents,
+        pendingCents: balance.pendingCents,
         purchasedCents,
         promotionalCents,
         debtCents,

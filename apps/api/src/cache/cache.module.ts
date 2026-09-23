@@ -1,6 +1,7 @@
 import { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import { createValkeyClient, type ValkeyClient } from "@idenzy/cache/connection/client";
 import { DueSet } from "@idenzy/cache/due-set";
+import { LiveBalanceCache } from "@idenzy/cache/live-balance-cache";
 import { LiveUsageSketches } from "@idenzy/cache/live-usage-sketches";
 import { RateLimitStrategy } from "@idenzy/cache/rate-limit-strategy";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
@@ -116,8 +117,21 @@ export class ValkeyLifecycle implements OnApplicationShutdown {
       inject: [VALKEY],
       useFactory: (valkey: ValkeyClient): LiveUsageSketches => new LiveUsageSketches(valkey),
     },
+    {
+      // The live balance the billing worker computes, read on a visit (ADR-0017).
+      provide: LiveBalanceCache,
+      inject: [VALKEY],
+      useFactory: (valkey: ValkeyClient): LiveBalanceCache => new LiveBalanceCache(valkey),
+    },
     ValkeyLifecycle,
   ],
-  exports: [VALKEY, RevocationSet, RateLimitStrategy, BillingSignals, LiveUsageSketches],
+  exports: [
+    VALKEY,
+    RevocationSet,
+    RateLimitStrategy,
+    BillingSignals,
+    LiveUsageSketches,
+    LiveBalanceCache,
+  ],
 })
 export class CacheModule {}

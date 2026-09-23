@@ -1,7 +1,9 @@
+import { OauthProviderError } from "@idenzy/core/errors";
 import type { HttpClient } from "@idenzy/core/http/http-client";
 import type { Clock } from "@idenzy/core/time/clock";
 import type {
   OAuthFlowStore,
+  ProviderCredentials,
   ProviderProfile,
   RedirectAllowlist,
 } from "@idenzy/domain/ports/oauth-provider";
@@ -41,8 +43,39 @@ export class GoogleProvider extends OidcProvider {
     return "https://oauth2.googleapis.com/token";
   }
 
-  protected override assertIssuer(claims: JWTPayload): void {
+  /**
+   * The issuer, and — where the project restricts sign-in to one Google Workspace — the domain.
+   *
+   * **The `hd` claim and not the email.** Anybody can create a personal Google account on an
+   * address they control at any domain, and Google will mark that address verified; an email
+   * ending `@example.com` therefore proves nothing about membership of example.com's Workspace.
+   * `hd` is set by Google only for an account the domain's Workspace manages, so it is the one
+   * claim that answers the question. The email is checked as well, because an account can carry
+   * a secondary address, and a verified one is required, because a guard downstream will key on it.
+   *
+   * Refused here, after the signature and before anything is mapped or stored: an assertion from
+   * outside the domain never becomes a user in the project at all.
+   */
+  protected override assertIssuer(claims: JWTPayload, credentials: ProviderCredentials): void {
     assertExactIssuer(claims, "https://accounts.google.com", this.id);
+
+    const domain = hostedDomainOf(credentials);
+    if (domain === null) return;
+    const hd = typeof claims["hd"] === "string" ? claims["hd"].toLowerCase() : null;
+    const email = stringClaim(claims, "email")?.toLowerCase() ?? null;
+    if (hd !== domain) {
+      throw new OauthProviderError({
+        detail: {
+          provider: this.id,
+          reason: "the account is not in the required Workspace domain",
+        },
+      });
+    }
+    if (email === null || !email.endsWith(`@${domain}`) || !verifiedEmailClaim(claims)) {
+      throw new OauthProviderError({
+        detail: { provider: this.id, reason: "the account has no verified address in the domain" },
+      });
+    }
   }
 
   protected override jwksUri(): string {
@@ -53,8 +86,12 @@ export class GoogleProvider extends OidcProvider {
     return ["openid", "email", "profile"];
   }
 
-  protected override decorateAuthorization(url: URL): void {
+  protected override decorateAuthorization(url: URL, credentials: ProviderCredentials): void {
     url.searchParams.set("prompt", "select_account");
+    // A hint to Google's account chooser and nothing more: a person can edit it out of the URL,
+    // which is why `assertIssuer` checks the claim rather than trusting this.
+    const domain = hostedDomainOf(credentials);
+    if (domain !== null) url.searchParams.set("hd", domain);
   }
 
   protected override mapClaims(claims: JWTPayload): ProviderProfile {
@@ -66,4 +103,13 @@ export class GoogleProvider extends OidcProvider {
       avatarUrl: stringClaim(claims, "picture"),
     };
   }
+}
+
+/**
+ * The Workspace domain a project restricts Google sign-in to, from `oauth_providers.settings`,
+ * lower case; null where it restricts nothing, which is every customer that has not asked.
+ */
+function hostedDomainOf(credentials: ProviderCredentials): string | null {
+  const value = credentials.config["hostedDomain"];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().toLowerCase() : null;
 }

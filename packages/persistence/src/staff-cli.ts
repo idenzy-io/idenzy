@@ -20,8 +20,35 @@ const USAGE = `usage:
   pnpm staff list
 `;
 
+/** Runs one command. False means the arguments did not make one, and usage is printed. */
+async function run(staff: StaffAdministration, args: readonly string[]): Promise<boolean> {
+  const [command, email, role, ...rest] = args;
+  if (command === "list") {
+    for (const row of await staff.list()) {
+      const state = row.active ? "active" : "inactive";
+      process.stdout.write(`${row.email}\t${row.role}\t${state}\t${row.note}\n`);
+    }
+    return true;
+  }
+  if (email === undefined) return false;
+  if (command === "deactivate") {
+    process.stdout.write((await staff.deactivate(email)) ? "deactivated\n" : "not active\n");
+    return true;
+  }
+  if (role === undefined) return false;
+  if (command === "add") {
+    await staff.add(email, role, rest.join(" "));
+    process.stdout.write(`${email.toLowerCase()} is ${role}\n`);
+    return true;
+  }
+  if (command === "role") {
+    process.stdout.write((await staff.setRole(email, role)) ? "updated\n" : "no such staff\n");
+    return true;
+  }
+  return false;
+}
+
 async function main(): Promise<void> {
-  const [command, email, role, ...rest] = process.argv.slice(2);
   const url = process.env["DATABASE_MIGRATION_URL"] ?? process.env["DATABASE_URL"];
   if (url === undefined || url === "") {
     process.stderr.write("DATABASE_MIGRATION_URL or DATABASE_URL must be set.\n");
@@ -30,33 +57,11 @@ async function main(): Promise<void> {
 
   const client = new pg.Client({ connectionString: url });
   await client.connect();
-  const staff = new StaffAdministration(client);
   try {
-    switch (command) {
-      case "add":
-        if (email === undefined || role === undefined) break;
-        await staff.add(email, role, rest.join(" "));
-        process.stdout.write(`${email.toLowerCase()} is ${role}\n`);
-        return;
-      case "role":
-        if (email === undefined || role === undefined) break;
-        process.stdout.write((await staff.setRole(email, role)) ? "updated\n" : "no such staff\n");
-        return;
-      case "deactivate":
-        if (email === undefined) break;
-        process.stdout.write((await staff.deactivate(email)) ? "deactivated\n" : "not active\n");
-        return;
-      case "list":
-        for (const row of await staff.list()) {
-          const state = row.active ? "active" : "inactive";
-          process.stdout.write(`${row.email}\t${row.role}\t${state}\t${row.note}\n`);
-        }
-        return;
-      default:
-        break;
+    if (!(await run(new StaffAdministration(client), process.argv.slice(2)))) {
+      process.stderr.write(USAGE);
+      process.exitCode = 1;
     }
-    process.stderr.write(USAGE);
-    process.exitCode = 1;
   } catch (cause: unknown) {
     process.stderr.write(`${cause instanceof Error ? cause.message : "failed"}\n`);
     process.exitCode = 1;

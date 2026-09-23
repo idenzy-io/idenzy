@@ -4,7 +4,7 @@ import {
   type OAuthProviderDependencies,
 } from "@idenzy/testing/oauth-provider-conformance";
 import { exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AppleProvider } from "../src/providers/apple-provider.js";
 import { BitbucketProvider } from "../src/providers/bitbucket-provider.js";
 import { DiscordProvider } from "../src/providers/discord-provider.js";
@@ -763,5 +763,95 @@ describe("slack", () => {
     await expect(
       provider.completeFlow("project", credentials, script.callbackFor(provider.id)),
     ).rejects.toMatchObject({ code: "oauth_provider_error" });
+  });
+});
+
+/**
+ * Google restricted to one Workspace domain, which is how the operator console signs in
+ * (ADR-0018). Every case but the last is an attack: somebody who is not in the domain's Workspace
+ * trying to arrive as though they were.
+ */
+describe("google, restricted to a workspace domain", () => {
+  // One key for the whole block. The provider caches the JWKS by URL, so a fresh key per test
+  // under the same kid would fail every test after the first on its signature — and an attack
+  // test refused for the wrong reason proves nothing, which is why each asserts its reason too.
+  let idToken: (claims: Record<string, unknown>) => Promise<string>;
+  beforeAll(async () => {
+    idToken = await signing();
+  });
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const restricted: ProviderCredentials = { ...credentials, config: { hostedDomain: "idenzy.io" } };
+
+  const complete = async (claims: Record<string, unknown>, with_ = restricted) => {
+    const script = completing([
+      { status: 200, data: { access_token: "at", id_token: await idToken(claims) } },
+    ]);
+    const provider = providers.google(script.deps);
+    return provider.completeFlow("project", with_, script.callbackFor(provider.id));
+  };
+
+  const refusedFor = (reason: string) => ({
+    code: "oauth_provider_error",
+    detail: expect.objectContaining({ reason }),
+  });
+  const NOT_IN_DOMAIN = "the account is not in the required Workspace domain";
+  const NO_ADDRESS = "the account has no verified address in the domain";
+
+  const base = { iss: "https://accounts.google.com", sub: "1234", email_verified: true };
+
+  it("asks Google's chooser for the domain", () => {
+    const provider = providers.google(completing([]).deps);
+    const url = new URL(
+      provider.authorizationUrl(restricted, {
+        state: "s",
+        nonce: "n",
+        codeChallenge: "c",
+        callbackUri: "https://auth.test/cb",
+      }),
+    );
+    expect(url.searchParams.get("hd")).toBe("idenzy.io");
+  });
+
+  /**
+   * The attack the claim exists for: a personal Google account created on an address at the
+   * domain. Google verifies the address, so the email alone would pass; `hd` is absent, because
+   * the domain's Workspace does not manage the account.
+   */
+  it("refuses a personal account that merely uses an address at the domain", async () => {
+    await expect(complete({ ...base, email: "mallory@idenzy.io" })).rejects.toMatchObject(
+      refusedFor(NOT_IN_DOMAIN),
+    );
+  });
+
+  it("refuses an account from another Workspace", async () => {
+    await expect(
+      complete({ ...base, email: "eve@evil.test", hd: "evil.test" }),
+    ).rejects.toMatchObject(refusedFor(NOT_IN_DOMAIN));
+  });
+
+  it("refuses a Workspace account whose address is outside the domain", async () => {
+    await expect(
+      complete({ ...base, email: "eve@evil.test", hd: "idenzy.io" }),
+    ).rejects.toMatchObject(refusedFor(NO_ADDRESS));
+  });
+
+  it("refuses an address Google has not verified", async () => {
+    await expect(
+      complete({ ...base, email_verified: false, email: "ada@idenzy.io", hd: "idenzy.io" }),
+    ).rejects.toMatchObject(refusedFor(NO_ADDRESS));
+  });
+
+  it("admits a verified account the domain's Workspace manages", async () => {
+    const { profile } = await complete({ ...base, email: "Ada@idenzy.io", hd: "idenzy.io" });
+    expect(profile.email).toBe("Ada@idenzy.io");
+    expect(profile.emailVerified).toBe(true);
+  });
+
+  it("restricts nothing for a project that asked for no domain", async () => {
+    const { profile } = await complete({ ...base, email: "ada@gmail.com" }, credentials);
+    expect(profile.email).toBe("ada@gmail.com");
   });
 });

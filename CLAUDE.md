@@ -50,7 +50,7 @@ deployment is still deferred.
 | If you are touching | Read |
 | --- | --- |
 | the toolchain, a migration, a column, an error code, a test | [docs/guide/repo.md](./docs/guide/repo.md) |
-| the API — a flow, MFA, passkeys, claims, SMS, revocation, the audit trail, webhook delivery, the dashboard endpoints | [docs/guide/backend.md](./docs/guide/backend.md) |
+| the API — a flow, MFA, passkeys, claims, SMS, revocation, the audit trail, webhook delivery, billing and the automatic top-up, the dashboard endpoints | [docs/guide/backend.md](./docs/guide/backend.md) |
 | `@idenzy/js`, a framework binding, an SSR helper, `@idenzy/node`, the CLI | [docs/guide/sdk.md](./docs/guide/sdk.md) |
 | `apps/client` generally — its stack, shared components, charts, code blocks | [docs/guide/panel.md](./docs/guide/panel.md) |
 | one screen of the panel | its `notes/` file, then [docs/guide/panel-screens.md](./docs/guide/panel-screens.md) |
@@ -67,7 +67,8 @@ snapshot), 0010 (an authentication answers with a session or a challenge), 0011 
 control plane has its own tenant key), 0013 (ClickHouse has no RLS, so a row policy and a
 client that cannot exist without a tenant stand in for it), 0014 (usage is drawn from a
 prepaid wallet by repricing the month, which is what makes it idempotent and makes
-volume bands correct).
+volume bands correct), 0017 (the automatic top-up never charges twice, and Valkey carries
+billing signals but never an amount).
 
 ## What can cost us money or take a customer down
 

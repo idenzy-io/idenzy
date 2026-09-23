@@ -1325,6 +1325,31 @@ template pipeline of its own rather than a branch in the OTP flow.
       Email and SMS rates are declared in the price list and marked as placeholders: 5.1
       quotes them and neither has been checked against a vendor bill. Only MAU is charged
       today
+      **The automatic top-up fires now, and money that leaves again is followed** (ADR-0017,
+      2026-09-23). The rule charges the saved card off-session when the balance falls under
+      its threshold: never twice (settings row lock, one open automatic charge per org by
+      partial index, a Stripe idempotency key per row), at most three attempts a rolling day,
+      fifteen minutes apart, backing off after a decline and suspending itself on 3-D Secure,
+      a dead card, three declines, a dispute, a fraud review or a refund. Refunds and
+      disputes take credit back and give it back, once each across every event Stripe sends.
+      "No queue, deliberately" above still holds for money: Valkey now carries *signals* —
+      which projects' usage moved, which wallets did — drained every five seconds, so a month
+      is repriced within about a minute and the rule looks within a tick of a charge, but no
+      amount ever travels through it. Verified against Stripe test mode end to end.
+- [ ] Charge SMS, WhatsApp and email to the wallet, not only MAU. Blocked on the rates in the
+      price list being real rather than placeholders (risks.md open decision 5). The shape is
+      the drawdown's: a watermark per meter per month, repriced from `usage_daily`'s counters,
+      since those only grow within a month exactly as MAU does. The automatic top-up and the
+      signals need no change — they react to the balance, whatever moved it.
+- [ ] Billing notifications over SES (risks.md 4, which blocks 3): an automatic top-up that
+      succeeded, failed or suspended itself (with the reason, as the wallet screen words it),
+      a refund or dispute that moved the balance, the spend alert `claimSpendAlert` already
+      makes idempotent, and a balance approaching the tolerance. Needs billing templates;
+      the catalogue has none.
+- [ ] A customer-set monthly cap on automatic top-ups (risks.md 6b, open decision 7). The
+      ceiling today is three times the rule's amount per day.
+- [ ] Reconcile stale *manual* checkouts against Stripe (risks.md 6). Automatic charges are
+      reconciled already; a manual row is keyed on its checkout session until it completes.
 - [ ] Close what `risks.md` lists as open, in the order it gives. **The shared sender is a
       sandbox now**, which was the first of them: `assertWithinQuota` refuses past a burst
       of three a minute and two hundred a day, because `mail.idenzy.io` is pooled reputation

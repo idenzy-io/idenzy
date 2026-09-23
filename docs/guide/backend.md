@@ -332,6 +332,54 @@ existed and no code had ever written a row. Five rules.
   decides what the other never sees.
 
 
+## Working on billing
+
+The wallet, the automatic top-up, and the payment webhook. Read
+[ADR-0014](../adr/0014-usage-is-drawn-from-a-prepaid-wallet-by-repricing-the-month.md) for how
+money leaves and [ADR-0017](../adr/0017-automatic-top-up-and-billing-signals.md) for how it
+comes back in on its own; risks.md 1 to 7 is what is still exposed.
+
+- **Every movement of a wallet goes through `WalletLedger`.** Debit is credit first, then debt;
+  credit is debt first, then spendable. The drawdown, a settlement, a refund and a dispute all
+  use it. A fifth copy of either direction is how the two sides come to disagree.
+- **Take the `billing_settings` row lock first**, before touching `top_ups` or the ledger. The
+  automatic worker decides under it and settlement takes it too; a writer that locked in another
+  order is a deadlock waiting for the two to meet. `lockForAutoTopUp` answers null when the
+  organisation has no row, which is fine — there is then nothing to count.
+- **Valkey never holds an amount.** The due sets and the rule cache are hints. If a change you
+  are making would lose money when Valkey restarts empty (it runs with no persistence, on
+  purpose), it belongs in Postgres. A new producer sends through `BillingSignals`, after its
+  transaction commits, and cannot fail its caller.
+- **Never twice rests on three things, and a change must keep all three**: the settings row
+  lock, `top_ups_org_automatic_open_key`, and the idempotency key derived from the row id. The
+  row is committed *before* Stripe is called, and a thrown provider call leaves it open for the
+  reconciler rather than marking it failed — a timeout may have charged the card.
+- **The worker and the webhook both settle charges.** `TopUpSettlement` is the one place, and
+  `settled_at is null` decides who did the work. Do not settle anywhere else.
+- **A refund or dispute moves the wallet by claiming its row first** (`claimClawback`,
+  `claimWithdrawal`, …), then touching the ledger, inside one transaction. Claim after, and two
+  concurrent deliveries each move the balance.
+- **Tests that use a clock must stamp rows with it.** `top_ups.created_at` defaults to the
+  database's `now()`, and the daily limit counts by the worker's clock; the automatic path passes
+  `createdAt` for exactly that reason. The first run of the worker's integration suite failed on
+  this in eight places.
+- **A concurrency test that passes may be passing on turbo's cache.** A mutation check (delete
+  the guard, watch the test fail) once "passed", most likely because the build restored `dist`
+  from cache; grep the built file to confirm the mutation is really in it. `FakePaymentProvider` counts real charges, and the
+  never-twice tests assert on `charges.size`, not on calls.
+- **Timers that run through `void` must catch.** A Valkey command past its 250 ms timeout,
+  rethrown out of a sweep and dropped by `void`, is an unhandled rejection, and the worker
+  process exits on those. Found in the ingest worker by this work's end-to-end run.
+- **A webhook handler that throws answers 500 on purpose**, so Stripe retries; a redelivery of an
+  unfinished event is handled again. So every handler must be idempotent by its own predicates.
+  An event type we do not act on answers 200 and is stored.
+- **Trying it for real**: `stripe listen --events <list> --forward-to localhost:<port>/v1/payments/stripe/webhook`
+  signs with the CLI's own secret (`stripe listen --print-secret`), not the one in `.env`, so run
+  a second API on another port with `API_PORT` and `STRIPE_WEBHOOK_SECRET` in the environment
+  rather than editing `.env`. Useful test cards: `pm_card_visa`, `pm_card_chargeCustomerFail`
+  (attaches, then declines), `pm_card_authenticationRequired`, `pm_card_createDispute`, and a
+  dispute is won by updating its evidence with `uncategorized_text=winning_evidence`.
+
 ## Working on metering
 
 What the product is billed on (PROJECT.md 5.1). Small surface, and almost every rule on it exists

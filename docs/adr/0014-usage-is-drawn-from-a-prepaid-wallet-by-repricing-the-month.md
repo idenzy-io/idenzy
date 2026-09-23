@@ -188,3 +188,10 @@ and never read `org_debts`, so the consequence above — *"the balance can go ne
 screen that reads it has to expect that"* — was not something the wire could express: the
 wallet contract floored cents at zero. It is signed now, and `debtCents` travels beside it, so
 an organisation inside its tolerance reads as what it is rather than as empty.
+
+**Section 5's "no queue" holds for money and not for latency** (ADR-0017). Valkey now carries
+signals — which projects' usage moved, which organisations' wallets did — drained every five
+seconds, so a month is repriced within about a minute of new usage and the automatic top-up
+looks within a tick of a charge. No amount travels through Valkey; the watermark, the
+five-minute pass and the one-transaction rule are unchanged, and a lost signal costs exactly
+the delay this section already accepted.

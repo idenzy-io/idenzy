@@ -187,6 +187,13 @@ no warning is a customer who churns and tells people why — and they would be r
 
 **Today.** The settings exist and are editable on the wallet screen. Nothing fires.
 
+It got wider on 2026-09-23. The automatic top-up now charges cards, declines, and suspends
+itself (ADR-0017), and a refund or a chargeback now takes credit back — all without telling
+anybody. The wallet screen says when the rule has paused and why; nobody is emailed. Each of
+those events is a natural trigger for the notification this section asks for, and the code
+paths that would send it are the ones that log `automatic top-up settled`, `rule_changed` and
+`dispute moved a wallet`.
+
 **What closes it.** A worker that reads the threshold, sends on the `spend_alert` template,
 and claims the month through `claimSpendAlert` so a restart does not send twice. It needs a
 notification template, which does not exist either — the catalogue has ten types and none
@@ -231,9 +238,17 @@ Stripe retries for days. `stripeSettingsFrom` refuses a partial configuration ou
 the specific case of "checkout configured, webhook secret missing" is a boot failure rather
 than a silent one.
 
-**What is still missing.** Nothing reconciles. If an event is lost for good, no pass ever
-notices that a `top_ups` row has sat `pending` for a week. A sweep over stale pending
-top-ups that asks Stripe directly would close it.
+**What is still missing.** Nothing reconciles a *manual* checkout. If its event is lost for
+good, no pass ever notices that a `top_ups` row has sat `pending` for a week. A sweep over stale
+pending top-ups that asks Stripe directly would close it.
+
+*Automatic* charges are reconciled now (ADR-0017): an open one is asked about by intent, or
+replayed under its idempotency key inside a day, or searched for by reference after. The same
+machinery would serve the manual sweep; what differs is that a manual row is keyed on the
+checkout session until it completes, so the sweep would ask about the session.
+
+A webhook whose handling fails also answers 500 now, so Stripe's retry is the retry. It used
+to answer 200 and leave the row for a sweep that did not exist.
 
 **A narrower version of this was worse and is fixed.** The event could arrive perfectly and
 still leave money uncollected: `settleIntent` granted the full amount as credit and never
@@ -245,6 +260,46 @@ subtracts debt too, so a balance can read negative — which it has to, because 
 inside its tolerance is exactly that.
 
 **Status: partly open.** The lost-event sweep is the remaining half.
+
+---
+
+## 6b. The automatic top-up charges a card with nobody present
+
+**Risk.** Three ways it costs somebody money: charging twice, charging in a loop, and charging a
+card in a pattern that gets our merchant account flagged — which would stop payments for every
+customer at once.
+
+**Today.** Built, and bounded (ADR-0017). Never twice: a row lock on the decision, a partial
+unique index allowing one open automatic charge per organisation, and a Stripe idempotency key
+per row, with crash recovery that replays under that key. Never a loop: the rule cannot add less
+than it triggers on (a check constraint), fires at most three times in any rolling day (attempts,
+declines included), fifteen minutes apart, and backs off after a decline. It suspends itself —
+until a person saves it again — on a card that needs 3-D Secure, a card that is gone or expired,
+three declines in a row, a dispute, a fraud review, or a refund.
+
+**What this does not close.** The ceiling is still three times the customer's own amount per
+day, every day. `notes/settings-billing.md` asks for "a spending safeguard"; a monthly cap on
+automatic charges the customer sets themselves is the obvious one and does not exist. And nobody
+is emailed when the rule charges, fails or pauses (section 4).
+
+**Status: closed for correctness, open for a customer-set cap.**
+
+## 6c. Money that left again stayed spendable
+
+**Risk.** A refunded top-up kept the credit it bought, and so did a charged-back one — Stripe took
+the money from us, the customer kept spending it, and the automatic rule would happily have
+charged the disputing card again.
+
+**Today.** Closed (ADR-0017). A refund takes the credit back when Stripe reports it pending and
+returns it if it fails; a dispute takes it when the funds are withdrawn and returns it when they
+are reinstated. Spent credit becomes debt, which the spend gate treats like any other. Each
+movement happens once across every event Stripe sends. A dispute, a refund and a fraud review
+each suspend the automatic rule.
+
+**What is left.** A lost dispute leaves debt that only a later payment settles; nothing chases
+it. That is the same exposure as any other debt and is bounded by the same tolerance.
+
+**Status: closed.**
 
 ---
 
@@ -348,6 +403,7 @@ each project's contribution to the account-wide rate AWS reviews (2).
 | 4 | Whether suspension above some size requires a person | 3, 7 |
 | 5 | Email and SMS rates, which are placeholders in the price list pending a margin study | 5.1 |
 | 6 | Whether to read SES's account-level reputation directly, now that each project's share is bounded | 2 |
+| 7 | Whether customers get a monthly cap on automatic top-ups, and what it defaults to | 6b |
 
 Closed: **2**, the per-project bounce-rate breaker, built alongside the SNS receiver (section 2).
 **3**, the authentication tolerance, at 30% of charges over thirty days against the metered 20%

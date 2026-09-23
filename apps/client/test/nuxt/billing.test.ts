@@ -28,6 +28,7 @@ import {
   isGrantExpired,
   isGrantExpiringSoon,
   isPastDue,
+  isPayable,
   LOW_RUNWAY_DAYS,
   liveGrants,
   METHOD_REMOVAL_ISSUE_LABELS,
@@ -111,6 +112,9 @@ function invoice(part: Partial<Invoice> = {}): Invoice {
     currency: "USD",
     status: "paid",
     pdfUri: null,
+    hostedUrl: null,
+    dueAt: null,
+    paidAt: null,
     ...part,
   };
 }
@@ -679,5 +683,14 @@ describe("a live balance", () => {
     expect(shown.pendingCents).toBe(420);
     expect(pendingWords(420)).toBe("Includes $4.20 of usage not yet on your statement.");
     expect(pendingWords(0)).toBeNull();
+  });
+});
+
+describe("an invoice a person can pay", () => {
+  it("is one issued, unpaid, and with a page to pay it on", () => {
+    expect(isPayable(invoice({ status: "open", hostedUrl: "https://pay.test/1" }))).toBe(true);
+    expect(isPayable(invoice({ status: "past_due", hostedUrl: "https://pay.test/1" }))).toBe(true);
+    expect(isPayable(invoice({ status: "paid", hostedUrl: "https://pay.test/1" }))).toBe(false);
+    expect(isPayable(invoice({ status: "open", hostedUrl: null }))).toBe(false);
   });
 });

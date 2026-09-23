@@ -16,6 +16,7 @@ import {
   INVOICE_STATUS_LABELS,
   INVOICE_STATUS_TONES,
   type Invoice,
+  isPayable,
 } from "~/utils/billing";
 import type { ColumnState, DataTableColumn, DataTableSort } from "~/utils/data-table";
 import { defaultColumnState, reconcileColumnState } from "~/utils/data-table";
@@ -28,6 +29,7 @@ const INVOICE_COLUMNS: readonly DataTableColumn<Invoice>[] = [
   { key: "number", title: "Invoice", fixed: true, minWidth: 180, mono: true },
   { key: "periodStart", title: "Period", width: 200 },
   { key: "issuedAt", title: "Issued", width: 140 },
+  { key: "dueAt", title: "Due", width: 140 },
   { key: "totalCents", title: "Amount", width: 130, mono: true, align: "end" },
   { key: "status", title: "Status", width: 140, skeleton: "pill" },
 ];
@@ -47,6 +49,14 @@ const sortBy = ref<DataTableSort[]>([{ key: "issuedAt", order: "desc" }]);
 const page = ref(1);
 const pageSize = useLocalStorage("idenzy.invoices.page-size", 10);
 
+/* A past-due invoice is settled on its own payment page, which takes a card or a bank
+   transfer. Only a prepaid organisation's repair is a card on file, which is the portal. */
+function settle() {
+  const due = invoices.value.find((invoice) => invoice.status === "past_due" && isPayable(invoice));
+  if (due?.hostedUrl) window.open(due.hostedUrl, "_blank", "noopener");
+  else screen.openPortal();
+}
+
 const MONTH = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
 </script>
 
@@ -58,15 +68,16 @@ const MONTH = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", ti
         <StatusBadge v-else label="Nothing outstanding" tone="success" />
       </template>
       <template #description>
-        One a month for <span class="font-medium text-ink">{{ org.name }}</span>, raised from
-        the closed month's metered lines across every project. Every one has a PDF.
+        One a month for <span class="font-medium text-ink">{{ org.name }}</span> when it is
+        billed by invoice, raised from the closed month's metered lines across every project and
+        due on its payment terms. Each one can be paid by card or bank transfer from its own page.
       </template>
       <template #actions>
         <DataTableColumnsMenu v-model="columnState" :columns="INVOICE_COLUMNS" />
       </template>
     </PageHeader>
 
-    <BillingPastDue v-if="repair" :repair="repair" @settle="screen.openPortal()" />
+    <BillingPastDue v-if="repair" :repair="repair" @settle="settle()" />
 
     <v-card border flat>
       <DataTable
@@ -90,6 +101,12 @@ const MONTH = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", ti
           <span class="text-ink/70">{{ formatDate(item.issuedAt) }}</span>
         </template>
 
+        <template #cell.dueAt="{ item }">
+          <span :class="item.status === 'past_due' ? 'text-error' : 'text-ink/70'">
+            {{ item.dueAt ? formatDate(item.dueAt) : "—" }}
+          </span>
+        </template>
+
         <template #cell.totalCents="{ item }">
           <span class="font-mono text-ink tabular-nums">
             {{ formatCents(item.totalCents, item.currency) }}
@@ -104,6 +121,18 @@ const MONTH = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", ti
         </template>
 
         <template #actions="{ item }">
+          <v-btn
+            v-if="isPayable(item)"
+            :href="item.hostedUrl ?? undefined"
+            class="mr-1 text-xs font-medium"
+            color="primary"
+            rel="noopener"
+            size="small"
+            target="_blank"
+            variant="tonal"
+          >
+            Pay
+          </v-btn>
           <v-tooltip location="top" text="The invoice as a PDF">
             <template #activator="{ props: tip }">
               <a

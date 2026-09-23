@@ -102,6 +102,9 @@ export const useBillingStore = defineStore("billing", () => {
       currency: invoice.currency,
       status: invoice.status,
       pdfUri: invoice.pdfUri,
+      hostedUrl: invoice.hostedUrl,
+      dueAt: invoice.dueAt,
+      paidAt: invoice.paidAt,
     };
   }
 
@@ -172,6 +175,12 @@ export const useBillingStore = defineStore("billing", () => {
     if (wallet !== null) return wallet.balanceCents;
     const known = bootstrap.balanceOf(orgId);
     return known?.mode === "prepaid" ? known.balanceCents : 0;
+  }
+
+  /** Net terms in days for an organisation billed by invoice, or null for a prepaid one. */
+  function invoicedTermsFor(orgId: string): number | null {
+    const wallet = walletOfOrg(orgId);
+    return wallet?.billingMode === "invoiced" ? wallet.invoiceTermsDays : null;
   }
 
   /** Usage priced live and not yet on the statement, in cents. Nought when unknown. */
@@ -381,6 +390,7 @@ export const useBillingStore = defineStore("billing", () => {
     grantsFor,
     balanceFor,
     pendingFor,
+    invoicedTermsFor,
     debtFor,
     methodsFor,
     defaultMethodFor,

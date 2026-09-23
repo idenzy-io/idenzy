@@ -709,6 +709,16 @@ export interface Invoice {
   status: InvoiceStatus;
   /** Where the PDF is. Null while one is still being produced. */
   pdfUri: string | null;
+  /** The provider's page where it is paid, by card or bank transfer (ADR-0019). */
+  hostedUrl: string | null;
+  /** When payment is due on the organisation's terms. */
+  dueAt: string | null;
+  paidAt: string | null;
+}
+
+/** Whether a person can still pay it: issued, unpaid, and with somewhere to pay. */
+export function isPayable(invoice: Invoice): boolean {
+  return (invoice.status === "open" || invoice.status === "past_due") && invoice.hostedUrl !== null;
 }
 
 export function isPastDue(invoice: Invoice): boolean {

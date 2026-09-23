@@ -86,6 +86,9 @@ const {
   isBusy,
 } = screen;
 
+/* How this organisation pays: null for prepaid, the terms in days for invoiced (ADR-0019). */
+const invoicedTerms = computed(() => store.invoicedTermsFor(org.value.id));
+
 /*
  * The balance, read across rather than down.
  */
@@ -229,6 +232,13 @@ const ZERO_SUMMARY = "Sign-in keeps working · SMS stops · metered use above th
 
 <template>
   <div class="flex flex-col gap-6">
+    <!-- An invoiced organisation (ADR-0019) is billed monthly in arrears, and nothing is drawn
+         from this wallet: saying so first keeps the balance below from reading as what it owes. -->
+    <v-alert v-if="invoicedTerms !== null" density="compact" type="info" variant="tonal">
+      Billed by invoice at the end of each month, due {{ invoicedTerms }} days after it is issued.
+      Usage is not drawn from this wallet; any credit shown was bought before invoicing began and
+      is applied to the next invoice.
+    </v-alert>
     <PageHeader title="Wallet">
       <template #badge>
         <StatusBadge v-if="repair" :label="`${formatCents(owed)} past due`" tone="error" />

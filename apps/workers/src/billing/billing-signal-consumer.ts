@@ -5,6 +5,7 @@ import type { Clock } from "@idenzy/core/time/clock";
 import type { BillingWorkReader } from "@idenzy/persistence/repository/billing-work-reader";
 import type { UsageDrawdown } from "../usage-drawdown.js";
 import type { AutoTopUpRunner } from "./auto-top-up-runner.js";
+import { inParallel } from "./in-parallel.js";
 
 export interface BillingSignalConsumerOptions {
   /** How often the due sets are drained. */
@@ -14,6 +15,10 @@ export interface BillingSignalConsumerOptions {
   /** How long to leave an organisation whose look failed before trying it again. */
   readonly retryAfterMs?: number;
   readonly batch?: number;
+  /** How long a claimed entry is ours before another worker may take it. */
+  readonly leaseMs?: number;
+  /** Organisations worked on at once. */
+  readonly parallelism?: number;
 }
 
 /**
@@ -29,6 +34,12 @@ const DEFAULT_TICK_MS = 5_000;
 const DEFAULT_SPACING_MS = 60_000;
 const DEFAULT_RETRY_MS = 60_000;
 const DEFAULT_BATCH = 100;
+/**
+ * Thirty seconds: longer than one look takes, provider call included, and short enough that a
+ * worker that died holding a claim costs the organisation half a minute rather than a pass.
+ */
+const DEFAULT_LEASE_MS = 30_000;
+const DEFAULT_PARALLELISM = 8;
 
 /**
  * Drains the two billing due sets on a short tick (ADR-0017).
@@ -98,7 +109,8 @@ export class BillingSignalConsumer {
   }
 
   private async drainUsage(): Promise<void> {
-    const due = await this.drawdownDue.due(this.clock.now(), this.options.batch ?? DEFAULT_BATCH);
+    const now = this.clock.now();
+    const due = await this.drawdownDue.claim(now, this.batch(), this.lease());
     if (due.length === 0) return;
 
     const orgOf = await this.work.orgsOf(due.map((entry) => entry.member));
@@ -107,35 +119,36 @@ export class BillingSignalConsumer {
       const org = orgOf.get(entry.member);
       // A project that no longer exists has nothing to reprice.
       if (org === undefined) {
-        await this.drawdownDue.done(entry);
+        await this.drawdownDue.done(entry, now);
         continue;
       }
       byOrg.set(org, [...(byOrg.get(org) ?? []), entry]);
     }
 
     const spacing = this.options.repriceSpacingMs ?? DEFAULT_SPACING_MS;
-    for (const [org, entries] of byOrg) {
+    await inParallel([...byOrg], this.parallelism(), async ([org, entries]) => {
       const gate = await this.repriceGate.pass(org, spacing);
       if (!gate.passed) {
         const until = new Date(this.clock.now().getTime() + gate.waitMs);
         for (const entry of entries) await this.drawdownDue.defer(entry, until);
-        continue;
+        return;
       }
       // `runFor` catches and logs per organisation, and leaves the watermark where it was.
       await this.drawdown.runFor([org]);
-      for (const entry of entries) await this.drawdownDue.done(entry);
-    }
+      for (const entry of entries) await this.drawdownDue.done(entry, this.clock.now());
+    });
   }
 
   private async drainWallets(): Promise<void> {
-    const due = await this.autoTopUpDue.due(this.clock.now(), this.options.batch ?? DEFAULT_BATCH);
-    for (const entry of due) {
+    const due = await this.autoTopUpDue.claim(this.clock.now(), this.batch(), this.lease());
+    await inParallel(due, this.parallelism(), (entry) => this.lookAt(entry));
+  }
+
+  /** One organisation's look. Its failure is deferred and never the tick's. */
+  private async lookAt(entry: DueEntry): Promise<void> {
+    try {
       // With nothing to charge, a mark is drained and dropped rather than left to accumulate.
-      if (this.topUps === null) {
-        await this.autoTopUpDue.done(entry);
-        continue;
-      }
-      try {
+      if (this.topUps !== null) {
         const result = await this.topUps.evaluate(entry.member, true);
         if (result.kind !== "skipped") {
           this.logger.info("automatic top-up looked", {
@@ -144,17 +157,31 @@ export class BillingSignalConsumer {
             outcome: result.kind,
           });
         }
-        await this.autoTopUpDue.done(entry);
-      } catch (cause: unknown) {
-        this.logger.error("automatic top-up failed", {
-          orgId: entry.member,
-          component: "billing",
-          outcome: "deferred",
-          errorName: cause instanceof Error ? cause.name : "unknown",
-        });
-        const retry = this.options.retryAfterMs ?? DEFAULT_RETRY_MS;
-        await this.autoTopUpDue.defer(entry, new Date(this.clock.now().getTime() + retry));
       }
+      await this.autoTopUpDue.done(entry, this.clock.now());
+    } catch (cause: unknown) {
+      this.logger.error("automatic top-up failed", {
+        orgId: entry.member,
+        component: "billing",
+        outcome: "deferred",
+        errorName: cause instanceof Error ? cause.name : "unknown",
+      });
+      const retry = this.options.retryAfterMs ?? DEFAULT_RETRY_MS;
+      await this.autoTopUpDue
+        .defer(entry, new Date(this.clock.now().getTime() + retry))
+        .catch(() => undefined);
     }
+  }
+
+  private batch(): number {
+    return this.options.batch ?? DEFAULT_BATCH;
+  }
+
+  private lease(): number {
+    return this.options.leaseMs ?? DEFAULT_LEASE_MS;
+  }
+
+  private parallelism(): number {
+    return this.options.parallelism ?? DEFAULT_PARALLELISM;
   }
 }

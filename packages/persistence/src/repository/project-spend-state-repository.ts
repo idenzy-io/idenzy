@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { projectSpendState } from "../schema/usage.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -42,13 +42,18 @@ export class ProjectSpendStateRepository extends BaseRepository<typeof projectSp
   }
 
   /**
-   * Publishes a decision, replacing whatever was there.
+   * Publishes a decision, and writes nothing when nothing changed.
    *
-   * An upsert rather than an insert-then-update: the drawdown reprices a month every pass, so
-   * this is written far more often than it is created, and a conditional write would be two
-   * statements where one does.
+   * An upsert whose update only applies when the decision differs from the one stored, or when
+   * the stored one is past half its life. The drawdown publishes for every project on every pass,
+   * and rewriting an identical row each time is a dead tuple per project per pass for nothing; the
+   * half-life refresh is what keeps an unchanged decision from ever reaching `stale_after` and
+   * failing open while the drawdown is healthy.
    */
   async publish(state: SpendState): Promise<void> {
+    const midpoint = new Date(
+      state.computedAt.getTime() + (state.staleAfter.getTime() - state.computedAt.getTime()) / 2,
+    );
     await this.tx
       .insert(projectSpendState)
       .values({
@@ -66,6 +71,9 @@ export class ProjectSpendStateRepository extends BaseRepository<typeof projectSp
           computedAt: state.computedAt,
           staleAfter: state.staleAfter,
         },
+        setWhere: sql`${projectSpendState.spendable} <> ${state.spendable}
+          or ${projectSpendState.reason} <> ${state.reason}
+          or ${projectSpendState.staleAfter} < ${midpoint.toISOString()}::timestamptz`,
       });
   }
 }

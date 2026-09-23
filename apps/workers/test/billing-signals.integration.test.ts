@@ -30,9 +30,9 @@ class MovableClock extends Clock {
 const clock = new MovableClock();
 const at = (seconds: number): Date => new Date(clock.instant.getTime() + seconds * 1000);
 
-/** The one entry due now, asserted to be exactly one. */
-async function onlyDue(set: DueSet): Promise<DueEntry> {
-  const due = await set.due(clock.now(), 10);
+/** The one entry due now, claimed, asserted to be exactly one. */
+async function onlyDue(set: DueSet, leaseMs = 30_000): Promise<DueEntry> {
+  const due = await set.claim(clock.now(), 10, leaseMs);
   expect(due).toHaveLength(1);
   // Safe: the length was asserted on the line above, which the index type cannot see.
   return due[0] as DueEntry;
@@ -63,51 +63,71 @@ describe("a due set", () => {
     expect(await set.size()).toBe(1);
   });
 
-  it("answers only what is due, earliest first", async () => {
+  it("hands out only what is due, earliest first", async () => {
     const set = new DueSet(valkey, "t");
     await set.mark("later", at(60));
     await set.mark("second", at(-5));
     await set.mark("first", at(-10));
-    const due = await set.due(clock.now(), 10);
+    const due = await set.claim(clock.now(), 10, 30_000);
     expect(due.map((entry) => entry.member)).toEqual(["first", "second"]);
+  });
+
+  /** Two workers draining one set: the lease is what stops both taking the same organisation. */
+  it("never hands one member to two consumers at once", async () => {
+    const set = new DueSet(valkey, "t");
+    for (let n = 0; n < 40; n += 1) await set.mark(`org_${String(n)}`, at(-1));
+    const [a, b] = await Promise.all([
+      set.claim(clock.now(), 25, 30_000),
+      set.claim(clock.now(), 25, 30_000),
+    ]);
+    const members = [...a, ...b].map((entry) => entry.member);
+    expect(new Set(members).size).toBe(members.length);
+    expect(members).toHaveLength(40);
+  });
+
+  it("hands a member out again once its lease runs out, if nobody finished it", async () => {
+    const set = new DueSet(valkey, "t");
+    await set.mark("org_a", at(0));
+    await onlyDue(set, 10_000);
+    expect(await set.claim(at(5), 10, 10_000)).toEqual([]);
+    expect(await set.claim(at(11), 10, 10_000)).toHaveLength(1);
   });
 
   it("removes what was done", async () => {
     const set = new DueSet(valkey, "t");
     await set.mark("org_a", at(0));
-    const entry = await onlyDue(set);
-    await set.done(entry);
+    await set.done(await onlyDue(set), clock.now());
     expect(await set.size()).toBe(0);
   });
 
   /**
-   * The case the script exists for. A mark that lands while the consumer is working is about
-   * something the consumer may not have read, so removing it would lose the signal.
+   * The case the mark count exists for. A claimed member's score is its lease end, so a mark that
+   * lands mid-work cannot move it; without the count, finishing would drop that mark.
    */
-  it("keeps a member marked again while it was being worked on", async () => {
+  it("keeps a member marked again while it was being worked on, and makes it due now", async () => {
     const set = new DueSet(valkey, "t");
     await set.mark("org_a", at(0));
     const entry = await onlyDue(set);
     await set.mark("org_a", at(1));
-    await set.done(entry);
+    await set.done(entry, at(2));
     expect(await set.size()).toBe(1);
+    expect(await set.claim(at(2), 10, 30_000)).toHaveLength(1);
   });
 
   it("never brings a deferred member forward with an older mark", async () => {
     const set = new DueSet(valkey, "t");
     await set.mark("org_a", at(0));
-    const entry = await onlyDue(set);
-    await set.defer(entry, at(60));
+    await set.defer(await onlyDue(set), at(60));
     await set.mark("org_a", at(1));
-    expect(await set.due(at(30), 10)).toEqual([]);
-    expect(await set.due(at(60), 10)).toHaveLength(1);
+    expect(await set.claim(at(30), 10, 30_000)).toEqual([]);
+    expect(await set.claim(at(60), 10, 30_000)).toHaveLength(1);
   });
 
   it("does not resurrect a member by deferring it after it was done", async () => {
     const set = new DueSet(valkey, "t");
     await set.mark("org_a", at(0));
     const entry = await onlyDue(set);
-    await set.done(entry);
+    await set.done(entry, clock.now());
     await set.defer(entry, at(60));
     expect(await set.size()).toBe(0);
   });

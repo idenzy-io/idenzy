@@ -399,6 +399,40 @@ describe("keeping one organisation out of another's wallet", () => {
   });
 });
 
+describe("publishing the spend decision", () => {
+  const rowVersion = async (): Promise<string | undefined> =>
+    (
+      await harness.owner.query<{ xmin: string }>(
+        `SELECT xmin::text FROM project_spend_state WHERE project_id = $1`,
+        [PROJECT_A],
+      )
+    ).rows[0]?.xmin;
+
+  /** A pass per five minutes per project was a dead tuple each for an identical row. */
+  it("does not rewrite a decision that has not changed", async () => {
+    await seedUsage(PROJECT_A, "2026-03-02", sketchOf(10));
+    await drawdown().runOnce();
+    const first = await rowVersion();
+    expect(first).toBeDefined();
+    await drawdown().runOnce();
+    expect(await rowVersion()).toBe(first);
+  });
+
+  it("rewrites it once it is past half its life, so a healthy gate never goes stale", async () => {
+    await seedUsage(PROJECT_A, "2026-03-02", sketchOf(10));
+    await drawdown().runOnce();
+    const first = await rowVersion();
+    await harness.owner.query(
+      `UPDATE project_spend_state SET stale_after = '2026-03-15T12:30:00Z' WHERE project_id = $1`,
+      [PROJECT_A],
+    );
+    const aged = await rowVersion();
+    await drawdown().runOnce();
+    expect(await rowVersion()).not.toBe(aged);
+    expect(first).toBeDefined();
+  });
+});
+
 describe("the month that just ended", () => {
   const at = (iso: string): UsageDrawdown =>
     new UsageDrawdown(

@@ -325,6 +325,15 @@ describe("a refund", () => {
     expect(await wallet()).toEqual({ credit: 2000, debt: 0 });
   });
 
+  /** Otherwise the clawback takes the balance under the threshold and the rule recharges. */
+  it("stops the automatic rule, so it does not charge the refunded card straight back", async () => {
+    await enableRule();
+    const topUp = await paidTopUp(5000);
+    const reversal = await refund(topUp.intent, RefundState.Pending);
+    expect(reversal?.suspended).toBe(AutoTopUpSuspension.Refunded);
+    expect((await rule()).autoTopUpState.suspendedReason).toBe(AutoTopUpSuspension.Refunded);
+  });
+
   it("takes it once when two deliveries arrive together", async () => {
     const topUp = await paidTopUp(5000);
     await contended(

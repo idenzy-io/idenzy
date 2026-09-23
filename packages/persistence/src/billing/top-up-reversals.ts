@@ -70,8 +70,9 @@ const CLOSED: readonly DisputeStatus[] = [
  * update on the refund or dispute row before the wallet is touched, and the row lock that
  * update takes is what makes two concurrent deliveries of one event move the balance once.
  *
- * **A dispute suspends the automatic rule.** Charging again the card of somebody disputing a
- * charge is how a merchant account is lost, and the merchant account is every customer's.
+ * **Both suspend the automatic rule.** Charging again the card of somebody disputing a charge
+ * is how a merchant account is lost, and the merchant account is every customer's; charging it
+ * again straight after a refund takes back what was just handed back.
  */
 export class TopUpReversals {
   private readonly topUps: TopUpRepository;
@@ -122,7 +123,15 @@ export class TopUpReversals {
     if (!(await this.refunds.claimClawback(row.id, refund.at))) return this.none(topUp.id);
     const debited = await this.ledger.debit(row.amountCents, refund.at, topUp.id);
     await this.refunds.recordReversal(row.id, debited.fromCreditCents, debited.toDebtCents);
-    return { ...this.none(topUp.id), debitedCents: row.amountCents };
+    // The clawback usually takes the balance under the threshold, and a rule that charged the
+    // same card again at once would undo the refund somebody just asked for.
+    const suspended = (await this.settings.suspendAutoTopUp(
+      AutoTopUpSuspension.Refunded,
+      refund.at,
+    ))
+      ? AutoTopUpSuspension.Refunded
+      : null;
+    return { ...this.none(topUp.id), debitedCents: row.amountCents, suspended };
   }
 
   /** Null when the dispute is not of a top-up that bought credit here. */

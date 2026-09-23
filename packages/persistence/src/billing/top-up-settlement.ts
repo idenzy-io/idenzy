@@ -11,7 +11,8 @@ import type { Transaction } from "../tenancy/unit-of-work.js";
 import { type Credited, WalletLedger } from "./wallet-ledger.js";
 
 export interface Settlement {
-  readonly providerIntentId: string;
+  /** The provider's handle, or our row id for a charge refused before it had one. */
+  readonly providerIntentId: string | { readonly topUpId: string };
   readonly state: TopUpState;
   readonly failureCode: string | null;
   readonly at: Date;

@@ -43,9 +43,10 @@ export type TopUpTrigger = (typeof TopUpTrigger)[keyof typeof TopUpTrigger];
  *
  * Every one of these is a case where charging again cannot help or would do harm. A bank
  * that wants 3-D Secure off-session has nobody to ask; three declines in a row is what card
- * testing looks like to an issuer; and charging a card whose holder is disputing us is the
- * fastest way to lose the merchant account every customer pays through. Saving the rule
- * again clears it, because that is a person looking at it.
+ * testing looks like to an issuer; charging a card whose holder is disputing us is the
+ * fastest way to lose the merchant account every customer pays through; and charging again
+ * straight after a refund undoes it. Saving the rule again clears it, because that is a person
+ * looking at it.
  */
 export const AutoTopUpSuspension = {
   AuthenticationRequired: "authentication_required",
@@ -53,6 +54,12 @@ export const AutoTopUpSuspension = {
   NoPaymentMethod: "no_payment_method",
   Dispute: "dispute",
   FraudReview: "fraud_review",
+  /**
+   * A top-up was refunded. The refund takes the credit back, which usually takes the balance
+   * under the threshold — and a rule that then charged the same card again would undo the
+   * refund somebody just asked for.
+   */
+  Refunded: "refunded",
 } as const;
 export type AutoTopUpSuspension = (typeof AutoTopUpSuspension)[keyof typeof AutoTopUpSuspension];
 

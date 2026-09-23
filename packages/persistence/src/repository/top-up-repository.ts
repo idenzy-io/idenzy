@@ -52,6 +52,12 @@ export interface NewTopUp {
   readonly cardBrand?: CardBrand | null | undefined;
   readonly cardLast4?: string | null | undefined;
   readonly requestedBy: string | null;
+  /**
+   * When it was opened, where the caller reasons about time with its own clock. The automatic
+   * rule counts its attempts over a rolling day and must count them by the clock it decides
+   * with, not the database's.
+   */
+  readonly createdAt?: Date | undefined;
 }
 
 function toRow(row: typeof topUps.$inferSelect): TopUpRow {
@@ -187,7 +193,12 @@ export class TopUpRepository extends OrgRepository<typeof topUps> {
     const rows = await this.guard(() =>
       this.tx
         .insert(topUps)
-        .values({ orgId: this.context.orgId, ...topUp, state: "pending" })
+        .values({
+          orgId: this.context.orgId,
+          ...topUp,
+          ...(topUp.createdAt === undefined ? {} : { createdAt: topUp.createdAt }),
+          state: "pending",
+        })
         .returning(),
     );
     const row = rows[0];
@@ -217,7 +228,7 @@ export class TopUpRepository extends OrgRepository<typeof topUps> {
    * intent id is the other half of that guard, one table up.
    */
   async settle(
-    providerIntentId: string,
+    key: string | { readonly topUpId: string },
     state: TopUpState,
     failureCode: string | null,
     settledAt: Date,
@@ -244,7 +255,9 @@ export class TopUpRepository extends OrgRepository<typeof topUps> {
       .where(
         and(
           this.orgScope(),
-          eq(topUps.providerIntentId, providerIntentId),
+          // By our own id for a charge the provider refused before it made an intent, so
+          // there is no handle to key on. Same predicate either way.
+          typeof key === "string" ? eq(topUps.providerIntentId, key) : eq(topUps.id, key.topUpId),
           isNull(topUps.settledAt),
         ),
       )

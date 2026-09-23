@@ -573,6 +573,9 @@ importers:
       '@idenzy/providers-gcp':
         specifier: workspace:*
         version: link:../../packages/providers-gcp
+      '@idenzy/providers-payment':
+        specifier: workspace:*
+        version: link:../../packages/providers-payment
       '@nestjs/common':
         specifier: 'catalog:'
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)

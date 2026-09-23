@@ -2,6 +2,7 @@ import type { Logger } from "@idenzy/core/logging/logger";
 import { HyperLogLog } from "@idenzy/core/metering/hyper-log-log";
 import type { Clock } from "@idenzy/core/time/clock";
 import { SpendTolerance } from "@idenzy/domain/policies/spend-tolerance";
+import { type BillingSignals, NullBillingSignals } from "@idenzy/domain/ports/billing-signals";
 import { WalletLedger } from "@idenzy/persistence/billing/wallet-ledger";
 import { CreditGrantRepository } from "@idenzy/persistence/repository/credit-grant-repository";
 import { OrgProjectRepository } from "@idenzy/persistence/repository/org-project-repository";
@@ -88,6 +89,7 @@ export class UsageDrawdown {
     private readonly activity: OrgUsageActivityReader,
     private readonly clock: Clock,
     private readonly logger: Logger,
+    private readonly signals: BillingSignals = new NullBillingSignals(),
     private readonly options: UsageDrawdownOptions = {},
   ) {}
 
@@ -106,14 +108,31 @@ export class UsageDrawdown {
 
   /** One pass. Returns how many organisations were charged something. */
   async runOnce(): Promise<number> {
+    const period = monthStart(this.clock.now());
+    return await this.runFor(
+      await this.activity.withActivity(period, this.options.orgsPerPass ?? DEFAULT_ORGS),
+    );
+  }
+
+  /**
+   * Reprices the named organisations now, rather than waiting for the pass (ADR-0017).
+   *
+   * What a usage signal calls. Safe for exactly the reason the pass is: the watermark makes a
+   * second repricing of the same month charge nothing, so being asked early, late or twice
+   * costs a read and never a charge.
+   */
+  async runFor(orgs: readonly string[]): Promise<number> {
     const now = this.clock.now();
     const period = monthStart(now);
-    const orgs = await this.activity.withActivity(period, this.options.orgsPerPass ?? DEFAULT_ORGS);
 
     let charged = 0;
     for (const orgId of orgs) {
       try {
-        if (await this.chargeOne(orgId, period, now)) charged += 1;
+        if (await this.chargeOne(orgId, period, now)) {
+          charged += 1;
+          // The balance just fell, which is the moment the automatic top-up exists for.
+          await this.signals.walletMoved(orgId);
+        }
         // Every organisation in the pass, not only the ones that were charged something. An
         // organisation past its tolerance stops owing more the moment it stops being served,
         // so "nothing new to charge" is exactly the state a stale gate would get wrong.

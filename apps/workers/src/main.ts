@@ -3,8 +3,16 @@ import { ClickHouseClient } from "@idenzy/analytics/client/clickhouse-client";
 import { AnalyticsIngestWorker } from "@idenzy/analytics/ingest/analytics-ingest-worker";
 import type { StreamCommands } from "@idenzy/analytics/ingest/stream-commands";
 import { migrateAnalytics } from "@idenzy/analytics/migrate";
+import { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import { createValkeyClient } from "@idenzy/cache/connection/client";
+import { DueSet } from "@idenzy/cache/due-set";
 import { RevocationSet } from "@idenzy/cache/revocation-set";
+import { SpacingGate } from "@idenzy/cache/spacing-gate";
+import {
+  AUTO_TOP_UP_DUE_KEY,
+  DRAWDOWN_DUE_KEY,
+  ValkeyBillingSignals,
+} from "@idenzy/cache/valkey-billing-signals";
 import { AppConfig } from "@idenzy/config/app-config";
 import { InternalError } from "@idenzy/core/errors";
 import { SystemClock } from "@idenzy/core/time/clock";
@@ -15,6 +23,7 @@ import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
 import { AuditEventReader } from "@idenzy/persistence/repository/audit-event-reader";
 import { AuditPartitionMaintainer } from "@idenzy/persistence/repository/audit-partition-maintainer";
+import { BillingWorkReader } from "@idenzy/persistence/repository/billing-work-reader";
 import { EmailProviderEventRepository } from "@idenzy/persistence/repository/email-provider-event-repository";
 import { EmailRetentionPruner } from "@idenzy/persistence/repository/email-retention-pruner";
 import { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
@@ -33,10 +42,15 @@ import {
 } from "@idenzy/providers-email/aws/sns-message-verifier";
 import { AdcTokenSource } from "@idenzy/providers-gcp/access-token-source";
 import { SecretManagerSource } from "@idenzy/providers-gcp/secret-manager-source";
+import { StripePaymentProvider } from "@idenzy/providers-payment/stripe-payment-provider";
+import { stripeSettingsFrom } from "@idenzy/providers-payment/stripe-settings";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { analyticsSettingsFrom } from "./analytics-settings.js";
 import { AuditPartitionKeeper } from "./audit-partition-keeper.js";
 import { AuditRelay } from "./audit-relay.js";
+import { AutoTopUpRunner } from "./billing/auto-top-up-runner.js";
+import { AutoTopUpSweeper } from "./billing/auto-top-up-sweeper.js";
+import { BillingSignalConsumer } from "./billing/billing-signal-consumer.js";
 import { EmailEventEndpoint } from "./email/email-event-endpoint.js";
 import { EmailReputationBreaker } from "./email/email-reputation-breaker.js";
 import { EmailRetentionSweeper } from "./email/email-retention-sweeper.js";
@@ -113,6 +127,23 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  const drawdownDue = new DueSet(valkey, DRAWDOWN_DUE_KEY);
+  const autoTopUpDue = new DueSet(valkey, AUTO_TOP_UP_DUE_KEY);
+  const ruleCache = new AutoTopUpRuleCache(valkey);
+  const signals = new ValkeyBillingSignals(
+    drawdownDue,
+    autoTopUpDue,
+    ruleCache,
+    clock,
+    (signal, cause) => {
+      logger.warn("billing signal not sent", {
+        component: "billing",
+        outcome: signal,
+        errorName: cause instanceof Error ? cause.name : "unknown",
+      });
+    },
+  );
+
   const reconciler = new RevocationReconciler(
     new RevocationEventReader(db),
     new RevocationSet(valkey, clock, retentionSeconds),
@@ -172,7 +203,52 @@ async function bootstrap(): Promise<void> {
    * is what makes it safe to run twice, safe to run beside itself, and correct across every
    * band boundary without knowing where they are.
    */
-  const drawdown = new UsageDrawdown(uow, new OrgUsageActivityReader(db), clock, logger);
+  const drawdown = new UsageDrawdown(uow, new OrgUsageActivityReader(db), clock, logger, signals);
+
+  /*
+   * The automatic top-up and the five-second billing tick (ADR-0017).
+   *
+   * Valkey carries hints — which projects' usage moved, which organisations' wallets did — and
+   * never an amount. The drawdown reprices on those hints as well as on its own pass, and the
+   * rule looks at an organisation within a tick of its balance falling. Postgres is still the
+   * only thing a charge rests on: the rule decides under a row lock, the database allows one
+   * open automatic charge per organisation, and Stripe is asked under an idempotency key.
+   *
+   * No provider configured means no rule can fire. That is a correct deployment, the same one
+   * the management API already treats as correct, and the wallet marks are drained and dropped.
+   */
+  const stripe = stripeSettingsFrom({
+    STRIPE_SECRET_KEY: config.get("STRIPE_SECRET_KEY"),
+    STRIPE_WEBHOOK_SECRET: config.get("STRIPE_WEBHOOK_SECRET"),
+    STRIPE_API_VERSION: config.get("STRIPE_API_VERSION"),
+    STRIPE_CHECKOUT_SUCCESS_URL: config.get("STRIPE_CHECKOUT_SUCCESS_URL"),
+    STRIPE_CHECKOUT_CANCEL_URL: config.get("STRIPE_CHECKOUT_CANCEL_URL"),
+  });
+  const billingWork = new BillingWorkReader(db);
+  const autoTopUp =
+    stripe === null
+      ? null
+      : new AutoTopUpRunner(
+          uow,
+          new StripePaymentProvider(stripe),
+          ruleCache,
+          signals,
+          billingWork,
+          clock,
+          logger,
+        );
+  const autoTopUpSweeper =
+    autoTopUp === null ? null : new AutoTopUpSweeper(autoTopUp, billingWork, logger);
+  const billingSignals = new BillingSignalConsumer(
+    drawdownDue,
+    autoTopUpDue,
+    new SpacingGate(valkey, "billing:drawdown:spacing:"),
+    billingWork,
+    drawdown,
+    autoTopUp,
+    clock,
+    logger,
+  );
 
   /*
    * The SES feedback loop (PROJECT.md 11.2 item 4, risks.md 2b).
@@ -352,6 +428,8 @@ async function bootstrap(): Promise<void> {
   await usageCloser.start();
   await usageRoller.start();
   drawdown.start();
+  billingSignals.start();
+  await autoTopUpSweeper?.start();
   reputation.start();
   await usageRetention.start();
   await emailRetention.start();

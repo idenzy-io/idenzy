@@ -241,7 +241,9 @@ async function bootstrap(): Promise<void> {
           logger,
         );
   const autoTopUpSweeper =
-    autoTopUp === null ? null : new AutoTopUpSweeper(autoTopUp, billingWork, logger);
+    autoTopUp === null
+      ? null
+      : new AutoTopUpSweeper(autoTopUp, billingWork, new LiveBalanceCache(valkey), logger);
   const billingSignals = new BillingSignalConsumer(
     drawdownDue,
     autoTopUpDue,
@@ -249,6 +251,7 @@ async function bootstrap(): Promise<void> {
     billingWork,
     drawdown,
     new LiveBalance(uow, new LiveUsageSketches(valkey), new LiveBalanceCache(valkey), clock),
+    ruleCache,
     autoTopUp,
     clock,
     logger,

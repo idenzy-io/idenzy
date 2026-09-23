@@ -222,6 +222,7 @@ export class PaymentWebhookService {
         intent.last_payment_error?.code ?? null,
       );
       if (settled?.suspended != null) await this.signals.ruleChanged(context.orgId);
+      if (settled != null) await this.signals.walletMoved(context.orgId);
     });
   }
 
@@ -239,6 +240,7 @@ export class PaymentWebhookService {
       }),
     );
     if (reversal?.suspended != null) await this.signals.ruleChanged(context.orgId);
+    if (reversal !== null) await this.signals.walletMoved(context.orgId);
   }
 
   private async disputed(
@@ -261,6 +263,7 @@ export class PaymentWebhookService {
       }),
     );
     if (reversal?.suspended != null) await this.signals.ruleChanged(context.orgId);
+    if (reversal !== null) await this.signals.walletMoved(context.orgId);
     if (reversal !== null && reversal.debitedCents + reversal.creditedCents > 0) {
       this.logger.warn("dispute moved a wallet", {
         requestId,
@@ -313,7 +316,8 @@ export class PaymentWebhookService {
     await this.uow.transaction((tx) =>
       new TopUpRepository(tx, context).attach(reference, intentId, TopUpState.Pending),
     );
-    await this.settleIntent(context, intentId, TopUpState.Succeeded, null);
+    const settled = await this.settleIntent(context, intentId, TopUpState.Succeeded, null);
+    if (settled !== null) await this.signals.walletMoved(context.orgId);
   }
 
   /**

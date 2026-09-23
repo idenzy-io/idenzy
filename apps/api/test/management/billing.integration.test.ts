@@ -483,6 +483,11 @@ describe("refunds, disputes and reviews", () => {
     signals.sent.length = 0;
   });
 
+  it("tells the live balance that the wallet moved when a top-up is paid", async () => {
+    await paid(5000);
+    expect(signals.sent).toContainEqual({ signal: "wallet_moved", id: REVERSALS });
+  });
+
   it("takes a refund's credit back once, across every event Stripe sends about it", async () => {
     const intent = await paid(5000);
     await webhooks.receive(unstamped("refund.created", refundOf(intent, "pending")), "sig", "r1");

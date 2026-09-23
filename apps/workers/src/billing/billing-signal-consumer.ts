@@ -1,3 +1,4 @@
+import type { AutoTopUpRuleCache } from "@idenzy/cache/auto-top-up-rule-cache";
 import type { DueEntry, DueSet } from "@idenzy/cache/due-set";
 import type { SpacingGate } from "@idenzy/cache/spacing-gate";
 import type { Logger } from "@idenzy/core/logging/logger";
@@ -69,6 +70,7 @@ export class BillingSignalConsumer {
     private readonly work: BillingWorkReader,
     private readonly drawdown: UsageDrawdown,
     private readonly live: LiveBalance,
+    private readonly rules: AutoTopUpRuleCache,
     /** Null in a deployment with no payment provider, where there is nothing to charge. */
     private readonly topUps: AutoTopUpRunner | null,
     private readonly clock: Clock,
@@ -129,8 +131,9 @@ export class BillingSignalConsumer {
 
     const spacing = this.options.repriceSpacingMs ?? DEFAULT_SPACING_MS;
     await inParallel([...byOrg], this.parallelism(), async ([org, entries]) => {
-      // Every tick: the balance a person sees moves as fast as usage does.
-      await this.live.refresh(org);
+      // Every tick: the balance a person sees moves as fast as usage does, and so does the rule.
+      const figure = await this.live.refresh(org);
+      await this.topUpIfLow(org, figure.balanceCents, figure.pendingCents);
       // At most once per spacing: the ledger is what is written, and it is written rarely. The
       // entries are finished either way, because the live figure already reflects them and the
       // ledger pass reprices the whole month whenever it next runs.
@@ -153,9 +156,9 @@ export class BillingSignalConsumer {
       // A wallet mark means the ledger was written: the snapshot is dropped and the live figure
       // recomputed before anything decides from it.
       await this.live.ledgerMoved(entry.member);
-      await this.live.refresh(entry.member);
+      const figure = await this.live.refresh(entry.member);
       if (this.topUps !== null) {
-        const result = await this.topUps.evaluate(entry.member, true);
+        const result = await this.topUps.evaluate(entry.member, true, figure.pendingCents);
         if (result.kind !== "skipped") {
           this.logger.info("automatic top-up looked", {
             orgId: entry.member,
@@ -176,6 +179,38 @@ export class BillingSignalConsumer {
       await this.autoTopUpDue
         .defer(entry, new Date(this.clock.now().getTime() + retry))
         .catch(() => undefined);
+    }
+  }
+
+  /**
+   * Gives the rule a look when the live balance is under its threshold.
+   *
+   * Decided from the cached rule so the five-second path reads no Postgres for an organisation
+   * whose rule is off or whose balance is comfortably above it — which is almost all of them. A
+   * missing cache entry means ask, because the look fills it; a stale one only makes the look
+   * early or late, since the decision is made again under the settings row lock.
+   */
+  private async topUpIfLow(orgId: string, balanceCents: number, pendingCents: number) {
+    if (this.topUps === null) return;
+    const rule = await this.rules.get(orgId).catch(() => null);
+    if (rule !== null && (!rule.armed || balanceCents >= rule.thresholdCents)) return;
+    try {
+      const result = await this.topUps.evaluate(orgId, true, pendingCents);
+      if (result.kind !== "skipped") {
+        this.logger.info("automatic top-up looked", {
+          orgId,
+          component: "billing",
+          outcome: result.kind,
+        });
+      }
+    } catch (cause: unknown) {
+      // Not this lane's to retry: the wallet mark and the sweep both come back to it.
+      this.logger.error("automatic top-up failed", {
+        orgId,
+        component: "billing",
+        outcome: "deferred",
+        errorName: cause instanceof Error ? cause.name : "unknown",
+      });
     }
   }
 

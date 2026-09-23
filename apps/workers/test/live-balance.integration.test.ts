@@ -217,6 +217,7 @@ describe("under a storm of usage signals", () => {
         signals,
       ),
       live(),
+      new AutoTopUpRuleCache(valkey),
       null,
       clock,
       new RecordingLogger(),

@@ -401,6 +401,7 @@ describe("the cache", () => {
     await new AutoTopUpSweeper(
       runner(),
       new BillingWorkReader(pg.db),
+      new LiveBalanceCache(valkey),
       new RecordingLogger(),
     ).runOnce();
     expect(provider.charges.size).toBe(1);
@@ -471,6 +472,7 @@ describe("the five-second tick", () => {
       new BillingWorkReader(pg.db),
       drawdown,
       liveBalance(),
+      rules,
       runner(),
       clock,
       new RecordingLogger(),
@@ -508,6 +510,7 @@ describe("the five-second tick", () => {
       new BillingWorkReader(pg.db),
       drawdown,
       liveBalance(),
+      rules,
       null,
       clock,
       new RecordingLogger(),
@@ -520,6 +523,59 @@ describe("the five-second tick", () => {
     // Finished rather than deferred: the live figure already reflects them, and the ledger pass
     // reprices the whole month whenever it next runs.
     expect(await drawdownDue.size()).toBe(0);
+  });
+});
+
+describe("deciding on the live balance", () => {
+  /**
+   * The ledger still says there is plenty: nothing has been booked yet. The live figure says the
+   * usage behind it has already spent past the threshold, and the rule fires on that.
+   */
+  it("fires on usage the ledger has not booked yet", async () => {
+    await enableRule(1000, 5000);
+    await uow.transaction((tx) =>
+      new CreditGrantRepository(tx, context).grant({
+        kind: "purchased",
+        amountCents: 3000,
+        currency: "USD",
+        topUpId: null,
+        note: "x",
+        expiresAt: null,
+      }),
+    );
+    expect((await runner().evaluate(ORG, true, 0)).kind).toBe("skipped");
+    expect(await runner().evaluate(ORG, true, 2500)).toMatchObject({ kind: "charged" });
+    expect(provider.charges.size).toBe(1);
+  });
+
+  it("still never charges twice when many lanes see the same low live balance", async () => {
+    await enableRule(1000, 5000);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => runner().evaluate(ORG, true, 900)),
+    );
+    expect(results.filter((result) => result.kind === "charged")).toHaveLength(1);
+    expect(provider.charges.size).toBe(1);
+  });
+
+  it("tells the live balance that the ledger moved once a charge settles", async () => {
+    await enableRule();
+    const sent: string[] = [];
+    const recording = new ValkeyBillingSignals(drawdownDue, autoTopUpDue, rules, clock, () => {});
+    const original = recording.walletMoved.bind(recording);
+    recording.walletMoved = async (orgId: string) => {
+      sent.push(orgId);
+      await original(orgId);
+    };
+    await new AutoTopUpRunner(
+      uow,
+      provider,
+      rules,
+      recording,
+      new BillingWorkReader(pg.db),
+      clock,
+      new RecordingLogger(),
+    ).evaluate(ORG, true);
+    expect(sent).toEqual([ORG]);
   });
 });
 

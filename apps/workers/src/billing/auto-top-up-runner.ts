@@ -97,8 +97,12 @@ export class AutoTopUpRunner {
    *
    * `useCache` lets a signal skip an organisation whose rule is off without reading Postgres.
    * The periodic pass passes false, which is what bounds a stale cache entry to one pass.
+   *
+   * `pendingCents` is usage priced live and not yet on the ledger (`LiveBalance`), so the rule
+   * fires on the balance a person would see rather than one up to five minutes behind it. It can
+   * only bring a top-up forward: every limit and guard below is unchanged.
    */
-  async evaluate(orgId: string, useCache: boolean): Promise<AutoTopUpResult> {
+  async evaluate(orgId: string, useCache: boolean, pendingCents = 0): Promise<AutoTopUpResult> {
     if (useCache && (await this.cachedOff(orgId))) return { kind: "skipped", reason: "cached_off" };
 
     const context = new OrgContext(orgId, "auto-top-up", "system");
@@ -133,7 +137,8 @@ export class AutoTopUpRunner {
           suspendedReason: current.autoTopUpState.suspendedReason,
         },
         {
-          balanceCents: await new WalletLedger(tx, context).balanceCents(now),
+          balanceCents:
+            (await new WalletLedger(tx, context).balanceCents(now)) - Math.max(0, pendingCents),
           attemptsInWindow: await topUps.automaticAttemptsSince(
             new Date(now.getTime() - AUTO_TOP_UP_WINDOW_MS),
           ),
@@ -331,6 +336,9 @@ export class AutoTopUpRunner {
       });
     });
     if (settled?.suspended != null) await this.signals.ruleChanged(context.orgId);
+    // The ledger moved, whichever way the charge went: a success added credit and a failure
+    // changed what the rule remembers. Either is what the live balance's snapshot has to hear.
+    if (settled != null) await this.signals.walletMoved(context.orgId);
     if (settled != null) {
       this.logger.info("automatic top-up settled", {
         orgId: context.orgId,

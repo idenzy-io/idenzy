@@ -1,3 +1,4 @@
+import type { LiveBalanceCache } from "@idenzy/cache/live-balance-cache";
 import type { Logger } from "@idenzy/core/logging/logger";
 import type { BillingWorkReader } from "@idenzy/persistence/repository/billing-work-reader";
 import type { AutoTopUpRunner } from "./auto-top-up-runner.js";
@@ -27,6 +28,7 @@ export class AutoTopUpSweeper {
   constructor(
     private readonly runner: AutoTopUpRunner,
     private readonly work: BillingWorkReader,
+    private readonly live: LiveBalanceCache,
     private readonly logger: Logger,
     private readonly options: AutoTopUpSweeperOptions = {},
   ) {}
@@ -77,7 +79,10 @@ export class AutoTopUpSweeper {
   /** One organisation, whose failure is not the pass's. */
   private async look(orgId: string): Promise<void> {
     try {
-      await this.runner.evaluate(orgId, false);
+      // The live figure's pending usage where there is one; a missing one is none, which only
+      // makes this pass as late as it was before live balances existed.
+      const live = await this.live.live(orgId).catch(() => null);
+      await this.runner.evaluate(orgId, false, live?.pendingCents ?? 0);
     } catch (cause: unknown) {
       this.logger.error("automatic top-up failed", {
         orgId,

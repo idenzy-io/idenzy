@@ -3,6 +3,7 @@ import { OperatorOrgReader } from "@idenzy/persistence/repository/operator-org-r
 import { StaffRole } from "@idenzy/protocol/enums/staff";
 import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import {
+  type OperatorInvoiceList,
   type OperatorMe,
   type OperatorOrgBilling,
   type OperatorOrgList,
@@ -48,6 +49,25 @@ export class OperatorController {
         id: PublicId.encode(IdPrefix.Org, row.id).value,
         name: row.name,
         createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /** Past-due invoices across every organisation, oldest first. Nothing acts on these by itself. */
+  @Get("invoices/overdue")
+  @RequireStaff(StaffRole.Support)
+  async overdue(): Promise<OperatorInvoiceList> {
+    const rows = await this.orgs.invoicesByStatus("past_due", 200);
+    return {
+      invoices: rows.map((row) => ({
+        orgId: PublicId.encode(IdPrefix.Org, row.orgId).value,
+        orgName: row.orgName,
+        number: row.number,
+        totalCents: row.totalCents,
+        currency: row.currency,
+        status: row.status,
+        dueAt: row.dueAt?.toISOString() ?? null,
+        hostedUrl: row.hostedUrl,
       })),
     };
   }

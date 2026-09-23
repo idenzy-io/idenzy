@@ -59,3 +59,18 @@ export const setBillingModeSchema = z
     path: ["invoiceEmail"],
   });
 export type SetBillingMode = z.infer<typeof setBillingModeSchema>;
+
+/** An invoice in the console's cross-organisation lists. */
+export const operatorInvoiceSchema = z.object({
+  orgId: z.string(),
+  orgName: z.string(),
+  number: z.string(),
+  totalCents: z.number().int(),
+  currency: z.string(),
+  status: z.string(),
+  dueAt: z.iso.datetime().nullable(),
+  hostedUrl: z.string().nullable(),
+});
+export type OperatorInvoice = z.infer<typeof operatorInvoiceSchema>;
+export const operatorInvoiceListSchema = z.object({ invoices: z.array(operatorInvoiceSchema) });
+export type OperatorInvoiceList = z.infer<typeof operatorInvoiceListSchema>;

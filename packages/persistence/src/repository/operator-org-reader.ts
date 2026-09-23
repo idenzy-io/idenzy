@@ -1,6 +1,19 @@
-import { desc, eq, ilike, or, sql } from "drizzle-orm";
+import { asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { invoices } from "../schema/billing.js";
 import { orgs } from "../schema/organisation.js";
+
+/** An invoice as the console lists it across organisations. */
+export interface OperatorInvoiceRow {
+  readonly orgId: string;
+  readonly orgName: string;
+  readonly number: string;
+  readonly totalCents: number;
+  readonly currency: string;
+  readonly status: string;
+  readonly dueAt: Date | null;
+  readonly hostedUrl: string | null;
+}
 
 export interface OperatorOrgRow {
   readonly id: string;
@@ -43,6 +56,29 @@ export class OperatorOrgReader {
       .from(orgs)
       .where(trimmed.length === 0 ? sql`true` : where)
       .orderBy(desc(orgs.createdAt))
+      .limit(limit);
+  }
+
+  /**
+   * Invoices in one state across every organisation, oldest due first — the overdue list a person
+   * works through, since nothing acts on an overdue invoice by itself (ADR-0019).
+   */
+  async invoicesByStatus(status: string, limit: number): Promise<readonly OperatorInvoiceRow[]> {
+    return await this.db
+      .select({
+        orgId: invoices.orgId,
+        orgName: orgs.name,
+        number: invoices.number,
+        totalCents: invoices.totalCents,
+        currency: invoices.currency,
+        status: invoices.status,
+        dueAt: invoices.dueAt,
+        hostedUrl: invoices.hostedUrl,
+      })
+      .from(invoices)
+      .innerJoin(orgs, eq(orgs.id, invoices.orgId))
+      .where(eq(invoices.status, status))
+      .orderBy(asc(invoices.dueAt))
       .limit(limit);
   }
 }

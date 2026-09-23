@@ -14,7 +14,10 @@ async function signOut() {
 <template>
   <div class="shell">
     <header>
-      <NuxtLink class="brand" to="/">Idenzy operator console</NuxtLink>
+      <nav style="display: flex; gap: 16px; align-items: baseline">
+        <NuxtLink class="brand" to="/">Idenzy operator console</NuxtLink>
+        <NuxtLink v-if="operator" to="/invoices/overdue">Overdue invoices</NuxtLink>
+      </nav>
       <span v-if="operator" class="who">
         {{ operator.email }} · {{ operator.role }}
         <button type="button" @click="signOut">Sign out</button>

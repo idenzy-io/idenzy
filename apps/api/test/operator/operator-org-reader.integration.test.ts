@@ -40,3 +40,21 @@ describe("searching organisations", () => {
     expect(await reader.search("", 10)).toHaveLength(3);
   });
 });
+
+describe("invoices across organisations", () => {
+  it("lists one state, oldest due first, with the organisation's name", async () => {
+    await harness.owner.query(
+      `INSERT INTO invoices (org_id, number, period_start, period_end, status, total_cents,
+                             provider, issued_at, due_at)
+       VALUES ($1, 'IDZ-1', '2026-07-01', '2026-07-31', 'past_due', 500, 'stripe', now(), now() - interval '9 days'),
+              ($1, 'IDZ-2', '2026-08-01', '2026-08-31', 'past_due', 700, 'stripe', now(), now() - interval '2 days'),
+              ($1, 'IDZ-3', '2026-06-01', '2026-06-30', 'paid', 900, 'stripe', now(), now() - interval '40 days')`,
+      [ACME],
+    );
+    const rows = await reader.invoicesByStatus("past_due", 10);
+    expect(rows.map((row) => [row.number, row.orgName])).toEqual([
+      ["IDZ-1", "Acme Corp"],
+      ["IDZ-2", "Acme Corp"],
+    ]);
+  });
+});

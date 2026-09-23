@@ -127,6 +127,9 @@ describe("the grants the app role holds", () => {
            -- Refunds and disputes of a top-up (migration 0004). Each records money that moved
            -- and how the wallet followed it, so neither gets DELETE. Asserted below.
            'payment_refunds', 'payment_disputes',
+           -- Operator identity (migration 0007, ADR-0018). The app role reads staff and never
+           -- writes it, and the operator audit trail is append-only. Asserted below.
+           'staff', 'operator_actions',
            -- The app role holds nothing at all on this one (migration 0062). It is written by
            -- purge_project running as the owner and read by an auditor, and it could not be
            -- tenant-scoped even in principle: the row exists because the tenant does not.
@@ -311,6 +314,60 @@ describe("the grants the app role holds", () => {
       ]);
     },
   );
+
+  /**
+   * Who is an operator is decided by a row the application can read and never write. The default
+   * privileges would have given it INSERT; this is the assertion that they did not survive.
+   */
+  it("gives the app role SELECT on staff and nothing else", async () => {
+    const { rows } = await harness.owner.query<{ priv: string; granted: boolean }>(
+      `SELECT p.priv, has_table_privilege('idenzy_app', 'staff', p.priv) AS granted
+       FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)`,
+    );
+    expect(rows).toEqual([
+      { priv: "SELECT", granted: true },
+      { priv: "INSERT", granted: false },
+      { priv: "UPDATE", granted: false },
+      { priv: "DELETE", granted: false },
+    ]);
+  });
+
+  /** And the attack itself, rather than only the privilege that should stop it. */
+  it("refuses the app role making somebody an operator", async () => {
+    const client = await harness.pool.connect();
+    try {
+      await client.query("SET ROLE idenzy_app");
+      await expect(
+        client.query(`INSERT INTO staff (email, role) VALUES ('mallory@idenzy.io', 'admin')`),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      client.release();
+    }
+  });
+
+  it("keeps the operator audit trail append-only", async () => {
+    const { rows } = await harness.owner.query<{ priv: string; granted: boolean }>(
+      `SELECT p.priv, has_table_privilege('idenzy_app', 'operator_actions', p.priv) AS granted
+       FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)`,
+    );
+    expect(rows).toEqual([
+      { priv: "SELECT", granted: true },
+      { priv: "INSERT", granted: true },
+      { priv: "UPDATE", granted: false },
+      { priv: "DELETE", granted: false },
+    ]);
+  });
+
+  it("accepts only idenzy.io addresses for staff, even from the owner", async () => {
+    await expect(
+      harness.owner.query(`INSERT INTO staff (email, role) VALUES ('eve@gmail.com', 'admin')`),
+    ).rejects.toThrow(/staff_email_domain_ck/);
+    await expect(
+      harness.owner.query(
+        `INSERT INTO staff (email, role) VALUES ('eve@idenzy.io.evil.com', 'admin')`,
+      ),
+    ).rejects.toThrow(/staff_email_domain_ck/);
+  });
 
   /**
    * The same claim for `usage_periods`, which withholds both verbs rather than one (0046).

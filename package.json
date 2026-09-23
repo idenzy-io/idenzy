@@ -29,7 +29,8 @@
     "examples:generate": "pnpm --filter @idenzy/cli run examples:generate",
     "examples:check": "pnpm --filter @idenzy/cli run examples:check",
     "gen:openapi": "pnpm --filter @idenzy/protocol run gen:openapi",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "staff": "pnpm --filter @idenzy/persistence run staff"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

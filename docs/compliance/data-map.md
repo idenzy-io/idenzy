@@ -12,11 +12,11 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 
 | Class | Columns |
 |---|---|
-| pii | 35 |
+| pii | 36 |
 | phi | 0 |
 | secret | 21 |
 | pseudonymous | 122 |
-| operational | 409 |
+| operational | 422 |
 
 ## `analytics.auth_events`
 
@@ -568,6 +568,25 @@ Notes:
 - `submittedBy`: The org_members row that answered. Who said it is part of what makes it useful.
 - `useCase`: Free text: what they are building. Optional, and skipping it is a normal answer.
 
+## `operator_actions`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `action` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `detail` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `id` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `orgId` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `reason` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `staffId` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+
+Notes:
+
+- `action`: OperatorAction: what was done, in a stable machine-readable name.
+- `detail`: What changed, from and to. Settings only; never a secret, never a customer's data.
+- `orgId`: The organisation acted on, where there was one. No FK: this outlives a purge.
+- `reason`: Required. A change to a customer's account without a reason is not reviewable.
+
 ## `org_debts`
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
@@ -1036,6 +1055,24 @@ Notes:
 - `maxSendsPerVerify`: Pumping signal: codes that are never entered. Applied above a daily floor.
 - `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `senderId`: Alphanumeric sender id, registered per country. Null uses the shared number.
+
+## `staff`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `active` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `deactivatedAt` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `email` | pii | audit_and_compliance | years_6 | no | retain_pseudonymous | no |
+| `id` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `note` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+| `role` | operational | audit_and_compliance | years_6 | no | not_applicable | no |
+
+Notes:
+
+- `email`: An employee's work address, lower case. Kept with the audit trail it signs.
+- `note`: Why they have access, in the words of whoever granted it.
+- `role`: StaffRole: support < billing < admin.
 
 ## `staff_access_grants`
 

@@ -12,4 +12,5 @@ export * from "./mfa.js";
 export * from "./organisation.js";
 export * from "./projects.js";
 export * from "./sessions.js";
+export * from "./staff.js";
 export * from "./usage.js";

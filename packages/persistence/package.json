@@ -22,7 +22,8 @@
     "db:migrate": "node --env-file-if-exists=../../.env src/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "clean": "rm -rf dist .turbo *.tsbuildinfo",
-    "db:seed": "node --env-file-if-exists=../../.env dist/seed.js"
+    "db:seed": "node --env-file-if-exists=../../.env dist/seed.js",
+    "staff": "node --env-file-if-exists=../../.env dist/staff-cli.js"
   },
   "dependencies": {
     "@idenzy/compliance": "workspace:*",

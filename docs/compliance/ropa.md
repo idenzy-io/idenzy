@@ -32,10 +32,11 @@ certification; see PROJECT.md 4.13.10.
 
 - **Lawful basis:** art_6_1_c_legal_obligation
 - **Retention:** days_30, project_lifetime, years_1, years_6
-- **Tables:** `audit_events`, `data_subject_requests`, `email_sending_holds`, `email_templates`, `staff_access_grants`, `top_ups`
+- **Tables:** `audit_events`, `data_subject_requests`, `email_sending_holds`, `email_templates`, `staff`, `staff_access_grants`, `top_ups`
 - **Categories of personal data:**
 
   - pii: artifactUri
+  - pii: email
   - pii: grantedBy
   - pii: ip
   - pii: releasedBy

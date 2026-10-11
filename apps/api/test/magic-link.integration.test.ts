@@ -23,6 +23,7 @@ import { OutboxFlowAudit } from "../dist/flows/outbox-flow-audit.js";
 import { MagicLinkFlow } from "../dist/magic-link/magic-link.flow.js";
 import { MAGIC_LINK_REDIRECT, MagicLinkService } from "../dist/magic-link/magic-link-service.js";
 import { SessionService } from "../dist/session/session-service.js";
+import { ProjectResolver } from "../dist/tenancy/project-resolver.js";
 import {
   claimTemplates,
   testActives,
@@ -171,6 +172,24 @@ describe("issuing a link", () => {
       `SELECT target_encrypted FROM magic_link_tokens ORDER BY created_at DESC LIMIT 1`,
     );
     expect(rows[0]?.target_encrypted).not.toContain("stored@a.test");
+  });
+});
+
+describe("the clicked link's project", () => {
+  /**
+   * A click brings the token and nothing else to our shared host: no publishable key, no auth
+   * domain in the Host. The token was stored with its project, so it is what names it there.
+   */
+  it("is found from the token alone", async () => {
+    await service.start(context, "resolve@a.test", REGISTERED);
+    const resolver = new ProjectResolver(harness.db);
+
+    await expect(resolver.byMagicLinkToken(tokenIn("resolve@a.test"))).resolves.toMatchObject({
+      projectId: PROJECT,
+    });
+    await expect(resolver.byMagicLinkToken(generateOpaqueToken())).rejects.toMatchObject({
+      code: "unknown_project",
+    });
   });
 });
 

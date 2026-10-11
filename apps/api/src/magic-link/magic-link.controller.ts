@@ -13,6 +13,7 @@ import { ZodValidationPipe } from "../common/zod-validation.pipe.js";
 import { presentOutcome } from "../flows/present-outcome.js";
 import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { TenantFromFlow } from "../tenancy/tenant-resolution.guard.js";
 import { SEND_MESSAGE_LIMITS, VERIFY_CODE_LIMITS } from "../throttling/limits.js";
 import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { MagicLinkFlow } from "./magic-link.flow.js";
@@ -51,6 +52,7 @@ export class MagicLinkController {
   @Get("callback")
   @RateLimit(VERIFY_CODE_LIMITS)
   @BrowserNavigation()
+  @TenantFromFlow("magic_link_token")
   @Redirect(undefined, 302)
   async callback(
     @Req() request: FastifyRequest,

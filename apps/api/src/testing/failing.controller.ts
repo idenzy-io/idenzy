@@ -1,6 +1,7 @@
 import { InvalidCredentialsError, MissingCredentialsError } from "@idenzy/core/errors";
 import { Controller, Get, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
+import { TenantFromFlow } from "../tenancy/tenant-resolution.guard.js";
 
 /** Not an Error at all, which is a real failure mode: libraries throw plain values. */
 class UnrecognizedFailure {
@@ -32,6 +33,13 @@ export class FailingController {
     const tenant = request.tenant;
     if (tenant === undefined) throw new MissingCredentialsError();
     return { projectId: tenant.projectId, actor: tenant.actorType };
+  }
+
+  /** As `tenant`, on a route a clicked magic link is sent to. */
+  @Get("tenant-from-link")
+  @TenantFromFlow("magic_link_token")
+  tenantFromLink(@Req() request: FastifyRequest): { projectId: string; actor: string } {
+    return this.tenant(request);
   }
 
   @Get("unhandled")

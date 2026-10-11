@@ -1,0 +1,1 @@
+CREATE INDEX "oauth_flows_state_idx" ON "oauth_flows" USING btree ("state");

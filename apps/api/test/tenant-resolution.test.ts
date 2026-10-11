@@ -13,6 +13,7 @@ import { SilentLogger } from "./fixtures.js";
 
 const BY_KEY = "11111111-1111-1111-1111-111111111111";
 const BY_HOST = "22222222-2222-2222-2222-222222222222";
+const BY_FLOW = "33333333-3333-3333-3333-333333333333";
 
 /**
  * A resolver that records every lookup, because several of these tests assert that **no**
@@ -42,6 +43,14 @@ class RecordingResolver extends ProjectResolver {
   override byHost(host: string): Promise<ResolvedProject> {
     this.lookups.push(`host:${host}`);
     return Promise.resolve(project(BY_HOST, null));
+  }
+
+  override byMagicLinkToken(token: string): Promise<ResolvedProject> {
+    this.lookups.push(`link:${token}`);
+    if (token !== "issued-token") {
+      return Promise.reject(new UnknownProjectError({ detail: { flow: "magic_link" } }));
+    }
+    return Promise.resolve(project(BY_FLOW, null));
   }
 }
 
@@ -94,8 +103,8 @@ interface Answer {
   readonly message: string | undefined;
 }
 
-async function get(headers: Record<string, string>): Promise<Answer> {
-  const response = await fetch(`${base}/test/tenant`, { headers });
+async function get(headers: Record<string, string>, path = "/test/tenant"): Promise<Answer> {
+  const response = await fetch(`${base}${path}`, { headers });
   const body = (await response.json()) as {
     error?: { code: string; message?: string };
     projectId?: string;
@@ -180,5 +189,32 @@ describe("resolution order is first-present-wins, not a fallback chain", () => {
     const secret = await get({ authorization: "Bearer sk_live_abc" });
     expect(secret.projectId).toBe(BY_KEY);
     expect(secret.actor).toBe("api_key");
+  });
+});
+
+describe("a route a browser is sent to with a one-time secret", () => {
+  it("is named by the secret, where the shared host names nothing", async () => {
+    const answer = await get({}, "/test/tenant-from-link?token=issued-token");
+    expect(answer.projectId).toBe(BY_FLOW);
+    expect(resolver.lookups).toEqual(["link:issued-token"]);
+  });
+
+  it("refuses a secret nobody issued, rather than falling back to Host", async () => {
+    const answer = await get({}, "/test/tenant-from-link?token=forged");
+    expect(answer.code).toBe("unknown_project");
+    expect(resolver.lookups).toEqual(["link:forged"]);
+  });
+
+  it("still lets a presented key win, first present as everywhere", async () => {
+    const answer = await get(
+      { [IdenzyHeader.PublishableKey]: "pk_live_abc" },
+      "/test/tenant-from-link?token=issued-token",
+    );
+    expect(answer.projectId).toBe(BY_KEY);
+  });
+
+  it("means nothing on a route that doesn't take one", async () => {
+    const answer = await get({}, "/test/tenant?token=issued-token");
+    expect(answer.projectId).toBe(BY_HOST);
   });
 });

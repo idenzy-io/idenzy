@@ -36,6 +36,7 @@ import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
 import { OAuthService } from "../dist/oauth/oauth-service.js";
 import { ProviderRegistry } from "../dist/oauth/provider-registry.js";
 import { SessionService } from "../dist/session/session-service.js";
+import { ProjectResolver } from "../dist/tenancy/project-resolver.js";
 import {
   claimTemplates,
   testActives,
@@ -273,6 +274,24 @@ describe("starting a flow", () => {
     expect(() =>
       ProviderRegistry.assertInstantModeAllowed("custom", "https://app.test/cb"),
     ).not.toThrow();
+  });
+});
+
+describe("the callback's project", () => {
+  /**
+   * The provider sends the browser to our shared host with a state and a code and nothing
+   * else: no publishable key, no auth domain in the Host. The state was stored with its
+   * project, so it is what names the project there.
+   */
+  it("is found from the state alone", async () => {
+    const url = new URL(await service.start(context, ProviderId.Google, REGISTERED, null));
+    const state = url.searchParams.get("state") ?? "";
+    const resolver = new ProjectResolver(harness.db);
+
+    await expect(resolver.byOAuthState(state)).resolves.toMatchObject({ projectId: PROJECT });
+    await expect(resolver.byOAuthState("a-state-nobody-issued")).rejects.toMatchObject({
+      code: "unknown_project",
+    });
   });
 });
 

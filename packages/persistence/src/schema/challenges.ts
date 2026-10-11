@@ -256,6 +256,9 @@ export const oauthFlows = classifiedTable(
   },
   (t) => [
     uniqueIndex("oauth_flows_project_state_key").on(t.projectId, t.state),
+    // The provider's callback arrives with a state and nothing else, so its project is
+    // found from the state alone (resolve_project_by_oauth_state).
+    index("oauth_flows_state_idx").on(t.state),
     index("oauth_flows_expiry_idx").on(t.expiresAt),
   ],
 );

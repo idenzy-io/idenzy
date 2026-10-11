@@ -16,6 +16,7 @@ import { presentOutcome } from "../flows/present-outcome.js";
 import { BrowserNavigation } from "../http/browser-navigation.decorator.js";
 import { RequireSession, type SessionPrincipal } from "../session/session.guard.js";
 import { flowContextFrom } from "../tenancy/flow-context.js";
+import { TenantFromFlow } from "../tenancy/tenant-resolution.guard.js";
 import { OAUTH_START_LIMITS, VERIFY_CODE_LIMITS } from "../throttling/limits.js";
 import { RateLimit } from "../throttling/rate-limit.decorator.js";
 import { OAuthCodeFlow } from "./oauth-code.flow.js";
@@ -130,6 +131,7 @@ export class OAuthController {
   @Get(":provider/callback")
   @RateLimit(VERIFY_CODE_LIMITS)
   @BrowserNavigation()
+  @TenantFromFlow("oauth_state")
   @Redirect(undefined, 302)
   callback(
     @Req() request: FastifyRequest,
@@ -143,6 +145,7 @@ export class OAuthController {
   @Post(":provider/callback")
   @RateLimit(VERIFY_CODE_LIMITS)
   @BrowserNavigation()
+  @TenantFromFlow("oauth_state")
   @Redirect(undefined, 302)
   callbackPosted(
     @Req() request: FastifyRequest,

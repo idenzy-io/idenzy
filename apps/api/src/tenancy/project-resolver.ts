@@ -62,6 +62,25 @@ export class ProjectResolver {
    * whose kind is `secret` but whose value was issued with a `pk_` prefix is a provisioning
    * mistake, and it must not become a secret key that works from a browser.
    */
+  /**
+   * The project of a clicked magic link, from its token: the browser that follows one brings
+   * no key, and lands on the shared host where no auth domain names a project.
+   */
+  async byMagicLinkToken(token: string): Promise<ResolvedProject> {
+    const rows = await this.db.execute<ResolvedProjectRow>(
+      sql`select * from resolve_project_by_magic_link(${hashToken(token)})`,
+    );
+    return this.first(rows.rows, { flow: "magic_link" });
+  }
+
+  /** The project of a provider's OAuth callback, from the state it returns, for the same reason. */
+  async byOAuthState(state: string): Promise<ResolvedProject> {
+    const rows = await this.db.execute<ResolvedProjectRow>(
+      sql`select * from resolve_project_by_oauth_state(${state})`,
+    );
+    return this.first(rows.rows, { flow: "oauth" });
+  }
+
   async byPublishableKey(key: string): Promise<ResolvedProject> {
     const resolved = await this.byApiKey(key);
     if (resolved.keyKind !== ApiKeyKind.Publishable) {

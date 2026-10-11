@@ -17,6 +17,21 @@ export const PUBLIC_ROUTE = "idenzy:public-route";
 /** Marks a route as reachable without a tenant. Health and discovery only. */
 export const NoTenant = (): MethodDecorator & ClassDecorator => SetMetadata(PUBLIC_ROUTE, true);
 
+export const FLOW_TENANT = "idenzy:flow-tenant";
+
+/** The one-time secret a browser brings back to a route it is sent to: a link's token, a state. */
+export type FlowSecret = "magic_link_token" | "oauth_state";
+
+/**
+ * Marks a route a browser is *sent* to, by an email or a provider, carrying a one-time secret
+ * and nothing else: no publishable key, and a Host that is the shared API host unless the
+ * project has an auth domain. The secret was stored with its project when the flow started, so
+ * it names the project, and it is unguessable, so naming one is all it can do: the route still
+ * checks the flow (expiry, single use) inside that project.
+ */
+export const TenantFromFlow = (secret: FlowSecret): MethodDecorator =>
+  SetMetadata(FLOW_TENANT, secret);
+
 declare module "fastify" {
   interface FastifyRequest {
     tenant?: TenantContext;
@@ -36,7 +51,8 @@ declare module "fastify" {
 type Credential =
   | { readonly from: "publishable-header"; readonly key: string }
   | { readonly from: "authorization"; readonly key: string }
-  | { readonly from: "host"; readonly host: string };
+  | { readonly from: "host"; readonly host: string }
+  | { readonly from: "flow"; readonly secret: FlowSecret; readonly value: string };
 
 /**
  * Resolves the project from the publishable-key header, an API key, or the Host header, and
@@ -85,7 +101,7 @@ export class TenantResolutionGuard implements CanActivate {
       return true;
     }
 
-    const credential = this.credential(request);
+    const credential = this.credential(request, context);
     const resolved = await this.resolve(credential);
     request.project = resolved;
 
@@ -109,6 +125,10 @@ export class TenantResolutionGuard implements CanActivate {
         return this.resolver.byApiKey(credential.key);
       case "host":
         return this.resolver.byHost(credential.host);
+      case "flow":
+        return credential.secret === "magic_link_token"
+          ? this.resolver.byMagicLinkToken(credential.value)
+          : this.resolver.byOAuthState(credential.value);
     }
   }
 
@@ -119,7 +139,7 @@ export class TenantResolutionGuard implements CanActivate {
    * a fabricated one produce the same answer after the same work. A check that ran after the
    * lookup would tell whoever asked whether the key they pasted was genuine.
    */
-  private credential(request: FastifyRequest): Credential {
+  private credential(request: FastifyRequest, context: ExecutionContext): Credential {
     const presented = request.headers[IdenzyHeader.PublishableKey];
     const key = typeof presented === "string" ? presented.trim() : "";
     if (key.length > 0) {
@@ -130,6 +150,12 @@ export class TenantResolutionGuard implements CanActivate {
 
     const bearer = this.bearerKey(request);
     if (bearer !== null) return { from: "authorization", key: bearer };
+
+    // Before Host: on the shared host Host names nothing, and where the project has an auth
+    // domain both name the same project.
+    const flow = this.reflector.get<FlowSecret | undefined>(FLOW_TENANT, context.getHandler());
+    const secret = flow === undefined ? null : flowSecretOf(request, flow);
+    if (flow !== undefined && secret !== null) return { from: "flow", secret: flow, value: secret };
 
     const host = request.headers.host;
     if (host !== undefined) return { from: "host", host };
@@ -149,4 +175,16 @@ export class TenantResolutionGuard implements CanActivate {
     const token = header.slice("Bearer ".length).trim();
     return isApiKey(token) ? token : null;
   }
+}
+
+/** The secret a flow's browser brings back: a link's `token` in the query, an OAuth `state` in
+ *  the query or, for a provider that posts its callback (Apple), in the form body. */
+function flowSecretOf(request: FastifyRequest, flow: FlowSecret): string | null {
+  const name = flow === "magic_link_token" ? "token" : "state";
+  for (const source of [request.query, request.body]) {
+    if (typeof source !== "object" || source === null) continue;
+    const value = (source as Record<string, unknown>)[name];
+    if (typeof value === "string" && value.length > 0 && value.length <= 512) return value;
+  }
+  return null;
 }

@@ -1,0 +1,162 @@
+name: Deploy
+
+# Production, stage one: the image to GitHub's registry, the two panels built, and the VPS moved onto
+# both over SSH (docs/guide/deploy.md).
+#
+# By hand, from the Actions tab, until the repository variable DEPLOY is "true"; then on every push
+# to main as well. The `production` environment is where the secrets live, and where a required
+# reviewer can be added so nothing reaches the box without somebody pressing the button.
+#
+# The order on the box is the order that keeps it serving: pull the new image, run the migrations
+# (forward-only, so every migration must work with the revision before it as well), start the new
+# revision, and wait for it to be ready. A revision that does not become ready is replaced by the one
+# before it, and the run fails.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+  IMAGE: ghcr.io/${{ github.repository_owner }}/idenzy
+
+jobs:
+  image:
+    name: image
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+  panels:
+    name: panels
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Static builds, so their public settings are fixed here: a publishable key and a URL, both
+      # meant to sit in a browser bundle, from repository variables rather than secrets.
+      - name: build the panel and the operator console
+        env:
+          NUXT_PUBLIC_IDENZY_API_URL: ${{ vars.PANEL_API_URL }}
+          NUXT_PUBLIC_IDENZY_PUBLISHABLE_KEY: ${{ vars.DASHBOARD_PUBLISHABLE_KEY }}
+          NUXT_PUBLIC_OPERATOR_PUBLISHABLE_KEY: ${{ vars.OPERATOR_PUBLISHABLE_KEY }}
+        run: pnpm turbo run build --filter=@idenzy/client --filter=@idenzy/admin --output-logs=errors-only
+      - run: |
+          mkdir -p panels
+          cp -r apps/client/.output/public panels/app
+          cp -r apps/admin/.output/public panels/console
+          tar -czf panels.tgz panels
+      - uses: actions/upload-artifact@v4
+        with:
+          name: panels
+          path: panels.tgz
+          retention-days: 7
+
+  deploy:
+    name: deploy
+    needs: [image, panels]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: panels
+      - name: reach the box
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: copy the stack's files and the panels
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+        run: |
+          # The files that describe the stack, never .env, secrets/ or recipient.txt, which are the
+          # box's own and are set up once by hand.
+          tar -czf stack.tgz -C deploy compose.yaml caddy/Caddyfile postgres clickhouse backup/Dockerfile backup/backup.sh
+          scp -i ~/.ssh/deploy stack.tgz panels.tgz "$TARGET:/opt/idenzy/"
+      - name: migrate, start, wait, or roll back
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          NEXT: ${{ env.IMAGE }}@${{ needs.image.outputs.digest }}
+        run: |
+          ssh -i ~/.ssh/deploy "$TARGET" NEXT="$NEXT" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/idenzy
+          tar -xzf stack.tgz && rm stack.tgz
+          rm -rf panels.next && mkdir panels.next && tar -xzf panels.tgz -C panels.next --strip-components=1 && rm panels.tgz
+
+          previous=$(grep '^IDENZY_IMAGE=' .env | cut -d= -f2-)
+          set_image() { sed -i "s#^IDENZY_IMAGE=.*#IDENZY_IMAGE=$1#" .env; }
+
+          set_image "$NEXT"
+          docker compose pull api workers migrate
+          docker compose run --rm migrate
+
+          # The first deploy only: the deployment's own projects, which the API needs to start. Their
+          # ids go into .env; their publishable keys (public by design) are printed for the
+          # repository variables the panels are built with, which the next run picks up.
+          if ! grep -q '^DASHBOARD_PROJECT_ID=prj_' .env; then
+            docker compose run --rm bootstrap platform | tee bootstrap.out
+            for id in DASHBOARD_PROJECT_ID OPERATOR_PROJECT_ID; do
+              line=$(grep "^$id=" bootstrap.out)
+              sed -i "s#^$id=.*#$line#" .env
+            done
+            rm bootstrap.out
+          fi
+
+          rm -rf panels.previous && { [ -d panels ] && mv panels panels.previous || true; } && mv panels.next panels
+          docker compose up -d --remove-orphans
+
+          for attempt in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q api)")
+            if [ "$status" = healthy ]; then echo "deployed $NEXT"; exit 0; fi
+            sleep 4
+          done
+
+          echo "the new revision did not become ready; putting $previous back" >&2
+          set_image "$previous"
+          rm -rf panels && { [ -d panels.previous ] && mv panels.previous panels || true; }
+          docker compose up -d --remove-orphans
+          exit 1
+          REMOTE

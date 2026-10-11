@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IdenzyExceptionFilter } from "../dist/common/exception.filter.js";
 import { HealthController } from "../dist/health/health.controller.js";
 import { FailingController } from "../dist/testing/failing.controller.js";
-import { WellKnownController } from "../dist/well-known/well-known.controller.js";
+import { ProjectKeysController } from "../dist/well-known/project-keys.controller.js";
 import { SilentLogger, testConfig } from "./fixtures.js";
 
 let app: NestFastifyApplication;
@@ -18,7 +18,7 @@ let base: string;
 beforeAll(async () => {
   const config = testConfig();
   const moduleRef = await Test.createTestingModule({
-    controllers: [HealthController, WellKnownController, FailingController],
+    controllers: [HealthController, ProjectKeysController, FailingController],
     providers: [
       { provide: AppConfig, useValue: config },
       {
@@ -45,8 +45,7 @@ describe("the auth API never returns HTML", () => {
   it.each([
     "/healthz",
     "/readyz",
-    "/.well-known/openid-configuration",
-    "/.well-known/jwks.json",
+    "/v1/projects/prj_3f2b9c1e4d5a4e6f8a7b9c0d1e2f3a4b/jwks.json",
     "/test/boom",
     "/test/unhandled",
     "/does-not-exist",

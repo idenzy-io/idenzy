@@ -88,7 +88,7 @@ function withSecretKey(headers: Record<string, string> = {}): RequestInit {
 }
 
 async function claims(body: string): Promise<unknown> {
-  const keys = createLocalJWKSet({ keys: [...(await issuer.publicKeys())] });
+  const keys = createLocalJWKSet({ keys: [...(await issuer.publicKeys(PROJECT))] });
   const { payload } = await jwtVerify(body, keys, {
     issuer: config.get("ISSUER_BASE_URL"),
     typ: REVOCATION_SNAPSHOT_TYP,
@@ -195,7 +195,7 @@ describe("a snapshot presented as an access token", () => {
 
     const verifier = new IssuerTokenVerifier(issuer, config.get("ISSUER_BASE_URL"));
 
-    await expect(verifier.verify(snapshot)).rejects.toMatchObject({
+    await expect(verifier.verify(snapshot, PROJECT)).rejects.toMatchObject({
       code: "access_token_invalid",
     });
   });

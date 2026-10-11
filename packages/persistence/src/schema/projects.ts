@@ -36,7 +36,7 @@ export const projects = classifiedTable(
     settings: classified(jsonb("settings").notNull().default({}), config),
     kmsKeyName: classified(text("kms_key_name").notNull(), {
       ...config,
-      note: "Per-project signing key. The private half never leaves KMS.",
+      note: "Read by nothing since ADR-0021: a project's signing keys are rows of project_signing_keys, wrapped by the deployment's KMS key (KMS_KEY_NAME). Kept until a migration drops it.",
     }),
     dekWrapped: encrypted(text("dek_wrapped"), {
       class: DataClass.Secret,

@@ -149,8 +149,8 @@ export class CorsPolicy {
    * Decorates the real response, which is the only place the browser's gate actually is.
    *
    * Four cases, and the order matters. Public routes get a wildcard and no credentials,
-   * because a JWKS document varying by origin is uncacheable at the CDN and the well-known
-   * controller exists to be cached hard. A resolved project gets its allowlist enforced. An
+   * because a JWKS document varying by origin is uncacheable at the CDN and a project's key
+   * set exists to be cached hard. A resolved project gets its allowlist enforced. An
    * unresolved project on an error gets the origin echoed, so the SDK can read our error code
    * rather than an opaque failure. Everything else gets nothing.
    */

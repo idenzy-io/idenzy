@@ -13,17 +13,20 @@ import {
 } from "../src/tokens/random.js";
 import { IssuerTokenVerifier } from "../src/tokens/token-verifier.js";
 
+const PROJECT = "3f2b9c1e-4d5a-4e6f-8a7b-9c0d1e2f3a4b";
+const AUD = "prj_3f2b9c1e4d5a4e6f8a7b9c0d1e2f3a4b";
+
 describe("token issuance", () => {
   it("issues a verifiable ES256 token with the required claims", async () => {
     const issuer = await LocalEs256Issuer.create(new SystemClock(), "https://auth.test", 300);
     const issued = await issuer.issue({
       sub: "usr_1",
       sid: "ses_1",
-      aud: "prj_1",
+      aud: AUD,
       amr: ["pwd"],
     });
 
-    const [jwk] = await issuer.publicKeys();
+    const [jwk] = await issuer.publicKeys("prj_1");
     const key = await importJWK({ ...jwk }, "ES256");
     const { payload, protectedHeader } = await jwtVerify(issued.token, key);
 
@@ -53,28 +56,28 @@ describe("token verification", () => {
 
   it("reads back the claims it was given", async () => {
     const { issuer, verifier } = await issuerAndVerifier();
-    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: ["pwd"] });
+    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: AUD, amr: ["pwd"] });
 
-    const verified = await verifier.verify(issued.token);
+    const verified = await verifier.verify(issued.token, PROJECT);
     expect(verified.subject).toBe("usr_1");
     expect(verified.sessionId).toBe("ses_1");
-    expect(verified.audience).toBe("prj_1");
+    expect(verified.audience).toBe(AUD);
     expect(verified.amr).toEqual(["pwd"]);
   });
 
   it("rejects a token signed by a different issuer's key", async () => {
     const { verifier } = await issuerAndVerifier();
     const impostor = await LocalEs256Issuer.create(new SystemClock(), ISSUER, 300);
-    const forged = await impostor.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: [] });
+    const forged = await impostor.issue({ sub: "usr_1", sid: "ses_1", aud: AUD, amr: [] });
 
-    await expect(verifier.verify(forged.token)).rejects.toMatchObject({
+    await expect(verifier.verify(forged.token, PROJECT)).rejects.toMatchObject({
       code: "access_token_invalid",
     });
   });
 
   it("rejects a token whose payload was edited", async () => {
     const { issuer, verifier } = await issuerAndVerifier();
-    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: [] });
+    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: AUD, amr: [] });
     const [header, payload, signature] = issued.token.split(".");
     const decoded = JSON.parse(Buffer.from(payload ?? "", "base64url").toString()) as {
       sub: string;
@@ -86,7 +89,7 @@ describe("token verification", () => {
       signature,
     ].join(".");
 
-    await expect(verifier.verify(tampered)).rejects.toMatchObject({
+    await expect(verifier.verify(tampered, PROJECT)).rejects.toMatchObject({
       code: "access_token_invalid",
     });
   });
@@ -94,9 +97,9 @@ describe("token verification", () => {
   it("rejects a token minted for another issuer url", async () => {
     const issuer = await LocalEs256Issuer.create(new SystemClock(), "https://elsewhere.test", 300);
     const verifier = new IssuerTokenVerifier(issuer, ISSUER);
-    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: "prj_1", amr: [] });
+    const issued = await issuer.issue({ sub: "usr_1", sid: "ses_1", aud: AUD, amr: [] });
 
-    await expect(verifier.verify(issued.token)).rejects.toMatchObject({
+    await expect(verifier.verify(issued.token, PROJECT)).rejects.toMatchObject({
       code: "access_token_invalid",
     });
   });
@@ -110,7 +113,7 @@ describe("token verification", () => {
     const stale = await issuer.issue({
       sub: "usr_1",
       sid: "ses_1",
-      aud: "prj_1",
+      aud: AUD,
       amr: [],
       custom: {
         exp: Math.floor(Date.now() / 1000) - 120,
@@ -118,7 +121,7 @@ describe("token verification", () => {
       },
     });
 
-    await expect(verifier.verify(stale.token)).rejects.toMatchObject({
+    await expect(verifier.verify(stale.token, PROJECT)).rejects.toMatchObject({
       code: "session_expired",
     });
   });
@@ -128,11 +131,11 @@ describe("token verification", () => {
     const issued = await issuer.issue({
       sub: "usr_1",
       sid: "ses_1",
-      aud: "prj_1",
+      aud: AUD,
       amr: [],
       custom: { sid: undefined },
     });
-    await expect(verifier.verify(issued.token)).rejects.toMatchObject({
+    await expect(verifier.verify(issued.token, PROJECT)).rejects.toMatchObject({
       code: "access_token_invalid",
     });
   });

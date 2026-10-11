@@ -45,7 +45,7 @@ import { SessionModule } from "./session/session.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 import { ThrottlingModule } from "./throttling/throttling.module.js";
 import { UsageModule } from "./usage/usage.module.js";
-import { WellKnownController } from "./well-known/well-known.controller.js";
+import { ProjectKeysController } from "./well-known/project-keys.controller.js";
 
 /**
  * Composition root (PROJECT.md 9.2).
@@ -120,6 +120,6 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     // dashboard's, so neither audience accepts the other's tokens.
     OperatorModule,
   ],
-  controllers: [HealthController, WellKnownController, RevocationController],
+  controllers: [HealthController, ProjectKeysController, RevocationController],
 })
 export class AppModule {}

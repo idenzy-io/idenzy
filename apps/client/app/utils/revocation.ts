@@ -311,7 +311,7 @@ const issuerUrl = "${endpoint}";
 const projectId = "${projectId}";
 
 // One key set, shared by the verifier and the cache, so neither fetches it twice.
-const keys = new RemoteJwks(issuerUrl);
+const keys = new RemoteJwks(issuerUrl, projectId);
 
 const revocations = new RevocationCache(
   // Server-side only. The endpoint takes a secret key and refuses a publishable one.

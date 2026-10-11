@@ -125,6 +125,21 @@ export const configSchema = z.object({
   WEBHOOK_DISPATCH_AUDIENCE: z.string().min(1).optional(),
 
   /**
+   * The Cloud KMS key that wraps every project's signing key (ADR-0021), as its full resource
+   * name. Required outside development, where the auth API refuses to start without it; locally
+   * the wrapping key is derived instead and everything above it runs the same code.
+   */
+  KMS_KEY_NAME: z
+    .string()
+    .regex(/^projects\/[^/]+\/locations\/[^/]+\/keyRings\/[^/]+\/cryptoKeys\/[^/]+$/)
+    .optional(),
+  /**
+   * The field-encryption key, wrapped by `KMS_KEY_NAME` (base64), made once by the bootstrap
+   * command. Required outside development, and a secret reference there like every other key.
+   */
+  FIELD_KEY_WRAPPED: z.string().min(1).optional(),
+
+  /**
    * The `iss` claim and the base of the discovery document. Required rather than
    * defaulted: a wrong issuer is accepted by every verifier that was told to expect it
    * and rejected by every verifier that was not, which is a confusing outage at best.

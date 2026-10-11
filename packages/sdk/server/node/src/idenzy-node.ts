@@ -86,7 +86,7 @@ export class AccessTokenVerifier {
     this.issuerUrl = options.issuerUrl;
     this.projectId = assertProjectId(options.projectId);
     this.tolerance = options.clockToleranceSeconds ?? 5;
-    this.keys = keys ?? new RemoteJwks(options.issuerUrl);
+    this.keys = keys ?? new RemoteJwks(options.issuerUrl, this.projectId);
     this.revocations = options.revocations ?? null;
   }
 

@@ -28,13 +28,6 @@ export interface IssuedToken {
 }
 
 /**
- * Mints access tokens for one project (PROJECT.md 4.2).
- *
- * The base owns claim assembly and lifetime so no implementation can quietly issue a
- * token with a missing `sid` or an unbounded expiry. Subclasses only sign bytes, which
- * is the one part that differs between KMS and a local key.
- */
-/**
  * What an access token's lifetime may ever be (PROJECT.md 4.2).
  *
  * Below a minute the refresh traffic stops paying for itself; above an hour the revocation
@@ -44,6 +37,15 @@ export interface IssuedToken {
 const MIN_TTL_SECONDS = 60;
 const MAX_TTL_SECONDS = 3600;
 
+/**
+ * Mints access tokens and signed statements, each with its project's own key (PROJECT.md 4.2,
+ * ADR-0021).
+ *
+ * The base owns claim assembly and lifetime so no implementation can quietly issue a
+ * token with a missing `sid` or an unbounded expiry. Subclasses only sign bytes, with the key of
+ * the project the token is for, which they find from its audience: every token and statement is
+ * addressed to exactly one project, so the audience is the project.
+ */
 export abstract class TokenIssuer {
   protected constructor(
     protected readonly clock: Clock,
@@ -51,10 +53,15 @@ export abstract class TokenIssuer {
     protected readonly ttlSeconds: number,
   ) {}
 
-  protected abstract sign(header: object, payload: object): Promise<{ jwt: string; kid: string }>;
+  /** Signs with the key of the project `audience` names (its public `prj_` id). */
+  protected abstract sign(
+    audience: string,
+    header: object,
+    payload: object,
+  ): Promise<{ jwt: string; kid: string }>;
 
-  /** Public keys for the JWKS endpoint. Two during a rotation overlap. */
-  abstract publicKeys(): Promise<readonly Jwk[]>;
+  /** One project's public keys, for its JWKS endpoint. Two during a rotation overlap. */
+  abstract publicKeys(projectId: string): Promise<readonly Jwk[]>;
 
   /**
    * Signs something that is not an access token, with the same project key.
@@ -94,6 +101,7 @@ export abstract class TokenIssuer {
     const issuedAt = Math.floor(this.clock.nowMs() / 1000);
     const expiresAt = issuedAt + ttlSeconds;
     const { jwt, kid } = await this.sign(
+      audience,
       { alg: "ES256", typ },
       { iss: this.issuer, aud: audience, iat: issuedAt, exp: expiresAt, ...claims },
     );
@@ -123,6 +131,7 @@ export abstract class TokenIssuer {
     const expiresAt = issuedAt + lifetime;
 
     const { jwt, kid } = await this.sign(
+      claims.aud,
       { alg: "ES256", typ: "JWT" },
       {
         iss: this.issuer,

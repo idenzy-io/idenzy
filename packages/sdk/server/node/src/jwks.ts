@@ -20,7 +20,11 @@ export abstract class JwksSource {
 }
 
 /**
- * The published JWKS, fetched once and kept.
+ * The project's published JWKS, fetched once and kept.
+ *
+ * Every project signs with its own key, so the set is the project's, at
+ * `/v1/projects/{projectId}/jwks.json`. A token minted for another project does not verify
+ * against it, whatever its audience says.
  *
  * `jose` owns the caching, and the part worth knowing is what it does on a key it has never
  * seen: it refetches, once, behind a cooldown. That is what makes a rotation invisible to a
@@ -30,9 +34,11 @@ export abstract class JwksSource {
 export class RemoteJwks extends JwksSource {
   private readonly resolve: KeyResolver;
 
-  constructor(issuerUrl: string) {
+  constructor(issuerUrl: string, projectId: string) {
     super();
-    this.resolve = createRemoteJWKSet(new URL(".well-known/jwks.json", withSlash(issuerUrl)));
+    this.resolve = createRemoteJWKSet(
+      new URL(`v1/projects/${encodeURIComponent(projectId)}/jwks.json`, withSlash(issuerUrl)),
+    );
   }
 
   override resolver(): KeyResolver {
@@ -60,7 +66,7 @@ export class StaticJwks extends JwksSource {
   }
 }
 
-/** A trailing slash, so `.well-known` resolves against the whole base and not its parent. */
+/** A trailing slash, so the path resolves against the whole base and not its parent. */
 function withSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }

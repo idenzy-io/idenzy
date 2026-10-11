@@ -4,11 +4,11 @@ import { type CryptoKey, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { TokenIssuer } from "./token-issuer.js";
 
 /**
- * ES256 signing with an in-process key.
+ * ES256 signing with one in-process key for every project.
  *
- * For local development and tests only. Production uses the KMS issuer, where the
- * private key never exists in application memory (PROJECT.md 4.2). Kept in the same
- * hierarchy so the conformance suite runs against both.
+ * For tests only: it needs no store and no envelope. Everything that runs — development
+ * included — signs with `WrappedEs256Issuer`, one key per project (ADR-0021). Kept in the
+ * same hierarchy so the conformance suite runs against both.
  */
 export class LocalEs256Issuer extends TokenIssuer {
   private constructor(
@@ -45,6 +45,7 @@ export class LocalEs256Issuer extends TokenIssuer {
    * signature from the same key.
    */
   protected override async sign(
+    _audience: string,
     header: object,
     payload: object,
   ): Promise<{ jwt: string; kid: string }> {
@@ -57,7 +58,7 @@ export class LocalEs256Issuer extends TokenIssuer {
     return { jwt, kid: this.publicJwk.kid };
   }
 
-  override publicKeys(): Promise<readonly Jwk[]> {
+  override publicKeys(_projectId: string): Promise<readonly Jwk[]> {
     return Promise.resolve([this.publicJwk]);
   }
 }

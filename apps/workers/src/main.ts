@@ -23,8 +23,7 @@ import {
 import { AppConfig } from "@idenzy/config/app-config";
 import { InternalError } from "@idenzy/core/errors";
 import { SystemClock } from "@idenzy/core/time/clock";
-import { developmentDataKey } from "@idenzy/crypto/encryption/development-key";
-import { FieldEncryptor } from "@idenzy/crypto/encryption/field-encryptor";
+import { fieldEncryptorFor } from "@idenzy/crypto/encryption/field-key";
 import { Sha256WebhookSigner } from "@idenzy/crypto/webhooks/webhook-signer";
 import { createLogger } from "@idenzy/observability/logger-factory";
 import { createPool } from "@idenzy/persistence/connection/pool";
@@ -50,6 +49,7 @@ import {
   SnsSubscriptionConfirmer,
 } from "@idenzy/providers-email/aws/sns-message-verifier";
 import { AdcTokenSource } from "@idenzy/providers-gcp/access-token-source";
+import { keyEncryptionFor } from "@idenzy/providers-gcp/key-encryption-for";
 import { SecretManagerSource } from "@idenzy/providers-gcp/secret-manager-source";
 import { StripePaymentProvider } from "@idenzy/providers-payment/stripe-payment-provider";
 import { stripeSettingsFrom } from "@idenzy/providers-payment/stripe-settings";
@@ -441,7 +441,11 @@ async function bootstrap(): Promise<void> {
   const dispatcher = new WebhookDispatcher(
     uow,
     new Sha256WebhookSigner(),
-    new FieldEncryptor(developmentDataKey(config.get("IDENZY_ENV"))),
+    await fieldEncryptorFor(
+      config.get("IDENZY_ENV"),
+      config.get("FIELD_KEY_WRAPPED"),
+      keyEncryptionFor(config.get("IDENZY_ENV"), config.get("KMS_KEY_NAME")),
+    ),
     // Loopback over plain http is allowed here for the same reason cookie mode is: a developer
     // running their own receiver on localhost has no other way to try this, and a production
     // deployment calling loopback would be calling itself.

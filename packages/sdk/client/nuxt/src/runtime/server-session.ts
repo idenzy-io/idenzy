@@ -56,7 +56,7 @@ function verifierFor(
 
   // One JWKS source for both, so the snapshot's signature and the token's are checked against
   // the same cached key set rather than two copies of it fetched separately.
-  const keys = new RemoteJwks(issuerUrl);
+  const keys = new RemoteJwks(issuerUrl, projectId);
   const revocations = revocationsFor(issuerUrl, projectId, server, keys);
   const built = new AccessTokenVerifier(
     { issuerUrl, projectId, ...(revocations === null ? {} : { revocations }) },

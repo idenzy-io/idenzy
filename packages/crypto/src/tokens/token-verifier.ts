@@ -1,4 +1,6 @@
 import { AccessTokenInvalidError, SessionExpiredError } from "@idenzy/core/errors";
+import { PublicId } from "@idenzy/core/value-objects/public-id";
+import { IdPrefix } from "@idenzy/protocol/schemas/common";
 import { createLocalJWKSet, type JSONWebKeySet, jwtVerify } from "jose";
 import type { TokenIssuer } from "./token-issuer.js";
 
@@ -19,7 +21,14 @@ export interface VerifiedAccessToken {
  * compliant provider rather than inventing a token format.
  */
 export abstract class TokenVerifier {
-  abstract verify(token: string): Promise<VerifiedAccessToken>;
+  /**
+   * The token's claims, if it is a live token for `projectId` (the uuid).
+   *
+   * The project comes from the caller — the request's tenant — and never from the token: the
+   * keys it is checked against are that project's, and its audience must be that project. A
+   * token minted for another project fails on both, the key first.
+   */
+  abstract verify(token: string, projectId: string): Promise<VerifiedAccessToken>;
 }
 
 /**
@@ -37,11 +46,12 @@ export class IssuerTokenVerifier extends TokenVerifier {
     super();
   }
 
-  override async verify(token: string): Promise<VerifiedAccessToken> {
-    const keys = { keys: [...(await this.issuer.publicKeys())] } as JSONWebKeySet;
+  override async verify(token: string, projectId: string): Promise<VerifiedAccessToken> {
+    const keys = { keys: [...(await this.issuer.publicKeys(projectId))] } as JSONWebKeySet;
     try {
       const { payload } = await jwtVerify(token, createLocalJWKSet(keys), {
         issuer: this.issuerUrl,
+        audience: PublicId.encode(IdPrefix.Project, projectId).value,
         algorithms: ["ES256"],
         // The same key signs revocation snapshots, so the media type is the only thing
         // separating them from an access token (RFC 8725 section 3.11).

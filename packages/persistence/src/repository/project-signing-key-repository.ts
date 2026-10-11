@@ -1,5 +1,6 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
-import { projectSigningKeys } from "../schema/projects.js";
+import { ResourceNotFoundError } from "@idenzy/core/errors";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { projectSigningKeys, projects } from "../schema/projects.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
 import { BaseRepository } from "./base-repository.js";
@@ -96,6 +97,45 @@ export class ProjectSigningKeyRepository extends BaseRepository<typeof projectSi
    * promoted; it stops *verifying* only once every token it signed has expired, which is why this
    * is a second step on a timer rather than part of the rotation.
    */
+  /** Whether the project exists, asked before a key is generated for it. */
+  async projectExists(): Promise<boolean> {
+    const rows = await this.tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, this.context.projectId))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Makes `key` the primary unless the project already has one, and answers with whichever is.
+   *
+   * Two processes minting a project's first token at the same moment both generate a key; the
+   * partial unique index on the primary lets exactly one insert land, and the other reads that one
+   * back. No lock, and no second primary.
+   */
+  async createPrimaryIfAbsent(key: NewSigningKey): Promise<SigningKeyRow> {
+    await this.tx
+      .insert(projectSigningKeys)
+      .values({
+        projectId: this.context.projectId,
+        kid: key.kid,
+        publicJwk: key.publicJwk,
+        privateKeyWrapped: key.privateKeyWrapped,
+        isPrimary: true,
+      })
+      .onConflictDoNothing({
+        target: projectSigningKeys.projectId,
+        where: sql`is_primary`,
+      });
+    const primary = await this.primary();
+    // Unreachable: the insert landed or another transaction's primary is there to read.
+    if (primary === null) {
+      throw new ResourceNotFoundError({ detail: { entity: "project_signing_keys" } });
+    }
+    return primary;
+  }
+
   async retire(kid: string, at: Date): Promise<void> {
     await this.tx
       .update(projectSigningKeys)

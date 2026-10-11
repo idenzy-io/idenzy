@@ -15,7 +15,7 @@ import { CorsPolicy } from "../dist/http/cors-policy.js";
 import { ProjectResolver, type ResolvedProject } from "../dist/tenancy/project-resolver.js";
 import { TenantResolutionGuard } from "../dist/tenancy/tenant-resolution.guard.js";
 import { FailingController } from "../dist/testing/failing.controller.js";
-import { WellKnownController } from "../dist/well-known/well-known.controller.js";
+import { ProjectKeysController } from "../dist/well-known/project-keys.controller.js";
 import { SilentLogger, testConfig } from "./fixtures.js";
 
 const PROJECT = "11111111-1111-1111-1111-111111111111";
@@ -63,7 +63,7 @@ beforeAll(async () => {
   // Production, so the development localhost allowance cannot mask a real refusal.
   const config = testConfig({ IDENZY_ENV: "production" });
   const moduleRef = await Test.createTestingModule({
-    controllers: [FailingController, HealthController, WellKnownController],
+    controllers: [FailingController, HealthController, ProjectKeysController],
     providers: [
       { provide: AppConfig, useValue: config },
       { provide: ProjectResolver, useValue: new StubResolver() },
@@ -106,7 +106,11 @@ describe("the actual response is where the browser's gate is", () => {
   });
 
   it("never pairs a wildcard with credentials on any route", async () => {
-    for (const path of ["/test/tenant", "/healthz", "/.well-known/jwks.json"]) {
+    for (const path of [
+      "/test/tenant",
+      "/healthz",
+      "/v1/projects/prj_3f2b9c1e4d5a4e6f8a7b9c0d1e2f3a4b/jwks.json",
+    ]) {
       const response = await fetch(base + path, { headers: { ...key, origin: ALLOWED } });
       const allowOrigin = response.headers.get("access-control-allow-origin");
       const credentials = response.headers.get("access-control-allow-credentials");
@@ -130,8 +134,11 @@ describe("the actual response is where the browser's gate is", () => {
     expect(response.headers.get("vary")?.toLowerCase()).toContain("origin");
   });
 
-  it("leaves the well-known documents cacheable, which is what they are for", async () => {
-    const response = await fetch(`${base}/.well-known/jwks.json`, { headers: { origin: EVIL } });
+  it("leaves a project's key set cacheable, which is what it is for", async () => {
+    const response = await fetch(
+      `${base}/v1/projects/prj_3f2b9c1e4d5a4e6f8a7b9c0d1e2f3a4b/jwks.json`,
+      { headers: { origin: EVIL } },
+    );
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
     // An origin-varying JWKS is uncacheable at the CDN, which defeats the point of it.

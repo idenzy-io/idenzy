@@ -67,11 +67,10 @@ export class SessionGuard implements CanActivate {
     if (required !== true) return true;
 
     const request = context.switchToHttp().getRequest<FastifyRequest>();
-    const claims = await this.verifier.verify(bearer(request));
-
     const tenant = tenantContextFrom(flowContextFrom(request));
-    const expectedAudience = PublicId.encode(IdPrefix.Project, tenant.projectId).value;
-    if (claims.audience !== expectedAudience) throw new MissingCredentialsError();
+    // Checked against this project's keys and audience, so a token for another project is
+    // refused by its signature before its claims are read.
+    const claims = await this.verifier.verify(bearer(request), tenant.projectId);
 
     const sessionId = PublicId.parse(IdPrefix.Session, claims.sessionId).uuid;
     const session = await this.uow.transaction((tx) =>

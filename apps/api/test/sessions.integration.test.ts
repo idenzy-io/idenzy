@@ -104,7 +104,7 @@ describe("the access token a session issues", () => {
     const userId = await newUser("verify@a.test");
     const { accessToken, sessionId } = await signIn(userId);
 
-    const verified = await verifier.verify(accessToken);
+    const verified = await verifier.verify(accessToken, PROJECT);
     expect(verified.sessionId).toMatch(/^ses_/);
     expect(verified.audience).toMatch(/^prj_/);
     expect(verified.sessionId.slice(4)).toBe(sessionId.replaceAll("-", ""));

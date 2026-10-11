@@ -23,7 +23,7 @@ export const Surface = {
   Auth: "auth",
   /** Our own panel. Dashboard token, one origin, no credentials. */
   Dashboard: "dashboard",
-  /** Health and discovery. No tenant, cacheable, wildcard origin. */
+  /** Health and projects' public keys. No tenant, cacheable, wildcard origin. */
   Public: "public",
   /** Idenzy's operator console (ADR-0018). Operator token, one origin, no credentials. */
   Operator: "operator",
@@ -33,6 +33,11 @@ export type Surface = (typeof Surface)[keyof typeof Surface];
 /** Exact paths and prefixes that are not the auth API. Longest match is not needed: none nests. */
 const DASHBOARD_PREFIXES = ["/v1/me", "/v1/onboarding", "/v1/orgs", "/v1/payments"] as const;
 const PUBLIC_PREFIXES = ["/healthz", "/readyz", "/.well-known"] as const;
+/**
+ * A project's key set, which names its project in the path and so is not a prefix. Exact, so
+ * nothing else that may one day live under `/v1/projects` is made public by accident.
+ */
+const PUBLIC_PATHS = [/^\/v1\/projects\/[^/]+\/jwks\.json$/] as const;
 const OPERATOR_PREFIXES = ["/v1/operator"] as const;
 
 /**
@@ -49,7 +54,10 @@ export function surfaceOf(path: string | undefined): Surface {
   // it is the answer for an unrecognised prefix: it is the one that demands a tenant.
   if (path === undefined) return Surface.Auth;
   const url = path.split("?")[0] ?? path;
-  if (PUBLIC_PREFIXES.some((prefix) => url === prefix || url.startsWith(`${prefix}/`))) {
+  if (
+    PUBLIC_PREFIXES.some((prefix) => url === prefix || url.startsWith(`${prefix}/`)) ||
+    PUBLIC_PATHS.some((pattern) => pattern.test(url))
+  ) {
     return Surface.Public;
   }
   if (OPERATOR_PREFIXES.some((prefix) => url === prefix || url.startsWith(`${prefix}/`))) {

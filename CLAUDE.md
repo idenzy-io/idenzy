@@ -45,8 +45,8 @@ The `api` profile is an alternative to `pnpm dev` for that service and not an ad
 both bind the same port and both write to `apps/api/dist`, so running the pair leaves one of
 them serving a build the other wrote. It mounts the working tree and runs the same
 watcher, so an edit reaches the container in a few seconds and nothing has to be rebuilt.
-There is no Dockerfile and no image of ours — this is a development convenience, and
-deployment is still deferred.
+It is a development convenience and not the production image, which is `deploy/Dockerfile`
+(see docs/guide/deploy.md).
 
 ## Where to read before you change something
 
@@ -57,6 +57,7 @@ deployment is still deferred.
 | `@idenzy/js`, a framework binding, an SSR helper, `@idenzy/node`, the CLI | [docs/guide/sdk.md](./docs/guide/sdk.md) |
 | `apps/client` generally — its stack, shared components, charts, code blocks | [docs/guide/panel.md](./docs/guide/panel.md) |
 | one screen of the panel | its `notes/` file, then [docs/guide/panel-screens.md](./docs/guide/panel-screens.md) |
+| `deploy/`, the production stack, Terraform, or anything about how it runs in production | [docs/guide/deploy.md](./docs/guide/deploy.md) |
 | `apps/admin`, the operator console, or anything under `/v1/operator` | [docs/adr/0018-operators-are-staff-rows-signed-in-with-google.md](./docs/adr/0018-operators-are-staff-rows-signed-in-with-google.md), then the billing section of backend.md |
 
 `notes/` holds one file per screen, plus `notes/layout-blueprint.md`,

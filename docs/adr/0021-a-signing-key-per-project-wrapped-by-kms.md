@@ -38,7 +38,7 @@ the project from the request's tenant, never from the token, and checks the sign
 project's keys and the audience against that project.
 
 **Each project publishes its own key set** at `/v1/projects/{prj}/jwks.json`, public and cached for
-five minutes (never a refusal). `@idenzy/node`, every SSR helper and keel's Go verifier fetch it.
+five minutes (never a refusal). `@idenzy/node` and every SSR helper fetch it.
 There is no deployment-wide `/.well-known/jwks.json` or OpenID discovery document: with a key per
 project neither could be right for more than one, and a discovery document whose `jwks_uri` is
 right for one project is worse than none. `iss` stays the deployment's base URL.

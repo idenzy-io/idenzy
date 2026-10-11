@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse on the production VPS (deploy/compose.yaml), sharing the box with everything else.
+
+  `custom_settings_prefixes` is what the tenant row policies stand on (ADR-0013): without it the
+  server refuses the SET of SQL_idenzy_project_id outright. The memory cap leaves the box to
+  Postgres, which matters more: analytics is the one store nothing on the sign-in path reads.
+-->
+<clickhouse>
+  <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+  <listen_host>0.0.0.0</listen_host>
+  <max_server_memory_usage_to_ram_ratio>0.25</max_server_memory_usage_to_ram_ratio>
+  <mark_cache_size>268435456</mark_cache_size>
+  <logger>
+    <level>warning</level>
+  </logger>
+</clickhouse>

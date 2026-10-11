@@ -1,0 +1,57 @@
+# The only thing on the box that listens on the internet. TLS for every host is Caddy's own
+# (Let's Encrypt), so Cloudflare DNS records point straight here, unproxied: an API whose clients
+# send bearer tokens has no business decrypting at a CDN, and the address a request came from is
+# then the one Caddy sees (TRUSTED_PROXY_HOPS=1 in .env).
+{
+	email {$ACME_EMAIL}
+}
+
+# Response headers every page gets. The API sets its own and is left alone.
+(panel) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	# A single-page app: every path that is not a file is the app's to route.
+	try_files {path} {path}/ /200.html /index.html
+	file_server
+}
+
+# The auth API, under two names: api. for customers' applications, auth. for our own panel, whose
+# verified auth domain is what gives it cookie mode (`node dist/bootstrap.js platform`).
+api.{$DOMAIN}, auth.{$DOMAIN} {
+	encode zstd gzip
+	header -Server
+	reverse_proxy api:3001
+}
+
+app.{$DOMAIN} {
+	root * /srv/app
+	import panel
+}
+
+console.{$DOMAIN} {
+	root * /srv/console
+	import panel
+}
+
+# Amazon SNS delivering SES bounces and complaints to the workers (SES_EVENT_URL), and nothing else.
+events.{$DOMAIN} {
+	handle /ses {
+		reverse_proxy workers:3000
+	}
+	respond 404
+}
+
+{$DOMAIN}, www.{$DOMAIN} {
+	redir https://app.{$DOMAIN}{uri}
+}
+
+# A customer's own auth domain (auth.<their domain>), one per line in that file, each pointed here by
+# a CNAME to api.{$DOMAIN} once the domain is verified in the panel.
+import customer-domains.caddy

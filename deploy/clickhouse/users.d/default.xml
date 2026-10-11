@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+  The built-in `default` user exists to run deploy/clickhouse/init-users.sh, which creates the four
+  identities the services use, and for nothing else: it may manage access, and only from inside its
+  own container. A service connecting as `default` from the network is refused.
+-->
+<clickhouse>
+  <users>
+    <default>
+      <access_management>1</access_management>
+      <networks replace="replace">
+        <ip>::1</ip>
+        <ip>127.0.0.1</ip>
+      </networks>
+    </default>
+  </users>
+</clickhouse>

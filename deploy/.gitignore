@@ -1,0 +1,6 @@
+# The box's own files: set up once by hand (docs/guide/deploy.md), never committed.
+.env
+secrets/
+panels/
+panels.*/
+backup/recipient.txt

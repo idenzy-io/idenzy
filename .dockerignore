@@ -1,0 +1,14 @@
+# The build context for deploy/Dockerfile. Nothing that is built, cached or secret goes in.
+**/node_modules
+**/dist
+**/.turbo
+**/.nuxt
+**/.output
+**/.next
+**/coverage
+**/*.tsbuildinfo
+.git
+.env
+.env.*
+!.env.example
+**/.terraform

@@ -1,0 +1,203 @@
+# Production, stage one: everything on one VPS (docs/guide/deploy.md).
+#
+# Caddy is the only thing listening on the internet. The API, the workers and the stores share a
+# private network that publishes nothing, so Postgres, Valkey and ClickHouse are reachable from the
+# services and from nowhere else. What must not live on the box — the key every other key is wrapped
+# by, the secrets, the backups — is on Google (infra/terraform/environments/prod).
+#
+# Secrets reach the services two ways, and never through an environment file:
+#   - the applications read theirs from Secret Manager (`secret://` references in .env), as the
+#     runtime service account whose key file is the one credential on disk;
+#   - the stores read theirs from files under ./secrets, root-only, at first initialisation.
+#
+#   docker compose up -d                       Caddy, the API, the workers and the stores
+#   docker compose --profile analytics up -d   the same, with ClickHouse
+#   docker compose run --rm migrate            the migration job, before a new revision
+#   docker compose run --rm bootstrap <cmd>    field-key | platform, once per deployment
+
+name: idenzy
+
+x-app: &app
+  image: ${IDENZY_IMAGE:?set IDENZY_IMAGE to the image the deploy pushed}
+  env_file: .env
+  environment:
+    GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-runtime
+  secrets: [gcp-runtime]
+  # Both: the stores are on `internal`, and Google, SES, the OAuth providers and customers' webhook
+  # endpoints are out on the internet.
+  networks: [internal, edge]
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/customer-domains.caddy:/etc/caddy/customer-domains.caddy:ro
+      - ./panels/app:/srv/app:ro
+      - ./panels/console:/srv/console:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. idenzy.io}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL for certificate expiry notices}
+    networks: [internal, edge]
+    depends_on: [api]
+    restart: unless-stopped
+    logging: *logging
+
+  api:
+    <<: *app
+    command: ["api/dist/main.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    healthcheck:
+      # No shell or curl in a distroless image: node itself asks.
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3001/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  workers:
+    <<: *app
+    command: ["workers/dist/main.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  migrate:
+    <<: *app
+    command: ["api/dist/migrate.js"]
+    profiles: [jobs]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  bootstrap:
+    <<: *app
+    entrypoint: ["/nodejs/bin/node", "api/dist/bootstrap.js"]
+    command: []
+    profiles: [jobs]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: idenzy
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-superuser
+      # Initdb's own defaults, stated so a reader does not have to look them up.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --data-checksums"
+    secrets: [postgres-superuser, postgres-api, postgres-migrator]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+    networks: [internal]
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d idenzy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  valkey:
+    image: valkey/valkey:8.1.4-alpine
+    # Append-only, because it carries the analytics queue and billing signals as well as caches, and
+    # a password although nothing outside this network can reach it.
+    command: ["sh", "-c", "exec valkey-server --appendonly yes --requirepass \"$$(cat /run/secrets/valkey)\""]
+    secrets: [valkey]
+    volumes: [valkey-data:/data]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$(cat /run/secrets/valkey)\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3.6.56-alpine
+    profiles: [analytics]
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+      CLICKHOUSE_DB: idenzy
+    secrets: [clickhouse-app, clickhouse-ingest, clickhouse-owner, clickhouse-eraser]
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+      - ./clickhouse/init-users.sh:/docker-entrypoint-initdb.d/01-users.sh:ro
+    networks: [internal]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  backup:
+    build: ./backup
+    environment:
+      BACKUP_BUCKET: ${BACKUP_BUCKET:?set BACKUP_BUCKET from terraform output backup_bucket}
+      PGHOST: postgres
+      PGDATABASE: idenzy
+      PGUSER: idenzy_migrator
+      PGPASSFILE: /tmp/pgpass
+    secrets: [gcp-runtime, postgres-migrator]
+    volumes:
+      - ./backup/recipient.txt:/etc/backup/recipient.txt:ro
+    networks: [internal, edge]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  # The services and the stores. Nothing on it is published to the host.
+  internal:
+    internal: true
+  # The way out: Caddy to the internet, the API and the workers to Google, SES, the OAuth
+  # providers and webhook receivers, the backup job to Cloud Storage. The stores are not on it.
+  edge: {}
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}
+  postgres-data: {}
+  valkey-data: {}
+  clickhouse-data: {}
+
+secrets:
+  gcp-runtime: { file: ./secrets/gcp-runtime.json }
+  postgres-superuser: { file: ./secrets/postgres-superuser }
+  postgres-api: { file: ./secrets/postgres-api }
+  postgres-migrator: { file: ./secrets/postgres-migrator }
+  valkey: { file: ./secrets/valkey }
+  clickhouse-app: { file: ./secrets/clickhouse-app }
+  clickhouse-ingest: { file: ./secrets/clickhouse-ingest }
+  clickhouse-owner: { file: ./secrets/clickhouse-owner }
+  clickhouse-eraser: { file: ./secrets/clickhouse-eraser }

@@ -1,0 +1,7 @@
+# Customers' auth domains, served by the auth API. One block per domain once it is verified in the
+# panel and its CNAME points at api.<DOMAIN>, then `docker compose exec caddy caddy reload
+# --config /etc/caddy/Caddyfile`. Empty is a valid file.
+#
+# auth.acme.com {
+# 	reverse_proxy api:3001
+# }

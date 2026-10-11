@@ -13,6 +13,7 @@ import {
   ProjectDomainStatus,
   ProjectDomainType,
 } from "../enums/tenancy.js";
+import { isLoopbackHost } from "../http/loopback.js";
 import { orgBalanceSchema } from "./billing.js";
 import {
   emailSchema,
@@ -218,16 +219,6 @@ export type AddProjectDomain = z.infer<typeof addProjectDomainSchema>;
  */
 
 /**
- * The loopback hosts a browser treats as a secure context.
- *
- * Listed in order to refuse them. Loopback is allowed by the deployment while it runs outside
- * production, in application code and gated on the environment, so it cannot be switched on
- * by data — which means a row for it grants nothing in production and is not needed anywhere
- * else.
- */
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
-/**
  * An origin as a browser sends it, and nothing that merely looks like one.
  *
  * A scheme, a host and an optional port, with nothing after them. The check at the edge is a
@@ -302,10 +293,16 @@ export function parseBrowserOrigin(value: string): BrowserOriginParts | null {
   return { scheme: scheme.toLowerCase(), host: host.toLowerCase(), port: port ?? null };
 }
 
-/** Whether an origin names a loopback host, which this list refuses and code allows. */
+/**
+ * Whether an origin names a loopback host, which this list refuses and code allows.
+ *
+ * Refused because loopback is allowed by the deployment while it runs outside production, in
+ * application code and gated on the environment, so it cannot be switched on by data: a row
+ * for it grants nothing in production and is not needed anywhere else.
+ */
 export function isLoopbackOrigin(value: string): boolean {
   const parts = parseBrowserOrigin(value);
-  return parts !== null && LOOPBACK_HOSTS.has(parts.host);
+  return parts !== null && isLoopbackHost(parts.host);
 }
 
 /**

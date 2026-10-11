@@ -5,11 +5,12 @@ import { OAuthProviderRepository } from "@idenzy/persistence/repository/oauth-pr
 import { TenantContext } from "@idenzy/persistence/tenancy/tenant-context";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
 import { OauthMode } from "@idenzy/protocol/enums/providers";
+import { isLoopbackHost } from "@idenzy/protocol/http/loopback";
 import { Inject, Injectable } from "@nestjs/common";
 import { OAUTH_PROVIDERS } from "./oauth-tokens.js";
 
-/** Hosts our shared OAuth apps may return to. Anything else must use its own app. */
-const INSTANT_MODE_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.idenzy\.io)$/i;
+/** Preview hosts our shared OAuth apps may return to, besides loopback. */
+const PREVIEW_HOSTS = /^[a-z0-9-]+\.idenzy\.io$/i;
 
 /**
  * The providers this deployment implements, and the credentials each project gave them
@@ -84,7 +85,7 @@ export class ProviderRegistry {
   static assertInstantModeAllowed(mode: string, redirectUri: string): void {
     if (mode !== OauthMode.Instant) return;
     const host = URL.parse(redirectUri)?.hostname ?? "";
-    if (!INSTANT_MODE_HOSTS.test(host)) {
+    if (!isLoopbackHost(host) && !PREVIEW_HOSTS.test(host)) {
       throw new ValidationFailedError({
         message: "Instant mode works only on localhost and preview domains.",
         fields: [{ path: "redirectUri", code: "instant_mode_host" }],

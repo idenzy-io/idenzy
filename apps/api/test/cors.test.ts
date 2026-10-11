@@ -227,3 +227,24 @@ describe("the operator surface", () => {
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   });
 });
+
+describe("loopback outside production", () => {
+  const policy = (env: "development" | "production") =>
+    new CorsPolicy(testConfig({ IDENZY_ENV: env }), new StubResolver());
+
+  it("allows a subdomain of localhost, so each local application keeps its own cookies", () => {
+    for (const origin of ["http://localhost:3000", "http://app.localhost:3201"]) {
+      expect(policy("development").originAllowed(origin, []), origin).toBe(true);
+    }
+  });
+
+  it("allows none of it in production", () => {
+    for (const origin of ["http://localhost:3000", "http://app.localhost:3201"]) {
+      expect(policy("production").originAllowed(origin, []), origin).toBe(false);
+    }
+  });
+
+  it("allows nothing that only looks local", () => {
+    expect(policy("development").originAllowed("http://localhost.evil.test", [])).toBe(false);
+  });
+});

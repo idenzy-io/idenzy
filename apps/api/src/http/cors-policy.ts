@@ -1,5 +1,6 @@
 import { AppConfig } from "@idenzy/config/app-config";
 import { IDENZY_HEADERS } from "@idenzy/protocol/http/headers";
+import { isLoopbackOrigin } from "@idenzy/protocol/schemas/management";
 import { Injectable } from "@nestjs/common";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ProjectResolver } from "../tenancy/project-resolver.js";
@@ -23,9 +24,6 @@ const ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 
 /** Ten minutes. Long enough to matter, short enough that an allowlist edit takes effect. */
 const PREFLIGHT_MAX_AGE = "600";
-
-/** Loopback in development only, and as code rather than data so it cannot be provisioned on. */
-const LOCALHOST = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
 /**
  * CORS for both surfaces, split across the two places it has to live (PROJECT.md 4.3).
@@ -206,12 +204,15 @@ export class CorsPolicy {
   /**
    * Exact match, with one environment-gated exception for loopback development.
    *
+   * Loopback is code rather than data so it cannot be provisioned on, and it includes
+   * `*.localhost`, which is how several applications on one laptop keep a cookie jar each.
+   *
    * Public because the cross-site checks ask the same question about the same list, and two
    * copies of an allowlist rule is one copy too many.
    */
   originAllowed(origin: string, allowed: readonly string[]): boolean {
     if (allowed.includes(origin)) return true;
-    return !this.config.isProduction && LOCALHOST.test(origin);
+    return !this.config.isProduction && isLoopbackOrigin(origin);
   }
 
   /**
@@ -222,7 +223,7 @@ export class CorsPolicy {
    */
   private dashboardAllowed(origin: string): boolean {
     if (origin === this.config.get("DASHBOARD_ORIGIN")) return true;
-    return !this.config.isProduction && LOCALHOST.test(origin);
+    return !this.config.isProduction && isLoopbackOrigin(origin);
   }
 
   /**
@@ -232,7 +233,7 @@ export class CorsPolicy {
    */
   private operatorAllowed(origin: string): boolean {
     if (origin === this.config.get("OPERATOR_ORIGIN")) return true;
-    return !this.config.isProduction && LOCALHOST.test(origin);
+    return !this.config.isProduction && isLoopbackOrigin(origin);
   }
 }
 

@@ -29,6 +29,14 @@ describe("IdenzyConfig", () => {
     expect(config.urlFor("v1/auth/refresh")).toBe("http://localhost:3000/v1/auth/refresh");
   });
 
+  it("counts a subdomain of localhost as loopback, which gives each local app its own cookies", () => {
+    const config = IdenzyConfig.parse({
+      publishableKey: "pk_test_abc",
+      apiUrl: "http://auth.app.localhost:3001",
+    });
+    expect(config.urlFor("v1/auth/refresh")).toBe("http://auth.app.localhost:3001/v1/auth/refresh");
+  });
+
   it("treats a blank device name as none, rather than storing an empty label", () => {
     const config = IdenzyConfig.parse({
       publishableKey: "pk_test_abc",

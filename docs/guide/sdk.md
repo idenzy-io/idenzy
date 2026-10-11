@@ -14,6 +14,11 @@ is a compile error rather than a runtime one in somebody's browser.
   it serves no HTML, and the customer's sign-in page stays wherever they put it. Say it that way
   when it comes up: "you need an auth domain" reads as "we host your sign-in screen", which is
   the one thing this product does not do (ADR-0002).
+- **Loopback is `localhost`, `*.localhost`, `127.0.0.1` and `[::1]`, decided once** in
+  `@idenzy/protocol/http/loopback` for the SDK, CORS, the origin allowlist and OAuth's instant
+  mode. The subdomains are there because cookies are scoped by host and not by port: two
+  applications on `localhost` share one jar and sign each other out, while `app-a.localhost`
+  talking to `auth.app-a.localhost` keeps cookie mode and a jar of its own.
 - **The transport is negotiated, not configured.** `auto` asks for cookie mode, and steps down
   to header mode once if the server answers `session_transport_unavailable`. A client cannot
   tell from its own URL whether it is on a custom domain, and only the server knows whether one

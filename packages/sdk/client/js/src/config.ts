@@ -1,10 +1,8 @@
+import { isLoopbackHost } from "@idenzy/protocol/http/loopback";
 import { ApiKeyPrefix, isPublishableKey, isSecretKey } from "@idenzy/protocol/schemas/common";
 import { IdenzyConfigurationError } from "./errors.js";
 import type { FetchLike } from "./http/transport.js";
 import type { SessionTransportPreference } from "./http/transport-mode.js";
-
-/** Loopback, where a browser treats http as secure and a developer has no certificate. */
-const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 export interface IdenzyOptions {
   /** The project's publishable key. Meant to sit in a browser bundle; a secret key is not. */
@@ -99,7 +97,8 @@ function assertSecureUrl(apiUrl: string): URL {
   } catch (error: unknown) {
     throw new IdenzyConfigurationError(`apiUrl is not a URL: ${apiUrl}`, { cause: error });
   }
-  if (url.protocol !== "https:" && !LOOPBACK.has(url.hostname)) {
+  // Loopback, where a browser treats http as secure and a developer has no certificate.
+  if (url.protocol !== "https:" && !isLoopbackHost(url.hostname)) {
     throw new IdenzyConfigurationError(`apiUrl must be https outside loopback: ${apiUrl}`);
   }
   return url;

@@ -362,7 +362,7 @@ async function bootstrap(): Promise<void> {
             url: analytics.url,
             database: analytics.database,
             user: analytics.ingestUser,
-            password: analytics.password,
+            password: analytics.passwords.ingest,
           }),
           clock,
           logger,
@@ -384,7 +384,7 @@ async function bootstrap(): Promise<void> {
         url: analytics.url,
         database: analytics.database,
         user: analytics.eraserUser,
-        password: analytics.password,
+        password: analytics.passwords.eraser,
       }),
       analytics.database,
     );
@@ -522,7 +522,7 @@ async function bootstrap(): Promise<void> {
         url: analytics.url,
         database: analytics.database,
         user: analytics.ownerUser,
-        password: analytics.password,
+        password: analytics.passwords.owner,
       }),
       {
         database: analytics.database,

@@ -8,8 +8,27 @@ export interface AnalyticsSettings {
   readonly ownerUser: string;
   readonly appUser: string;
   readonly eraserUser: string;
-  readonly password: string;
+  /** Each identity's own password: the reader's for nothing here, the rest for what they run. */
+  readonly passwords: {
+    readonly ingest: string;
+    readonly owner: string;
+    readonly eraser: string;
+  };
 }
+
+/**
+ * The write, DDL and erasure identities' passwords, one each.
+ *
+ * Outside development each must be set and none may be the reader's: four identities behind one
+ * password are one identity, and the reason they are separate — the reader cannot write, the writer
+ * cannot read, the eraser can only delete — would hold only until that password leaked. Locally
+ * one password opens all four, which is what the development roles script creates.
+ */
+const SEPARATE_PASSWORDS = [
+  "CLICKHOUSE_INGEST_PASSWORD",
+  "CLICKHOUSE_OWNER_PASSWORD",
+  "CLICKHOUSE_ERASER_PASSWORD",
+] as const;
 
 /** All of them or none, so a half-configured store cannot become a silently disabled one. */
 const REQUIRED = [
@@ -55,6 +74,32 @@ export function analyticsSettingsFrom(config: AppConfig): AnalyticsSettings | nu
     ingestUser: config.get("CLICKHOUSE_INGEST_USER") ?? "",
     ownerUser: config.get("CLICKHOUSE_OWNER_USER") ?? "",
     eraserUser: config.get("CLICKHOUSE_ERASER_USER") ?? "",
-    password: config.get("CLICKHOUSE_PASSWORD") ?? "",
+    passwords: passwordsFrom(config),
+  };
+}
+
+function passwordsFrom(config: AppConfig): AnalyticsSettings["passwords"] {
+  const shared = config.get("CLICKHOUSE_PASSWORD") ?? "";
+  if (config.get("IDENZY_ENV") === "development") {
+    return {
+      ingest: config.get("CLICKHOUSE_INGEST_PASSWORD") ?? shared,
+      owner: config.get("CLICKHOUSE_OWNER_PASSWORD") ?? shared,
+      eraser: config.get("CLICKHOUSE_ERASER_PASSWORD") ?? shared,
+    };
+  }
+  const shortfall = SEPARATE_PASSWORDS.filter((key) => {
+    const value = config.get(key);
+    return value === undefined || value === shared;
+  });
+  if (shortfall.length > 0) {
+    throw new ValidationFailedError({
+      message: "Each analytics identity needs its own password.",
+      fields: shortfall.map((key) => ({ path: key, code: "required_and_distinct" })),
+    });
+  }
+  return {
+    ingest: config.get("CLICKHOUSE_INGEST_PASSWORD") ?? "",
+    owner: config.get("CLICKHOUSE_OWNER_PASSWORD") ?? "",
+    eraser: config.get("CLICKHOUSE_ERASER_PASSWORD") ?? "",
   };
 }

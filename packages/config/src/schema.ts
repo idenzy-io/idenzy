@@ -46,6 +46,11 @@ export const configSchema = z.object({
   TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(8).default(0),
 
   DATABASE_URL: z.string().min(1),
+  /**
+   * The schema owner's connection, for the migration job alone (`dist/migrate.js`). The API and
+   * the workers never read it, so a compromised runtime holds no credential that can alter a table.
+   */
+  DATABASE_MIGRATION_URL: z.string().min(1).optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 
@@ -205,6 +210,13 @@ export const configSchema = z.object({
    * one credential able to remove analytics rows cannot read them or write new ones.
    */
   CLICKHOUSE_ERASER_USER: z.string().min(1).optional(),
+  /**
+   * The other identities' passwords. Locally they fall back to `CLICKHOUSE_PASSWORD`; a deployment
+   * must give each its own (`analyticsSettingsFrom` refuses to start otherwise).
+   */
+  CLICKHOUSE_INGEST_PASSWORD: z.string().min(1).optional(),
+  CLICKHOUSE_OWNER_PASSWORD: z.string().min(1).optional(),
+  CLICKHOUSE_ERASER_PASSWORD: z.string().min(1).optional(),
 
   /**
    * How long a one-time code and a magic link stay usable (PROJECT.md 4.7). Ten minutes

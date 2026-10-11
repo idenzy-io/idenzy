@@ -6,18 +6,17 @@
  * effect at the next token rotation, so an open session keeps working for up to one
  * access-token lifetime — the server deliberately does not end the sessions, and
  * `signOutEverywhere` is the separate thing to call when somebody means both. A deletion is
- * an erasure (PROJECT.md 4.13.6) and is **not wired**, because the field lists it operates
- * on come from `classified()` and the worker that runs them does not exist yet.
+ * an erasure (PROJECT.md 4.13.6): immediate, and the row stays behind as a tombstone.
  *
  * `forProject` stays synchronous over a cache, because the screen reads it in a computed
  * and a fetch inside one is a request per render. `load` fills the cache; `ensure` is what
  * the screens that only read users indirectly — audit, sessions, security — lean on, since
  * they watch this list and would otherwise sit empty until somebody opened the Users page.
  *
- * Two actions have no endpoint and say so instead of pretending. Creating a user needs
- * password hashing in the management API, which has no `PasswordHasher`; erasing one needs
- * the DSR path. Both refuse with a message naming what is missing, which is the whole point
- * of notes/priorities.md's first row: a fixture switch must not imply working capability.
+ * One action has no endpoint and says so instead of pretending. Creating a user needs
+ * password hashing in the management API, which has no `PasswordHasher`, so it refuses with a
+ * message naming what is missing, which is the whole point of notes/priorities.md's first
+ * row: a fixture switch must not imply working capability.
  */
 
 import { InternalError } from "@idenzy/core/errors";
@@ -271,13 +270,22 @@ export const useUsersStore = defineStore("users", () => {
     );
   }
 
-  /** No endpoint. Erasure is the DSR path and its worker does not exist (PROJECT.md 4.13.6). */
-  function remove(_ids: readonly string[]): Promise<number> {
-    return Promise.reject(
-      new InternalError({
-        detail: { reason: "erasure runs through the DSR path, which is not built" },
-      }),
-    );
+  /**
+   * Erases each account, now (PROJECT.md 4.13.6), and reads the tombstone back.
+   *
+   * The row stays on purpose: the audit trail keeps a subject it can no longer name, and the
+   * screens draw what is left of it. `each` reports how many went through.
+   */
+  async function remove(ids: readonly string[]): Promise<number> {
+    const api = useManagementApi();
+    refusal.value = null;
+    return await each(ids, async (path, id) => {
+      const erased = await api(`${path}/${id}`).delete();
+      if (erased.error.value !== null) throw erased.error.value;
+      const { data, error } = await api(`${path}/${id}`).get().json<ApiProjectUser>();
+      if (error.value !== null) throw error.value;
+      return data.value;
+    });
   }
 
   /** Every user the store holds, for the screens that watch the whole set. */

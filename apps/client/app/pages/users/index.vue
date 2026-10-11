@@ -353,15 +353,13 @@ function askDelete(users: readonly ProjectUser[]) {
   if (deleteTargets.value.length > 0) deleteOpen.value = true;
 }
 
-/** Erasure has no endpoint yet, so the refusal is shown rather than a fabricated count. */
+/** The count is what went through; a refusal says why the rest did not. */
 async function erase() {
-  try {
-    const count = await store.remove(deleteTargets.value.map((user) => user.id));
-    notify(`Deleted ${plural(count, "user")}`);
-    selected.value = [];
-  } catch {
-    notify("Erasure is not available yet");
-  }
+  const count = await store.remove(deleteTargets.value.map((user) => user.id));
+  notify(
+    count === 0 ? (store.refusal ?? "No user was deleted") : `Deleted ${plural(count, "user")}`,
+  );
+  selected.value = [];
 }
 
 async function copyText(text: string, what: string) {

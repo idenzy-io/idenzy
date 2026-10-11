@@ -330,12 +330,8 @@ async function signOutEverywhere() {
  * would hide the tombstone they just made, and the tombstone is the point.
  */
 async function erase() {
-  try {
-    await store.remove([id.value]);
-    notify("Account erased");
-  } catch {
-    notify("Erasure is not available yet");
-  }
+  const count = await store.remove([id.value]);
+  notify(count === 1 ? "Account erased" : (store.refusal ?? "The account was not erased"));
 }
 
 function askRevoke(session: SessionRow) {

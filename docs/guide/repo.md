@@ -33,6 +33,9 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   from source. Compiling first also means tests exercise the artifact that ships. The API's
   `typecheck` compiles too, rather than `--noEmit`: its test config reads those files'
   declarations, and on a clean checkout nothing else has written them yet.
+- **The Nuxt apps' tasks take turns.** `nuxt prepare` clears `.nuxt` before writing it, and an
+  app's typecheck, tests and build each run it, so in parallel one deletes the tsconfig another
+  is reading. Each app's `turbo.json` orders them typecheck, then test, then build.
 - **`drizzle-kit` does not generate grants, functions or partitioning.** Those are
   hand-authored migrations made with `pnpm db:custom`, in the same numbered sequence. Read
   them as SQL. It used to not generate `FORCE ROW LEVEL SECURITY` either; there is no RLS

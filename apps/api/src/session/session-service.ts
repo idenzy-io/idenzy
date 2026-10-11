@@ -60,7 +60,7 @@ export class SessionService implements SessionIssuer {
     // were a deployment-wide environment variable until the settings document existed.
     const lifetimes = (await this.settings.for(context)).lifetimes;
 
-    const { sessionId, user } = await this.uow.transaction(async (tx) => {
+    const { sessionId, user, authenticatedAt } = await this.uow.transaction(async (tx) => {
       const users = new UserRepository(tx, tenant);
       const found = await users.findById(subject.userId);
       if (found === null) {
@@ -99,7 +99,7 @@ export class SessionService implements SessionIssuer {
         userAgent: context.userAgent,
         at: now.toISOString(),
       });
-      return { sessionId: session.id, user: found };
+      return { sessionId: session.id, user: found, authenticatedAt: session.createdAt };
     });
 
     const access = await this.mintAccessToken(
@@ -108,6 +108,7 @@ export class SessionService implements SessionIssuer {
       sessionId,
       subject.amr,
       subject.factorVerifiedAt,
+      authenticatedAt,
     );
 
     // After the transaction, like the meter and the revocation publish: an analytics event for a
@@ -272,6 +273,7 @@ export class SessionService implements SessionIssuer {
     sessionId: string,
     amr: readonly string[],
     factorVerifiedAt: Date | null,
+    authenticatedAt: Date,
   ): Promise<{ token: string; expiresAt: Date }> {
     const custom = (await this.claims.load(tenant)).render(user);
     // Two primary-key reads per token, which is what the project-config cache §4.2 assumes
@@ -287,6 +289,7 @@ export class SessionService implements SessionIssuer {
         ...(factorVerifiedAt === null
           ? {}
           : { fva: Math.floor((this.clock.nowMs() - factorVerifiedAt.getTime()) / 1000) }),
+        authTime: Math.floor(authenticatedAt.getTime() / 1000),
         custom,
       },
       lifetimes.accessTokenSeconds,

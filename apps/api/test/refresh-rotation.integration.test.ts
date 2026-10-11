@@ -404,6 +404,22 @@ describe("the claims a rotation carries", () => {
     expect(claimsOf(rotated.accessToken).fva).toBeGreaterThanOrEqual(60);
   });
 
+  it("keeps the sign-in time, which a rotation does not repeat", async () => {
+    const { rows } = await harness.owner.query<{ id: string }>(
+      `INSERT INTO users (project_id, email, email_verified) VALUES ($1, $2, true) RETURNING id`,
+      [PROJECT, "auth-time@a.test"],
+    );
+    const issued = await sessions.issueSession(context, {
+      userId: rows[0]?.id ?? "",
+      amr: [AuthMethod.Password],
+      factorVerifiedAt: null,
+    });
+    const rotated = await refresh.rotate(context, issued.refreshToken);
+
+    expect(claimsOf(issued.accessToken).auth_time).toEqual(expect.any(Number));
+    expect(claimsOf(rotated.accessToken).auth_time).toBe(claimsOf(issued.accessToken).auth_time);
+  });
+
   it("omits it entirely for a session that never proved one", async () => {
     const { refreshToken } = await signIn("fva-absent@a.test");
     const rotated = await refresh.rotate(context, refreshToken);
@@ -413,8 +429,9 @@ describe("the claims a rotation carries", () => {
 });
 
 /** The payload, read the way a customer's verifier would after checking the signature. */
-function claimsOf(token: string): { fva?: number } {
+function claimsOf(token: string): { fva?: number; auth_time?: number } {
   return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as {
     fva?: number;
+    auth_time?: number;
   };
 }

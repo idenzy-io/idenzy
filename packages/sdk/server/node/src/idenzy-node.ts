@@ -36,6 +36,12 @@ export interface VerifiedAccessToken {
    * Null means "no restriction can be satisfied", never "no restriction applies".
    */
   readonly factorVerifiedSecondsAgo: number | null;
+  /**
+   * When the user signed in to this session (`auth_time`), which a refresh does not move.
+   * What to compare against before an action that wants a recent sign-in. Null for a token
+   * minted before the claim existed.
+   */
+  readonly authenticatedAt: Date | null;
   /** The whole payload, for the claims a project adds to its own tokens. */
   readonly claims: Readonly<Record<string, unknown>>;
 }
@@ -148,7 +154,7 @@ function assertProjectId(value: string): string {
 
 /** `jose` has already checked these exist; this reads them at the types we promise. */
 function read(payload: Record<string, unknown>): VerifiedAccessToken {
-  const { sub, sid, aud, amr, fva, iat, exp } = payload;
+  const { sub, sid, aud, amr, fva, iat, exp, auth_time: authTime } = payload;
   if (typeof sub !== "string" || typeof sid !== "string" || typeof aud !== "string") {
     throw new AccessTokenInvalidError({ detail: { reason: "missing subject claims" } });
   }
@@ -163,6 +169,7 @@ function read(payload: Record<string, unknown>): VerifiedAccessToken {
     issuedAt: new Date(iat * 1000),
     expiresAt: new Date(exp * 1000),
     factorVerifiedSecondsAgo: typeof fva === "number" ? fva : null,
+    authenticatedAt: typeof authTime === "number" ? new Date(authTime * 1000) : null,
     claims: payload,
   };
 }

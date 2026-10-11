@@ -250,6 +250,7 @@ export class SessionRepository extends BaseRepository<typeof sessions> {
       absoluteExpiresAt: row.absoluteExpiresAt,
       revokedAt: row.revokedAt,
       revokeReason: row.revokeReason as SessionRevokeReason | null,
+      createdAt: row.createdAt,
     };
     return new Session(state);
   }

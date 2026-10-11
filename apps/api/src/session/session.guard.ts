@@ -28,6 +28,8 @@ export interface SessionPrincipal {
    * has just stepped up would otherwise still be refused until their next refresh.
    */
   readonly factorVerifiedAt: Date | null;
+  /** When the session was signed in to, which the access token carries as `auth_time`. */
+  readonly authenticatedAt: Date;
 }
 
 declare module "fastify" {
@@ -82,6 +84,7 @@ export class SessionGuard implements CanActivate {
       sessionId,
       amr: claims.amr,
       factorVerifiedAt: session.factorVerifiedAt,
+      authenticatedAt: session.createdAt,
     };
     return true;
   }

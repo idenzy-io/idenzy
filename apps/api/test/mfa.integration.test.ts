@@ -715,6 +715,7 @@ describe("stepping up inside a session", () => {
       sessionId,
       amr: session.amr,
       factorVerifiedAt: session.factorVerifiedAt,
+      authenticatedAt: session.createdAt,
     };
   }
 

@@ -133,6 +133,8 @@ export class StepUpService {
       principal.sessionId,
       dedupe(amr),
       at,
+      // A step-up proves a factor and moves `fva`; it is not a sign-in, so `auth_time` stays.
+      principal.authenticatedAt,
     );
     return {
       accessToken: access.token,

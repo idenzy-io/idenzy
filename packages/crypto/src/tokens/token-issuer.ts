@@ -10,6 +10,14 @@ export interface AccessTokenClaims {
   readonly acr?: string;
   /** Factor verification age: when the second factor was last proven. */
   readonly fva?: number;
+  /**
+   * When the user signed in to this session, as Unix seconds: OpenID Connect's `auth_time`.
+   *
+   * `iat` moves on every rotation, so it cannot answer "did they prove who they are
+   * recently", which is what a customer asks before deleting an account or changing an
+   * address. This does, and it stays put across rotations for exactly that reason.
+   */
+  readonly authTime?: number;
   readonly custom?: Readonly<Record<string, unknown>>;
 }
 
@@ -126,6 +134,7 @@ export abstract class TokenIssuer {
         amr: [...claims.amr],
         ...(claims.acr === undefined ? {} : { acr: claims.acr }),
         ...(claims.fva === undefined ? {} : { fva: claims.fva }),
+        ...(claims.authTime === undefined ? {} : { auth_time: claims.authTime }),
         ...claims.custom,
       },
     );

@@ -11,6 +11,8 @@ export interface SessionState {
   readonly absoluteExpiresAt: Date;
   readonly revokedAt: Date | null;
   readonly revokeReason: SessionRevokeReason | null;
+  /** When the user signed in, which is when the session began. */
+  readonly createdAt: Date;
 }
 
 /**
@@ -38,6 +40,11 @@ export class Session {
   /** The instant itself, for a caller comparing it against its own window. */
   get factorVerifiedAt(): Date | null {
     return this.state.factorVerifiedAt;
+  }
+
+  /** The sign-in this session began with: the access token's `auth_time`. */
+  get createdAt(): Date {
+    return this.state.createdAt;
   }
 
   isRevoked(): boolean {

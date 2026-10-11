@@ -64,6 +64,7 @@ export const RESERVED_CLAIMS = [
   "amr",
   "acr",
   "fva",
+  "auth_time",
 ] as const;
 
 /**

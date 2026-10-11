@@ -28,6 +28,14 @@ describe("a token we issued", () => {
     expect(verified.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
+  it("reads when the session was signed in to, and null where the token does not say", async () => {
+    const signedIn = Math.floor(Date.now() / 1000) - 3600;
+    const verified = await verifier.verify(await tokens.mint({ extra: { auth_time: signedIn } }));
+    expect(verified.authenticatedAt).toEqual(new Date(signedIn * 1000));
+
+    expect((await verifier.verify(await tokens.mint())).authenticatedAt).toBeNull();
+  });
+
   it("hands back the whole payload, for the claims a project adds to its own tokens", async () => {
     const verified = await verifier.verify(await tokens.mint({ extra: { plan: "pro" } }));
 

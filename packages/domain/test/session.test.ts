@@ -27,6 +27,7 @@ function session(overrides: Partial<SessionState> = {}): Session {
     absoluteExpiresAt: future,
     revokedAt: null,
     revokeReason: null,
+    createdAt: new Date(0),
     ...overrides,
   });
 }

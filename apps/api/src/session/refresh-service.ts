@@ -176,6 +176,8 @@ export class RefreshService {
       sessionId,
       session.amr,
       session.factorVerifiedAt,
+      // The sign-in this session began with, which a rotation does not repeat.
+      session.createdAt,
     );
     return {
       kind: "rotated",

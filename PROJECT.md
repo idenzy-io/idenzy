@@ -1236,7 +1236,7 @@ Still open, to resolve before Phase 0 ends:
 
 1. Default access-token TTL: 5 min (proposed) versus 60 s (Clerk parity, higher cost).
 2. Valkey from day one versus Postgres-only rate limiting for the first months.
-3. Whether to open-source the auth server (a Supabase-style trust signal) while keeping the managed cloud as the business. Headless makes this easier, because there is no UI licensing question.
+3. ~~Whether to open-source the auth server~~ **Resolved: open source** (2026-10-11). The server is AGPL-3.0 and the SDKs MIT; the managed cloud is the business, and self-hosting (and later bring-your-own-cloud) is how a customer who does not want it runs Idenzy. AGPL rather than a permissive licence because a hosted fork must share its changes, which keeps the managed service the best place to run what is in this repository; MIT on the SDKs keeps the AGPL out of every application built on them.
 4. Billing granularity for email: per-send versus monthly bundles.
 5. Panel hosting for `client` and `admin`: GCS plus CDN static (proposed) versus Firebase Hosting for simpler preview channels.
 6. ~~Whether `management-api` stays a separate deployment~~ **Resolved: merged.** One service, `apps/api`, serving both surfaces on one port (2026-09-21). The separation was preferred here and the cost was about $25/mo; what decided it the other way was the operational weight of two of everything — two CORS policies, two connection pools, two bootstraps — for a product with no customers yet. The thing the split protected is written down so it can be taken back: a dashboard incident can now degrade sign-in, because they share a process.

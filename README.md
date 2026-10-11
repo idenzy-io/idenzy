@@ -1,8 +1,12 @@
 # Idenzy
 
-A managed authentication and user-management platform in the Firebase Auth, Supabase Auth and
-Clerk category, delivered as a hosted service with first-class SDKs for every major web, mobile
-and game platform.
+An open-source authentication and user-management platform in the Firebase Auth, Supabase Auth
+and Clerk category, with first-class SDKs for every major web, mobile and game platform.
+
+**Use it hosted, or run it yourself.** The hosted service at [idenzy.io](https://idenzy.io) is the
+same code, operated for you: no servers, no key management, no upgrades, priced per monthly active
+user. Or deploy this repository on your own infrastructure: [docs/guide/deploy.md](./docs/guide/deploy.md)
+is the procedure we run ourselves.
 
 **Three pillars:** extreme security by default, five-minute integration, and the lowest per-MAU price
 in the market.
@@ -24,16 +28,17 @@ clickjacking surface from our side of the trust boundary. See `docs/adr/0002-hea
 
 ```
 apps/          deployables. Thin, never imported by anything
-  auth-api           NestJS + Fastify, public auth API (the only service that mints tokens)
-  management-api     NestJS + Fastify, dashboard/management + billing control plane
-  workers            NestJS standalone: email, sms, webhook, audit, analytics
-  landing            Nuxt, SSR   marketing + docs
-  client             Nuxt, SPA   customer dashboard
-  admin              Nuxt, SPA   internal operator console
+  api                NestJS + Fastify: the auth API and the dashboard API, one service
+  workers            NestJS standalone: email, webhooks, audit, analytics, erasure
+  landing            marketing and docs
+  client             Nuxt, SPA   the dashboard
+  admin              Nuxt, SPA   the operator console
 packages/      all reusable logic; apps consume packages, packages never consume apps
-infra/         Terraform (one stack, one region) and container images
-tools/         shared lint config, CLI, codegen
-docs/          architecture decision records and compliance registers
+  sdk/               the SDKs published to npm (@idenzy/js, react, vue, next, nuxt, ...)
+deploy/        the production image and the stack that runs it
+infra/         Terraform
+tools/         the CLI (@idenzy/cli), compliance generators, dev tooling
+docs/          architecture decision records, guides and compliance registers
 ```
 
 Full architecture, security model, pricing and delivery plan: **[PROJECT.md](./PROJECT.md)**.
@@ -94,4 +99,13 @@ is an audit rather than a rebuild, and the programme itself is deliberately park
 
 ## Licence
 
-Proprietary. All rights reserved.
+Idenzy is open source under the **GNU Affero General Public License v3.0** ([LICENSE](./LICENSE)):
+use it, run it, change it. If you offer a modified Idenzy to others over a network, you share your
+changes under the same licence.
+
+**The SDKs are MIT**: every package published to npm (`@idenzy/protocol`, `core`, `js`, `node`,
+the framework bindings and `@idenzy/cli`) carries its own MIT `LICENSE`, so building an
+application on Idenzy never brings the AGPL into your code. Talking to an Idenzy server over its
+API does not either.
+
+Security issues: please report them privately, as [SECURITY.md](./SECURITY.md) describes.

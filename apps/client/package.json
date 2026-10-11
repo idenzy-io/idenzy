@@ -8,7 +8,7 @@
     "typecheck": "nuxt prepare && nuxt typecheck",
     "dev": "nuxt dev",
     "preview": "nuxt preview",
-    "test": "vitest run --passWithNoTests",
+    "test": "nuxt prepare && vitest run --passWithNoTests",
     "clean": "rm -rf .nuxt .output dist .turbo"
   },
   "dependencies": {

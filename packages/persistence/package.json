@@ -23,6 +23,7 @@
     "db:studio": "drizzle-kit studio",
     "clean": "rm -rf dist .turbo *.tsbuildinfo",
     "db:seed": "node --env-file-if-exists=../../.env dist/seed.js",
+    "dev:project": "node --env-file-if-exists=../../.env dist/dev-project.js",
     "staff": "node --env-file-if-exists=../../.env dist/staff-cli.js"
   },
   "dependencies": {

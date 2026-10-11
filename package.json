@@ -23,6 +23,7 @@
     "db:generate": "pnpm --filter @idenzy/persistence run db:generate",
     "db:migrate": "pnpm --filter @idenzy/persistence run db:migrate",
     "db:seed": "pnpm --filter @idenzy/persistence run db:seed",
+    "dev:project": "pnpm --silent --filter @idenzy/persistence run dev:project",
     "db:studio": "pnpm --filter @idenzy/persistence run db:studio",
     "compliance:generate": "pnpm --filter @idenzy/compliance-cli run generate",
     "compliance:check": "pnpm --filter @idenzy/compliance-cli run check",

@@ -9,6 +9,7 @@
     "dev": "node ../../tools/dev/src/serve.ts",
     "start": "node dist/main.js",
     "migrate": "node dist/migrate.js",
+    "bootstrap": "node dist/bootstrap.js",
     "test": "tsc -p tsconfig.json && vitest run --passWithNoTests",
     "clean": "rm -rf dist .turbo *.tsbuildinfo",
     "test:integration": "tsc -p tsconfig.json && vitest run --config vitest.integration.config.ts"

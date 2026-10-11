@@ -98,6 +98,16 @@ export const configSchema = z.object({
   OPERATOR_ORIGIN: z.url().default("https://console.idenzy.io"),
 
   /**
+   * Read by `dist/bootstrap.js platform` alone, when it creates the deployment's own projects. The
+   * auth domain is the host the panel signs in through: a verified one is what lets the dashboard
+   * project use cookie mode. The Google client is the operator console's only way in (ADR-0018);
+   * its redirect URI is `<ISSUER_BASE_URL>/v1/auth/oauth/google/callback`.
+   */
+  DASHBOARD_AUTH_DOMAIN: z.string().min(1).default("auth.idenzy.io"),
+  OPERATOR_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  OPERATOR_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+
+  /**
    * The retry queue for webhook deliveries, and the endpoint it calls back (ADR-0012).
    *
    * All five are optional together and required together. A deployment with none of them retries on

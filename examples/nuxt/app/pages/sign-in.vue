@@ -18,9 +18,13 @@ const challenge = ref<MfaChallenge | null>(null);
 const factorCode = ref("");
 const error = ref<string | null>(null);
 
-/** A session, or the factor still owed. The second is not a failure and not a session. */
-function finish(result: AuthResult): void {
-  if (result.status === "mfa_required") challenge.value = result.challenge;
+/** A session, or the factor still owed. Never navigate on the second one. */
+async function finish(result: AuthResult): Promise<void> {
+  if (result.status === "mfa_required") {
+    challenge.value = result.challenge;
+    return;
+  }
+  await navigateTo("/");
 }
 
 /** The offered factor that takes a typed code. A passkey has its own button below. */
@@ -34,7 +38,7 @@ async function submitSecondFactor(): Promise<void> {
   if (pending === null) return;
   try {
     await pending.submit({ factor: codeFactor.value, code: factorCode.value });
-    challenge.value = null;
+    await navigateTo("/");
   } catch (failure) {
     error.value = describeAuthError(failure);
   }
@@ -47,7 +51,7 @@ async function submitPasskey(): Promise<void> {
   if (pending === null) return;
   try {
     await pending.submitPasskey();
-    challenge.value = null;
+    await navigateTo("/");
   } catch (failure) {
     error.value = describeAuthError(failure);
   }
@@ -66,8 +70,7 @@ async function sendCode(): Promise<void> {
 async function verifyCode(): Promise<void> {
   error.value = null;
   try {
-    finish(await idenzy.signIn.verifyOtp({ code: code.value }));
-    await navigateTo("/");
+    await finish(await idenzy.signIn.verifyOtp({ code: code.value }));
   } catch (failure) {
     error.value = describeAuthError(failure);
   }
@@ -76,10 +79,9 @@ async function verifyCode(): Promise<void> {
 async function signInWithPassword(): Promise<void> {
   error.value = null;
   try {
-    finish(
+    await finish(
       await idenzy.signIn.withPassword({ email: email.value, password: password.value }),
     );
-    await navigateTo("/");
   } catch (failure) {
     error.value = describeAuthError(failure);
   }

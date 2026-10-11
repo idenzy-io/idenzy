@@ -1,10 +1,12 @@
 import { ResourceNotFoundError } from "@idenzy/core/errors";
 import { Clock } from "@idenzy/core/time/clock";
 import { PublicId } from "@idenzy/core/value-objects/public-id";
+import { OutboxRepository } from "@idenzy/persistence/repository/outbox-repository";
 import {
   ProjectUserRepository,
   type ProjectUserRow,
 } from "@idenzy/persistence/repository/project-user-repository";
+import { RefreshTokenRepository } from "@idenzy/persistence/repository/refresh-token-repository";
 import {
   type SessionListItem,
   SessionRepository,
@@ -20,6 +22,7 @@ import type {
   UserSession,
 } from "@idenzy/protocol/schemas/management";
 import { Injectable } from "@nestjs/common";
+import { RevocationPublisher } from "../../session/revocation-publisher.js";
 import { ProjectScope } from "../tenancy/project-scope.js";
 
 /**
@@ -42,6 +45,7 @@ export class UsersService {
     private readonly uow: UnitOfWork,
     private readonly scope: ProjectScope,
     private readonly clock: Clock,
+    private readonly revocations: RevocationPublisher,
   ) {}
 
   async list(
@@ -120,24 +124,41 @@ export class UsersService {
    * The count comes back because zero is a real answer a screen has to be able to say:
    * "signed out of 3 devices" and "there was nothing to sign out of" are different things
    * to have just done, and a silent success reads as the first.
+   *
+   * It ends them the way signing out everywhere does (`SessionService.signOut`): the refresh
+   * tokens go with the sessions, `session.revoked` is written in the same transaction, and the
+   * user's watermark is published after the commit. Without the last two, an access token a
+   * customer's backend verifies offline kept working until it expired, which is not what a
+   * support agent pressing "sign out everywhere" on a compromised account means.
    */
   async revokeSessions(context: OrgContext, projectId: string, userId: string): Promise<number> {
     const tenant = await this.scope.of(context, projectId);
     const id = parseUserId(userId);
+    const now = this.clock.now();
 
     const revoked = await this.uow.transaction(async (tx) => {
       const user = await new ProjectUserRepository(tx, tenant).findById(id);
       if (user === null) return null;
       // `revokeAllForUser` answers with the ids it ended, so the count is the length
       // rather than a second query — and an empty array is a real zero.
-      return await new SessionRepository(tx, tenant).revokeAllForUser(
+      const ended = await new SessionRepository(tx, tenant).revokeAllForUser(
         id,
         SessionRevokeReason.AdminRevoked,
-        this.clock.now(),
+        now,
       );
+      if (ended.length === 0) return ended;
+      await new RefreshTokenRepository(tx, tenant).revokeForSessions(ended, now);
+      await new OutboxRepository(tx, tenant).enqueue("session.revoked", {
+        userId: id,
+        sessionIds: [...ended],
+        scope: "all",
+        at: now.toISOString(),
+      });
+      return ended;
     });
 
     if (revoked === null) throw notFound(userId);
+    if (revoked.length > 0) await this.revocations.userRevoked(tenant, id, now);
     return revoked.length;
   }
 

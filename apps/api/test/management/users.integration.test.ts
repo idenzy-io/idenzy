@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // From `dist`, like every other app test: Rolldown does not apply the decorator semantics
 // NestJS DI depends on.
 import { UsersService } from "../../dist/management/users/users-service.js";
+import { type InMemoryRevocationCommands, testRevocations } from "../fixtures.js";
 
 /**
  * What the Users screen reads and writes, against a real Postgres.
@@ -29,6 +30,7 @@ const OTHER_PROJECT = "33333333-3333-3333-3333-333333333333";
 
 let uow: UnitOfWork;
 let service: UsersService;
+let revocationCommands: InMemoryRevocationCommands;
 let publicProjectId = "";
 let publicOtherProjectId = "";
 
@@ -82,7 +84,10 @@ async function seedSession(projectId: string, userId: string, id: string): Promi
 beforeAll(async () => {
   await harness.start();
   uow = new UnitOfWork(harness.db);
-  service = new UsersService(uow, new PassthroughScope() as never, new SystemClock());
+  const clock = new SystemClock();
+  const revocations = testRevocations(clock);
+  revocationCommands = revocations.commands;
+  service = new UsersService(uow, new PassthroughScope() as never, clock, revocations.publisher);
 
   await harness.owner.query(
     `INSERT INTO orgs (id, name)
@@ -169,6 +174,16 @@ describe("the users a screen reads", () => {
     expect(sessions).toHaveLength(2);
     expect(sessions.every((session) => session.revokedAt !== null)).toBe(true);
     expect(sessions.every((session) => session.revokeReason === "admin_revoked")).toBe(true);
+
+    // And it reaches the verifiers that never ask us: an event the reconciler can replay, and the
+    // user's watermark in the published set, which is what ends an access token already issued.
+    const events = await harness.owner.query<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM outbox WHERE topic = 'session.revoked' AND project_id = $1`,
+      [PROJECT],
+    );
+    expect(events.rows.map((row) => row.payload["userId"])).toContain(ALICE);
+    const published = [...revocationCommands.sorted.values()].flatMap((set) => [...set.keys()]);
+    expect(published).toContain(userPublicId(ALICE));
   });
 
   it("reports zero rather than failing when there was nothing to revoke", async () => {

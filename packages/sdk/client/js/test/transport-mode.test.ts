@@ -4,11 +4,9 @@ import { publicUserSchema } from "@idenzy/protocol/schemas/user";
 import { describe, expect, it } from "vitest";
 import { IdenzyConfig, type IdenzyOptions } from "../src/config.js";
 import { ApiClient } from "../src/http/api-client.js";
-import type { CookieJar } from "../src/http/cookie-jar.js";
 import { type SessionTransportPreference, TransportMode } from "../src/http/transport-mode.js";
 import { errorBody, FakeTransport, json, user } from "./fixtures.js";
 
-const NO_COOKIES: CookieJar = { read: () => undefined };
 const OPTIONS: IdenzyOptions = {
   publishableKey: "pk_test_abc",
   apiUrl: "https://api.idenzy.test",
@@ -20,7 +18,7 @@ function clientFor(transport: FakeTransport, preference?: SessionTransportPrefer
   );
   const notices: string[] = [];
   const mode = new TransportMode(config.sessionTransport, (message) => notices.push(message));
-  return { client: new ApiClient(config, transport, NO_COOKIES, mode), mode, notices };
+  return { client: new ApiClient(config, transport, mode), mode, notices };
 }
 
 /** The shared API host's answer: cookie mode cannot work here, and it says so plainly. */

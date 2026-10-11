@@ -1,36 +1,26 @@
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
-import { IdenzyCookie, IdenzyHeader, SessionTransport } from "@idenzy/protocol/http/headers";
+import { IdenzyHeader, SessionTransport } from "@idenzy/protocol/http/headers";
 import { publicUserSchema } from "@idenzy/protocol/schemas/user";
 import { describe, expect, it } from "vitest";
 import { IdenzyConfig } from "../src/config.js";
 import { IdenzyApiError, IdenzyTransportError } from "../src/errors.js";
 import { ApiClient } from "../src/http/api-client.js";
-import type { CookieJar } from "../src/http/cookie-jar.js";
 import { TransportMode } from "../src/http/transport-mode.js";
 import { errorBody, FakeTransport, json, user } from "./fixtures.js";
 
 /** The downgrade notice is a developer aid, not something a test needs to hear. */
 const silent = (): void => {};
 
-class StubJar implements CookieJar {
-  constructor(private readonly values: Record<string, string> = {}) {}
-
-  read(name: string): string | undefined {
-    return this.values[name];
-  }
-}
-
 function clientFor(
   transport: FakeTransport,
   sessionTransport: SessionTransport = SessionTransport.Header,
-  jar: CookieJar = new StubJar(),
 ): ApiClient {
   const config = IdenzyConfig.parse({
     publishableKey: "pk_test_abc",
     apiUrl: "https://auth.acme.test",
     sessionTransport,
   });
-  return new ApiClient(config, transport, jar, new TransportMode(sessionTransport, silent));
+  return new ApiClient(config, transport, new TransportMode(sessionTransport, silent));
 }
 
 describe("ApiClient", () => {
@@ -57,17 +47,23 @@ describe("ApiClient", () => {
     );
   });
 
-  it("echoes the csrf cookie in cookie mode, on the methods that change something", async () => {
+  /**
+   * The declaration is a custom header, which is what makes every cookie-mode request a
+   * preflighted one: the browser sends nothing until the API's CORS answer names the page's
+   * origin. That, `SameSite=Lax` and the server's own Origin check are the CSRF defence, and
+   * they hold where the page cannot read the auth host's cookies, which is everywhere.
+   */
+  it("declares cookie mode on every request, writes included, and sends credentials", async () => {
     const transport = new FakeTransport(() => json(200, user()));
-    const jar = new StubJar({ [IdenzyCookie.Csrf]: "csrf-value" });
-    const client = clientFor(transport, SessionTransport.Cookie, jar);
+    const client = clientFor(transport, SessionTransport.Cookie);
 
     await client.send(publicUserSchema, { method: "POST", path: "v1/users/me", body: {} });
     await client.send(publicUserSchema, { method: "GET", path: "v1/users/me" });
 
-    expect(transport.requests[0]?.headers[IdenzyHeader.Csrf]).toBe("csrf-value");
-    expect(transport.requests[0]?.withCredentials).toBe(true);
-    expect(transport.requests[1]?.headers[IdenzyHeader.Csrf]).toBeUndefined();
+    for (const request of transport.requests) {
+      expect(request.headers[IdenzyHeader.SessionTransport]).toBe(SessionTransport.Cookie);
+      expect(request.withCredentials).toBe(true);
+    }
   });
 
   it("turns the error contract into the code a customer branches on", async () => {

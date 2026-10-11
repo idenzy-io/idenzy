@@ -1,5 +1,4 @@
 import { isIdenzyError } from "@idenzy/core/errors/idenzy-error";
-import { generateOpaqueToken } from "@idenzy/crypto/tokens/random";
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import { SessionTransport } from "@idenzy/protocol/http/headers";
 import {
@@ -78,10 +77,6 @@ export class SessionCookieInterceptor implements NestInterceptor {
       accessToken: payload.accessToken,
       accessTokenTtlSeconds: ttlSeconds(payload.accessTokenExpiresAt),
     });
-    // Rotated with the session, and readable by design: double-submit only works if the
-    // client can echo it back in a header.
-    this.cookies.writeCsrf(reply, generateOpaqueToken());
-
     // The whole point: in cookie mode the refresh token never appears in a body. The key is
     // deleted rather than set to undefined, so it cannot be serialised back as null.
     const { refreshToken, ...rest } = payload;

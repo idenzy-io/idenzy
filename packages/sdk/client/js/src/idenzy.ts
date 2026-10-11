@@ -9,7 +9,6 @@ import { MagicLinkFlow } from "./flows/magic-link-flow.js";
 import { OtpFlow } from "./flows/otp-flow.js";
 import { PasswordFlow } from "./flows/password-flow.js";
 import { ApiClient } from "./http/api-client.js";
-import { type CookieJar, DocumentCookieJar } from "./http/cookie-jar.js";
 import { FetchTransport, type Transport } from "./http/transport.js";
 import { TransportMode } from "./http/transport-mode.js";
 import { MfaApi } from "./mfa/mfa-api.js";
@@ -39,7 +38,6 @@ import { SignUp } from "./sign-up.js";
 export interface IdenzyInternals {
   readonly transport?: Transport;
   readonly clock?: Clock;
-  readonly cookies?: CookieJar;
   readonly refreshTokens?: RefreshTokenStore;
   readonly refreshLock?: RefreshLock;
   readonly pkce?: PkceStore;
@@ -77,7 +75,6 @@ export class Idenzy {
     const api = new ApiClient(
       config,
       internals.transport ?? new FetchTransport(options.fetch),
-      internals.cookies ?? new DocumentCookieJar(),
       mode,
     );
     this.manager = new SessionManager(

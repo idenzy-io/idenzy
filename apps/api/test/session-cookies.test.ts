@@ -19,7 +19,6 @@ import { testConfig } from "./fixtures.js";
  */
 const ALLOWED_ORIGIN = "https://app.acme.test";
 const EVIL_ORIGIN = "https://evil.test";
-const CSRF = "csrf-token-value";
 
 class FakeReply {
   readonly cookies: string[] = [];
@@ -34,7 +33,6 @@ interface FakeRequestInit {
   readonly method?: string;
   readonly origin?: string;
   readonly secFetchSite?: string;
-  readonly csrfHeader?: string;
   /** The declared header, which is what the guard reads. */
   readonly transport?: string;
   /** The decision the guard already made, which is what the interceptor reads. */
@@ -52,7 +50,6 @@ function request(init: FakeRequestInit = {}): Record<string, unknown> {
   if (init.cookie !== undefined) headers["cookie"] = init.cookie;
   if (init.origin !== undefined) headers["origin"] = init.origin;
   if (init.secFetchSite !== undefined) headers["sec-fetch-site"] = init.secFetchSite;
-  if (init.csrfHeader !== undefined) headers[IdenzyHeader.Csrf] = init.csrfHeader;
   const resolved = init.resolved ?? true;
   return {
     headers,
@@ -208,7 +205,7 @@ describe("moving the refresh token out of the body", () => {
   it("expires the cookies when a sign-out succeeds with no body", async () => {
     const reply = new FakeReply();
     await intercept(request({ carried: SessionTransport.Cookie }), reply, () => of(undefined));
-    expect(reply.cookies).toHaveLength(3);
+    expect(reply.cookies).toHaveLength(2);
     for (const cookie of reply.cookies) expect(cookie).toContain("Max-Age=0");
   });
 
@@ -222,7 +219,7 @@ describe("moving the refresh token out of the body", () => {
 
     // The assertion that matters: the error still propagates, and the browser is told to
     // stop presenting a token that will only ever look like an attack from now on.
-    expect(reply.cookies).toHaveLength(3);
+    expect(reply.cookies).toHaveLength(2);
     for (const cookie of reply.cookies) expect(cookie).toContain("Max-Age=0");
   });
 
@@ -288,11 +285,11 @@ describe("refusing a cross-site request before anything is consumed", () => {
   const session = {
     carried: SessionTransport.Cookie,
     transport: SessionTransport.Cookie,
-    cookie: `${IdenzyCookie.Refresh}=live-token; ${IdenzyCookie.Csrf}=${CSRF}`,
+    cookie: `${IdenzyCookie.Refresh}=live-token`,
   };
 
   it("refuses an unregistered origin, and leaves the refresh token alone", () => {
-    const req = request({ ...session, method: "POST", origin: EVIL_ORIGIN, csrfHeader: CSRF });
+    const req = request({ ...session, method: "POST", origin: EVIL_ORIGIN });
     expect(() => guard.canActivate(executionContext(req))).toThrow(
       expect.objectContaining({ code: "origin_not_allowed" }),
     );
@@ -301,53 +298,47 @@ describe("refusing a cross-site request before anything is consumed", () => {
     expect(req["refreshCookie"]).toBeUndefined();
   });
 
-  it("refuses an allowlisted origin that cannot echo the csrf cookie", () => {
-    const req = request({ ...session, method: "POST", origin: ALLOWED_ORIGIN });
+  it("refuses a write that carries no Origin at all", () => {
+    const req = request({ ...session, method: "POST" });
     expect(() => guard.canActivate(executionContext(req))).toThrow(
-      expect.objectContaining({ code: "csrf_check_failed" }),
+      expect.objectContaining({ code: "origin_not_allowed" }),
     );
+    expect(req["refreshCookie"]).toBeUndefined();
   });
 
-  it("refuses a mismatched csrf value", () => {
+  it("refuses a cross-site fetch even from an allowlisted origin", () => {
+    // Proves the checks are ANDed rather than alternatives: Fetch Metadata still has a say
+    // when the Origin passes.
+    for (const site of ["cross-site", "none"]) {
+      const req = request({
+        ...session,
+        method: "POST",
+        origin: ALLOWED_ORIGIN,
+        secFetchSite: site,
+      });
+      expect(() => guard.canActivate(executionContext(req))).toThrow(
+        expect.objectContaining({ code: "csrf_check_failed" }),
+      );
+    }
+  });
+
+  /**
+   * The case cookie mode exists for: the page on `app.acme.test`, the API on another host of
+   * the same site. The page can read none of the API's cookies, and needs to: the allowlisted
+   * Origin and a same-site fetch are the whole of what it has to show.
+   */
+  it("accepts an allowlisted page on another host of the site", () => {
     const req = request({
       ...session,
       method: "POST",
       origin: ALLOWED_ORIGIN,
-      csrfHeader: "not-the-cookie",
-    });
-    expect(() => guard.canActivate(executionContext(req))).toThrow(
-      expect.objectContaining({ code: "csrf_check_failed" }),
-    );
-  });
-
-  it("still refuses a cross-site fetch that happens to carry a correct csrf header", () => {
-    // Proves the checks are ANDed rather than alternatives. An attacker who somehow read the
-    // token still does not get past Fetch Metadata.
-    const req = request({
-      ...session,
-      method: "POST",
-      origin: ALLOWED_ORIGIN,
-      csrfHeader: CSRF,
-      secFetchSite: "cross-site",
-    });
-    expect(() => guard.canActivate(executionContext(req))).toThrow(
-      expect.objectContaining({ code: "csrf_check_failed" }),
-    );
-  });
-
-  it("accepts the real thing", () => {
-    const req = request({
-      ...session,
-      method: "POST",
-      origin: ALLOWED_ORIGIN,
-      csrfHeader: CSRF,
       secFetchSite: "same-site",
     });
     expect(guard.canActivate(executionContext(req))).toBe(true);
     expect(req["refreshCookie"]).toBe("live-token");
   });
 
-  it("refuses login CSRF, where there is no session cookie to echo yet", () => {
+  it("refuses login CSRF, before there is any session cookie", () => {
     // An attacker who makes a victim's browser complete a sign-in as the attacker plants
     // their own session, and everything the victim does next happens in that account.
     // Origin carries this on its own, because script cannot forge it.

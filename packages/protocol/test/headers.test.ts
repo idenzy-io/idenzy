@@ -37,7 +37,7 @@ describe("wire header names", () => {
 });
 
 describe("cookie names", () => {
-  it("are all __Host- prefixed, which is what the CSRF design rests on", () => {
+  it("are all __Host- prefixed, so no sibling subdomain can plant one", () => {
     for (const name of Object.values(IdenzyCookie)) {
       expect(name.startsWith("__Host-")).toBe(true);
     }

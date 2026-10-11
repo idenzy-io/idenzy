@@ -125,7 +125,7 @@ describe("reading the token out of a request", () => {
     const token = await tokens.mint();
 
     const verified = await verifier.verifyRequest({
-      cookie: `other=1; ${IdenzyCookie.Session}=${token}; ${IdenzyCookie.Csrf}=abc`,
+      cookie: `other=1; ${IdenzyCookie.Session}=${token}; trailing=abc`,
     });
 
     expect(verified.userId).toBe("usr_00000000000000000001");

@@ -5,7 +5,6 @@ import {
   OriginNotAllowedError,
   SessionTransportUnavailableError,
 } from "@idenzy/core/errors";
-import { hashToken, safeCompareHex } from "@idenzy/crypto/tokens/random";
 import { IdenzyCookie, IdenzyHeader, SessionTransport } from "@idenzy/protocol/http/headers";
 import { type CanActivate, type ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -85,8 +84,8 @@ export class SessionTransportGuard implements CanActivate {
     this.assertEligible(request);
     // Checked before the credential is stashed, not after: nothing downstream should be able
     // to reach a token on a request that was going to be refused anyway.
+    this.assertNotCrossSite(context, request);
     const presented = this.cookies.read(request, IdenzyCookie.Refresh);
-    this.assertNotCrossSite(context, request, presented);
     if (presented !== undefined) request.refreshCookie = presented;
     return true;
   }
@@ -106,14 +105,25 @@ export class SessionTransportGuard implements CanActivate {
    * Coverage is wider than refresh and sign-out. Every route that *writes* the cookie is a
    * login-CSRF target: an attacker who makes a victim's browser complete a sign-in as the
    * attacker plants their own session, and everything the victim does afterwards happens in
-   * the attacker's account. Those routes have no CSRF cookie yet, so `Origin` carries them,
-   * which is sufficient because script cannot forge it.
+   * the attacker's account.
+   *
+   * Three defences, each enough against a browser on its own, and none costs a round trip:
+   *
+   * - The cookies are `SameSite=Lax`, so another site's request never carries them.
+   * - Cookie mode is only ever *declared* by a custom header (`declared` below), and a request
+   *   with a custom header is preflighted: the browser asks first and sends nothing unless our
+   *   CORS answer names its origin. A plain form post cannot reach cookie mode at all.
+   * - Here, `Origin` must be allowlisted (script cannot forge it, and a write without one is
+   *   refused) and Fetch Metadata must not say cross-site.
+   *
+   * There used to be a double-submit token on top, a `__Host-` cookie the page echoed in a
+   * header. It could never work where the page and this API are different hosts, which is
+   * every deployment with an auth domain (`app.customer.com` cannot read a cookie of
+   * `auth.customer.com`), so every refresh after a reload was refused. It guarded nothing the
+   * allowlisted `Origin` does not: a page that could read the value was one whose origin is
+   * allowed anyway.
    */
-  private assertNotCrossSite(
-    context: ExecutionContext,
-    request: FastifyRequest,
-    presented: string | undefined,
-  ): void {
+  private assertNotCrossSite(context: ExecutionContext, request: FastifyRequest): void {
     if (!UNSAFE.has(request.method)) return;
     // A top-level navigation or a provider's form post. Apple posts its callback with
     // `Origin: https://appleid.apple.com`, so an Origin check here would break Sign in with
@@ -131,33 +141,6 @@ export class SessionTransportGuard implements CanActivate {
     const site = request.headers["sec-fetch-site"];
     if (typeof site === "string" && (site === "cross-site" || site === "none")) {
       throw new CsrfCheckFailedError({ detail: { secFetchSite: site } });
-    }
-
-    // Only once a session is actually being presented. The sign-in routes have no CSRF
-    // cookie to echo yet, and demanding one there would make sign-in impossible.
-    if (presented === undefined) return;
-    this.assertDoubleSubmit(request);
-  }
-
-  /**
-   * Double-submit, made sound by the `__Host-` prefix.
-   *
-   * Plain double-submit is defeated by cookie tossing, where a sibling subdomain writes a
-   * cookie the target host will read. `__Host-` forbids `Domain` and pins the cookie to the
-   * exact host that set it, so there is no sibling that can write this one. That is why the
-   * prefix is load-bearing rather than decorative.
-   *
-   * Compared as digests so the comparison is constant time over a fixed length, whatever the
-   * two values turn out to be.
-   */
-  private assertDoubleSubmit(request: FastifyRequest): void {
-    const cookie = this.cookies.read(request, IdenzyCookie.Csrf);
-    const header = request.headers[IdenzyHeader.Csrf];
-    if (cookie === undefined || typeof header !== "string" || header.length === 0) {
-      throw new CsrfCheckFailedError({ detail: { reason: "missing" } });
-    }
-    if (!safeCompareHex(hashToken(cookie), hashToken(header))) {
-      throw new CsrfCheckFailedError({ detail: { reason: "mismatch" } });
     }
   }
 

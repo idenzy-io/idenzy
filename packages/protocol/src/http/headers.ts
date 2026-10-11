@@ -17,8 +17,6 @@ export const IdenzyHeader = {
   PublishableKey: "x-idenzy-publishable-key",
   /** `cookie` or `header`. Absent means header mode, which is the back-compatible default. */
   SessionTransport: "x-idenzy-session-transport",
-  /** Echoes the CSRF cookie. Only meaningful in cookie mode (PROJECT.md 4.3). */
-  Csrf: "x-idenzy-csrf",
   /**
    * What to call this device in the user's own session list, percent-encoded.
    *
@@ -71,15 +69,13 @@ export type SessionTransport = (typeof SessionTransport)[keyof typeof SessionTra
  *
  * The prefix is a browser-enforced guarantee, not decoration: it requires `Secure`, forbids
  * `Domain`, and pins `Path=/`. That combination is what stops a sibling subdomain writing a
- * cookie the auth host will read, which is the attack plain double-submit CSRF is otherwise
- * open to.
+ * cookie the auth host will read, so nothing but the auth host can plant a session. Both are
+ * `HttpOnly`: no script, ours included, ever reads them.
  */
 export const IdenzyCookie = {
   /** The opaque refresh token. Never readable by JavaScript. */
   Refresh: "__Host-idenzy-refresh",
   /** The short-lived access token, so SSR can verify offline without a network call. */
   Session: "__Host-idenzy-session",
-  /** The double-submit value. Deliberately readable by JavaScript, unlike the other two. */
-  Csrf: "__Host-idenzy-csrf",
 } as const;
 export type IdenzyCookie = (typeof IdenzyCookie)[keyof typeof IdenzyCookie];

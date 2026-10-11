@@ -1,14 +1,10 @@
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
-import { IdenzyCookie, IdenzyHeader } from "@idenzy/protocol/http/headers";
+import { IdenzyHeader } from "@idenzy/protocol/http/headers";
 import type { ZodType } from "zod";
 import type { IdenzyConfig } from "../config.js";
 import { errorFromResponse, IdenzyApiError, IdenzyTransportError } from "../errors.js";
-import type { CookieJar } from "./cookie-jar.js";
 import type { ApiRequest, ApiResponse, Transport } from "./transport.js";
 import type { TransportMode } from "./transport-mode.js";
-
-/** Methods that change something, and therefore the ones the CSRF header belongs on. */
-const UNSAFE = new Set(["POST", "PATCH", "DELETE"]);
 
 export interface RequestSpec {
   readonly method: "GET" | "POST" | "PATCH" | "DELETE";
@@ -47,7 +43,6 @@ export class ApiClient {
   constructor(
     private readonly config: IdenzyConfig,
     private readonly transport: Transport,
-    private readonly cookies: CookieJar,
     private readonly mode: TransportMode,
   ) {}
 
@@ -153,21 +148,7 @@ export class ApiClient {
     // form the two sides could disagree about.
     if (spec.attestation !== undefined) headers[IdenzyHeader.Attestation] = spec.attestation;
     if (spec.accessToken !== undefined) headers["authorization"] = `Bearer ${spec.accessToken}`;
-    const csrf = this.csrfFor(spec.method);
-    if (csrf !== undefined) headers[IdenzyHeader.Csrf] = csrf;
     return headers;
-  }
-
-  /**
-   * Echoes the CSRF cookie, and only where it means something.
-   *
-   * Sent even on the routes that have no cookie to echo yet, because the server demands it
-   * only once a session is actually presented and an absent value is simply not checked.
-   * Sending it unconditionally in cookie mode is what keeps this out of every call site.
-   */
-  private csrfFor(method: string): string | undefined {
-    if (!this.mode.usesCookies || !UNSAFE.has(method)) return undefined;
-    return this.cookies.read(IdenzyCookie.Csrf);
   }
 }
 

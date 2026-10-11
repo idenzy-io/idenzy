@@ -35,8 +35,8 @@ export interface IssuedCookies {
  * why the default lifetime is five minutes.
  *
  * The attributes are not configurable. `__Host-` makes the browser enforce `Secure`, no
- * `Domain` and `Path=/`, which is the property the whole CSRF design rests on: a sibling
- * subdomain cannot write a cookie this host will read.
+ * `Domain` and `Path=/`: a sibling subdomain cannot write a cookie this host will read, so it
+ * cannot plant a session of its own choosing. Both are `HttpOnly`; no script reads either.
  */
 @Injectable()
 export class SessionCookies {
@@ -67,7 +67,7 @@ export class SessionCookies {
    * until the cookie's own lifetime runs out.
    */
   clear(reply: FastifyReply): void {
-    for (const name of [IdenzyCookie.Refresh, IdenzyCookie.Session, IdenzyCookie.Csrf]) {
+    for (const name of [IdenzyCookie.Refresh, IdenzyCookie.Session]) {
       this.write(reply, name, "", 0);
     }
   }
@@ -84,17 +84,6 @@ export class SessionCookies {
       return value.length === 0 ? undefined : value;
     }
     return undefined;
-  }
-
-  /**
-   * The CSRF cookie is the one thing here JavaScript is meant to read, because double-submit
-   * only works if the client can echo it back in a header.
-   */
-  writeCsrf(reply: FastifyReply, value: string): void {
-    reply.header(
-      "set-cookie",
-      `${IdenzyCookie.Csrf}=${assertSafe(value)}; Secure; SameSite=Lax; Path=/; Max-Age=${this.config.get("REFRESH_TOKEN_TTL_SECONDS")}`,
-    );
   }
 
   private write(reply: FastifyReply, name: string, value: string, maxAge: number): void {

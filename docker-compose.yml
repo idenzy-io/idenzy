@@ -1,4 +1,9 @@
 # Local development dependencies. Not a production topology.
+#
+# The host ports default to each store's own and can be moved with IDENZY_POSTGRES_PORT,
+# IDENZY_VALKEY_PORT and IDENZY_CLICKHOUSE_PORT, for a machine where something else already
+# listens on 5432, 6379 or 8123. Moving one means pointing DATABASE_URL, VALKEY_URL or
+# CLICKHOUSE_URL at the new port too: compose reads these from the shell or from `.env`.
 services:
   postgres:
     image: postgres:17-alpine
@@ -8,7 +13,7 @@ services:
       POSTGRES_PASSWORD: idenzy
       POSTGRES_DB: idenzy
     ports:
-      - "5432:5432"
+      - "${IDENZY_POSTGRES_PORT:-5432}:5432"
     volumes:
       - idenzy-pgdata:/var/lib/postgresql/data
       # Roles are created at cluster init, not by a migration. See the script's header.
@@ -24,7 +29,7 @@ services:
     container_name: idenzy-valkey
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     ports:
-      - "6379:6379"
+      - "${IDENZY_VALKEY_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 2s
@@ -42,7 +47,7 @@ services:
       CLICKHOUSE_DB: idenzy
       CLICKHOUSE_SKIP_USER_SETUP: "1"
     ports:
-      - "8123:8123"
+      - "${IDENZY_CLICKHOUSE_PORT:-8123}:8123"
     volumes:
       - idenzy-chdata:/var/lib/clickhouse
       # Users, roles and row policies are server-level objects, not schema, so they are created

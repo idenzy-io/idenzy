@@ -1,7 +1,10 @@
 # Infrastructure
 
-One deployment: Cloud Run, Cloud SQL, Memorystore, a KMS key ring, and the network around
-them, in one region.
+Stage one (production today): a VPS runs the services and the stateful stores (`deploy/`,
+docs/guide/deploy.md), and this directory gives it what should not live on the box: the KMS key
+every other key is wrapped by, the secrets it reads at boot, an append-only backup bucket and the
+export bucket. `environments/prod` is that. Turning `enable_managed_infrastructure` on adds the
+later stage: Cloud SQL, its network and the Cloud Tasks retry lane.
 
 This used to describe **cells** — independent regional stacks sharing no data, with a
 project pinned to one at creation so that an EU project could be honestly described as
@@ -9,15 +12,21 @@ EU-resident, and a global control plane holding cell pointers only. That model w
 and removed on 2026-09-21. **Residency is not offered** (PROJECT.md 4.13.5), and nothing
 here should be read as offering it.
 
-Nothing in this directory has been applied.
+Nothing in this directory has been applied yet.
 
 ## Layout
 
 ```
 modules/stack/         the deployment, instantiated per environment
-  main.tf              KMS, Cloud SQL, the Postgres roles
-  webhooks.tf          the webhook retry lane: Cloud Tasks queues, an identity, IAM
-environments/dev/      the one environment
+  main.tf              KMS, Cloud SQL (later stage), the Postgres roles
+  vps-identity.tf      the identity the VPS runs as, and what it may touch
+  secrets.tf           the secrets the box reads at boot, declared and never valued
+  backups.tf           where the nightly encrypted dump goes, append-only for the box
+  storage.tf           where a data-subject export lands
+  apis.tf              the Google APIs the deployment calls
+  webhooks.tf          the webhook retry lane (later stage): Cloud Tasks queues, an identity, IAM
+environments/prod/     production, stage one
+environments/dev/      a development Cloud project
 ```
 
 ## What lives here rather than in a migration

@@ -12,8 +12,8 @@ locals {
   name_prefix = "idenzy"
 
   common_labels = {
-    app          = "idenzy"
-    managed_by   = "terraform"
+    app        = "idenzy"
+    managed_by = "terraform"
   }
 }
 

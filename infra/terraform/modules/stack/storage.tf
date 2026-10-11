@@ -17,7 +17,8 @@
 # It lives in the deployment's own region, like everything else: an export is a copy of
 # exactly the data an export bundle should not outlive.
 resource "google_storage_bucket" "subject_exports" {
-  name     = "${local.name_prefix}-subject-exports"
+  # Bucket names are global, so they carry the Cloud project's id, which is unique already.
+  name     = "${var.project_id}-subject-exports"
   project  = var.project_id
   location = var.region
   labels   = local.common_labels

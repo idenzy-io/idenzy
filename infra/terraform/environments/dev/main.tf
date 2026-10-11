@@ -44,19 +44,18 @@ module "stack" {
  * is why there is no VPC here — a VPC is what Cloud Run needed to reach a private database, and
  * there is neither.
  *
- * So `enable_managed_infrastructure` stays off and this applies exactly three things:
+ * So `enable_managed_infrastructure` stays off and this applies:
  *
- *   - the **KMS ring** and its DEK-wrapping key, because key custody is the one property that
- *     cannot be rebuilt after a compromise and a key on the box is a key in every snapshot of it;
+ *   - the **KMS ring** and its wrapping key, because key custody is the one property that cannot
+ *     be rebuilt after a compromise and a key on the box is a key in every snapshot of it; every
+ *     project's signing key and the field-encryption key are stored wrapped by it (ADR-0021);
  *   - the **export bucket**, because a data-subject bundle needs durable storage whose retention
  *     enforces itself, which a directory beside the database is not;
- *   - the **runtime service account** the VPS authenticates as, scoped to those two and nothing
- *     else.
+ *   - the **backup bucket**, append-only for the box and locked for a week;
+ *   - the **secrets** the box reads at boot, declared and never valued;
+ *   - the **runtime service account** the VPS authenticates as, scoped to those and nothing else.
  *
  * Turning the flag on adds Cloud SQL, the VPC and peering it needs, and the Cloud Tasks retry lane.
  * That is the later stage and it needs no application change: ADR-0012's sweeper is a correct
  * deployment rather than a fallback, and every other adapter is already behind a port.
- *
- * Still missing for an actual deploy, on the box rather than here: the KMS issuer. `auth-api`
- * refuses to boot outside development until one exists, so nothing above can serve a request yet.
  */

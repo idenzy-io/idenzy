@@ -1,6 +1,21 @@
 output "kms_key_ring" {
-  description = "Per-project signing keys are created inside this ring."
+  description = "The ring the wrapping key lives in."
   value       = google_kms_key_ring.stack.id
+}
+
+output "kms_key_name" {
+  description = "KMS_KEY_NAME: wraps every project's signing key and the field-encryption key (ADR-0021)."
+  value       = google_kms_crypto_key.dek_wrapping.id
+}
+
+output "backup_bucket" {
+  description = "Where the nightly encrypted Postgres dump goes."
+  value       = google_storage_bucket.backups.name
+}
+
+output "secret_names" {
+  description = "The secrets to give a value, once, before the first start."
+  value       = sort([for secret in google_secret_manager_secret.runtime : secret.secret_id])
 }
 
 /*

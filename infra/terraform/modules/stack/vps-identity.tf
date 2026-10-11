@@ -20,20 +20,15 @@ resource "google_service_account" "stack_runtime" {
   description  = "Used by the VPS to reach KMS and the export bucket, and nothing else."
 }
 
-# Sign and verify, not manage. The runtime may *use* the per-project signing keys and may not
-# create, rotate, disable or read them — which is the separation PROJECT.md 4.13.7 asks for between
-# key administrators and key users, expressed as two roles rather than as a policy document.
-resource "google_kms_key_ring_iam_member" "runtime_signs" {
-  key_ring_id = google_kms_key_ring.stack.id
-  role        = "roles/cloudkms.signerVerifier"
-  member      = "serviceAccount:${google_service_account.stack_runtime.email}"
-}
-
-# Unwrapping the per-project data encryption key, which is what field-level encryption runs on.
-resource "google_kms_key_ring_iam_member" "runtime_unwraps" {
-  key_ring_id = google_kms_key_ring.stack.id
-  role        = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member      = "serviceAccount:${google_service_account.stack_runtime.email}"
+# Wrap and unwrap with the one key, and nothing else (ADR-0021). Every project's signing key and the
+# field-encryption key are stored wrapped by it; the runtime opens them and signs locally, so it
+# never needed to sign with KMS. Use, not manage: it cannot create, rotate, disable or destroy the
+# key, which is the separation PROJECT.md 4.13.7 asks for between key administrators and key users.
+# On the key rather than the ring, so a key added to the ring later is not the runtime's by default.
+resource "google_kms_crypto_key_iam_member" "runtime_wraps" {
+  crypto_key_id = google_kms_crypto_key.dek_wrapping.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${google_service_account.stack_runtime.email}"
 }
 
 # Write an export and hand out a signed link to it. `objectAdmin` rather than `objectCreator`

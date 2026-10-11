@@ -102,6 +102,24 @@ variable "subject_export_retention_days" {
   default     = 30
 }
 
+variable "backup_retention_days" {
+  description = <<-EOT
+    Days a nightly database backup is kept before the bucket deletes it.
+
+    The first seven of them it cannot be deleted at all, by anybody (`backup_lock_days`): a backup
+    is what is left after a compromise, so the credential that writes one must not be able to
+    remove it.
+  EOT
+  type        = number
+  default     = 30
+}
+
+variable "backup_lock_days" {
+  description = "Days a backup is held under the bucket's retention policy, undeletable by anybody."
+  type        = number
+  default     = 7
+}
+
 variable "enable_managed_infrastructure" {
   description = <<-EOT
     Whether the deployment runs on Google's managed services or on a VPS.

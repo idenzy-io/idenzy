@@ -25,6 +25,28 @@ engineStrict: true
 onlyBuiltDependencies:
   - argon2
 
+# Advisories with no fix published, or none reachable from how we run the package, each with
+# the reason. `pnpm audit` in CI fails on anything not on this list.
+auditConfig:
+  ignoreGhsas:
+    # esbuild <=0.24.2's dev server answers any origin. drizzle-kit (latest, 0.31.x) pins it
+    # through @esbuild-kit/core-utils for loading the config file; no server is ever started.
+    - GHSA-67mh-4wv8-2f99
+    # node-forge <=1.4.0, no fixed release yet. listhen uses it to mint the self-signed
+    # certificate of `nuxt dev --https`; nothing verifies a signature with it.
+    - GHSA-86w9-cpqp-85rv
+    # braces <=3.0.3, no fixed release yet. micromatch expands build-time glob patterns from
+    # our own config in nitropack; no request reaches it.
+    - GHSA-vfj7-8cjw-p6xm
+    # simple-git <4.0.1 and its argv parser: unsafe handling of caller-supplied arguments and
+    # environment. Only @nuxt/devtools uses it, under `nuxt dev`, with fixed arguments
+    # (branch(), revparse(["--short", "HEAD"]), status()) on the developer's own checkout.
+    # 4.x removes the default export devtools imports, so it cannot be overridden either.
+    - GHSA-x6jw-m9v5-85vh
+    - GHSA-g4wm-2vf7-vfgr
+    - GHSA-858h-whjf-mvg5
+    - GHSA-v5rq-49vh-5v5c
+
 # Single source of truth for shared dependency versions. Packages reference these
 # as "catalog:" so a bump happens in one place.
 catalog:
@@ -37,12 +59,12 @@ catalog:
   '@vitest/coverage-v8': 4.1.11
 
   # Runtime framework
-  '@nestjs/common': 12.0.1
-  '@nestjs/core': 12.0.1
-  '@nestjs/platform-fastify': 12.0.1
-  '@nestjs/testing': 12.0.1
+  '@nestjs/common': 12.1.2
+  '@nestjs/core': 12.1.2
+  '@nestjs/platform-fastify': 12.1.2
+  '@nestjs/testing': 12.1.2
   '@nestjs/terminus': 12.0.0
-  fastify: 5.12.1
+  fastify: 5.12.5
   reflect-metadata: 0.2.2
   rxjs: 7.8.2
 
@@ -129,10 +151,10 @@ catalog:
   react: 19.2.8
   react-dom: 19.2.8
   '@types/react': 19.2.18
-  next: 16.3.4
+  next: 16.3.8
   svelte: 5.57.0
   '@angular/core': 22.1.5
-  solid-js: 1.9.15
+  solid-js: 1.9.16
 
   # Validation and observability
   zod: 4.5.4

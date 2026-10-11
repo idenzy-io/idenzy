@@ -129,6 +129,24 @@ describe("what the cache answers", () => {
     expect(cache.isRevoked(token({ issuedAt: new Date(watermark * 1000) }))).toBe(false);
   });
 
+  it("keeps a user's latest watermark when the set lists them twice", async () => {
+    const watermark = Math.floor(Date.now() / 1000);
+    const cache = await cacheOver(
+      serving(() =>
+        signer({
+          sessions: [],
+          users: [
+            { userId: USER, revokedBefore: watermark },
+            { userId: USER, revokedBefore: watermark - 60 },
+          ],
+          projectRevokedBefore: null,
+        }),
+      ).fetch,
+    );
+
+    expect(cache.isRevoked(token({ issuedAt: new Date((watermark - 30) * 1000) }))).toBe(true);
+  });
+
   it("applies a project watermark to everybody", async () => {
     const watermark = Math.floor(Date.now() / 1000);
     const cache = await cacheOver(

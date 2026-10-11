@@ -47,12 +47,39 @@ export interface RevocationStatus {
   readonly stale: boolean;
 }
 
-const EMPTY: RevocationSnapshot = {
-  sessions: [],
-  users: [],
+/**
+ * A snapshot as the request path reads it: a set of sessions and a map of watermarks.
+ *
+ * Built once per poll rather than searched per request, because the set lists every
+ * revocation inside its retention window and a request should cost a hash lookup whatever
+ * the size of that list. An array scan is fine at ten entries and is a CPU bill per request
+ * at a hundred thousand.
+ */
+interface RevocationIndex {
+  readonly sessions: ReadonlySet<string>;
+  readonly users: ReadonlyMap<string, number>;
+  readonly projectRevokedBefore: number | null;
+}
+
+const EMPTY: RevocationIndex = {
+  sessions: new Set(),
+  users: new Map(),
   projectRevokedBefore: null,
-  retentionSeconds: 0,
 };
+
+function indexOf(snapshot: RevocationSnapshot): RevocationIndex {
+  const users = new Map<string, number>();
+  // The latest watermark wins should a user appear twice: it revokes everything the earlier
+  // one did and more.
+  for (const { userId, revokedBefore } of snapshot.users) {
+    users.set(userId, Math.max(revokedBefore, users.get(userId) ?? revokedBefore));
+  }
+  return {
+    sessions: new Set(snapshot.sessions),
+    users,
+    projectRevokedBefore: snapshot.projectRevokedBefore,
+  };
+}
 
 /**
  * An in-process copy of a project's revocation set (ADR-0009).
@@ -75,7 +102,7 @@ export class RevocationCache {
   private readonly url: string;
   private readonly intervalMs: number;
   private readonly request: typeof globalThis.fetch;
-  private snapshot: RevocationSnapshot = EMPTY;
+  private snapshot: RevocationIndex = EMPTY;
   private etag: string | null = null;
   private expiresAt: Date | null = null;
   private lastSuccessAt: Date | null = null;
@@ -141,11 +168,11 @@ export class RevocationCache {
    */
   isRevoked(token: Pick<VerifiedAccessToken, "sessionId" | "userId" | "issuedAt">): boolean {
     if (this.status().stale) return false;
-    if (this.snapshot.sessions.includes(token.sessionId)) return true;
+    if (this.snapshot.sessions.has(token.sessionId)) return true;
 
     const issuedAt = Math.floor(token.issuedAt.getTime() / 1000);
-    const user = this.snapshot.users.find((entry) => entry.userId === token.userId);
-    if (user !== undefined && issuedAt < user.revokedBefore) return true;
+    const user = this.snapshot.users.get(token.userId);
+    if (user !== undefined && issuedAt < user) return true;
     const project = this.snapshot.projectRevokedBefore;
     return project !== null && issuedAt < project;
   }
@@ -169,7 +196,7 @@ export class RevocationCache {
       if (!response.ok) return;
 
       const verified = await this.verify(await response.text());
-      this.snapshot = verified.snapshot;
+      this.snapshot = indexOf(verified.snapshot);
       this.expiresAt = verified.expiresAt;
       this.etag = response.headers.get("etag");
       this.lastSuccessAt = new Date();

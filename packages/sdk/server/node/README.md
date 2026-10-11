@@ -25,4 +25,16 @@ outage rather than reported as a bad token. `RevocationCache` (from
 instead of at the token's expiry. `verifyWebhook` (from `@idenzy/node/webhooks`) checks a
 delivery's signature and timestamp.
 
+When one of your users deletes their account, erase them in Idenzy too:
+
+```ts
+import { IdenzyAdmin } from "@idenzy/node/admin";
+
+const admin = new IdenzyAdmin({ baseUrl: "https://auth.acme.com", secretKey: process.env.IDENZY_SECRET_KEY });
+await admin.users.delete(userId); // "deleted", or "not_found" for an unknown or already erased id
+```
+
+It is immediate: the account is tombstoned, its ways in and sessions go, tokens already issued
+are revoked through the published set, and your webhooks receive `user.deleted`.
+
 MIT licensed.

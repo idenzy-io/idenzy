@@ -22,6 +22,7 @@ import type {
   UserSession,
 } from "@idenzy/protocol/schemas/management";
 import { Injectable } from "@nestjs/common";
+import { type ErasureRequest, UserErasureService } from "../../erasure/user-erasure-service.js";
 import { RevocationPublisher } from "../../session/revocation-publisher.js";
 import { ProjectScope } from "../tenancy/project-scope.js";
 
@@ -45,6 +46,7 @@ export class UsersService {
     private readonly uow: UnitOfWork,
     private readonly scope: ProjectScope,
     private readonly clock: Clock,
+    private readonly erasure: UserErasureService,
     private readonly revocations: RevocationPublisher,
   ) {}
 
@@ -160,6 +162,20 @@ export class UsersService {
     if (revoked === null) throw notFound(userId);
     if (revoked.length > 0) await this.revocations.userRevoked(tenant, id, now);
     return revoked.length;
+  }
+
+  /**
+   * Erases the account, now. `UserErasureService` says what that covers; this only resolves the
+   * project the caller may act on, so a team member erases exactly what a secret key would.
+   */
+  async erase(
+    context: OrgContext,
+    projectId: string,
+    userId: string,
+    request: ErasureRequest,
+  ): Promise<void> {
+    const tenant = await this.scope.of(context, projectId);
+    if (!(await this.erasure.erase(tenant, parseUserId(userId), request))) throw notFound(userId);
   }
 
   private async setBan(

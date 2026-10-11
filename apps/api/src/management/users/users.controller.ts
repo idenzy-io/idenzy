@@ -9,7 +9,7 @@ import {
   suspendUserSchema,
   type UserSessionList,
 } from "@idenzy/protocol/schemas/management";
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
 import { orgContextFrom } from "../tenancy/dashboard-principal.js";
@@ -28,6 +28,7 @@ import { UsersService } from "./users-service.js";
  * Suspending is not a DELETE because nothing is removed — `banned_until` is what changes —
  * and revoking sessions is not one either, for the same reason: the rows stay and carry
  * `revoked_at`, because a session that vanished would take its own audit trail with it.
+ * Erasing is the DELETE, because what the account was is gone even though its id stays.
  */
 @Controller("v1/orgs/:orgId/projects/:projectId/users")
 export class UsersController {
@@ -85,6 +86,24 @@ export class UsersController {
     @Param("userId") userId: string,
   ): Promise<ProjectUser> {
     return await this.users.restore(orgContextFrom(request), projectId, userId);
+  }
+
+  /**
+   * Erases the account, now (PROJECT.md 4.13.6). Developer, like everything on this screen:
+   * the panel's matrix lists "deleting somebody" under the same row as suspending them.
+   */
+  @Delete(":userId")
+  @HttpCode(204)
+  @RequireRole(MemberRole.Developer)
+  async erase(
+    @Req() request: FastifyRequest,
+    @Param("projectId") projectId: string,
+    @Param("userId") userId: string,
+  ): Promise<void> {
+    await this.users.erase(orgContextFrom(request), projectId, userId, {
+      ip: request.ip ?? null,
+      userAgent: request.headers["user-agent"] ?? null,
+    });
   }
 
   @Get(":userId/sessions")

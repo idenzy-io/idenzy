@@ -7,6 +7,7 @@ import { ClaimsModule } from "./claims/claims.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
 import { DeliveryModule } from "./delivery/delivery.module.js";
+import { ErasureModule } from "./erasure/erasure.module.js";
 import { FlowsModule } from "./flows/flows.module.js";
 import { HealthController } from "./health/health.controller.js";
 import { HttpModule } from "./http/http.module.js";
@@ -89,6 +90,7 @@ import { WellKnownController } from "./well-known/well-known.controller.js";
     MfaModule,
     AccountModule,
     AnonymousModule,
+    ErasureModule,
 
     // The dashboard surface. `DashboardTenancyModule` registers `MembershipGuard`, which is
     // opt-in per route on `@RequireSignIn`/`@RequireRole` and so is inert on every auth route.

@@ -7,6 +7,7 @@ import { PostgresHarness } from "@idenzy/testing/postgres-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // From `dist`, like every other app test: Rolldown does not apply the decorator semantics
 // NestJS DI depends on.
+import { UserErasureService } from "../../dist/erasure/user-erasure-service.js";
 import { UsersService } from "../../dist/management/users/users-service.js";
 import { type InMemoryRevocationCommands, testRevocations } from "../fixtures.js";
 
@@ -87,7 +88,13 @@ beforeAll(async () => {
   const clock = new SystemClock();
   const revocations = testRevocations(clock);
   revocationCommands = revocations.commands;
-  service = new UsersService(uow, new PassthroughScope() as never, clock, revocations.publisher);
+  service = new UsersService(
+    uow,
+    new PassthroughScope() as never,
+    clock,
+    new UserErasureService(uow, clock, revocations.publisher),
+    revocations.publisher,
+  );
 
   await harness.owner.query(
     `INSERT INTO orgs (id, name)
@@ -234,6 +241,18 @@ describe("the users a screen reads", () => {
       const page = await service.list(context, publicProjectId, { limit: 50, search: term });
       expect(page.users.map((user) => user.email)).toContain("alice@example.test");
     }
+  });
+
+  it("erases an account, which then reads as a tombstone and cannot be erased twice", async () => {
+    await service.erase(context, publicProjectId, userPublicId(BOB), {
+      ip: null,
+      userAgent: null,
+    });
+    const after = await service.find(context, publicProjectId, userPublicId(BOB));
+    expect(after.deletedAt).not.toBeNull();
+    await expect(
+      service.erase(context, publicProjectId, userPublicId(BOB), { ip: null, userAgent: null }),
+    ).rejects.toSatisfy(isIdenzyError);
   });
 
   /** `_` is a LIKE wildcard, so an unescaped search would match far more than it named. */

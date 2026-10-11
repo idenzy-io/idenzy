@@ -80,7 +80,7 @@ export class AppConfig {
    * this one cannot, because at that point the value is already in `process.env` either way.
    */
   static fromEnvironment(env: NodeJS.ProcessEnv = process.env): AppConfig {
-    const parsed = configSchema.safeParse(env);
+    const parsed = configSchema.safeParse(withoutBlanks(env));
     if (!parsed.success) {
       throw new ValidationFailedError({
         message: "The environment is not valid.",
@@ -128,4 +128,18 @@ export class AppConfig {
       accessTokenTtlSeconds: this.values.ACCESS_TOKEN_TTL_SECONDS,
     };
   }
+}
+
+/**
+ * The environment with its empty variables left out, so `CLICKHOUSE_URL=` reads as not set.
+ *
+ * That is what an empty variable means wherever one is written by hand or by a tool: a
+ * dotenv line with nothing after it, a compose `${VAR:-}`, a shell that exports the name to
+ * switch a feature off. Without this an optional store could not be turned off from the
+ * command line, because Node's `--env-file` never overrides a variable the process already
+ * has, and the schema refused the empty string as too short. A required variable left empty
+ * is still refused, as missing rather than as malformed.
+ */
+function withoutBlanks(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ""));
 }

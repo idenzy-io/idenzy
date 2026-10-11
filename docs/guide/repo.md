@@ -30,7 +30,9 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
   that compiles, because the apps consume `@idenzy/*` from `dist`.
 - **App tests import from `dist`.** Vitest 4 transforms with Rolldown, which does not
   apply the legacy decorator semantics NestJS needs, so decorated classes fail to parse
-  from source. Compiling first also means tests exercise the artifact that ships.
+  from source. Compiling first also means tests exercise the artifact that ships. The API's
+  `typecheck` compiles too, rather than `--noEmit`: its test config reads those files'
+  declarations, and on a clean checkout nothing else has written them yet.
 - **`drizzle-kit` does not generate grants, functions or partitioning.** Those are
   hand-authored migrations made with `pnpm db:custom`, in the same numbered sequence. Read
   them as SQL. It used to not generate `FORCE ROW LEVEL SECURITY` either; there is no RLS

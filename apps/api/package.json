@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
     "dev": "node ../../tools/dev/src/serve.ts",
     "start": "node dist/main.js",
     "test": "tsc -p tsconfig.json && vitest run --passWithNoTests",

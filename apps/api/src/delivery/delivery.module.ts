@@ -7,6 +7,7 @@ import { SmsProvider } from "@idenzy/domain/ports/sms-provider";
 import { LoggingSmsProvider } from "@idenzy/providers-sms/logging-sms-provider";
 import { MetadataPhoneGeography } from "@idenzy/providers-sms/metadata-phone-geography";
 import { ProviderRouter } from "@idenzy/providers-sms/provider-router";
+import { UnconfiguredSmsProvider } from "@idenzy/providers-sms/unconfigured-sms-provider";
 import { TemplateRenderer, TemplateStore } from "@idenzy/templating/renderer";
 import { NoStoredSmsTemplates, SmsRenderer } from "@idenzy/templating/sms-renderer";
 import { Global, Module } from "@nestjs/common";
@@ -31,8 +32,10 @@ import { WalletSolvency } from "./wallet-solvency.js";
  * SMS does not: `emailProviderFor` picks SES when it is configured and the development
  * logger otherwise, and that logger refuses to construct outside development, so a
  * deployment that forgot to configure a transport fails at boot rather than silently
- * swallowing every sign-in code. The SMS half is still the logger alone, and a Twilio or
- * AWS End User Messaging adapter is a change to this file and nothing else.
+ * swallowing every sign-in code. SMS has no real adapter yet: development logs messages, and
+ * a deployment refuses the SMS ways in (`UnconfiguredSmsProvider`) instead of refusing to
+ * start, because a deployment that signs people in by email and providers is complete without
+ * it. A Twilio or AWS End User Messaging adapter is a change to this file and nothing else.
  *
  * The SMS half wires more than a transport, and that is the design rather than a
  * complication: the fraud guard and the spend cap are constructor arguments of
@@ -72,8 +75,15 @@ import { WalletSolvency } from "./wallet-solvency.js";
     {
       provide: SmsProvider,
       inject: [SmsFraudGuard, DatabaseSpendCap, Logger, AppConfig],
-      useFactory: (fraudGuard: FraudGuard, spendCap: SpendCap, logger: Logger, config: AppConfig) =>
-        new LoggingSmsProvider(fraudGuard, spendCap, logger, config.get("IDENZY_ENV")),
+      useFactory: (
+        fraudGuard: FraudGuard,
+        spendCap: SpendCap,
+        logger: Logger,
+        config: AppConfig,
+      ) =>
+        config.get("IDENZY_ENV") === "development"
+          ? new LoggingSmsProvider(fraudGuard, spendCap, logger, config.get("IDENZY_ENV"))
+          : new UnconfiguredSmsProvider(fraudGuard, spendCap),
     },
     {
       // One provider, so the table is one default rule. The per-country routing this

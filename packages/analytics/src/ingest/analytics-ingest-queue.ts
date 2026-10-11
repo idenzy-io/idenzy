@@ -99,4 +99,19 @@ export class AnalyticsIngestQueue {
   depth(table: string): Promise<number> {
     return this.commands.xlen(streamFor(table));
   }
+
+  /**
+   * When the oldest entry still waiting was queued, or null when nothing is.
+   *
+   * The worker deletes what it has inserted (and what it sets aside), so the head of the stream
+   * is the oldest row not yet in ClickHouse, and its id is the millisecond it was queued at.
+   * Erasure waits on this: deleting a user's rows while one of theirs is still queued would let
+   * that one arrive afterwards and outlive them.
+   */
+  async oldestQueuedAt(table: string): Promise<Date | null> {
+    const [head] = await this.commands.xrange(streamFor(table), "-", "+", "COUNT", 1);
+    if (head === undefined) return null;
+    const ms = Number(head[0].split("-")[0]);
+    return Number.isFinite(ms) ? new Date(ms) : null;
+  }
 }

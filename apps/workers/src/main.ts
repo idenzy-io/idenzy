@@ -1,5 +1,10 @@
 import "reflect-metadata";
 import { ClickHouseClient } from "@idenzy/analytics/client/clickhouse-client";
+import {
+  AnalyticsEraser,
+  ERASABLE_ANALYTICS_TABLES,
+} from "@idenzy/analytics/erasure/analytics-eraser";
+import { AnalyticsIngestQueue } from "@idenzy/analytics/ingest/analytics-ingest-queue";
 import { AnalyticsIngestWorker } from "@idenzy/analytics/ingest/analytics-ingest-worker";
 import type { StreamCommands } from "@idenzy/analytics/ingest/stream-commands";
 import { migrateAnalytics } from "@idenzy/analytics/migrate";
@@ -28,6 +33,7 @@ import { AuditPartitionMaintainer } from "@idenzy/persistence/repository/audit-p
 import { BillingWorkReader } from "@idenzy/persistence/repository/billing-work-reader";
 import { EmailProviderEventRepository } from "@idenzy/persistence/repository/email-provider-event-repository";
 import { EmailRetentionPruner } from "@idenzy/persistence/repository/email-retention-pruner";
+import { ErasedUserCopies } from "@idenzy/persistence/repository/erased-user-copies";
 import { OrgUsageActivityReader } from "@idenzy/persistence/repository/org-usage-activity-reader";
 import { ProjectEmailActivityReader } from "@idenzy/persistence/repository/project-email-activity-reader";
 import { RelayOffsetRepository } from "@idenzy/persistence/repository/relay-offset-repository";
@@ -38,6 +44,7 @@ import { UsageClosableReader } from "@idenzy/persistence/repository/usage-closab
 import { UsageRetentionPruner } from "@idenzy/persistence/repository/usage-retention-pruner";
 import { WebhookDueReader } from "@idenzy/persistence/repository/webhook-due-reader";
 import { UnitOfWork } from "@idenzy/persistence/tenancy/unit-of-work";
+import { PERSONAL_EVENT_FIELDS } from "@idenzy/protocol/schemas/webhooks";
 import {
   SnsMessageVerifier,
   SnsSubscriptionConfirmer,
@@ -66,6 +73,12 @@ import { RevocationReconciler } from "./revocation-reconciler.js";
 import { UsageDrawdown } from "./usage-drawdown.js";
 import { UsagePeriodCloser } from "./usage-period-closer.js";
 import { UsageRetentionSweeper } from "./usage-retention-sweeper.js";
+import {
+  analyticsTarget,
+  type ErasureTarget,
+  messagingTarget,
+  UserErasureRelay,
+} from "./user-erasure-relay.js";
 import { CloudTasksScheduler } from "./webhooks/cloud-tasks-scheduler.js";
 import { type DeliveryScheduler, SweepingScheduler } from "./webhooks/delivery-scheduler.js";
 import { WebhookDispatcher } from "./webhooks/webhook-dispatcher.js";
@@ -357,6 +370,46 @@ async function bootstrap(): Promise<void> {
   const usageRetention = new UsageRetentionSweeper(new UsageRetentionPruner(db), clock, logger);
 
   /*
+   * Erasure's second half (PROJECT.md 4.13.6): the copies of an erased user that messaging and
+   * analytics made, which the API's transaction cannot reach. The analytics target exists only
+   * where the store does, and runs as the erasure identity, which can delete rows and nothing else.
+   */
+  const erasureTargets: ErasureTarget[] = [
+    messagingTarget((users) => new ErasedUserCopies(db).strip(users, PERSONAL_EVENT_FIELDS), clock),
+  ];
+  if (analytics !== null) {
+    const queue = new AnalyticsIngestQueue(valkey as unknown as StreamCommands, logger);
+    const eraser = new AnalyticsEraser(
+      new ClickHouseClient({
+        url: analytics.url,
+        database: analytics.database,
+        user: analytics.eraserUser,
+        password: analytics.password,
+      }),
+      analytics.database,
+    );
+    erasureTargets.push(
+      analyticsTarget(
+        async () => {
+          const heads = await Promise.all(
+            ERASABLE_ANALYTICS_TABLES.map((table) => queue.oldestQueuedAt(table.name)),
+          );
+          const queued = heads.flatMap((head) => (head === null ? [] : [head.getTime()]));
+          return queued.length === 0 ? null : new Date(Math.min(...queued));
+        },
+        (users) => eraser.erase(users),
+        clock,
+      ),
+    );
+  }
+  const erasureRelay = new UserErasureRelay(
+    new AuditEventReader(db),
+    new RelayOffsetRepository(db),
+    erasureTargets,
+    logger,
+  );
+
+  /*
    * The customer's own retention, which is a different thing from the usage tiers above: those
    * are ours and fixed, these are each project's and chosen. Until this existed the settings
    * screen offered five ages and nothing deleted a row on account of any of them, so every
@@ -471,12 +524,15 @@ async function bootstrap(): Promise<void> {
         database: analytics.database,
         appUser: analytics.appUser,
         ingestUser: analytics.ingestUser,
+        eraserUser: analytics.eraserUser,
       },
     );
     // One consumer name per process. Two workers with the same name share a pending list, which is
     // the one thing a consumer group cannot tell apart from a single one that keeps crashing.
     await ingest.start(`workers-${String(process.pid)}`);
   }
+  // After the analytics schema exists, since one of its targets deletes from it.
+  await erasureRelay.start();
   await server.start();
   logger.info("workers started", config.toSafeSummary());
 }

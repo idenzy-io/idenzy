@@ -63,6 +63,15 @@ export interface StreamCommands {
   xdel(key: string, ...ids: string[]): Promise<number>;
   xlen(key: string): Promise<number>;
 
+  /** The oldest entries first, which is how far behind a stream is. */
+  xrange(
+    key: string,
+    start: "-",
+    end: "+",
+    countToken: "COUNT",
+    count: number,
+  ): Promise<StreamEntry[]>;
+
   /** Delivery counts, which is the retry counter this gets for free. */
   xpending(
     key: string,

@@ -1,5 +1,6 @@
 import type { ClickHouseClient } from "./client/clickhouse-client.js";
 import { TENANT_SETTING } from "./client/clickhouse-client.js";
+import { ERASABLE_ANALYTICS_TABLES } from "./erasure/analytics-eraser.js";
 import { ANALYTICS_TABLES } from "./schema/tables.js";
 
 export interface MigrateSettings {
@@ -8,6 +9,8 @@ export interface MigrateSettings {
   readonly appUser: string;
   /** The pipeline's identity. Holds INSERT and no SELECT, and carries no policy. */
   readonly ingestUser: string;
+  /** Granted ALTER DELETE on the tables an erasure removes rows from, and nothing else. */
+  readonly eraserUser: string;
 }
 
 /** What one run created, for the log line that says whether anything changed. */
@@ -45,6 +48,13 @@ export async function migrateAnalytics(
     await client.execute(table.createTable(settings.database));
     await client.execute(
       table.createRowPolicy(settings.database, settings.appUser, TENANT_SETTING),
+    );
+  }
+  // Per table rather than on the database, and after the tables exist, because a grant on a
+  // table names it: the erasure identity can delete from what erasure deletes from and no more.
+  for (const table of ERASABLE_ANALYTICS_TABLES) {
+    await client.execute(
+      `GRANT ALTER DELETE ON ${settings.database}.${table.name} TO ${settings.eraserUser}`,
     );
   }
 

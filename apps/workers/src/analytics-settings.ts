@@ -7,6 +7,7 @@ export interface AnalyticsSettings {
   readonly ingestUser: string;
   readonly ownerUser: string;
   readonly appUser: string;
+  readonly eraserUser: string;
   readonly password: string;
 }
 
@@ -18,6 +19,7 @@ const REQUIRED = [
   "CLICKHOUSE_PASSWORD",
   "CLICKHOUSE_INGEST_USER",
   "CLICKHOUSE_OWNER_USER",
+  "CLICKHOUSE_ERASER_USER",
 ] as const;
 
 /**
@@ -52,6 +54,7 @@ export function analyticsSettingsFrom(config: AppConfig): AnalyticsSettings | nu
     appUser: config.get("CLICKHOUSE_USER") ?? "",
     ingestUser: config.get("CLICKHOUSE_INGEST_USER") ?? "",
     ownerUser: config.get("CLICKHOUSE_OWNER_USER") ?? "",
+    eraserUser: config.get("CLICKHOUSE_ERASER_USER") ?? "",
     password: config.get("CLICKHOUSE_PASSWORD") ?? "",
   };
 }

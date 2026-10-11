@@ -19,6 +19,7 @@ import { WebhookEventType } from "@idenzy/protocol/schemas/webhooks";
  */
 export const WEBHOOK_EVENT_BY_TOPIC: Readonly<Record<string, WebhookEventType>> = {
   "user.created": WebhookEventType.UserCreated,
+  "user.deleted": WebhookEventType.UserDeleted,
   "session.created": WebhookEventType.SessionCreated,
   "session.revoked": WebhookEventType.SessionRevoked,
   "security.mfa_enrolled": WebhookEventType.MfaEnrolled,

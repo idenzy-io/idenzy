@@ -57,6 +57,7 @@ beforeAll(async () => {
     database: DATABASE,
     appUser: APP_USER,
     ingestUser: INGEST_USER,
+    eraserUser: "idenzy_eraser",
   });
 
   // One batch, many projects, which is the shape the queue drains and the reason the writer is

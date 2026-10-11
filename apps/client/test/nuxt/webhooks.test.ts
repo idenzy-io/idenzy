@@ -212,9 +212,10 @@ describe("which events actually send anything", () => {
     expect(EVENTS_NOT_SENT).toBe(WEBHOOK_EVENTS_WITHOUT_EMITTER.length);
   });
 
-  it("counts the account event that does send as sent", () => {
+  it("counts the account events that do send as sent", () => {
     expect(eventIsSent("user.created")).toBe(true);
-    expect(eventIsSent("user.deleted")).toBe(false);
+    expect(eventIsSent("user.deleted")).toBe(true);
+    expect(eventIsSent("user.suspended")).toBe(false);
     // Not an event at all: a test delivery is not something to subscribe to.
     expect(eventIsSent(TEST_EVENT)).toBe(false);
   });
@@ -269,7 +270,7 @@ describe("the sample body the screen documents", () => {
   it("shows an empty body for an event nothing sends yet", () => {
     // Truthful rather than plausible: there is no sender, so there is no body to show.
     expect(
-      JSON.parse(samplePayload("user.deleted", "dlv_1", "2026-09-09T18:42:11.203Z")).data,
+      JSON.parse(samplePayload("user.suspended", "dlv_1", "2026-09-09T18:42:11.203Z")).data,
     ).toEqual({});
   });
 });

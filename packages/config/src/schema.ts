@@ -165,7 +165,7 @@ export const configSchema = z.object({
   USAGE_FLUSH_INTERVAL_SECONDS: durationSeconds.min(10).max(3600).default(60),
 
   /**
-   * The analytics store (ADR-0013), and the four variables that travel together.
+   * The analytics store (ADR-0013), and the variables that travel together.
    *
    * All of them or none, like the webhook retry queue and for the same reason: a deployment with
    * three of the four would not fail, it would run with analytics quietly switched off, and the
@@ -185,6 +185,11 @@ export const configSchema = z.object({
   CLICKHOUSE_INGEST_USER: z.string().min(1).optional(),
   /** The DDL identity, for the migration this runs at boot. */
   CLICKHOUSE_OWNER_USER: z.string().min(1).optional(),
+  /**
+   * The erasure identity, for `apps/workers` alone. Holds ALTER DELETE and nothing else, so the
+   * one credential able to remove analytics rows cannot read them or write new ones.
+   */
+  CLICKHOUSE_ERASER_USER: z.string().min(1).optional(),
 
   /**
    * How long a one-time code and a magic link stay usable (PROJECT.md 4.7). Ten minutes

@@ -55,6 +55,7 @@ beforeAll(async () => {
     database: DATABASE,
     appUser: "idenzy_app",
     ingestUser: "idenzy_ingest",
+    eraserUser: "idenzy_eraser",
   });
 
   reader = new ClickHouseClient({ ...shared, url: clickhouse.url, user: "idenzy_app" });

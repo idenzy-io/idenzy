@@ -151,6 +151,16 @@ export class InMemoryStreams implements StreamCommands {
     return Promise.resolve(this.listFor(key).length);
   }
 
+  xrange(
+    key: string,
+    _start: "-",
+    _end: "+",
+    _countToken: "COUNT",
+    count: number,
+  ): Promise<StreamEntry[]> {
+    return Promise.resolve(this.listFor(key).slice(0, count));
+  }
+
   xpending(
     key: string,
     group: string,

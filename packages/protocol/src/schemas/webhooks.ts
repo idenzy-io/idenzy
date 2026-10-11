@@ -98,14 +98,13 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = Object.values(We
  * thirteen subscriptions as though all thirteen sent something, and six of them save and stay silent.
  * A customer cannot be expected to discover that by waiting.
  *
- * Each is waiting on the thing that would enqueue it: deletion needs the erasure path and suspension
- * a users screen that can ban somebody, and nothing writes `banned_until` or `deleted_at` today; the
- * three delivery events need the SES and SMS event paths; staff access needs the break-glass flow.
+ * Each is waiting on the thing that would enqueue it: suspension needs `banned_until` to announce
+ * itself when it is set; the three delivery events need the SES and SMS event paths; staff access
+ * needs the break-glass flow.
  * `webhook-events.test.ts` in the worker holds this list and the topic map together, because a list of
  * known gaps that is itself out of date is worse than no list.
  */
 export const WEBHOOK_EVENTS_WITHOUT_EMITTER: readonly WebhookEventType[] = [
-  WebhookEventType.UserDeleted,
   WebhookEventType.UserSuspended,
   WebhookEventType.EmailBounced,
   WebhookEventType.EmailComplained,
@@ -208,6 +207,12 @@ export interface WebhookDataField {
   readonly id?: IdPrefix;
   /** A list of ids rather than one. */
   readonly many?: boolean;
+  /**
+   * Personal data about the user the event is about. An erasure strips these from every copy
+   * still waiting to be sent (`PERSONAL_EVENT_FIELDS`), so a field that names, reaches or
+   * locates somebody has to say so here or it outlives them.
+   */
+  readonly personal?: true;
   readonly sample: unknown;
 }
 
@@ -229,8 +234,8 @@ export const WEBHOOK_DATA_FIELDS: Partial<Record<WebhookEventType, readonly Webh
       id: IdPrefix.User,
       sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
     },
-    { from: "email", sample: "ada@example.com" },
-    { from: "phone", sample: null },
+    { from: "email", personal: true, sample: "ada@example.com" },
+    { from: "phone", personal: true, sample: null },
     { from: "emailVerified", sample: false },
     { from: "phoneVerified", sample: false },
   ],
@@ -244,6 +249,15 @@ export const WEBHOOK_DATA_FIELDS: Partial<Record<WebhookEventType, readonly Webh
     // Which of the three things happened, because three internal topics become this one event and a
     // receiver that cannot tell a verified address from a changed password has to guess.
     { from: "changed", sample: "email_verified" },
+  ],
+  // The id and nothing else: by the time this is sent, the id is all that is left.
+  [WebhookEventType.UserDeleted]: [
+    {
+      from: "userId",
+      as: "user",
+      id: IdPrefix.User,
+      sample: "usr_8f14e45fceea167a5a36dedd4bea2543",
+    },
   ],
   [WebhookEventType.SessionCreated]: [
     {
@@ -260,8 +274,8 @@ export const WEBHOOK_DATA_FIELDS: Partial<Record<WebhookEventType, readonly Webh
     },
     // The same `amr` a customer already reads off our access tokens, so one vocabulary covers both.
     { from: "amr", sample: ["password"] },
-    { from: "ip", sample: "203.0.113.11" },
-    { from: "userAgent", sample: "Mozilla/5.0" },
+    { from: "ip", personal: true, sample: "203.0.113.11" },
+    { from: "userAgent", personal: true, sample: "Mozilla/5.0" },
   ],
   [WebhookEventType.SessionRevoked]: [
     {
@@ -318,10 +332,28 @@ export const WEBHOOK_DATA_FIELDS: Partial<Record<WebhookEventType, readonly Webh
     // How many refresh tokens went with the family, which is the part a customer's incident response
     // acts on. The family's own id is ours and is not published: there is nothing they can do with it.
     { from: "revokedTokens", sample: 2 },
-    { from: "ip", sample: "203.0.113.11" },
-    { from: "userAgent", sample: "Mozilla/5.0" },
+    { from: "ip", personal: true, sample: "203.0.113.11" },
+    { from: "userAgent", personal: true, sample: "Mozilla/5.0" },
   ],
 };
+
+/**
+ * The keys an erasure strips from the copies messaging made of a user's data: outbox events and
+ * webhook deliveries that still hold a payload.
+ *
+ * Derived from the declarations above rather than listed, and under both names a field travels
+ * by, because an outbox event carries `from` and a delivery carries `as`. They are the same
+ * names today; deriving both is what keeps that from mattering.
+ */
+export const PERSONAL_EVENT_FIELDS: readonly string[] = [
+  ...new Set(
+    Object.values(WEBHOOK_DATA_FIELDS).flatMap((fields) =>
+      (fields ?? [])
+        .filter((field) => field.personal === true)
+        .flatMap((field) => [field.from, field.as ?? field.from]),
+    ),
+  ),
+];
 
 /**
  * The `data` the panel documents for an event, from the same declaration the wire uses.

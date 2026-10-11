@@ -24,6 +24,12 @@ CREATE USER IF NOT EXISTS idenzy_owner IDENTIFIED WITH plaintext_password BY 'id
 -- writer goes through a narrow SECURITY DEFINER function rather than through the app role.
 CREATE USER IF NOT EXISTS idenzy_ingest IDENTIFIED WITH plaintext_password BY 'idenzy';
 
+-- The erasure identity. Deletes an erased user's rows and can do nothing else: it cannot read
+-- what it deletes or write anything new, so the one credential that removes analytics data is no
+-- use for exfiltrating or planting it. The migration grants it ALTER DELETE on exactly the tables
+-- whose rows an erasure removes.
+CREATE USER IF NOT EXISTS idenzy_eraser IDENTIFIED WITH plaintext_password BY 'idenzy';
+
 -- SELECT and no INSERT, which is the half that is not obvious and is verified in
 -- `tenant-isolation.integration.test.ts`. A ClickHouse row policy filters reads and does **not**
 -- constrain writes the way a Postgres `WITH CHECK` clause does, so a tenant-scoped identity holding
@@ -40,3 +46,5 @@ GRANT INSERT ON idenzy.* TO idenzy_ingest;
 GRANT CREATE DATABASE, DROP DATABASE, CREATE TABLE, DROP TABLE, ALTER, OPTIMIZE ON *.* TO idenzy_owner;
 GRANT CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES ON *.* TO idenzy_owner;
 GRANT SELECT, INSERT ON *.* TO idenzy_owner WITH GRANT OPTION;
+-- And the one write verb it may pass on, to the erasure identity and nobody else in practice.
+GRANT ALTER DELETE ON *.* TO idenzy_owner WITH GRANT OPTION;

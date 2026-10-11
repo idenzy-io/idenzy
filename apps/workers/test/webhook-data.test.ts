@@ -114,7 +114,13 @@ describe("projecting an event's data", () => {
   it("sends nothing at all for an event whose shape is not declared", () => {
     // An event nothing emits cannot arrive; if one ever does, the receiver gets an empty body rather
     // than our internal message.
-    expect(projectWebhookData(WebhookEventType.UserDeleted, { userId: USER })).toEqual({});
+    expect(projectWebhookData(WebhookEventType.UserSuspended, { userId: USER })).toEqual({});
+  });
+
+  it("tells a receiver who was deleted and nothing else, because nothing else is left", () => {
+    expect(
+      projectWebhookData(WebhookEventType.UserDeleted, { userId: USER, at: "2026-10-11" }),
+    ).toEqual({ user: PublicId.encode(IdPrefix.User, USER).value });
   });
 });
 

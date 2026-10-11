@@ -109,7 +109,7 @@ export const WEBHOOK_EVENTS: readonly WebhookEvent[] = [
   {
     id: "user.deleted",
     group: "accounts",
-    note: "The account is gone. Sent after the row is deleted, so anything you keep about them is now yours alone to erase.",
+    note: "The account was erased: its details, ways in and sessions are gone, and `data.user` is all that is left. Anything you keep about them is now yours alone to erase.",
   },
   {
     id: "user.suspended",

@@ -13,6 +13,20 @@ function sketchOf(from: number, to: number): HyperLogLog {
   return sketch;
 }
 
+/**
+ * A paying project's month, built once. Two hundred thousand adds take a third of a second on a
+ * laptop and many seconds on a shared CI runner that is also building and testing every other
+ * package, so the tests that need it share one rather than each building its own.
+ */
+let month: HyperLogLog | undefined;
+function denseMonth(): HyperLogLog {
+  month ??= sketchOf(0, 200_000);
+  return month;
+}
+
+/** For the tests that build dense sketches: generous, because a CI runner's speed is not ours. */
+const HEAVY = { timeout: 30_000 };
+
 /** The published standard error is 0.81%; the assertions allow three of those. */
 function expectWithinErrorOf(sketch: HyperLogLog, truth: number): void {
   expect(Math.abs(sketch.count - truth) / truth).toBeLessThan(0.025);
@@ -39,18 +53,17 @@ describe("HyperLogLog", () => {
     expectWithinErrorOf(sketchOf(0, 2_000), 2_000);
   });
 
-  it("estimates a paying project's month from the dense form", () => {
-    expectWithinErrorOf(sketchOf(0, 200_000), 200_000);
+  it("estimates a paying project's month from the dense form", HEAVY, () => {
+    expectWithinErrorOf(denseMonth(), 200_000);
   });
 
-  it("keeps the sparse form under 16 KiB and the dense form at exactly it", () => {
+  it("keeps the sparse form under 16 KiB and the dense form at exactly it", HEAVY, () => {
     expect(sketchOf(0, 200).encode()).toHaveLength(4 + 200 * 4);
-    expect(sketchOf(0, 200_000).encode()).toHaveLength(4 + 16_384);
+    expect(denseMonth().encode()).toHaveLength(4 + 16_384);
   });
 
-  it("round-trips through the bytes a column holds, sparse and dense alike", () => {
-    for (const truth of [500, 200_000]) {
-      const sketch = sketchOf(0, truth);
+  it("round-trips through the bytes a column holds, sparse and dense alike", HEAVY, () => {
+    for (const sketch of [sketchOf(0, 500), denseMonth()]) {
       expect(HyperLogLog.decode(sketch.encode()).count).toBe(sketch.count);
     }
   });
@@ -63,14 +76,14 @@ describe("HyperLogLog", () => {
     expect([...forwards.encode()]).toEqual([...backwards.encode()]);
   });
 
-  it("unions two days into the month they belong to", () => {
+  it("unions two days into the month they belong to", HEAVY, () => {
     expectWithinErrorOf(
       HyperLogLog.union([sketchOf(0, 60_000), sketchOf(40_000, 100_000)]),
       100_000,
     );
   });
 
-  it("unions a sparse day into a dense month and back the other way", () => {
+  it("unions a sparse day into a dense month and back the other way", HEAVY, () => {
     const dense = sketchOf(0, 60_000);
     dense.mergeFrom(sketchOf(60_000, 60_100));
     expectWithinErrorOf(dense, 60_100);

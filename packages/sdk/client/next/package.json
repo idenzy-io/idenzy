@@ -1,7 +1,22 @@
 {
   "name": "@idenzy/next",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Next.js helpers for Idenzy: the session on the server, protected routes in middleware, and the React bindings.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "nextjs",
+    "next",
+    "react",
+    "ssr"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/next"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +29,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -39,5 +55,8 @@
     "react": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

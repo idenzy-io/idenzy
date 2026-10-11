@@ -1,7 +1,19 @@
 {
   "name": "@idenzy/angular",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Angular bindings for Idenzy: provideIdenzy and an injectable session.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "angular"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/angular"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +26,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -34,5 +47,8 @@
     "@angular/core": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

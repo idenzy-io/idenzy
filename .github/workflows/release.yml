@@ -53,8 +53,8 @@ jobs:
       - name: Typecheck, test and build the published packages
         run: >-
           pnpm turbo run typecheck test build
-          --filter=@idenzy/protocol --filter=@idenzy/core --filter=@idenzy/js
-          --filter=@idenzy/vue --filter=@idenzy/node --filter=@idenzy/nuxt
+          --filter=./packages/protocol --filter=./packages/core
+          --filter=./packages/sdk/** --filter=./tools/cli
 
       - uses: changesets/action@v1
         with:
@@ -65,7 +65,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The first publish of each package needs a token; trusted publishing takes over
-          # once it is configured for all six on npmjs.com, and the secret can then go.
+          # once it is configured for every package on npmjs.com, and the secret can then go.
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: ${{ vars.NPM_PROVENANCE == 'true' }}

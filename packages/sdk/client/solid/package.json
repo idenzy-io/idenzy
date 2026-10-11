@@ -1,7 +1,20 @@
 {
   "name": "@idenzy/solid",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Solid bindings for Idenzy: IdenzyProvider, and useSession, useUser and useIdenzy.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "solid",
+    "solid-js"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/solid"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +27,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -35,5 +49,8 @@
     "solid-js": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

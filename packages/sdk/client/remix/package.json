@@ -1,7 +1,20 @@
 {
   "name": "@idenzy/remix",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Remix helpers for Idenzy: the verified session in loaders and actions.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "remix",
+    "ssr"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/remix"
+  },
   "type": "module",
   "exports": {
     "./*": {
@@ -10,7 +23,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -26,5 +40,8 @@
     "jose": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

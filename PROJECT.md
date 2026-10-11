@@ -1130,7 +1130,7 @@ Both used to carry an RLS policy underneath, keyed on `current_setting('app.proj
 The promise is not "paste a component". It is "your existing form signs people in".
 
 ```bash
-npx idenzy init          # creates the project, writes .env with the publishable key,
+npx @idenzy/cli init     # creates the project, writes .env with the publishable key,
                          # detects the framework and scaffolds working auth routes into YOUR repo
 ```
 

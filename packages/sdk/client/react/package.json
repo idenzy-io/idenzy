@@ -1,7 +1,19 @@
 {
   "name": "@idenzy/react",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "React bindings for Idenzy: IdenzyProvider, and useSession, useUser and useIdenzy.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "react"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/react"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +26,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -39,5 +52,8 @@
     "react-dom": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

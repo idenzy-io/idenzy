@@ -13,9 +13,20 @@
       "@idenzy/js",
       "@idenzy/vue",
       "@idenzy/node",
-      "@idenzy/nuxt"
+      "@idenzy/nuxt",
+      "@idenzy/react",
+      "@idenzy/next",
+      "@idenzy/angular",
+      "@idenzy/astro",
+      "@idenzy/remix",
+      "@idenzy/solid",
+      "@idenzy/svelte",
+      "@idenzy/cli"
     ]
   ],
   "ignore": [],
-  "privatePackages": { "version": false, "tag": false }
+  "privatePackages": {
+    "version": false,
+    "tag": false
+  }
 }

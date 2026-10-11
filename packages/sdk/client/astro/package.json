@@ -1,7 +1,20 @@
 {
   "name": "@idenzy/astro",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Astro middleware for Idenzy: the verified session on every request.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "astro",
+    "ssr"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/astro"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +27,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -30,5 +44,8 @@
     "jose": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

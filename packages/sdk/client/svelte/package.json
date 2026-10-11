@@ -1,7 +1,21 @@
 {
   "name": "@idenzy/svelte",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Svelte and SvelteKit bindings for Idenzy: stores for the session and a server hook.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "svelte",
+    "sveltekit",
+    "ssr"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/svelte"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +28,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -36,5 +51,8 @@
     "svelte": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

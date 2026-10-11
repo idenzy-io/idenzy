@@ -4,7 +4,7 @@ Working sign-in, sign-up, one-time code and OAuth routes, written in this framew
 idiom. Copy them into your application, or have the CLI write them for you:
 
 ```bash
-npx idenzy init --framework sveltekit
+npx @idenzy/cli init --framework sveltekit
 ```
 
 Idenzy ships no authentication UI, so none of this is a component of ours: it is ordinary

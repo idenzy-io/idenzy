@@ -300,10 +300,14 @@ dependency and the only honest way to promise a fast integration while shipping 
 
 ## Releasing
 
-Six packages are published to npm under MIT: `@idenzy/protocol`, `@idenzy/core`, `@idenzy/js`,
-`@idenzy/vue`, `@idenzy/node` and `@idenzy/nuxt`. Every other package, the remaining framework
-bindings included, stays `private` until somebody needs it, because a published package is a
-promise and each one is a second place to keep a change in step.
+Fourteen packages are published to npm under MIT: `@idenzy/protocol`, `@idenzy/core`,
+`@idenzy/js`, `@idenzy/node`, every framework binding (`vue`, `nuxt`, `react`, `next`, `angular`,
+`astro`, `remix`, `solid`, `svelte`) and `@idenzy/cli`. Each has a README and a LICENSE of its
+own, since npm shows the package's and not the repository's. `@idenzy/sdk-conformance` and
+everything outside `packages/sdk` stay `private`.
+
+- **The CLI is `npx @idenzy/cli`**, not `npx idenzy`: `npx` resolves a command to the package of
+  that name, and the bin `idenzy` lives in the scoped package.
 
 - **They share one version** (`fixed` in `.changeset/config.json`). The packages depend on
   each other at exact versions, so a customer who installs `@idenzy/nuxt@0.4.0` gets the
@@ -317,9 +321,9 @@ promise and each one is a second place to keep a change in step.
   bump a pin and its floor together.
 - **The workflow is off until the repository variable `PUBLISH` is `true`**, and needs the
   `NPM_TOKEN` secret for the first publish of each package. Trusted publishing replaces the
-  token once it is configured for all six on npmjs.com. `NPM_PROVENANCE=true` turns on
+  token once it is configured for every package on npmjs.com. `NPM_PROVENANCE=true` turns on
   provenance, which npm only attests for packages built from a public repository.
 - **Check a package as a customer installs it before changing its exports or files**:
-  `pnpm pack` the six into a directory and install them into a scratch Nuxt app with
+  `pnpm pack` them into a directory and install them into a scratch Nuxt app with
   `overrides` pointing at the tarballs. A workspace link resolves things an installed
   package cannot, which is how a missing file or a stray `workspace:` reaches npm.

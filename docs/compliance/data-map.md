@@ -92,6 +92,8 @@ Notes:
 
 ## `auth_codes`
 
+Data subject: **end_user**, by `user_id`.
+
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `amr` | operational | service_configuration | project_lifetime | no | not_applicable | no |
@@ -446,6 +448,8 @@ Notes:
 
 ## `mfa_challenges`
 
+Data subject: **end_user**, by `user_id`.
+
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `amr` | pseudonymous | authentication | days_30 | no | row_deleted | no |
@@ -509,6 +513,10 @@ Notes:
 - `usedAt`: Single use. Set in the same statement that reads the row, so two requests cannot spend one code.
 
 ## `oauth_flows`
+
+Data subject: **end_user**, by `link_user_id`.
+
+Only a flow attaching a provider to a signed-in user names one. A sign-in flow learns who it is for when it completes, and expires within minutes.
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
@@ -959,6 +967,10 @@ Notes:
 
 ## `refresh_tokens`
 
+Data subject: **end_user**, not directly addressable.
+
+Reached through the session: a user's refresh tokens are those of the user's sessions, and `session_id` is what carries the user.
+
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
@@ -1286,6 +1298,8 @@ Notes:
 
 ## `verification_tokens`
 
+Data subject: **end_user**, by `user_id`.
+
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|
 | `consumedAt` | operational | authentication | days_30 | no | row_deleted | no |
@@ -1302,6 +1316,10 @@ Notes:
 - `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `webauthn_challenges`
+
+Data subject: **end_user**, by `user_id`.
+
+Null for a sign-in ceremony, which names nobody until the credential does, and expires within minutes.
 
 | Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
 |---|---|---|---|---|---|---|

@@ -191,7 +191,17 @@ export const mfaChallenges = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [index("mfa_challenges_expiry_idx").on(t.expiresAt)],
+  (t) => [
+    index("mfa_challenges_expiry_idx").on(t.expiresAt),
+    // What an erasure deletes by. Without it, deleting one user's challenges reads the table.
+    index("mfa_challenges_user_idx").on(t.projectId, t.userId),
+  ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 );
 
 /**

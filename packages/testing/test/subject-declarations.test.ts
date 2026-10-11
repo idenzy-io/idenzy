@@ -2,7 +2,7 @@ import {
   classificationRegistry,
   subjectRegistry,
 } from "@idenzy/compliance/classification/registry";
-import { SubjectPopulation } from "@idenzy/compliance/classification/vocabulary";
+import { Erasure, SubjectPopulation } from "@idenzy/compliance/classification/vocabulary";
 import { describe, expect, it } from "vitest";
 // Importing the schema is what populates both registries, so this has to come before any read.
 import "@idenzy/persistence/schema/index";
@@ -31,6 +31,21 @@ function tablesWithSubjectColumns(): string[] {
   const found: string[] = [];
   for (const [table, columns] of classificationRegistry()) {
     if (Object.values(columns).some((column) => column.subjectField === true)) found.push(table);
+  }
+  return found.sort();
+}
+
+/** Tables with at least one column an erasure acts on. */
+function tablesWithErasureColumns(): string[] {
+  const found: string[] = [];
+  for (const [table, columns] of classificationRegistry()) {
+    const acted = Object.values(columns).some(
+      (column) =>
+        column.erasure !== undefined &&
+        column.erasure !== Erasure.NotApplicable &&
+        column.erasure !== Erasure.RetainPseudonymous,
+    );
+    if (acted) found.push(table);
   }
   return found.sort();
 }
@@ -68,11 +83,16 @@ describe("every table holding personal data declares whose", () => {
     }
   });
 
+  /**
+   * Something to return or something to erase. A table of one-time codes has nothing an access
+   * request would return and still has to be reached by an erasure (`erase_user` is held to the
+   * end-user subjects by `user-erasure.test.ts`), so either kind of column justifies a subject.
+   */
   it("declares no subject for a table holding nobody's personal data", () => {
-    const withColumns = new Set(tablesWithSubjectColumns());
-    const spurious = [...subjectRegistry().keys()].filter((table) => !withColumns.has(table));
-    // Honest in both directions: a subject on a table with no subject columns would send a request
-    // somewhere there is nothing to find.
+    const reachable = new Set([...tablesWithSubjectColumns(), ...tablesWithErasureColumns()]);
+    const spurious = [...subjectRegistry().keys()].filter((table) => !reachable.has(table));
+    // Honest in both directions: a subject on a table with nothing to return or erase would send
+    // a request somewhere there is nothing to find.
     expect(spurious).toEqual([]);
   });
 

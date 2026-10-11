@@ -85,6 +85,20 @@
       "when": 1791736045203,
       "tag": "0011_flow_project_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791741748032,
+      "tag": "0012_erasure_lookups",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791741748764,
+      "tag": "0013_user_erasure",
+      "breakpoints": true
     }
   ]
 }

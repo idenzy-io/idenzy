@@ -348,6 +348,11 @@ export const webhookDeliveries = classifiedTable(
     // The fan-out writes one delivery per endpoint per event, and relaying the same outbox row
     // twice must not send it twice.
     uniqueIndex("webhook_deliveries_webhook_sequence_key").on(t.webhookId, t.sequence),
+    // What an erasure strips by: the deliveries that still hold a payload and name the user.
+    // A delivered one has already lost its payload, so the index holds the open window only.
+    index("webhook_deliveries_user_idx")
+      .on(t.projectId, sql`(${t.payload}->>'user')`)
+      .where(sql`${t.payload} is not null`),
   ],
 );
 
@@ -418,6 +423,11 @@ export const outbox = classifiedTable(
   (t) => [
     index("outbox_unpublished_idx").on(t.publishedAt, t.createdAt),
     index("outbox_topic_seq_idx").on(t.topic, t.seq),
+    // What an erasure strips by. Without it, finding one user's events reads the whole outbox,
+    // once per erasure batch, and the outbox is the table that grows fastest.
+    index("outbox_user_idx")
+      .on(t.projectId, sql`(${t.payload}->>'userId')`)
+      .where(sql`${t.payload} ? 'userId'`),
   ],
 );
 

@@ -10,6 +10,7 @@ import {
   Retention,
   SubjectPopulation,
 } from "@idenzy/compliance/classification/vocabulary";
+import { sql } from "drizzle-orm";
 import { index, integer, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./identity.js";
 import { config, credential, ephemeralChallenge } from "./presets.js";
@@ -134,7 +135,16 @@ export const webauthnChallenges = classifiedTable(
   (t) => [
     uniqueIndex("webauthn_challenges_hash_key").on(t.challengeHash),
     index("webauthn_challenges_expiry_idx").on(t.expiresAt),
+    // What an erasure deletes by, over the rows that name somebody.
+    index("webauthn_challenges_user_idx").on(t.projectId, t.userId).where(sql`user_id is not null`),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+      note: "Null for a sign-in ceremony, which names nobody until the credential does, and expires within minutes.",
+    },
+  },
 );
 
 /**
@@ -186,7 +196,11 @@ export const magicLinkTokens = classifiedTable(
     }),
     createdAt: createdAtColumn(),
   },
-  (t) => [uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash)],
+  (t) => [
+    uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash),
+    // What an erasure deletes by. A link for an address with no account names nobody.
+    index("magic_link_tokens_user_idx").on(t.projectId, t.userId).where(sql`user_id is not null`),
+  ],
   {
     subject: {
       population: SubjectPopulation.EndUser,
@@ -260,7 +274,18 @@ export const oauthFlows = classifiedTable(
     // found from the state alone (resolve_project_by_oauth_state).
     index("oauth_flows_state_idx").on(t.state),
     index("oauth_flows_expiry_idx").on(t.expiresAt),
+    // What an erasure deletes by. Only a flow attaching a provider names a user.
+    index("oauth_flows_link_user_idx")
+      .on(t.projectId, t.linkUserId)
+      .where(sql`link_user_id is not null`),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "link_user_id",
+      note: "Only a flow attaching a provider to a signed-in user names one. A sign-in flow learns who it is for when it completes, and expires within minutes.",
+    },
+  },
 );
 
 /**
@@ -307,6 +332,12 @@ export const verificationTokens = classifiedTable(
     index("verification_tokens_user_purpose_idx").on(t.projectId, t.userId, t.purpose),
     index("verification_tokens_expiry_idx").on(t.expiresAt),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 );
 
 /**
@@ -446,5 +477,13 @@ export const authCodes = classifiedTable(
   (t) => [
     uniqueIndex("auth_codes_hash_key").on(t.codeHash),
     index("auth_codes_expiry_idx").on(t.expiresAt),
+    // What an erasure deletes by. Without it, deleting one user's codes reads the table.
+    index("auth_codes_user_idx").on(t.projectId, t.userId),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: "user_id",
+    },
+  },
 );

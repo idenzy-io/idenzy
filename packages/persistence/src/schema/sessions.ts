@@ -118,6 +118,13 @@ export const refreshTokens = classifiedTable(
     index("refresh_tokens_family_idx").on(t.familyId),
     index("refresh_tokens_session_idx").on(t.sessionId),
   ],
+  {
+    subject: {
+      population: SubjectPopulation.EndUser,
+      locatedBy: null,
+      note: "Reached through the session: a user's refresh tokens are those of the user's sessions, and `session_id` is what carries the user.",
+    },
+  },
 );
 
 /** Idempotency and replay protection for mutating management endpoints. */

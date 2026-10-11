@@ -149,7 +149,7 @@ describe("a project that has configured nothing", () => {
 
     expect(claims["sub"]).toBeDefined();
     expect(Object.keys(claims).sort()).toEqual(
-      ["amr", "aud", "exp", "iat", "iss", "sid", "sub"].sort(),
+      ["amr", "aud", "auth_time", "exp", "iat", "iss", "sid", "sub"].sort(),
     );
   });
 
@@ -310,7 +310,7 @@ describe("applying a template to a token", () => {
     const claims = claimsOf(await newUser("claims-emptied@a.test"));
 
     expect(Object.keys(claims).sort()).toEqual(
-      ["amr", "aud", "exp", "iat", "iss", "sid", "sub"].sort(),
+      ["amr", "aud", "auth_time", "exp", "iat", "iss", "sid", "sub"].sort(),
     );
   });
 });

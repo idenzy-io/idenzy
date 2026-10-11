@@ -1,0 +1,9 @@
+# Fixtures gitleaks reads as keys, by fingerprint (commit:file:rule:line), so a new
+# finding still fails. None is a credential: a sample TOTP secret, placeholder Twilio
+# account and key IDs, and test webhook signing secrets.
+b8eec90f75a670e702bcd9280441d5a6383dd289:packages/sdk/server/node/test/webhooks.test.ts:generic-api-key:11
+085cf0da8de11398dcee19a337564b1739bff8f1:apps/client/test/nuxt/webhooks.test.ts:generic-api-key:161
+924dab87d5826c908d4025614a070e47c044eb6b:apps/client/test/nuxt/sms-providers.test.ts:generic-api-key:27
+924dab87d5826c908d4025614a070e47c044eb6b:apps/client/test/nuxt/sms-providers.test.ts:twilio-api-key:146
+924dab87d5826c908d4025614a070e47c044eb6b:apps/client/app/stores/sms-providers.ts:generic-api-key:53
+839f9823848ed816c49327565dfb6a9ce8284dec:apps/client/app/utils/mfa.ts:generic-api-key:95

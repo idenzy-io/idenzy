@@ -1,0 +1,71 @@
+name: Release
+
+# Publishes the SDK packages to npm (docs/guide/sdk.md, "Releasing").
+#
+# On every push to main, the Changesets action does one of two things: with changesets
+# pending, it opens or updates a "Version Packages" pull request; with none, it publishes any
+# package whose version is not on npm yet, which is what merging that pull request leads to.
+#
+# Off until the repository variable PUBLISH is "true", so a fork, or this repository before
+# its npm token exists, spends no minutes failing here. NPM_PROVENANCE is the second switch:
+# npm only attests packages built from a public repository, so it turns on when this one is.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  # npm's trusted publishing, and provenance once the repository is public.
+  id-token: write
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+jobs:
+  release:
+    name: version or publish
+    if: vars.PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The packages are checked here rather than trusted to CI's last run on this commit:
+      # a release is the one moment a red build reaches somebody else's application.
+      - name: Typecheck, test and build the published packages
+        run: >-
+          pnpm turbo run typecheck test build
+          --filter=@idenzy/protocol --filter=@idenzy/core --filter=@idenzy/js
+          --filter=@idenzy/vue --filter=@idenzy/node --filter=@idenzy/nuxt
+
+      - uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          publish: pnpm release
+          title: "chore(sdk): version packages"
+          commit: "chore(sdk): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The first publish of each package needs a token; trusted publishing takes over
+          # once it is configured for all six on npmjs.com, and the secret can then go.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: ${{ vars.NPM_PROVENANCE == 'true' }}

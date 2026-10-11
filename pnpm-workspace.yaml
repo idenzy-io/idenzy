@@ -146,3 +146,15 @@ catalog:
   '@testing-library/react': 16.3.3
   '@vue/test-utils': 2.5.0
   jsdom: 30.0.1
+
+# What the published SDK packages declare, as ranges rather than the pins above.
+#
+# A library that pins its dependencies exactly gives every customer a second copy of zod or
+# jose the moment their own version differs by a patch, and those copies do not dedupe. The
+# floor is the version this workspace builds and tests against, so the two lists move
+# together: bump a pin above and its floor here in the same change.
+catalogs:
+  sdk:
+    zod: ^4.5.4
+    jose: ^6.2.10
+    '@nuxt/kit': ^4.5.2

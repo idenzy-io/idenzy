@@ -1,7 +1,19 @@
 {
   "name": "@idenzy/protocol",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "The wire contract of Idenzy's API: request and response schemas, error codes, header names.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "schemas",
+    "zod"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/protocol"
+  },
   "type": "module",
   "exports": {
     "./*": {
@@ -10,7 +22,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -19,10 +32,13 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "zod": "catalog:"
+    "zod": "catalog:sdk"
   },
   "devDependencies": {
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

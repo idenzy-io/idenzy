@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "format": false,
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "fixed": [
+    [
+      "@idenzy/protocol",
+      "@idenzy/core",
+      "@idenzy/js",
+      "@idenzy/vue",
+      "@idenzy/node",
+      "@idenzy/nuxt"
+    ]
+  ],
+  "ignore": [],
+  "privatePackages": { "version": false, "tag": false }
+}

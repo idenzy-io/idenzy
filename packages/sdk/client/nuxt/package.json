@@ -1,7 +1,20 @@
 {
   "name": "@idenzy/nuxt",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "The Nuxt module for Idenzy: the Vue bindings, plus a server render seeded from the session cookie.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "nuxt",
+    "nuxt-module"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/nuxt"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +27,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -30,7 +44,7 @@
     "@idenzy/node": "workspace:*",
     "@idenzy/protocol": "workspace:*",
     "@idenzy/vue": "workspace:*",
-    "@nuxt/kit": "catalog:"
+    "@nuxt/kit": "catalog:sdk"
   },
   "devDependencies": {
     "@nuxt/schema": "catalog:",
@@ -39,5 +53,8 @@
     "typescript": "catalog:",
     "vitest": "catalog:",
     "vue": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -55,7 +55,7 @@ is a compile error rather than a runtime one in somebody's browser.
   second list to keep in step with `@idenzy/protocol`.
 - A cancelled WebAuthn prompt keeps the browser's own `DOMException`. `NotAllowedError` and
   `InvalidStateError` are a web platform contract older than ours.
-- The package is `private` until Changesets exists. Publishing is its own change.
+- It is published to npm with five others; see Releasing at the end of this file.
 
 ## Working on a framework binding
 
@@ -298,3 +298,28 @@ dependency and the only honest way to promise a fast integration while shipping 
 - **The key is refused on its prefix, before anything is written.** A secret key scaffolded
   into a client bundle is published at the next build, and nothing after that unpublishes it.
 
+## Releasing
+
+Six packages are published to npm under MIT: `@idenzy/protocol`, `@idenzy/core`, `@idenzy/js`,
+`@idenzy/vue`, `@idenzy/node` and `@idenzy/nuxt`. Every other package, the remaining framework
+bindings included, stays `private` until somebody needs it, because a published package is a
+promise and each one is a second place to keep a change in step.
+
+- **They share one version** (`fixed` in `.changeset/config.json`). The packages depend on
+  each other at exact versions, so a customer who installs `@idenzy/nuxt@0.4.0` gets the
+  `@idenzy/js` it was tested with and never has to match six numbers up.
+- **A change to one of them carries a changeset**: `pnpm changeset`, the bump, one line a
+  customer would want to read. On main, `.github/workflows/release.yml` turns pending
+  changesets into a "Version Packages" pull request, and merging that publishes.
+- **Published dependencies are ranges, from the `sdk` catalog**, never the workspace's exact
+  pins. A library that pins zod exactly gives every customer whose own zod differs by a
+  patch a second copy of it. The floors are the versions this workspace tests against, so
+  bump a pin and its floor together.
+- **The workflow is off until the repository variable `PUBLISH` is `true`**, and needs the
+  `NPM_TOKEN` secret for the first publish of each package. Trusted publishing replaces the
+  token once it is configured for all six on npmjs.com. `NPM_PROVENANCE=true` turns on
+  provenance, which npm only attests for packages built from a public repository.
+- **Check a package as a customer installs it before changing its exports or files**:
+  `pnpm pack` the six into a directory and install them into a scratch Nuxt app with
+  `overrides` pointing at the tarballs. A workspace link resolves things an installed
+  package cannot, which is how a missing file or a stray `workspace:` reaches npm.

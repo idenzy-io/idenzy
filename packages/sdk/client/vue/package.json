@@ -1,7 +1,19 @@
 {
   "name": "@idenzy/vue",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Vue bindings for Idenzy: a plugin and useSession, useUser and useIdenzy.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "vue"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/client/vue"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -14,7 +26,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/.tsbuildinfo"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -36,5 +49,8 @@
     "typescript": "catalog:",
     "vitest": "catalog:",
     "vue": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

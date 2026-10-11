@@ -58,7 +58,7 @@ catch the next missing `where`.
 
 | Requirement | Where it lives | Evidence | In effect |
 |---|---|---|---|
-| Access, rectification, erasure, portability | `data_subject_requests`, one handler per kind | Request rows with `completed_at` | **No.** `DataSubjectRequestHandler` is abstract and nothing implements it, so no worker assembles an export |
+| Access, rectification, erasure, portability | `data_subject_requests`, one handler per kind | Request rows with `completed_at` | **Erasure only.** `UserErasureService` erases at once and writes a completed row (ADR-0020); access, rectification and portability have no handler, so no worker assembles an export |
 | The deadline is the right one | `DsrDeadline` per request, from the controller's rule, defaulting to the stricter | `dsr-deadline-conformance`, `data_subject_requests.deadline_rule` | Yes |
 | The deadline is tracked | `due_at` set at intake from the rule | — | **Partly.** The date is set and stored with the rule that set it; nothing pages when it passes |
 | Export covers every field | Field list generated from classification, not hand-listed | Generated subject-field map | Yes, for the list. Nothing consumes it yet |

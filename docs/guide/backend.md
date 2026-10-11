@@ -331,6 +331,46 @@ existed and no code had ever written a row. Five rules.
   to the Pub/Sub relay, and two consumers sharing one watermark means whichever runs first
   decides what the other never sees.
 
+## Working on erasure
+
+Deleting a user is an erasure (PROJECT.md 4.13.6, ADR-0020): immediate, with no grace window,
+through `DELETE /v1/users/:id` (secret key), the dashboard's `DELETE …/projects/:p/users/:id`,
+and `IdenzyAdmin.users.delete` in `@idenzy/node`. All three are `UserErasureService`.
+
+- **Two halves, and the split is what one transaction can reach.** `erase_user` (migration 0013)
+  tombstones the account, deletes every way back in (identities, factors, passkeys, recovery
+  codes, every challenge, code, token, link and flow), clears and revokes every session and drops
+  their refresh tokens, in the caller's transaction. The copies other parts of the system made on
+  their way through — outbox events, webhook deliveries, analytics rows — are the second half, done
+  by `UserErasureRelay` in the workers a minute later.
+- **The SQL names its columns, and `user-erasure.test.ts` holds it to `classified()`.** Every
+  end-user table with something to erase must be deleted from, or updated with exactly its
+  erasure columns cleared. A new column with an erasure action, or a table that starts holding a
+  user's rows (declare its `subject`), fails there instead of surviving every erasure.
+- **One transaction writes four records, each for a different reader.** `session.revoked` (scope
+  all) for the reconciler, `user.deleted` for the webhook and the relay, an audit entry, and a
+  completed `data_subject_requests` row as the proof. The user's watermark is published after the
+  commit, like every revocation.
+- **An erased id and an unknown one are the same 404.** A retry after a lost response reads as
+  done, and the id space does not confirm that somebody existed. The row stays as a tombstone,
+  because the trail points at it.
+- **The relay waits for copies still on their way.** Messages settle a minute after the erasure,
+  which outlasts a webhook fan-out in flight. Analytics settles once the ingest stream holds
+  nothing queued before the erasure (its head is the oldest row not yet inserted), less the same
+  minute; while ingestion is behind or down, analytics erasures wait rather than delete ahead of
+  rows that will then arrive. Each target keeps its own position, so one store being down holds
+  back only its own erasures.
+- **What a message loses is declared on the webhook field.** `personal: true` in
+  `WEBHOOK_DATA_FIELDS` builds `PERSONAL_EVENT_FIELDS`; those keys are stripped from the erased
+  user's outbox events and open deliveries, ids are kept. `audit.recorded` is left alone: the trail
+  keeps its actor and address as proof of the erasure (Art. 17(3)(b)).
+- **ClickHouse erasure is a mutation, never a lightweight delete.** A lightweight delete masks
+  rows until a merge that an old month may never get; a mutation rewrites the parts. One runs per
+  batch. `idenzy_eraser` holds ALTER DELETE on those tables only, granted by the migration, so the
+  credential that removes analytics rows cannot read or write them.
+- **Every lookup has an index.** The short-lived tables gained `(project_id, user_id)` indexes and
+  the outbox and deliveries partial expression indexes in migration 0012, so an erasure is index
+  walks however large the project, and a bulk deletion is linear.
 
 ## Working on billing
 
@@ -494,12 +534,13 @@ two of these are decisions that look arbitrary until you know what they are avoi
   on a request path may fail because a chart will be missing a point. The opposite call is the SMS
   spend cap's, and what decides it in all three is what sits on the other side.
 - **A deployment with no ClickHouse is correct, not degraded.** `NullAnalyticsRecorder` is the
-  reason no call site branches on whether analytics exist. Six environment variables travel
+  reason no call site branches on whether analytics exist. Seven environment variables travel
   together or not at all: a half-configured store would start and run with ingestion quietly off,
   and the symptom is an empty chart nobody is watching.
 - **Retention is a TTL derived from `classified()`**, with `ttl_only_drop_parts` so ageing out
-  drops whole monthly partitions instead of rewriting the table. Erasure is a different promise and
-  is not kept yet: the columns say `row_deleted` and nothing calls it.
+  drops whole monthly partitions instead of rewriting the table. Erasure is a different promise,
+  kept by the erasure relay (next section's last bullets): a mutation, as `idenzy_eraser`, on the
+  tables whose `user_id` says `row_deleted`.
 
 ## Working on webhook delivery
 

@@ -708,10 +708,10 @@ client have no server halves to talk to yet.
       reader who picks "every event" and never opens the groups. Three of the notes beside those events
       also described payloads that never existed — `user.updated` promised "what it was and what it is
       now", `session.revoked` a reason, `session.created` the device name — and now name what the
-      projected data carries. The events still without an emitter: deletion and suspension, which need the
-      erasure path and a users screen that can ban somebody (nothing writes `banned_until` or
-      `deleted_at` today), the three delivery events waiting on the SES and SMS event paths, and staff
-      access waiting on the break-glass flow
+      projected data carries. `user.deleted` has its emitter now (the erasure, ADR-0020). The events
+      still without one: suspension, which needs `banned_until` to announce itself when it is set,
+      the three delivery events waiting on the SES and SMS event paths, and staff access waiting on
+      the break-glass flow
 - [~] Usage metering and the MAU HyperLogLog sketch. **The sketch exists and is written.**
       `usage_daily.mau_hll` had been a column with no writer since the schema landed, and the
       shape is forced by what it has to do: billing needs one number per project per month, and
@@ -955,9 +955,8 @@ client have no server halves to talk to yet.
       The panel's password-policy store is off its fixture; the stats beside it are not,
       because those are counts over sign-ins and refusals that live in ClickHouse (ADR-0013)
       and wait on 3.2's panel wiring rather than on an endpoint that could exist today
-      `add` and `remove` refuse with a reason instead of pretending: creating an account
-      needs a `PasswordHasher` the management API does not have, and erasure is the DSR path
-      (4.13.6), whose worker does not exist. The remaining stores are placeholders, and each
+      `add` refuses with a reason instead of pretending: creating an account needs a
+      `PasswordHasher` the management API does not have. `remove` erases (ADR-0020). The remaining stores are placeholders, and each
       one waits on an endpoint rather than on the panel. **Audit is off its fixture now**, which is the
       first of the compliance-shaped screens and the only remaining store whose backend
       already existed: the relay has been writing hash-chained rows since phase 1 and
@@ -1527,14 +1526,14 @@ working, so the split below is by which question is being asked, not by which sc
       refusals at module load: a column whose retention differs from its table's, because ClickHouse
       drops rows and a data map claiming otherwise describes something the engine cannot do; a
       retention with no interval to express it; and a TTL measured from a column the table lacks.
-- [~] Erasure and retention. **Retention is done and erasure is not.** Every table carries
+- [x] Erasure and retention. **Both are done; erasure landed with ADR-0020.** Every table carries
       `TTL … + INTERVAL` with `ttl_only_drop_parts`, so ageing out drops whole monthly partitions
       rather than rewriting the table on a schedule — the same reasoning partition-dropping has for
       `audit_events` — and the interval is derived from the same `classified()` declaration the data
-      map is generated from, so the two cannot disagree. What is owed is the delete path: the
-      columns say `row_deleted` because a row keyed on a user with the user removed is not anonymous
-      (the timing alone re-identifies), and nothing yet lets the DSR handler call it. Until it does,
-      the erasure promise is true of Postgres and not of this store, which is the honest statement
+      map is generated from, so the two cannot disagree. The delete path exists too: the columns
+      say `row_deleted` because a row keyed on a user with the user removed is not anonymous (the
+      timing alone re-identifies), and the erasure relay in the workers deletes them with a
+      mutation, as `idenzy_eraser`, once the ingest stream has drained past the erasure.
 - [ ] Panel wiring, last. `apps/client`'s stores are placeholders behind real screens, so
       the swap is a client change rather than a screen change — which is the point of
       having built them against a store rather than against a query.

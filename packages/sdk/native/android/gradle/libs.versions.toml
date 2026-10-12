@@ -14,6 +14,8 @@ browser = "1.10.0"
 credentials = "1.6.0"
 googleid = "1.2.1"
 junit = "4.13.2"
+# Android's org.json is a stub on the JVM; the unit tests of the JSON bridge need a real one.
+orgjson = "20260814"
 # The Lynx module compiles against it and ships without it: the app has its own Lynx.
 lynx = "4.1.0"
 # Lynx's JavaScript engine, for the Lynx example's host app only.
@@ -29,6 +31,7 @@ androidx-credentials = { module = "androidx.credentials:credentials", version.re
 androidx-credentials-play = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 junit = { module = "junit:junit", version.ref = "junit" }
+orgjson = { module = "org.json:json", version.ref = "orgjson" }
 lynx = { module = "org.lynxsdk.lynx:lynx", version.ref = "lynx" }
 lynx-jssdk = { module = "org.lynxsdk.lynx:lynx-jssdk", version.ref = "lynx" }
 lynx-trace = { module = "org.lynxsdk.lynx:lynx-trace", version.ref = "lynx" }

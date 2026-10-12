@@ -64,6 +64,7 @@ dependencies {
 
     testImplementation(libs.jna)
     testImplementation(libs.junit)
+    testImplementation(libs.orgjson)
     testImplementation(libs.coroutines.test)
 }
 

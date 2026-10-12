@@ -86,6 +86,31 @@ final class IdenzyBridgeTests: XCTestCase {
         XCTAssertEqual(status, "authenticated")
     }
 
+    func testTheJSONFacadeAnswersInJSONWithTimestampsAsNumbers() async throws {
+        let (bridge, _) = try bridge(["POST v1/auth/sign-in/password": (200, Fixture.authenticated())])
+        let facade = ObjCBridge(bridge: bridge)
+        let json = await withCheckedContinuation { (done: CheckedContinuation<String, Never>) in
+            facade.call("password.signIn", argumentsJSON: #"{"email":"ada@example.com","password":"pw"}"#) {
+                done.resume(returning: $0)
+            }
+        }
+        let answer = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let session = try XCTUnwrap((answer["ok"] as? [String: Any])?["session"] as? [String: Any])
+        let user = try XCTUnwrap(session["user"] as? [String: Any])
+        XCTAssertEqual((user["createdAt"] as? NSNumber)?.int64Value, 1_791_702_000_000)
+        XCTAssertTrue(user["phone"] is NSNull)
+    }
+
+    func testTheJSONFacadeRefusesArgumentsThatAreNotAnObject() async throws {
+        let (bridge, transport) = try bridge([:])
+        let facade = ObjCBridge(bridge: bridge)
+        let json = await withCheckedContinuation { (done: CheckedContinuation<String, Never>) in
+            facade.call("password.signIn", argumentsJSON: "[1, 2]") { done.resume(returning: $0) }
+        }
+        XCTAssertTrue(json.contains(#""code":"validation_failed""#))
+        XCTAssertTrue(transport.sent.isEmpty)
+    }
+
     func testAnUnknownMethodIsUnsupportedRatherThanIgnored() async throws {
         let (bridge, _) = try bridge([:])
         do {

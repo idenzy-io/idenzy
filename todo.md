@@ -1237,10 +1237,10 @@ template pipeline of its own rather than a branch in the OTP flow.
       magic link, OAuth through the system browser, anonymous, MFA and step-up, account and
       sessions, with the refresh rules tested by removing each one. Native Sign in with Apple
       and Google is in too, over `POST v1/auth/id-token` with a server-issued nonce, and so is
-      Flutter (`idenzy_flutter`), React Native/Expo (`@idenzy/react-native`) and Lynx
-      (`@idenzy/lynx`), all on one bridge, the two JavaScript ones on one client
-      (`@idenzy/native-js`), and all three run on an iOS simulator and an Android emulator. Not
-      yet: passkeys, publishing, and the NativeScript and Capacitor bridges
+      Flutter (`idenzy_flutter`), React Native/Expo (`@idenzy/react-native`), Lynx
+      (`@idenzy/lynx`), NativeScript (`@idenzy/nativescript`) and Capacitor (`@idenzy/capacitor`),
+      all on one bridge, the four JavaScript ones on one client (`@idenzy/native-js`), and all five
+      run on an iOS simulator and an Android emulator. Not yet: native passkeys and publishing
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
 - [~] Billing on Stripe, metered against usage. The schema half is in: the wallet, the

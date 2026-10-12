@@ -811,9 +811,11 @@ idenzy/
 │       │   ├── apple/            # Swift package `Idenzy`: URLSession, Keychain, ASWebAuthenticationSession
 │       │   ├── android/          # Gradle library `io.idenzy`: HttpURLConnection, Keystore, Custom Tabs
 │       │   ├── flutter/          # idenzy_flutter: a channel carrier over the platform SDKs' bridge
-│       │   ├── js/               # @idenzy/native-js (public), the JavaScript client the three below share
+│       │   ├── js/               # @idenzy/native-js (public), the JavaScript client the four below share
 │       │   ├── react-native/     # @idenzy/react-native (public), an Expo module over the same bridge
-│       │   └── lynx/             # @idenzy/lynx (public), a Lynx native module over the same bridge
+│       │   ├── lynx/             # @idenzy/lynx (public), a Lynx native module over the same bridge
+│       │   ├── nativescript/     # @idenzy/nativescript (public), NativeScript's direct calls, in JSON
+│       │   └── capacitor/        # @idenzy/capacitor (public), a Capacitor plugin, in JSON
 │       └── server/               # runs on a server. Verifies tokens, never holds a session.
 │           ├── node/             # @idenzy/node       (public, server SDK)
 │           └── nest/             # @idenzy/nest       (public, guards + module for customers on NestJS)

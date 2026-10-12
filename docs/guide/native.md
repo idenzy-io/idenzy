@@ -13,9 +13,11 @@ packages/sdk/native/
 │                     Credential Manager
 ├── flutter/
 │   └── idenzy_flutter/  the Flutter plugin, over the two SDKs above
-├── js/               @idenzy/native-js: the JavaScript client React Native, Lynx and NativeScript share
+├── js/               @idenzy/native-js: the JavaScript client every framework below shares
 ├── react-native/     @idenzy/react-native: an Expo module carrying it
 ├── lynx/             @idenzy/lynx: a Lynx native module carrying it
+├── nativescript/     @idenzy/nativescript: NativeScript's direct calls, carrying it in JSON
+├── capacitor/        @idenzy/capacitor: a Capacitor plugin carrying it in JSON
 └── scripts/          build-apple.sh, build-android.sh
 ```
 
@@ -193,8 +195,8 @@ cd example && flutter test integration_test -d <simulator or emulator> --no-dds
 `IdenzyBridge` (Swift product `IdenzyBridge`, Kotlin `io.idenzy.bridge`) is the native SDK as one
 method table over plain values: `call("password.signIn", ["email": …])` in, a dictionary of strings,
 numbers and booleans out, and a `BridgeFailure(code, message, details)` for anything refused. The
-Flutter plugin, the React Native module and the Lynx module are message carriers over it, and
-NativeScript and Capacitor will be too.
+Flutter plugin, the React Native module, the Lynx module, the NativeScript plugin and the
+Capacitor plugin are message carriers over it.
 
 - **A new method goes in the bridge, once per platform, and nowhere else.** Then the Dart client
   and `@idenzy/native-js` each get one line that names it. A plugin that maps values itself is
@@ -207,12 +209,19 @@ NativeScript and Capacitor will be too.
   needs the rest. Every JavaScript carrier returns it as it is.
 - **`IDZBridge` is the bridge for Objective-C**, which Lynx's module has to be written in and
   NativeScript reaches everything through. Main thread only, like the bridge; the caller hops.
+- **The bridge also speaks JSON**: `IDZBridge`'s `callMethod:argumentsJSON:completion:` and
+  `watchStatusJSON:` on iOS, `io.idenzy.bridge.JsonBridge` on Android. A string crosses every
+  framework as itself, so a carrier that moves strings converts nothing; NativeScript and
+  Capacitor use it. `JsonBridge` answers on the main thread, because NativeScript runs JavaScript
+  there and a callback into it from another thread fails, and its encoder is written by hand:
+  Android's `org.json` keeps a null that the reference library the unit tests run on drops.
 - **A bridge serves one project for the life of the process.** Every handle a framework holds
   reaches the bridge's one client, and every status watch is bound to it, so `configure` with a
   second publishable key is refused rather than quietly taking them all over. The same key again,
   as a hot reload sends it, is answered with the client already there.
 - **Both bridges have tests of their own** (`IdenzyBridgeTests`, `IdenzyBridgeTest`) against fakes:
-  a value shape, a refusal, a missing argument, an unknown method, a second project, an answer.
+  a value shape, a refusal, a missing argument, an unknown method, a second project, an answer,
+  and the JSON facades' round trip with a timestamp and a null in it.
 
 ## The JavaScript client
 
@@ -226,6 +235,10 @@ and NativeScript differ only in how they reach native code, so each of their pac
   `configure` from its framework's, and the `Idenzy` type, `/errors`, `/types` and the `/react`
   hooks from this one. Re-exporting them from each framework package would be a barrel per
   framework, which Biome refuses (PROJECT.md 7.5).
+- **`/json-bridge` turns a JSON carrier into a `NativeBridge`**, so NativeScript and Capacitor
+  each supply only a `call` and a `watchStatus` that move strings. An answer that is not JSON
+  becomes `provider_unavailable` with `transportReason: "unexpectedResponse"`, the same as an
+  answer of the wrong shape, rather than an exception from `JSON.parse`.
 - **The hooks are written against `react` and serve ReactLynx too.** ReactLynx aliases `react` to
   `@lynx-js/react`, `useSyncExternalStore` included, so the Lynx example renders through the same
   `IdenzyProvider` as React Native. `react` is an optional peer for that reason.
@@ -314,8 +327,94 @@ xcodebuild -workspace ios/IdenzyLynxExample.xcworkspace -scheme IdenzyLynxExampl
   console reaches no log at all, Lynx's own lines do, so read it from the screen: `xcrun simctl io
   booted screenshot`.
 
+## Working on the NativeScript package
+
+`nativescript/`: `@idenzy/nativescript`, which has no native code of its own. NativeScript calls
+`IDZBridge` and `io.idenzy.bridge.JsonBridge` directly from JavaScript, through the metadata it
+generates from the pods and the AAR, and `configure` hands the shared client those calls as a JSON
+carrier. `platforms/` names the native dependencies the way every NativeScript plugin does.
+
+```bash
+pnpm turbo run typecheck test build --filter=@idenzy/nativescript
+(cd android && ./gradlew :idenzy:publishToMavenLocal)
+cd nativescript/example && npm install
+npx ns build android && npx ns build ios        # the CLI is a pinned devDependency
+```
+
+- **JSON, because NativeScript marshals objects as proxies.** A JavaScript object reaches
+  Objective-C or Java as a wrapper, and a dictionary or a map comes back the same way; a string
+  crosses as itself. A Kotlin `suspend` function cannot be called at all, which is why
+  `JsonBridge` takes a callback interface, `JsonBridge.Callback`, that JavaScript implements.
+- **The plugin's `platforms/ios/Podfile` is empty until the pods are on trunk.** An app declares
+  `IdenzyCore`, `Idenzy` and `IdenzyBridge` by path in `App_Resources/iOS/Podfile`, relative to
+  `platforms/ios` where NativeScript writes the merged Podfile, and says `platform :ios, '16.0'`:
+  without it CocoaPods assumes 13.0 and refuses `IdenzyCore`. Named in both places, CocoaPods would
+  refuse the two sources instead.
+- **The app sets the Android SDK's needs in `App_Resources/Android/app.gradle`**: `minSdkVersion
+  26`, `mavenLocal()` until Maven Central, and the `idenzyRedirectScheme` manifest placeholder.
+- **The CLI runs `pod` and `ruby -e "require 'xcodeproj'"` from the `PATH`.** With the system
+  Ruby there is no `xcodeproj`, and Homebrew's CocoaPods has the `json` 3 problem described under
+  React Native. Putting a `pod` and a `ruby` first on the `PATH` that run Homebrew's Ruby with the
+  Lynx example's pinned bundle (`bundle exec pod`, `ruby -rbundler/setup`) is enough.
+- **NativeScript 9's iOS runtime is a remote Swift package** with about 120 MB of binaries, so the
+  first iOS build hits the keychain trap below.
+- **The example's self-test logs through NativeScript's console**: `adb logcat | grep
+  IDENZY_SELF_TEST` (tag `JS`), and on the simulator the unified log, process `example`.
+
+## Working on the Capacitor package
+
+`capacitor/`: `@idenzy/capacitor`, a Capacitor plugin named `Idenzy` (Swift, Kotlin, one method
+and one event, over the JSON bridge) and a `configure` that hands it to the shared client. In a
+Capacitor app the session then lives in the native SDK, with the refresh token in the Keychain or
+the Keystore, out of reach of the web view's scripts; that is the reason to use it rather than
+`@idenzy/js`.
+
+```bash
+pnpm turbo run typecheck test build --filter=@idenzy/capacitor
+(cd android && ./gradlew :idenzy:publishToMavenLocal)
+cd capacitor/example && npm install && npm run sync
+xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator …
+(cd android && JAVA_HOME=<a JDK 21> ./gradlew :app:assembleDebug)
+```
+
+- **Never resolve a promise with the plugin object.** `registerPlugin` returns a proxy that
+  answers every property as a native method, `then` included, so `await` on a promise resolved
+  with it calls a method named `then`, which rejects, and `configure` hangs on "not
+  implemented". `appCarrier` wraps it first, and a test with a proxy built the same way fails
+  against the unwrapped version.
+- **`Package.swift` finds the Swift SDK from its own real location**, as the Flutter plugin does:
+  the app reaches the plugin through `node_modules`, a symlink while it is developed here.
+  `IdenzyCapacitor.podspec` is there for an app still on CocoaPods.
+- **Capacitor 8 compiles Java for 21**, so Gradle needs a JDK 21 (Android Studio's bundled one
+  will do), and the plugin depends on AppCompat itself, because Capacitor's `activity` is an
+  `AppCompatActivity` it does not export.
+- **The example's `ios/` and `android/` came from `cap add` and are committed**, with three edits
+  on Android: `minSdkVersion = 26` in `variables.gradle`, `mavenLocal()` in `build.gradle`, and the
+  `idenzyRedirectScheme` placeholder in `app/build.gradle`. Vite dedupes `@capacitor/core`, since
+  the linked plugin would otherwise look for it beside its own real path.
+- **The self-test is in logcat as `Capacitor/Console`.** On iOS the web view's console reaches no
+  log, so read it from the screen.
+
+## The SwiftPM keychain trap
+
+Before downloading a binary artifact, SwiftPM looks for a credential for the host in the login
+keychain, and on the machine this was found on there was one for `github.com`. Everything then
+stopped: `xcodebuild` sat at "Resolving Swift Package dependencies" with no output and no CPU, and
+so did `swift package resolve`, whose `--very-verbose` output ends at "read credentials for
+'https://github.com' … in keychain". The likeliest reading is a keychain permission macOS asks for
+in a dialog nobody can answer from a build; with the keychain left out the same downloads took
+under a minute. Anything whose iOS half pulls a remote binary package meets it: NativeScript's
+runtime, Capacitor's.
+
+The way past is to fill SwiftPM's shared artifact cache without the keychain, from a throwaway
+package that names the same dependency, and build afterwards:
+
+```bash
+swift package resolve --disable-keychain    # ~/Library/Caches/org.swift.swiftpm/artifacts
+```
+
 ## Not built yet
 
 Passkeys (needs `apple-app-site-association` and `assetlinks.json` served by the auth domain),
-App Attest and Play Integrity, the Swift Package Manager mirror and Maven publishing, and the
-NativeScript and Capacitor bridges.
+App Attest and Play Integrity, and publishing: npm, Maven Central, CocoaPods trunk, pub.dev and
+the Swift Package Manager mirror.

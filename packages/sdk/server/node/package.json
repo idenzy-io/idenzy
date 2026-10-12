@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Verify Idenzy access tokens and webhooks on a server, offline, with an optional revocation set.",
   "keywords": [
     "idenzy",

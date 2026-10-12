@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Idenzy CLI: scaffolds working sign-in routes into your app with `idenzy init`.",
   "keywords": [
     "idenzy",

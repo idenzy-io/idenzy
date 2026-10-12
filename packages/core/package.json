@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Errors, value objects and time shared by Idenzy's SDKs.",
   "keywords": [
     "idenzy",

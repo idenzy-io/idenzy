@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/js",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Idenzy's browser SDK: sign in with a password, a code, a magic link, OAuth or a passkey, and hold the session.",
   "keywords": [
     "idenzy",

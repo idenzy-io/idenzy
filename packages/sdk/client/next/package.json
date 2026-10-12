@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/next",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Next.js helpers for Idenzy: the session on the server, protected routes in middleware, and the React bindings.",
   "keywords": [
     "idenzy",

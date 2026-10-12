@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/protocol",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The wire contract of Idenzy's API: request and response schemas, error codes, header names.",
   "keywords": [
     "idenzy",

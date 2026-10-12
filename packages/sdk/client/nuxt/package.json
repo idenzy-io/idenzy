@@ -1,6 +1,6 @@
 {
   "name": "@idenzy/nuxt",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Nuxt module for Idenzy: the Vue bindings, plus a server render seeded from the session cookie.",
   "keywords": [
     "idenzy",

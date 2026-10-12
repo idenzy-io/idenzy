@@ -66,6 +66,78 @@ jobs:
       - name: Starter templates are current
         run: pnpm examples:check
 
+      # The native core's enums and wire constants are generated from @idenzy/protocol. A protocol
+      # change that did not regenerate them reaches every mobile SDK as a silent divergence
+      # (ADR-0022).
+      - name: Native protocol enums are current
+        run: pnpm native:check
+
+  native-core:
+    name: native core (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/sdk/native
+    steps:
+      - uses: actions/checkout@v4
+      # rustup reads rust-toolchain.toml, so the toolchain, its components and the targets are
+      # the pinned ones without a setup action. --locked is the Cargo half of PROJECT.md 7.6.
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  native-android:
+    name: native SDK (Android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/sdk/native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # The bindings and the host library only: the unit tests load the real core through JNA.
+      - run: scripts/build-android.sh --dev
+      # The Lynx module is built here too and has its own test of the values it hands Lynx.
+      - run: ./gradlew :idenzy:testDebugUnitTest :idenzy-lynx:testDebugUnitTest --console=plain
+        working-directory: packages/sdk/native/android
+
+  native-apple:
+    name: native SDK (Apple)
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/sdk/native
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/build-apple.sh --dev
+      - run: swift test
+        working-directory: packages/sdk/native/apple
+
+  native-flutter:
+    name: native SDK (Flutter)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/sdk/native/flutter/idenzy_flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+      # The Dart layer against a stand-in channel. The native halves are compiled and run on a
+      # device by the example's integration test, which needs a simulator or an emulator.
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
   integration:
     name: integration (containers)
     runs-on: ubuntu-latest

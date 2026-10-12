@@ -12,6 +12,8 @@ import {
   type MfaFactorList,
   type MfaProof,
   nonceFrom,
+  type Passkey,
+  passkeyFrom,
   Reader,
   type RecoveryCodes,
   recoveryCodesFrom,
@@ -61,6 +63,7 @@ export class Idenzy {
   readonly account: AccountApi;
   readonly sessions: SessionsApi;
   readonly mfa: MfaApi;
+  readonly passkeys: PasskeysApi;
 
   /** For a host that brings its own bridge, such as a test. Use your framework's `configure`. */
   constructor(private readonly native: NativeBridge) {
@@ -76,6 +79,7 @@ export class Idenzy {
     this.account = new AccountApi(this);
     this.sessions = new SessionsApi(this);
     this.mfa = new MfaApi(this);
+    this.passkeys = new PasskeysApi(this);
   }
 
   /**
@@ -359,6 +363,35 @@ export class SessionsApi {
 
   async revoke(id: string): Promise<void> {
     await this.client.call("sessions.revoke", { id });
+  }
+}
+
+/**
+ * Passkeys through the platform's own sheet: AuthenticationServices on iOS, Credential Manager on
+ * Android. The relying party's domain must list the app, under `webcredentials` in its
+ * `apple-app-site-association` and by package and signing certificate in `assetlinks.json`.
+ */
+export class PasskeysApi {
+  constructor(private readonly client: Idenzy) {}
+
+  /** Adds a passkey to the signed-in account. `name` is what the user's own list calls it. */
+  async add(input: { readonly name?: string } = {}): Promise<Passkey> {
+    return passkeyFrom(await this.client.record("passkey.add", { name: input.name ?? null }));
+  }
+
+  /** Signs in with whichever of the user's passkeys the sheet offers. Nothing names the account. */
+  signIn(): Promise<AuthResult> {
+    return this.client.result("passkey.signIn");
+  }
+
+  async list(): Promise<readonly Passkey[]> {
+    const rows = await this.client.call("passkey.list");
+    if (!Array.isArray(rows)) return [];
+    return rows.map((row: unknown) => passkeyFrom(Reader.of(row, "passkey")));
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.client.call("passkey.remove", { id });
   }
 }
 

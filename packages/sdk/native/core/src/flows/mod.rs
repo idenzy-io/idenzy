@@ -5,6 +5,7 @@ pub mod id_token;
 pub mod magic_link;
 pub mod oauth;
 pub mod otp;
+pub mod passkey;
 pub mod password;
 
 use std::sync::Arc;

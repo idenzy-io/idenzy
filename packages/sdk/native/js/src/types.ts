@@ -111,6 +111,18 @@ export interface SessionSummary {
   readonly current: boolean;
 }
 
+/** A passkey on the user's account. It carries no credential id, which a list leaks into logs. */
+export interface Passkey {
+  readonly id: string;
+  readonly name: string | null;
+  readonly transports: readonly string[];
+  /** The credential can sync to a provider's cloud. */
+  readonly backupEligible: boolean;
+  readonly backedUp: boolean;
+  readonly createdAt: Date;
+  readonly lastUsedAt: Date | null;
+}
+
 /**
  * Reads one value the native module sent, refusing anything not of the shape it promised.
  *
@@ -291,5 +303,17 @@ export function sessionSummaryFrom(reader: Reader): SessionSummary {
     revokedAt: reader.optionalTime("revokedAt"),
     revokeReason: reason === null ? null : member(SessionRevokeReason, reason),
     current: reader.flag("current"),
+  };
+}
+
+export function passkeyFrom(reader: Reader): Passkey {
+  return {
+    id: reader.text("id"),
+    name: reader.optionalText("name"),
+    transports: reader.list("transports").map(String),
+    backupEligible: reader.flag("backupEligible"),
+    backedUp: reader.flag("backedUp"),
+    createdAt: reader.time("createdAt"),
+    lastUsedAt: reader.optionalTime("lastUsedAt"),
   };
 }

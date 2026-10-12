@@ -183,4 +183,22 @@ describe("the client over the native SDKs", () => {
       displayName: null,
     });
   });
+
+  it("adds a passkey by name and reads it back typed", async () => {
+    const native = new FakeNative(() => ({
+      ok: {
+        id: "pk_1",
+        name: "Phone",
+        transports: ["internal"],
+        backupEligible: true,
+        backedUp: true,
+        createdAt: 1_791_788_400_000,
+        lastUsedAt: null,
+      },
+    }));
+    const passkey = await new Idenzy(native).passkeys.add({ name: "Phone" });
+    expect(native.calls.at(-1)).toEqual({ method: "passkey.add", args: { name: "Phone" } });
+    expect(passkey.createdAt).toEqual(new Date(Date.UTC(2026, 9, 12, 7)));
+    expect(passkey.lastUsedAt).toBeNull();
+  });
 });

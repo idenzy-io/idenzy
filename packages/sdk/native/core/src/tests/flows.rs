@@ -359,6 +359,92 @@ fn a_native_sign_in_hands_the_sheet_a_digest_and_the_api_the_nonce() {
     assert_eq!(h.store.get("refresh").as_deref(), Some(FIRST));
 }
 
+#[test]
+fn a_passkey_sign_in_hands_the_platform_the_options_and_the_api_its_response_as_json() {
+    let h = harness();
+    let options = json!({ "challenge": "Y2hhbGxlbmdl", "rpId": "example.com", "userVerification": "required" });
+    h.transport.on(
+        "POST v1/auth/passkeys/authentication/options",
+        Reply::Json(
+            200,
+            json!({ "challengeId": CHALLENGE_ID, "expiresAt": iso(NOW + 300), "publicKey": options }),
+        ),
+    );
+    h.transport.on(
+        "POST v1/auth/passkeys/authentication",
+        Reply::Json(200, authenticated(FIRST, NOW)),
+    );
+
+    let ceremony = run(h.client.passkeys().authentication_options()).unwrap();
+    assert_eq!(ceremony.challenge_id, CHALLENGE_ID);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&ceremony.options_json).unwrap(),
+        options
+    );
+
+    let assertion = json!({ "id": "Y3JlZA", "rawId": "Y3JlZA", "type": "public-key", "response": { "clientDataJSON": "e30" } });
+    session_of(
+        run(h
+            .client
+            .passkeys()
+            .sign_in(ceremony.challenge_id, assertion.to_string()))
+        .unwrap(),
+    );
+    let request = &h.transport.sent_to("POST v1/auth/passkeys/authentication")[0];
+    assert_eq!(
+        FakeTransport::body_of(request),
+        json!({ "challengeId": CHALLENGE_ID, "response": assertion })
+    );
+    assert_eq!(h.store.get("refresh").as_deref(), Some(FIRST));
+}
+
+#[test]
+fn adding_a_passkey_needs_a_session_and_presents_it() {
+    let h = harness();
+    let refused = run(h.client.passkeys().registration_options()).unwrap_err();
+    assert_eq!(refused.code(), ErrorCode::MissingCredentials);
+    assert!(h.transport.sent().is_empty());
+
+    let session = signed_in(&h);
+    h.transport.on(
+        "POST v1/auth/passkeys/registration",
+        Reply::Json(
+            201,
+            json!({ "id": "pk_1", "name": "Phone", "transports": ["internal"], "backupEligible": true, "backedUp": true, "createdAt": iso(NOW), "lastUsedAt": null }),
+        ),
+    );
+    let passkey = run(h.client.passkeys().register(
+        CHALLENGE_ID.into(),
+        r#"{"id":"Y3JlZA","type":"public-key"}"#.into(),
+        Some("  Phone ".into()),
+    ))
+    .unwrap();
+    assert_eq!(passkey.name.as_deref(), Some("Phone"));
+    assert!(passkey.last_used_at.is_none());
+
+    let request = &h.transport.sent_to("POST v1/auth/passkeys/registration")[0];
+    assert_eq!(
+        request.headers["authorization"],
+        format!("Bearer {}", session.access_token)
+    );
+    assert_eq!(
+        FakeTransport::body_of(request),
+        json!({ "challengeId": CHALLENGE_ID, "response": { "id": "Y3JlZA", "type": "public-key" }, "name": "Phone" })
+    );
+}
+
+#[test]
+fn a_passkey_response_that_is_not_json_is_refused_before_sending() {
+    let h = harness();
+    let refused = run(h
+        .client
+        .passkeys()
+        .sign_in(CHALLENGE_ID.into(), "not json".into()))
+    .unwrap_err();
+    assert_eq!(refused.code(), ErrorCode::ValidationFailed);
+    assert!(h.transport.sent().is_empty());
+}
+
 fn base16(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

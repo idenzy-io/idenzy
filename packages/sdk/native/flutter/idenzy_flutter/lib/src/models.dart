@@ -230,6 +230,29 @@ class MfaEnrolmentConfirmed {
 }
 
 /// A session as the device list shows it. No token material.
+/// A passkey on the user's account. It carries no credential id: that identifies a physical
+/// authenticator, and a list is how one ends up in logs.
+class Passkey {
+  Passkey.fromWire(Wire wire)
+      : id = wire['id']! as String,
+        name = wire['name'] as String?,
+        transports = [for (final transport in wire['transports']! as List) transport as String],
+        backupEligible = wire['backupEligible']! as bool,
+        backedUp = wire['backedUp']! as bool,
+        createdAt = _time(wire['createdAt']),
+        lastUsedAt = _optionalTime(wire['lastUsedAt']);
+
+  final String id;
+  final String? name;
+  final List<String> transports;
+
+  /// The credential can sync to a provider's cloud.
+  final bool backupEligible;
+  final bool backedUp;
+  final DateTime createdAt;
+  final DateTime? lastUsedAt;
+}
+
 class SessionSummary {
   SessionSummary.fromWire(Wire wire)
       : id = wire['id']! as String,

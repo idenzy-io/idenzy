@@ -111,6 +111,20 @@ final class IdenzyBridgeTests: XCTestCase {
         XCTAssertTrue(transport.sent.isEmpty)
     }
 
+    func testAPasskeyListCrossesAsPlainValues() async throws {
+        let (bridge, _) = try bridge([
+            "POST v1/auth/sign-in/password": (200, Fixture.authenticated()),
+            "GET v1/users/me/passkeys": (200, #"{"passkeys":[{"id":"pk_1","name":null,"transports":["internal"],"backupEligible":true,"backedUp":false,"createdAt":"2026-10-12T07:00:00.000Z","lastUsedAt":null}]}"#),
+        ])
+        _ = try await bridge.call("password.signIn", ["email": "ada@example.com", "password": "pw"])
+
+        let answer = try await bridge.call("passkey.list")
+        let list = try XCTUnwrap(answer as? [[String: Any]])
+        XCTAssertEqual(list.first?["id"] as? String, "pk_1")
+        XCTAssertEqual(list.first?["createdAt"] as? Int64, 1_791_788_400_000)
+        XCTAssertEqual(list.first?["backupEligible"] as? Bool, true)
+    }
+
     func testAnUnknownMethodIsUnsupportedRatherThanIgnored() async throws {
         let (bridge, _) = try bridge([:])
         do {

@@ -2,9 +2,13 @@ package io.idenzy
 
 import android.app.Activity
 import android.content.Context
+import androidx.credentials.CreatePublicKeyCredentialRequest
+import androidx.credentials.CreatePublicKeyCredentialResponse
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetPublicKeyCredentialOption
+import androidx.credentials.PublicKeyCredential
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import io.idenzy.core.AuthResult
@@ -20,6 +24,7 @@ import io.idenzy.core.MfaEnrolmentConfirmed
 import io.idenzy.core.MfaFactorList
 import io.idenzy.core.MfaProof
 import io.idenzy.core.NativeProvider
+import io.idenzy.core.Passkey
 import io.idenzy.core.RecoveryCodes
 import io.idenzy.core.Session
 import io.idenzy.core.SessionListener
@@ -81,6 +86,7 @@ public class Idenzy internal constructor(private val core: IdenzyClient) {
     public val account: Account = Account()
     public val sessions: Sessions = Sessions()
     public val mfa: Mfa = Mfa()
+    public val passkeys: Passkeys = Passkeys()
 
     public val session: Session? get() = core.session()
 
@@ -271,6 +277,47 @@ public class Idenzy internal constructor(private val core: IdenzyClient) {
         /** Answers any challenge, sign-in or step-up. Prefer it to `challenge.submit`, which is not shielded. */
         public suspend fun submit(challenge: MfaChallenge, proof: MfaProof): Session = shielded { challenge.submit(proof) }
     }
+
+    public inner class Passkeys internal constructor() {
+        /**
+         * Adds a passkey to the signed-in account through Credential Manager.
+         *
+         * The relying party's domain must list this app, by package and signing certificate, in
+         * `/.well-known/assetlinks.json` with `delegate_permission/common.get_login_creds`, and the
+         * project must accept the app's `android:apk-key-hash:` origin. Without both, Credential
+         * Manager or the API refuses.
+         */
+        public suspend fun add(activity: Activity, name: String? = null): Passkey {
+            val ceremony = shielded { core.passkeys().registrationOptions() }
+            val created = CredentialManager.create(activity)
+                .createCredential(activity, CreatePublicKeyCredentialRequest(ceremony.optionsJson))
+            val response = (created as? CreatePublicKeyCredentialResponse)?.registrationResponseJson
+                ?: throw unexpected("Credential Manager created something other than a passkey.")
+            return shielded { core.passkeys().register(ceremony.challengeId, response, name) }
+        }
+
+        /**
+         * Signs in with a passkey through Credential Manager, which offers whichever of the user's
+         * passkeys belong to the relying party. Nothing names the account first.
+         */
+        public suspend fun signIn(activity: Activity): AuthResult {
+            val ceremony = shielded { core.passkeys().authenticationOptions() }
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(GetPublicKeyCredentialOption(ceremony.optionsJson))
+                .build()
+            val credential = CredentialManager.create(activity).getCredential(activity, request).credential
+            val response = (credential as? PublicKeyCredential)?.authenticationResponseJson
+                ?: throw unexpected("Credential Manager returned something other than a passkey.")
+            return shielded { core.passkeys().signIn(ceremony.challengeId, response) }
+        }
+
+        public suspend fun list(): List<Passkey> = shielded { core.passkeys().list() }
+
+        public suspend fun remove(id: String): Unit = shielded { core.passkeys().remove(id) }
+    }
+
+    private fun unexpected(detail: String): IdenzyException =
+        IdenzyException.Transport(TransportReason.UNEXPECTED_RESPONSE, detail, 0u)
 
     public companion object {
         private val clients = HashMap<String, Pair<String, Idenzy>>()

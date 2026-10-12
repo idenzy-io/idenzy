@@ -83,6 +83,23 @@ class IdenzyBridgeTest {
     }
 
     @Test
+    fun aPasskeyListCrossesAsPlainValues() = runBlocking {
+        transport.answer("POST v1/auth/sign-in/password", 200, Fixture.authenticated())
+        transport.answer(
+            "GET v1/users/me/passkeys",
+            200,
+            """{"passkeys":[{"id":"pk_1","name":null,"transports":["internal"],"backupEligible":true,"backedUp":false,"createdAt":"2026-10-12T07:00:00.000Z","lastUsedAt":null}]}""",
+        )
+        bridge.call("password.signIn", mapOf("email" to "ada@example.com", "password" to "pw"))
+
+        @Suppress("UNCHECKED_CAST")
+        val list = bridge.call("passkey.list") as List<Map<String, Any?>>
+        assertEquals("pk_1", list[0]["id"])
+        assertEquals(1_791_788_400_000L, list[0]["createdAt"])
+        assertEquals(true, list[0]["backupEligible"])
+    }
+
+    @Test
     fun anUnknownMethodIsUnsupportedRatherThanIgnored() = runBlocking {
         try {
             bridge.call("password.teleport")

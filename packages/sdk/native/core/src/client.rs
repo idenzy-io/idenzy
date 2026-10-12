@@ -13,6 +13,7 @@ use crate::flows::id_token::IdTokenFlow;
 use crate::flows::magic_link::MagicLinkFlow;
 use crate::flows::oauth::OAuthFlow;
 use crate::flows::otp::OtpFlow;
+use crate::flows::passkey::PasskeyFlow;
 use crate::flows::password::PasswordFlow;
 use crate::mfa::MfaApi;
 use crate::protocol::User;
@@ -39,6 +40,7 @@ pub struct IdenzyClient {
     oauth: Arc<OAuthFlow>,
     anonymous: Arc<AnonymousFlow>,
     id_token: Arc<IdTokenFlow>,
+    passkeys: Arc<PasskeyFlow>,
     account: Arc<AccountApi>,
     session_list: Arc<SessionsApi>,
     mfa: Arc<MfaApi>,
@@ -71,6 +73,7 @@ impl IdenzyClient {
             oauth: Arc::new(OAuthFlow::new(flow.clone(), stored("pkce"))),
             anonymous: Arc::new(AnonymousFlow::new(flow.clone())),
             id_token: Arc::new(IdTokenFlow::new(flow.clone())),
+            passkeys: Arc::new(PasskeyFlow::new(flow.clone())),
             account: Arc::new(AccountApi::new(flow.clone())),
             session_list: Arc::new(SessionsApi::new(flow.clone())),
             mfa: Arc::new(MfaApi::new(flow)),
@@ -115,6 +118,11 @@ impl IdenzyClient {
     /// Native Sign in with Apple and Google, after the platform sheet has produced a token.
     pub fn id_token(&self) -> Arc<IdTokenFlow> {
         self.id_token.clone()
+    }
+
+    /// Passkeys: the API's half of the ceremony the platform runs, and the user's own list.
+    pub fn passkeys(&self) -> Arc<PasskeyFlow> {
+        self.passkeys.clone()
     }
 
     pub fn account(&self) -> Arc<AccountApi> {

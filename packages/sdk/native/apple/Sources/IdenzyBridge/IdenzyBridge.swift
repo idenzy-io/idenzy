@@ -166,6 +166,10 @@ public final class IdenzyBridge {
                 nonce: arguments.text("nonce"),
                 displayName: arguments.optional("displayName")
             ))
+        case "passkey.add": return Self.passkey(try await client.addPasskey(named: arguments.optional("name")))
+        case "passkey.signIn": return authResult(try await client.signInWithPasskey())
+        case "passkey.list": return try await client.passkeys.list().map(Self.passkey)
+        case "passkey.remove": try await client.passkeys.remove(id: arguments.text("id"))
         case "anonymous.signIn": return authResult(try await client.anonymous.signIn())
         case "anonymous.upgrade":
             return authResult(try await client.anonymous.upgrade(email: arguments.text("email"), password: arguments.text("password")))
@@ -269,6 +273,18 @@ public final class IdenzyBridge {
             "label": factor.label as Any,
             "createdAt": millis(factor.createdAt),
             "lastUsedAt": factor.lastUsedAt.map(millis) as Any,
+        ]
+    }
+
+    static func passkey(_ passkey: Passkey) -> [String: Any] {
+        [
+            "id": passkey.id,
+            "name": passkey.name as Any,
+            "transports": passkey.transports,
+            "backupEligible": passkey.backupEligible,
+            "backedUp": passkey.backedUp,
+            "createdAt": millis(passkey.createdAt),
+            "lastUsedAt": passkey.lastUsedAt.map(millis) as Any,
         ]
     }
 

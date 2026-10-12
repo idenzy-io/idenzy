@@ -2,7 +2,10 @@ package io.idenzy.bridge
 
 import android.app.Activity
 import android.content.Context
+import androidx.credentials.exceptions.CreateCredentialCancellationException
+import androidx.credentials.exceptions.CreateCredentialException
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import io.idenzy.Idenzy
 import io.idenzy.OAuthCancelledException
 import io.idenzy.core.AuthResult
@@ -15,6 +18,7 @@ import io.idenzy.core.MfaEnrolmentConfirmed
 import io.idenzy.core.MfaFactorSummary
 import io.idenzy.core.MfaProof
 import io.idenzy.core.NativeProvider
+import io.idenzy.core.Passkey
 import io.idenzy.core.RecoveryCodes
 import io.idenzy.core.Session
 import io.idenzy.core.SessionSummary
@@ -86,6 +90,14 @@ public class IdenzyBridge private constructor(private val context: Context) {
             throw BridgeFailure("cancelled", error.message ?: "cancelled", emptyMap())
         } catch (error: GetCredentialCancellationException) {
             throw BridgeFailure("cancelled", error.message ?: "cancelled", emptyMap())
+        } catch (error: CreateCredentialCancellationException) {
+            throw BridgeFailure("cancelled", error.message ?: "cancelled", emptyMap())
+        } catch (error: GetCredentialException) {
+            // No passkey for the relying party, an app the domain does not list: the platform's to
+            // explain, and its type and message are the explanation.
+            throw BridgeFailure("internal_error", "${error.type}: ${error.message}", emptyMap())
+        } catch (error: CreateCredentialException) {
+            throw BridgeFailure("internal_error", "${error.type}: ${error.message}", emptyMap())
         }
 
     /**
@@ -159,6 +171,10 @@ public class IdenzyBridge private constructor(private val context: Context) {
                     arguments.optional("displayName"),
                 ),
             )
+            "passkey.add" -> passkey(idenzy.passkeys.add(foreground(), arguments.optional("name")))
+            "passkey.signIn" -> authResult(idenzy.passkeys.signIn(foreground()))
+            "passkey.list" -> idenzy.passkeys.list().map(::passkey)
+            "passkey.remove" -> idenzy.passkeys.remove(arguments.text("id"))
             "anonymous.signIn" -> authResult(idenzy.anonymous.signIn())
             "anonymous.upgrade" -> authResult(idenzy.anonymous.upgrade(arguments.text("email"), arguments.text("password")))
             "account.me" -> user(idenzy.account.me())
@@ -242,6 +258,16 @@ public class IdenzyBridge private constructor(private val context: Context) {
         "label" to factor.label,
         "createdAt" to millis(factor.createdAt),
         "lastUsedAt" to factor.lastUsedAt?.let(::millis),
+    )
+
+    private fun passkey(passkey: Passkey) = mapOf(
+        "id" to passkey.id,
+        "name" to passkey.name,
+        "transports" to passkey.transports,
+        "backupEligible" to passkey.backupEligible,
+        "backedUp" to passkey.backedUp,
+        "createdAt" to millis(passkey.createdAt),
+        "lastUsedAt" to passkey.lastUsedAt?.let(::millis),
     )
 
     private fun recoveryCodes(codes: RecoveryCodes) =

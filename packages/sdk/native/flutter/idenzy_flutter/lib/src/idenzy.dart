@@ -37,6 +37,7 @@ class Idenzy {
     account = AccountApi._(this);
     sessions = SessionsApi._(this);
     mfa = MfaApi._(this);
+    passkeys = PasskeysApi._(this);
   }
 
   final MethodChannel _channel;
@@ -53,6 +54,7 @@ class Idenzy {
   late final AccountApi account;
   late final SessionsApi sessions;
   late final MfaApi mfa;
+  late final PasskeysApi passkeys;
 
   /// Configures the client for a project. One per app: the native SDKs hold one client per
   /// project per process, because two would rotate one refresh token twice and lose the session,
@@ -284,6 +286,28 @@ class SessionsApi {
       ];
 
   Future<void> revoke(String id) => _client._call<void>('sessions.revoke', {'id': id});
+}
+
+/// Passkeys through the platform's own sheet: AuthenticationServices on iOS, Credential Manager on
+/// Android. The relying party's domain must list the app, under `webcredentials` in its
+/// `apple-app-site-association` and by package and signing certificate in `assetlinks.json`.
+class PasskeysApi {
+  PasskeysApi._(this._client);
+
+  final Idenzy _client;
+
+  /// Adds a passkey to the signed-in account. [name] is what the user's own list calls it.
+  Future<Passkey> add({String? name}) async => Passkey.fromWire(await _client._wire('passkey.add', {'name': name}));
+
+  /// Signs in with whichever of the user's passkeys the sheet offers. Nothing names the account.
+  Future<AuthResult> signIn() => _client._result('passkey.signIn');
+
+  Future<List<Passkey>> list() async => [
+        for (final row in await _client._require<List>('passkey.list'))
+          Passkey.fromWire(Map<String, Object?>.from(row as Map)),
+      ];
+
+  Future<void> remove(String id) => _client._call<void>('passkey.remove', {'id': id});
 }
 
 class MfaApi {

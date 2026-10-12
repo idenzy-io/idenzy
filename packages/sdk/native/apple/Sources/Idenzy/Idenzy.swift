@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 @_exported import IdenzyCore
 
@@ -77,6 +78,9 @@ public final class Idenzy: ObservableObject {
     public nonisolated var account: AccountApi { core.account() }
     public nonisolated var sessions: SessionsApi { core.sessions() }
     public nonisolated var mfa: MfaApi { core.mfa() }
+    /// The user's passkeys and the API's half of a ceremony; `addPasskey` and
+    /// `signInWithPasskey` run the whole of one.
+    public nonisolated var passkeys: PasskeyFlow { core.passkeys() }
     public nonisolated var session: Session? { core.session() }
 
     /// Picks up the session the last launch left in the Keychain. Call it once, at start-up.
@@ -143,7 +147,10 @@ public final class Idenzy: ObservableObject {
     public func signInWithApple() async throws -> AuthResult {
         let flow = core.idToken()
         let prepared = try await flow.prepare()
-        let credential = try await AppleSignInSheet().present(nonceDigest: prepared.digest)
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = prepared.digest
+        let credential = try await AuthorizationSheet().present(request, expecting: ASAuthorizationAppleIDCredential.self)
         guard let data = credential.identityToken, let token = String(data: data, encoding: .utf8) else {
             throw IdenzyError.Transport(
                 reason: .unexpectedResponse,
@@ -178,6 +185,65 @@ public final class Idenzy: ObservableObject {
         displayName: String? = nil
     ) async throws -> AuthResult {
         try await core.idToken().exchange(provider: provider, idToken: idToken, nonce: nonce, displayName: displayName)
+    }
+
+    /// Adds a passkey to the signed-in account through the system's passkey sheet.
+    ///
+    /// The relying party's domain must list this app under `webcredentials` in its
+    /// `apple-app-site-association`, and the app needs the Associated Domains entitlement naming
+    /// that domain. Without both the sheet refuses before it is shown.
+    public func addPasskey(named name: String? = nil) async throws -> Passkey {
+        let flow = core.passkeys()
+        let ceremony = try await flow.registrationOptions()
+        let options = try PasskeyJSON.creation(ceremony.optionsJson)
+        let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: options.relyingParty)
+            .createCredentialRegistrationRequest(challenge: options.challenge, name: options.userName, userID: options.userID)
+        if let preference = options.userVerification {
+            request.userVerificationPreference = ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: preference)
+        }
+        if #available(iOS 17.4, macOS 14.4, *) {
+            request.excludedCredentials = options.excluded.map {
+                ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: $0)
+            }
+        }
+        let credential = try await AuthorizationSheet().present(
+            request,
+            expecting: ASAuthorizationPlatformPublicKeyCredentialRegistration.self
+        )
+        guard let attestation = credential.rawAttestationObject else {
+            throw IdenzyError.Transport(reason: .unexpectedResponse, detail: "The passkey sheet returned no attestation.", status: 0)
+        }
+        let response = PasskeyJSON.registration(
+            credentialID: credential.credentialID,
+            clientDataJSON: credential.rawClientDataJSON,
+            attestationObject: attestation
+        )
+        return try await flow.register(challengeId: ceremony.challengeId, responseJson: response, name: name)
+    }
+
+    /// Signs in with a passkey through the system's sheet, which offers whichever of the user's
+    /// passkeys belong to the relying party. Nothing names the account first.
+    public func signInWithPasskey() async throws -> AuthResult {
+        let flow = core.passkeys()
+        let ceremony = try await flow.authenticationOptions()
+        let options = try PasskeyJSON.request(ceremony.optionsJson)
+        let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: options.relyingParty)
+            .createCredentialAssertionRequest(challenge: options.challenge)
+        if let preference = options.userVerification {
+            request.userVerificationPreference = ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: preference)
+        }
+        let credential = try await AuthorizationSheet().present(
+            request,
+            expecting: ASAuthorizationPlatformPublicKeyCredentialAssertion.self
+        )
+        let response = PasskeyJSON.assertion(
+            credentialID: credential.credentialID,
+            clientDataJSON: credential.rawClientDataJSON,
+            authenticatorData: credential.rawAuthenticatorData,
+            signature: credential.signature,
+            userHandle: credential.userID
+        )
+        return try await flow.signIn(challengeId: ceremony.challengeId, responseJson: response)
     }
 
     /// Finishes a magic link from the URL the app was opened with, or answers `nil` when the URL

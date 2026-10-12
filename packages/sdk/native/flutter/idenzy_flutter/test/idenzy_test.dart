@@ -161,6 +161,31 @@ void main() {
     });
   });
 
+  test('a passkey is added by name and listed with typed times', () async {
+    const passkeyWire = {
+      'id': 'pk_1',
+      'name': 'Phone',
+      'transports': ['internal'],
+      'backupEligible': true,
+      'backedUp': true,
+      'createdAt': 1791788400000,
+      'lastUsedAt': null,
+    };
+    answer((call) => switch (call.method) {
+          'passkey.add' => passkeyWire,
+          'passkey.list' => [passkeyWire],
+          _ => null,
+        });
+
+    final added = await idenzy.passkeys.add(name: 'Phone');
+    expect(calls.last.arguments, {'name': 'Phone'});
+    expect(added.createdAt, DateTime.utc(2026, 10, 12, 7));
+
+    final listed = await idenzy.passkeys.list();
+    expect(listed.single.lastUsedAt, isNull);
+    expect(listed.single.backupEligible, isTrue);
+  });
+
   test('status starts loading and follows what the native SDK reports', () async {
     const events = EventChannel('io.idenzy/status');
     messenger.setMockStreamHandler(

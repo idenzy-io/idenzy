@@ -1085,12 +1085,138 @@ export type OtpSettings = z.infer<typeof otpSettingsSchema>;
  * Only the switch lives here. The relying party is a row in `webauthn_relying_parties` with
  * a unique index behind it, because one project may have exactly one — a second would split
  * a customer's passkeys into two sets that cannot substitute for each other — and a unique
- * index is a guarantee a jsonb document cannot make.
+ * index is a guarantee a jsonb document cannot make. It has its own schema below.
  */
 export const passkeySettingsSchema = z.object({
   enabled: z.boolean().default(true),
 });
 export type PasskeySettings = z.infer<typeof passkeySettingsSchema>;
+
+/*
+ * The passkey relying party (PROJECT.md 4.7).
+ */
+
+const ANDROID_PASSKEY_ORIGIN = /^android:apk-key-hash:[A-Za-z0-9_-]{43}$/;
+
+/**
+ * An Android app's passkey origin: what Credential Manager writes into the client data, the
+ * SHA-256 of the app's signing certificate in base64url. Not a URL, so it cannot be checked
+ * against the relying party's domain; that association is the domain's `assetlinks.json`.
+ */
+export function isAndroidPasskeyOrigin(value: string): boolean {
+  return ANDROID_PASSKEY_ORIGIN.test(value.trim());
+}
+
+const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/**
+ * The origin for a signing certificate's SHA-256 fingerprint as `keytool` and the Play Console
+ * print it, 32 colon-separated hex bytes, or null if the text is not one.
+ *
+ * Exported for the panel, which takes the fingerprint because that is what anybody has to hand,
+ * and must turn it into the same origin the server compares against.
+ */
+export function androidPasskeyOrigin(fingerprint: string): string | null {
+  const hex = fingerprint.trim().split(":");
+  if (hex.length !== 32 || !hex.every((pair) => /^[\da-f]{2}$/i.test(pair))) return null;
+  const bytes = hex.map((pair) => Number.parseInt(pair, 16));
+  let text = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const [a = 0, b = 0, c = 0] = bytes.slice(i, i + 3);
+    const chunk = (a << 16) | (b << 8) | c;
+    const left = bytes.length - i;
+    text += BASE64URL.charAt((chunk >> 18) & 63) + BASE64URL.charAt((chunk >> 12) & 63);
+    if (left > 1) text += BASE64URL.charAt((chunk >> 6) & 63);
+    if (left > 2) text += BASE64URL.charAt(chunk & 63);
+  }
+  return `android:apk-key-hash:${text}`;
+}
+
+/**
+ * Where a passkey ceremony may run: a page, by its exact origin, or an Android app, by its
+ * signing certificate. An iOS app needs no entry of its own; AuthenticationServices reports the
+ * relying party's https origin, once the domain's `apple-app-site-association` lists the app.
+ */
+export const passkeyOriginSchema = z
+  .string()
+  .trim()
+  .max(255)
+  .refine((value) => isAndroidPasskeyOrigin(value) || parseBrowserOrigin(value) !== null, {
+    message: "A page's origin, https://app.example.com, or an Android app's android:apk-key-hash:.",
+  })
+  .transform((value) => (isAndroidPasskeyOrigin(value) ? value : canonicalBrowserOrigin(value)));
+
+const relyingPartyFields = z.object({
+  rpId: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(253)
+    .regex(/^(?:(?:[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?\.)+[a-z]{2,63}|localhost)$/, {
+      message: "A domain such as example.com, with no scheme, port or path.",
+    }),
+  rpName: z.string().trim().min(1).max(200),
+  origins: z.array(passkeyOriginSchema).min(1).max(50),
+});
+
+/**
+ * Every web origin must be the RP ID or a subdomain of it, over https, which is WebAuthn's own
+ * rule: refusing one here is a sentence at save time instead of every ceremony on that page
+ * failing later. Loopback may use http, which browsers treat as a secure context.
+ */
+function originsOnTheDomain(
+  party: { readonly rpId: string; readonly origins: readonly string[] },
+  context: z.RefinementCtx,
+): void {
+  party.origins.forEach((origin, index) => {
+    if (party.origins.indexOf(origin) !== index) {
+      context.addIssue({ code: "custom", path: ["origins", index], message: "Listed twice." });
+      return;
+    }
+    const page = parseBrowserOrigin(origin);
+    if (page === null) return;
+    if (page.scheme === "http" && !isLoopbackHost(page.host)) {
+      context.addIssue({
+        code: "custom",
+        path: ["origins", index],
+        message: "WebAuthn needs https, except on loopback.",
+      });
+    }
+    if (page.host !== party.rpId && !page.host.endsWith(`.${party.rpId}`)) {
+      context.addIssue({
+        code: "custom",
+        path: ["origins", index],
+        message: "A page's host must be the passkey domain or a subdomain of it.",
+      });
+    }
+  });
+}
+
+/** The relying party a project's passkeys belong to. */
+export const relyingPartySchema = relyingPartyFields.superRefine(originsOnTheDomain);
+export type RelyingParty = z.infer<typeof relyingPartySchema>;
+
+/**
+ * Saving one. A credential is bound to the RP ID it was created under, so moving a project
+ * with passkeys to another domain leaves every one of them unable to sign in. That move goes
+ * through only when `strandPasskeys` names how many it strands, and the number matches what
+ * the project holds: an acknowledgement of the state as it is, not of a count read earlier.
+ */
+export const saveRelyingPartySchema = relyingPartyFields
+  .extend({ strandPasskeys: z.number().int().min(0).optional() })
+  .superRefine(originsOnTheDomain);
+export type SaveRelyingParty = z.infer<typeof saveRelyingPartySchema>;
+
+/**
+ * The relying party, or null for a project that has none and so cannot use passkeys yet, and how
+ * many passkeys the project holds: what a change of domain would strand, read where it is true
+ * rather than from the screen's figures.
+ */
+export const relyingPartyAnswerSchema = z.object({
+  relyingParty: relyingPartySchema.nullable(),
+  passkeys: z.number().int().min(0),
+});
+export type RelyingPartyAnswer = z.infer<typeof relyingPartyAnswerSchema>;
 
 export const authenticatorSettingsSchema = z.object({
   enabled: z.boolean().default(true),

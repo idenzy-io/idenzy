@@ -1,5 +1,5 @@
 import { ResourceNotFoundError } from "@idenzy/core/errors";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { webauthnCredentials } from "../schema/mfa.js";
 import type { TenantContext } from "../tenancy/tenant-context.js";
 import type { Transaction } from "../tenancy/unit-of-work.js";
@@ -44,6 +44,15 @@ export interface WebauthnCredentialRow {
 export class WebauthnCredentialRepository extends BaseRepository<typeof webauthnCredentials> {
   constructor(tx: Transaction, context: TenantContext) {
     super(tx, context, webauthnCredentials);
+  }
+
+  /** How many passkeys the project holds, which is what a change of relying party would strand. */
+  async count(): Promise<number> {
+    const rows = await this.tx
+      .select({ total: count() })
+      .from(webauthnCredentials)
+      .where(this.tenantScope());
+    return rows[0]?.total ?? 0;
   }
 
   async findByCredentialId(credentialId: string): Promise<WebauthnCredentialRow | null> {

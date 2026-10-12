@@ -432,6 +432,64 @@ describe("passkey attacks", () => {
   });
 });
 
+describe("native apps", () => {
+  // Its own project, so the relying party the other tests share is never touched.
+  const NATIVE = "44444444-4444-4444-4444-444444444444";
+  // What Credential Manager writes into the client data: the signing certificate's SHA-256.
+  const APP = "android:apk-key-hash:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+  const native: FlowContext = { ...context, projectId: NATIVE };
+  let owner: string;
+
+  beforeAll(async () => {
+    const { rows } = await harness.owner.query<{ org_id: string }>(
+      "SELECT org_id FROM projects WHERE id = $1",
+      [PROJECT],
+    );
+    await harness.owner.query(
+      `INSERT INTO projects (id, org_id, name, kms_key_name) VALUES ($1, $2, 'Native', 'k')`,
+      [NATIVE, rows[0]?.org_id],
+    );
+    await harness.owner.query(
+      `INSERT INTO webauthn_relying_parties (project_id, rp_id, rp_name, origins)
+       VALUES ($1, $2, 'Native', ARRAY[$3, $4])`,
+      [NATIVE, RP_ID, ORIGIN, APP],
+    );
+    owner = (await createUser(new TenantContext(NATIVE, "req_passkey", "user"), "app@example.test"))
+      .id;
+  });
+
+  it("enrols and signs in from an Android app the project lists, by its certificate", async () => {
+    const authenticator = new TestAuthenticator();
+    const options = await service.startRegistration(native, owner);
+    await service.finishRegistration(native, owner, {
+      challengeId: options.challengeId,
+      response: authenticator.register(RP_ID, APP, options.publicKey.challenge),
+    });
+
+    const { challengeId, challenge } = await beginSignIn(native);
+    const issued = sessionOf(
+      await flow.authenticate(native, {
+        challengeId,
+        response: authenticator.authenticate(RP_ID, APP, challenge, encodeUserHandle(owner)),
+      }),
+    );
+    expect(issued.userId).toBe(owner);
+  });
+
+  it("refuses an app the project does not list, whatever its certificate", async () => {
+    const authenticator = await enrol(native, owner);
+    const { challengeId, challenge } = await beginSignIn(native);
+    const stranger = "android:apk-key-hash:-vr6-vr6-vr6-vr6-vr6-vr6-vr6-vr6-vr6-vr6-vo";
+
+    await expect(
+      flow.authenticate(native, {
+        challengeId,
+        response: authenticator.authenticate(RP_ID, stranger, challenge, encodeUserHandle(owner)),
+      }),
+    ).rejects.toMatchObject({ code: "webauthn_assertion_invalid" });
+  });
+});
+
 describe("relying party configuration", () => {
   it("refuses a ceremony for a project that has not configured one", async () => {
     const unconfigured: FlowContext = { ...context, projectId: PROJECT };

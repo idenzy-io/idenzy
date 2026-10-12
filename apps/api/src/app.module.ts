@@ -23,6 +23,7 @@ import { MembersModule } from "./management/members/members.module.js";
 import { OnboardingModule } from "./management/onboarding/onboarding.module.js";
 import { OrgsModule } from "./management/orgs/orgs.module.js";
 import { OriginsModule } from "./management/origins/origins.module.js";
+import { RelyingPartyModule } from "./management/passkeys/relying-party.module.js";
 import { ProjectsModule } from "./management/projects/projects.module.js";
 import { ProvidersModule } from "./management/providers/providers.module.js";
 import { RetentionModule } from "./management/retention/retention.module.js";
@@ -108,6 +109,7 @@ import { ProjectKeysController } from "./well-known/project-keys.controller.js";
     DashboardClaimsModule,
     MembersModule,
     ProvidersModule,
+    RelyingPartyModule,
     SessionsModule,
     RetentionModule,
     SettingsModule,

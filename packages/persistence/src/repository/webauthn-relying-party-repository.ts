@@ -32,4 +32,20 @@ export class WebauthnRelyingPartyRepository extends BaseRepository<typeof webaut
     if (row === undefined) return null;
     return { rpId: row.rpId, rpName: row.rpName, origins: row.origins };
   }
+
+  /** Creates the project's relying party or replaces it; the unique index makes it the one. */
+  async upsert(party: RelyingPartyRow): Promise<void> {
+    await this.tx
+      .insert(webauthnRelyingParties)
+      .values({
+        projectId: this.context.projectId,
+        rpId: party.rpId,
+        rpName: party.rpName,
+        origins: [...party.origins],
+      })
+      .onConflictDoUpdate({
+        target: [webauthnRelyingParties.projectId],
+        set: { rpId: party.rpId, rpName: party.rpName, origins: [...party.origins] },
+      });
+  }
 }

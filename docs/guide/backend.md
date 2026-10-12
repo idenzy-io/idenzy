@@ -133,6 +133,29 @@ from the request Host: the RP ID decides which credentials an assertion may addr
 row per project, enforced by a unique index, because a credential is bound to the RP ID it
 was created under and two would split a customer's passkeys into disjoint sets.
 
+It is set through `GET/PUT v1/orgs/:orgId/projects/:projectId/passkeys/relying-party`, at
+admin, with `relyingPartySchema` from the protocol behind both the route and the panel.
+
+- **The RP ID moves under passkeys only when told how many it strands.** Every credential is
+  bound to the RP ID it was made under and stops signing in on a new one, with nothing on the
+  user's side to explain it. So a save that changes the RP ID while the project holds any is
+  refused with a conflict naming the count, unless `strandPasskeys` carries that same count:
+  the panel's acknowledgement checkbox, made into something the server checks against now
+  rather than against a figure read earlier. The answer carries `passkeys` so the panel can
+  show the true number. The credentials are kept, so moving back revives them. The name and
+  the origins change freely.
+- **Native apps are origins too, of two different kinds.** An iOS app needs no entry:
+  AuthenticationServices reports the relying party's own `https://<rpId>`, once the domain's
+  `apple-app-site-association` lists the app under `webcredentials`. An Android app reports
+  `android:apk-key-hash:<base64url SHA-256 of its signing certificate>`, which has to be in
+  `origins` like a page, and which the domain's `assetlinks.json` ties to the app.
+  `androidPasskeyOrigin` turns the fingerprint `keytool` prints into it, for the panel and
+  anyone else. Web origins must sit on the RP ID's domain; an Android origin cannot, and is
+  not checked against it.
+- **We do not serve the association files.** The RP ID is the customer's domain, where their
+  site lives, and the files belong there. Serving them would mean the RP ID was a domain of
+  ours, which no web page of theirs could use.
+
 Tests use `TestAuthenticator` from `@idenzy/testing`, which is a real software
 authenticator: a real P-256 key, real CBOR, a real signature. That is deliberate. Every
 attack worth testing here (replayed challenge, cloned counter, wrong origin, another

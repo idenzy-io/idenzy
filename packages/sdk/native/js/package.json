@@ -1,0 +1,63 @@
+{
+  "name": "@idenzy/native-js",
+  "version": "0.1.0",
+  "description": "Idenzy for JavaScript apps on the native iOS and Android SDKs: the client React Native, Lynx and NativeScript share.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "react-native",
+    "lynx",
+    "nativescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/native/js"
+  },
+  "type": "module",
+  "main": "./dist/idenzy-native-js.js",
+  "types": "./dist/idenzy-native-js.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/idenzy-native-js.d.ts",
+      "default": "./dist/idenzy-native-js.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@idenzy/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "react": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

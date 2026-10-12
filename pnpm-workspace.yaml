@@ -3,6 +3,7 @@ packages:
   - packages/*
   - packages/sdk/client/*
   - packages/sdk/server/*
+  - packages/sdk/native/js
   - tools/*
 
 # Supply-chain and reproducibility settings (PROJECT.md 7.6).

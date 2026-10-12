@@ -35,6 +35,7 @@ import { DatabaseRedirectAllowlist } from "../dist/oauth/database-redirect-allow
 import { OAuthCodeFlow } from "../dist/oauth/oauth-code.flow.js";
 import { OAuthService } from "../dist/oauth/oauth-service.js";
 import { ProviderRegistry } from "../dist/oauth/provider-registry.js";
+import { ProviderSignIn } from "../dist/oauth/provider-sign-in.js";
 import { SessionService } from "../dist/session/session-service.js";
 import { ProjectResolver } from "../dist/tenancy/project-resolver.js";
 import {
@@ -170,7 +171,7 @@ beforeAll(async () => {
     registry,
     flows,
     encryptor,
-    new ProjectSettingsReader(uow),
+    new ProviderSignIn(clock, new ProjectSettingsReader(uow)),
   );
   flow = new OAuthCodeFlow(
     sessions,

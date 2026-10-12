@@ -99,6 +99,20 @@
       "when": 1791741748764,
       "tag": "0013_user_erasure",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791792446554,
+      "tag": "0014_id_token_nonces",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791792456422,
+      "tag": "0015_id_token_nonce_grants",
+      "breakpoints": true
     }
   ]
 }

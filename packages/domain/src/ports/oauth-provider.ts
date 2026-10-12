@@ -111,6 +111,29 @@ export interface CompletedFlow {
 }
 
 /**
+ * A provider whose ID tokens can be accepted without a redirect (PROJECT.md 4.4).
+ *
+ * A native sign-in sheet hands the app an ID token directly, so there is no state, no code
+ * and no callback; what is left of the flow's defences is in the token, and an implementation
+ * must check all of it: the signature against the provider's keys, the issuer, the audience
+ * against the project's own client ids, the expiry, and `nonceDigest` against the token's
+ * `nonce`. A token from a sign-in this project did not start fails the last two.
+ */
+export interface IdTokenVerifier {
+  verifyIdToken(
+    credentials: ProviderCredentials,
+    idToken: string,
+    nonceDigest: string,
+  ): Promise<ProviderProfile>;
+}
+
+export function verifiesIdTokens(
+  provider: OAuthProvider,
+): provider is OAuthProvider & IdTokenVerifier {
+  return "verifyIdToken" in provider && typeof provider.verifyIdToken === "function";
+}
+
+/**
  * Base for every social provider (PROJECT.md 4.6, 7.2).
  *
  * `completeFlow` is the reason this class exists. Its ordering is inherited and a

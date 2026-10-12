@@ -1,7 +1,8 @@
-import { OauthProviderError } from "@idenzy/core/errors";
+import { IdTokenInvalidError, OauthProviderError } from "@idenzy/core/errors";
 import type { HttpClient } from "@idenzy/core/http/http-client";
 import type { Clock } from "@idenzy/core/time/clock";
 import {
+  type IdTokenVerifier,
   type OAuthFlowStore,
   OAuthProvider,
   type ProviderCredentials,
@@ -10,7 +11,7 @@ import {
   type StoredFlow,
   type TokenGrant,
 } from "@idenzy/domain/ports/oauth-provider";
-import { createRemoteJWKSet, type JWTPayload, jwtVerify } from "jose";
+import { createRemoteJWKSet, errors, type JWTPayload, jwtVerify } from "jose";
 
 /** One JWKS per issuer, cached across requests. Refetching per sign-in is a self-DoS. */
 const keyStores = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -42,7 +43,7 @@ function keysFor(jwksUri: string): ReturnType<typeof createRemoteJWKSet> {
  * Profiles come from the id_token rather than from a userinfo call, which is one fewer
  * round trip on every sign-in and one fewer thing to be unavailable.
  */
-export abstract class OidcProvider extends OAuthProvider {
+export abstract class OidcProvider extends OAuthProvider implements IdTokenVerifier {
   protected constructor(
     http: HttpClient,
     clock: Clock,
@@ -105,6 +106,64 @@ export abstract class OidcProvider extends OAuthProvider {
     this.verified.set(grant, payload);
   }
 
+  /**
+   * An ID token a native sign-in sheet handed the app, checked as thoroughly as one from a
+   * redirect: signature, issuer, audience, expiry, and the nonce (PROJECT.md 4.4).
+   *
+   * The audience is the project's web client id or one of its `nativeAudiences`, because a
+   * native token is minted for the app: an iOS bundle id for Apple, an Android or iOS client
+   * id for Google. A token minted for any other app, however valid, is refused here, which is
+   * what stops one customer's users being signed into another's project.
+   *
+   * A key set that cannot be fetched is the provider failing, not the token, and stays
+   * `OauthProviderError`. Everything else is `IdTokenInvalidError`.
+   */
+  async verifyIdToken(
+    credentials: ProviderCredentials,
+    idToken: string,
+    nonceDigest: string,
+  ): Promise<ProviderProfile> {
+    const { payload } = await jwtVerify(idToken, keysFor(this.jwksUri(credentials)), {
+      audience: [credentials.clientId, ...nativeAudiencesOf(credentials)],
+      clockTolerance: 60,
+    }).catch((error: unknown) => {
+      if (isKeySetFailure(error)) {
+        throw new OauthProviderError({
+          detail: { provider: this.id, reason: "the provider's key set could not be read" },
+          cause: error,
+        });
+      }
+      throw new IdTokenInvalidError({
+        detail: { provider: this.id, reason: "the id_token did not verify" },
+        cause: error,
+      });
+    });
+
+    try {
+      this.assertIssuer(payload, credentials);
+    } catch (error: unknown) {
+      throw new IdTokenInvalidError({
+        detail: { provider: this.id, reason: "the id_token was refused by the issuer check" },
+        cause: error,
+      });
+    }
+    // Required, never optional: a native token with no nonce could have been minted for any
+    // sign-in this app ever made, and replayed.
+    if (typeof payload["nonce"] !== "string" || payload["nonce"] !== nonceDigest) {
+      throw new IdTokenInvalidError({
+        detail: { provider: this.id, reason: "the id_token nonce did not match the one issued" },
+      });
+    }
+    try {
+      return this.mapClaims(payload);
+    } catch (error: unknown) {
+      throw new IdTokenInvalidError({
+        detail: { provider: this.id, reason: "the id_token's claims could not be mapped" },
+        cause: error,
+      });
+    }
+  }
+
   protected override fetchProfile(
     _credentials: ProviderCredentials,
     grant: TokenGrant,
@@ -119,6 +178,28 @@ export abstract class OidcProvider extends OAuthProvider {
     }
     return Promise.resolve(this.mapClaims(claims));
   }
+}
+
+/**
+ * The client ids a project's native apps sign in with, from `oauth_providers.settings`.
+ *
+ * One string because settings are a string map: separated by commas or whitespace, so a
+ * value pasted from a console with a trailing space or a newline still parses.
+ */
+export function nativeAudiencesOf(credentials: ProviderCredentials): string[] {
+  const value = credentials.config["nativeAudiences"];
+  if (typeof value !== "string") return [];
+  return value.split(/[\s,]+/).filter((audience) => audience.length > 0);
+}
+
+/** The JWKS could not be fetched or read, which says nothing about the token. */
+function isKeySetFailure(error: unknown): boolean {
+  return (
+    error instanceof errors.JWKSTimeout ||
+    error instanceof errors.JWKSInvalid ||
+    // A fetch that never completed arrives from jose as the runtime's own TypeError.
+    error instanceof TypeError
+  );
 }
 
 /** Refuses an assertion from anyone but the provider we started the flow with. */

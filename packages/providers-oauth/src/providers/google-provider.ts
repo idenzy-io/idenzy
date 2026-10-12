@@ -57,7 +57,11 @@ export class GoogleProvider extends OidcProvider {
    * outside the domain never becomes a user in the project at all.
    */
   protected override assertIssuer(claims: JWTPayload, credentials: ProviderCredentials): void {
-    assertExactIssuer(claims, "https://accounts.google.com", this.id);
+    // Google documents both spellings as its issuer, and a token from a native sign-in may
+    // carry either. Two exact values, never a pattern.
+    if (claims.iss !== "accounts.google.com") {
+      assertExactIssuer(claims, "https://accounts.google.com", this.id);
+    }
 
     const domain = hostedDomainOf(credentials);
     if (domain === null) return;

@@ -171,7 +171,7 @@ describe("draftFrom", () => {
       clientSecret: "",
       scopes: "",
       customScopes: false,
-      settings: {},
+      settings: { nativeAudiences: "" },
       storeTokens: false,
     });
   });
@@ -191,7 +191,11 @@ describe("draftFrom", () => {
     expect(opened.clientSecret).toBe("");
     expect(opened.customScopes).toBe(true);
     expect(opened.scopes).toBe("openid email");
-    expect(opened.settings).toEqual({ teamId: "9QJ4TZ2P8L", keyId: "K7D2M4XR9V" });
+    expect(opened.settings).toEqual({
+      teamId: "9QJ4TZ2P8L",
+      keyId: "K7D2M4XR9V",
+      nativeAudiences: "",
+    });
   });
 });
 

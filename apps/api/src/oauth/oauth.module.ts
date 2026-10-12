@@ -24,14 +24,18 @@ import { Module } from "@nestjs/common";
 import { SessionModule } from "../session/session.module.js";
 import { DatabaseOAuthFlowStore } from "./database-oauth-flow-store.js";
 import { DatabaseRedirectAllowlist } from "./database-redirect-allowlist.js";
+import { IdTokenController } from "./id-token.controller.js";
+import { IdTokenFlow } from "./id-token.flow.js";
+import { IdTokenNonceService } from "./id-token-nonce-service.js";
 import { OAuthController } from "./oauth.controller.js";
 import { OAuthCodeFlow } from "./oauth-code.flow.js";
 import { OAuthService } from "./oauth-service.js";
 import { OAUTH_PROVIDERS } from "./oauth-tokens.js";
 import { ProviderRegistry } from "./provider-registry.js";
+import { ProviderSignIn } from "./provider-sign-in.js";
 
 /**
- * Social sign-in (PROJECT.md 4.6, 9.2).
+ * Social sign-in (PROJECT.md 4.6, 9.2), through the redirect and through a native ID token (4.4).
  *
  * The linking policy is bound here with auto-linking on, which is the default a customer
  * can turn off per project once project settings reach the panel. It is a constructor
@@ -40,7 +44,7 @@ import { ProviderRegistry } from "./provider-registry.js";
  */
 @Module({
   imports: [SessionModule],
-  controllers: [OAuthController],
+  controllers: [OAuthController, IdTokenController],
   providers: [
     DatabaseOAuthFlowStore,
     DatabaseRedirectAllowlist,
@@ -78,8 +82,11 @@ import { ProviderRegistry } from "./provider-registry.js";
       },
     },
     ProviderRegistry,
+    ProviderSignIn,
     OAuthService,
     OAuthCodeFlow,
+    IdTokenNonceService,
+    IdTokenFlow,
   ],
 })
 export class OAuthModule {}

@@ -58,6 +58,12 @@ export const ErrorCode = {
   OauthStateInvalid: "oauth_state_invalid",
   OauthProviderError: "oauth_provider_error",
   WebauthnAssertionInvalid: "webauthn_assertion_invalid",
+  /**
+   * An ID token from a native sign-in did not verify: its signature, issuer, audience,
+   * expiry or nonce. One code for all of them, like a passkey assertion, and distinct from
+   * `oauth_provider_error`, which is the provider failing rather than the token.
+   */
+  IdTokenInvalid: "id_token_invalid",
 
   // Abuse, quota and spend
   RateLimited: "rate_limited",

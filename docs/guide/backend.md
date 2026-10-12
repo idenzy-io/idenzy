@@ -169,6 +169,39 @@ of minting a token cannot leave a project's claims out. That read is a primary-k
 a tiny table; the project-config cache PROJECT.md 4.2 assumes is what removes it, and nothing
 else wants one yet.
 
+## Working on native sign-in (the ID-token exchange)
+
+`POST v1/auth/id-token/nonce` then `POST v1/auth/id-token`: an ID token from Apple's or Google's
+own sign-in sheet, exchanged for a session (PROJECT.md 4.4). There is no redirect, so state, the
+code and the allowlisted callback are all absent, and the token has to carry everything they
+proved. Five rules.
+
+- **The nonce is ours, and it is spent first.** The app asks us for one, gives its SHA-256 to
+  the sheet, and sends the nonce back with the token. `IdTokenNonceRepository.claim` is a delete,
+  one statement, before the token is looked at, so a nonce is worth one attempt whatever the
+  attempt turns out to be. An app-made nonce would prove only that the token is whatever the app
+  says it is. The table holds digests, and the next issue for a project clears its expired rows,
+  which is why it needs no sweep of its own.
+- **The audience is the project's own client ids and nothing wider.** `verifyIdToken` accepts
+  the provider's `clientId` or one of `settings.nativeAudiences`: an iOS bundle id for Apple, an
+  iOS client id for Google (Credential Manager mints for the web client id, which is `clientId`).
+  A valid token minted for another app is refused, which is what stops one customer's users being
+  signed into another's project. Instant mode is refused outright for the same reason: our shared
+  apps have no native client ids.
+- **A key set that cannot be fetched is `oauth_provider_error`, not `id_token_invalid`.** The same
+  distinction `@idenzy/node` draws: a token that could not be checked is not a bad token, and
+  answering "invalid" for an Apple outage would send users to a sign-in that cannot work.
+- **The account is resolved by `ProviderSignIn`, which the redirect flow uses too.** The linking
+  policy is the IdP takeover defence (PROJECT.md 4.6), and a second copy of it for native tokens
+  is how one of the two ways in would one day link on an unverified address.
+  `id-token.integration.test.ts` presents exactly that attack.
+- **`displayName` from the app is display text for a new account.** Apple shows the app the
+  user's name once and never puts it in the token. It names an account being created and is
+  ignored for one that exists.
+
+The cryptography is tested against real signed tokens in `@idenzy/providers-oauth`
+(`native-id-token.test.ts`); the database half, against a provider that stands in at the seam.
+
 ## Adding a provider, factor or channel
 
 Extend the family's abstract base in `@idenzy/domain/ports` and implement only what

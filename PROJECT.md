@@ -281,7 +281,7 @@ One threat class is **absent by construction**: we render no HTML on any custome
 
 - Tokens in **Keychain (iOS, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`)**, **Android Keystore-encrypted storage**, Expo SecureStore, and Unity/Godot via platform-native plugins (fallback: encrypted file with an OS-provided key).
 - OAuth via **ASWebAuthenticationSession** and **Custom Tabs** with **PKCE**, never embedded WebViews.
-- **Native Sign in with Apple and Google** through an ID-token exchange endpoint that verifies nonce, audience and issuer.
+- **Native Sign in with Apple and Google** through an ID-token exchange endpoint that verifies nonce, audience and issuer. The nonce is issued by us and spent once (`POST v1/auth/id-token/nonce`), the platform sheet signs its digest into the token, and the audience must be one of the project's own client ids: the provider's, or the bundle and client ids listed as its native apps.
 - **App attestation** (App Attest, Play Integrity) as an optional gate for sensitive endpoints such as sign-up and SMS send. This massively reduces SMS pumping and bot sign-ups on mobile.
 - Optional **device-bound refresh tokens**: the SDK generates a key pair in the Secure Enclave or Keystore and signs refresh requests. A stolen refresh token without the device key is useless.
 - Universal Links and App Links for magic-link returns and OAuth returns.

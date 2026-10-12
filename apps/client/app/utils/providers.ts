@@ -167,7 +167,16 @@ export const PROVIDERS: readonly ProviderInfo[] = [
       "Google asserts that the address is verified, so an existing account on it is joined.",
     defaultScopes: ["openid", "email", "profile"],
     note: "The account chooser is always shown. Without it, somebody signed into several Google accounts is taken through whichever the browser prefers, which is not the one they thought they picked.",
-    fields: [],
+    fields: [
+      {
+        key: "nativeAudiences",
+        label: "Native app client IDs",
+        placeholder: "1234-ios.apps.googleusercontent.com",
+        hint: "For sign-in from your iOS app with Google's SDK: its iOS client ID. Android's Credential Manager uses the web client ID above. Separate several with commas.",
+        issue: "Client IDs from the same Google Cloud project, separated by commas.",
+        required: false,
+      },
+    ],
     secret: CLIENT_SECRET,
     console: {
       label: "Google Cloud credentials",
@@ -204,6 +213,14 @@ export const PROVIDERS: readonly ProviderInfo[] = [
         hint: "The identifier of the Sign in with Apple key the .p8 file belongs to.",
         issue: "The Key ID printed beside the .p8 download.",
         required: true,
+      },
+      {
+        key: "nativeAudiences",
+        label: "App bundle IDs",
+        placeholder: "com.example.app",
+        hint: "For the native Sign in with Apple sheet: the bundle ID of each app that shows it. A token minted for any other app is refused. Separate several with commas.",
+        issue: "Bundle IDs, separated by commas.",
+        required: false,
       },
     ],
     secret: {

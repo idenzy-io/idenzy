@@ -344,6 +344,21 @@ export class WebauthnAssertionInvalidError extends BadRequestError {
   }
 }
 
+/**
+ * An ID token from a native Sign in with Apple or Google did not verify.
+ *
+ * One error for every way it can fail, for the reason a passkey assertion has one: the
+ * caller holds a token and either it proves who they are or it does not. Which check
+ * refused it stays in `detail`. A provider whose key set cannot be fetched is not this
+ * error but `OauthProviderError`: a token that could not be checked is not a bad token.
+ */
+export class IdTokenInvalidError extends BadRequestError {
+  override readonly code = ErrorCode.IdTokenInvalid;
+  constructor(options: ErrorOptions = {}) {
+    super(options.message ?? "That sign-in could not be verified.", options);
+  }
+}
+
 /** Exact-match allowlist failure. Never echo the offending URI back (open-redirect bait). */
 export class RedirectUriNotAllowedError extends BadRequestError {
   override readonly code = ErrorCode.RedirectUriNotAllowed;

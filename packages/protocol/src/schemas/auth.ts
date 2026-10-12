@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Channel } from "../enums/delivery.js";
+import { ProviderId } from "../enums/providers.js";
 import { emailSchema, isoDateTimeSchema, passwordSchema, phoneSchema } from "./common.js";
 
 export const signUpWithPasswordSchema = z.object({
@@ -170,6 +171,43 @@ export const magicLinkCallbackSchema = z.object({
   token: z.string().min(20),
 });
 
+/**
+ * The providers whose ID tokens a native app may exchange for a session (PROJECT.md 4.4).
+ *
+ * Two, because those are the two with a platform sign-in sheet: Sign in with Apple on Apple
+ * devices, and Google through Credential Manager on Android or Google's SDK on iOS. Every
+ * other provider is reached through the system browser with the OAuth flow above.
+ */
+export const NATIVE_ID_TOKEN_PROVIDERS = [ProviderId.Apple, ProviderId.Google] as const;
+export type NativeIdTokenProvider = (typeof NATIVE_ID_TOKEN_PROVIDERS)[number];
+
+/**
+ * A nonce for one native sign-in, issued by us and spent once.
+ *
+ * The app hands its SHA-256 (lowercase hex) to Apple or Google, which sign it into the ID
+ * token, and sends the nonce itself back with the token. A token copied off the device
+ * carries only the digest, so it cannot be redeemed without the value this app holds, and
+ * one already redeemed cannot be redeemed again.
+ */
+export const idTokenNonceSchema = z.object({
+  nonce: z.string(),
+  expiresAt: isoDateTimeSchema,
+});
+
+/**
+ * Exchanges a native ID token for a session.
+ *
+ * `displayName` is the one thing the token cannot carry: Apple gives an app the user's name
+ * on the first authorization only, and never in the token. It is display text, used when
+ * the exchange creates an account and ignored otherwise; nothing is decided from it.
+ */
+export const exchangeIdTokenSchema = z.object({
+  provider: z.enum(NATIVE_ID_TOKEN_PROVIDERS),
+  idToken: z.string().min(1).max(8192),
+  nonce: z.string().min(43).max(128),
+  displayName: z.string().trim().min(1).max(200).optional(),
+});
+
 /** Turns an anonymous account into a real one, keeping the same user id and its data. */
 export const upgradeAnonymousSchema = z.object({
   email: emailSchema,
@@ -196,3 +234,5 @@ export type AuthorizationStarted = z.infer<typeof authorizationStartedSchema>;
 export type StartMagicLink = z.infer<typeof startMagicLinkSchema>;
 export type MagicLinkCallback = z.infer<typeof magicLinkCallbackSchema>;
 export type UpgradeAnonymous = z.infer<typeof upgradeAnonymousSchema>;
+export type IdTokenNonce = z.infer<typeof idTokenNonceSchema>;
+export type ExchangeIdToken = z.infer<typeof exchangeIdTokenSchema>;

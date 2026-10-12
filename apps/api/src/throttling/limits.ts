@@ -87,6 +87,15 @@ export const OAUTH_START_LIMITS: RateLimitSpec = {
 };
 
 /**
+ * A native ID-token sign-in, both halves: issuing the nonce writes a row, and the exchange
+ * fetches the provider's keys and may create a user. Address only, because neither half names
+ * a subject until the token has been verified, and by then the provider has done the proving.
+ */
+export const ID_TOKEN_LIMITS: RateLimitSpec = {
+  ip: { limit: 100, windowSeconds: MINUTES_5 },
+};
+
+/**
  * An anonymous session creates a real user row, which makes it a free-tier abuse path.
  * Tighter than the rest because there is no subject to fall back on and nothing else
  * bounds it, and loose enough for the case it exists for: a game signing in its players.

@@ -14,9 +14,9 @@ Idenzy holds no certification. See PROJECT.md 4.13.10 for what is deliberately n
 |---|---|
 | pii | 37 |
 | phi | 0 |
-| secret | 21 |
+| secret | 22 |
 | pseudonymous | 123 |
-| operational | 424 |
+| operational | 428 |
 
 ## `analytics.auth_events`
 
@@ -334,6 +334,20 @@ Notes:
 - `html`: Compiled output, cached by version.
 - `projectId`: Tenant discriminator. Enforced by the repository layer.
 - `updatedBy`: Customer staff identifier, kept for change attribution.
+
+## `id_token_nonces`
+
+| Column | Class | Purpose | Retention | In DSR export | Erasure | Encrypted |
+|---|---|---|---|---|---|---|
+| `createdAt` | operational | account_management | until_account_deletion | no | not_applicable | no |
+| `expiresAt` | operational | authentication | days_30 | no | row_deleted | no |
+| `id` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+| `nonceHash` | secret | authentication | days_30 | no | row_deleted | no |
+| `projectId` | operational | service_configuration | project_lifetime | no | not_applicable | no |
+
+Notes:
+
+- `projectId`: Tenant discriminator. Enforced by the repository layer.
 
 ## `idempotency_keys`
 

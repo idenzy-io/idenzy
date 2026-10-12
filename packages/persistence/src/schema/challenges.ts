@@ -487,3 +487,41 @@ export const authCodes = classifiedTable(
     },
   },
 );
+
+/**
+ * Nonces for native Sign in with Apple and Google (PROJECT.md 4.4).
+ *
+ * The app asks for one, hands its SHA-256 to the platform's sign-in sheet, which signs it into
+ * the ID token, and sends the nonce itself back with the token. The row holds the digest, so the
+ * value that redeems a token is never at rest here, and it is deleted by the exchange that
+ * spends it: claiming is the delete, one statement, so two exchanges racing on one nonce cannot
+ * both proceed.
+ *
+ * It names nobody. A nonce is issued before anybody is known, and the token it ends up in is
+ * verified and forgotten, so there is no subject to locate and nothing to erase. Rows that were
+ * never spent, a sheet the user dismissed, are cleared by the next issue for the same project.
+ */
+export const idTokenNonces = classifiedTable(
+  "id_token_nonces",
+  {
+    id: classified(uuid("id").primaryKey().defaultRandom(), config),
+    projectId: projectIdColumn(() => projects.id),
+    nonceHash: classified(text("nonce_hash").notNull(), {
+      ...credential,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    expiresAt: classified(timestamp("expires_at", { withTimezone: true }).notNull(), {
+      class: DataClass.Operational,
+      purpose: Purpose.Authentication,
+      retention: Retention.Days30,
+      erasure: Erasure.RowDeleted,
+    }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("id_token_nonces_hash_key").on(t.nonceHash),
+    // What the clearing on issue walks: one project's rows, oldest first.
+    index("id_token_nonces_expiry_idx").on(t.projectId, t.expiresAt),
+  ],
+);

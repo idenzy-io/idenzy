@@ -643,7 +643,7 @@ This section is binding. A change that violates it does not get merged, regardle
 
 ### 7.1 Language rules
 
-- **TypeScript only.** No JavaScript source files anywhere in the repo except generated output and config files that cannot be TS.
+- **TypeScript only** for the authentication architecture: the API, the workers, the domain and infrastructure packages, the panels and the TypeScript SDKs. No JavaScript source files there except generated output and config files that cannot be TS. SDKs for other platforms are written in their platform's language; the native ones share a Rust core (ADR-0022).
 - `strict: true`, plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `useUnknownInCatchVariables`, `noFallthroughCasesInSwitch`. These are set once in `tsconfig.base.json`, every package extends it, and a package may not relax them.
 - **`any` is banned** (lint error). Use `unknown` at boundaries, narrowed by a validator. Type assertions (`as`) require a comment justifying why the compiler cannot know.
 - No enums-as-strings drift: domain enums are declared once in `@idenzy/protocol` and reused by server, SDKs and panels.

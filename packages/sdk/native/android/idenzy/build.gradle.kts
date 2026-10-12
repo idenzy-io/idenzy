@@ -24,6 +24,8 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            // Maven Central refuses a release without one, documentation or not.
+            withJavadocJar()
         }
     }
 
@@ -77,6 +79,12 @@ publishing {
             artifactId = "idenzy-android"
             version = "0.1.0"
             afterEvaluate { from(components["release"]) }
+            pom {
+                name.set("Idenzy for Android")
+                description.set("Sign-in, sessions and MFA for Android, with the session in the Keystore and the refresh rules in a shared Rust core. Headless: every screen is yours.")
+            }
         }
     }
 }
+
+apply(from = rootProject.file("gradle/publishing.gradle.kts"))

@@ -19,6 +19,8 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            // Maven Central refuses a release without one, documentation or not.
+            withJavadocJar()
         }
     }
 }
@@ -48,6 +50,12 @@ publishing {
             artifactId = "idenzy-lynx"
             version = "0.1.0"
             afterEvaluate { from(components["release"]) }
+            pom {
+                name.set("Idenzy for Lynx")
+                description.set("The Lynx native module that carries @idenzy/lynx to the Idenzy Android SDK.")
+            }
         }
     }
 }
+
+apply(from = rootProject.file("gradle/publishing.gradle.kts"))

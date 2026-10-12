@@ -5,7 +5,9 @@ Pod::Spec.new do |s|
   s.homepage = 'https://github.com/idenzy-io/idenzy'
   s.license = { :type => 'MIT' }
   s.authors = 'Idenzy'
-  s.source = { :git => 'https://github.com/idenzy-io/idenzy.git', :tag => "v#{s.version}" }
+  # The release zip scripts/package-apple.sh writes, which carries the generated sources and the
+  # XCFramework the repository does not; an app naming the pod by :path ignores this.
+  s.source = { :http => "https://github.com/idenzy-io/idenzy/releases/download/v#{s.version}/idenzy-apple-#{s.version}.zip" }
   s.platforms = { :ios => '15.0' }
   s.swift_version = '5.9'
   s.source_files = 'Sources/Idenzy/**/*.swift'

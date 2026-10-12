@@ -17,10 +17,10 @@ buildscript {
 allprojects {
     repositories {
         google()
+        // The Android SDK. While it is developed here, the example app adds mavenLocal() for the
+        // copy `./gradlew :idenzy:publishToMavenLocal` puts there; a published plugin must not add
+        // it to every app that installs it.
         mavenCentral()
-        // The Android SDK, until it is on Maven Central: `scripts/build-android.sh` then
-        // `./gradlew :idenzy:publishToMavenLocal` in packages/sdk/native/android.
-        mavenLocal()
     }
 }
 

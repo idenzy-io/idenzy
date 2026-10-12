@@ -148,9 +148,11 @@ adding a column, an error or a test. Read alongside [PROJECT.md](../../PROJECT.m
 ## Adding an error
 
 Add the code to `@idenzy/protocol/errors/codes`, then a subclass of the right status
-class in `@idenzy/core/errors`. `throw new Error(...)` is a lint error. Codes are
+class in `@idenzy/core/errors`, then `pnpm native:generate` so the native core knows it too
+(CI's `native:check` fails otherwise). `throw new Error(...)` is a lint error. Codes are
 a public API promise: customers build every user-facing message from them, so renaming
-one is a breaking change.
+one is a breaking change. Adding one is not, and the native SDKs keep that true for an app
+built before the code existed: it arrives there as `Unrecognized`, with the raw code beside it.
 
 ## Storing something a challenge has to read back
 

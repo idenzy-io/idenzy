@@ -36,6 +36,7 @@ pnpm turbo run typecheck build test
 pnpm lint                          # biome, a root script and not a turbo task
 pnpm turbo run test:integration    # Testcontainers, needs Docker
 pnpm compliance:generate           # after any schema change; CI fails if stale
+pnpm native:generate               # after a protocol enum or error code changes; CI fails if stale
 pnpm staff add <email> <role>      # the only way into the operator console (ADR-0018)
 pnpm --silent dev:project --name acme --origin http://acme.localhost:3000
                                    # a customer project + keys for an app built against local Idenzy

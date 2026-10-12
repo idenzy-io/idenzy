@@ -1,0 +1,15 @@
+[package]
+name = "uniffi-bindgen"
+description = "The bindings generator, pinned to the same UniFFI as the core it reads."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "main.rs"
+
+[dependencies]
+uniffi = { workspace = true, features = ["cli"] }

@@ -1,0 +1,12 @@
+# How the generated bindings are named. The hand-written SDKs (`Idenzy` in Swift, `io.idenzy` in
+# Kotlin) are what a customer imports; these modules sit underneath them.
+
+[bindings.swift]
+module_name = "IdenzyCore"
+ffi_module_name = "IdenzyCoreFFI"
+generate_immutable_records = true
+
+[bindings.kotlin]
+package_name = "io.idenzy.core"
+generate_immutable_records = true
+android = true

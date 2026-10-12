@@ -1,0 +1,5 @@
+# One toolchain for every developer and every CI job. The cross-compilation targets are not listed
+# here: rustup would install all nine for every job, so the build scripts add the ones they build.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

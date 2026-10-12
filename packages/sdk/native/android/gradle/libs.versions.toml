@@ -1,0 +1,30 @@
+# Exact versions only, like the pnpm catalog and the Cargo workspace (PROJECT.md 7.6).
+[versions]
+agp = "9.4.1"
+# The oldest Kotlin an app may compile with is the one these bind us to. AndroidX's Credential
+# Manager and Browser need stdlib 2.1.20, so 2.1 is the floor, and coroutines 1.10 is built for it.
+# React Native 0.83 compiles with Kotlin 2.1.
+kotlin-floor = "2.1.20"
+# The compiler is newer than the floor, and only the compiler: Google's googleid is itself compiled
+# with Kotlin 2.4 metadata, which no older compiler can read. What we emit stays at the floor.
+kotlin-compiler = "2.4.21"
+coroutines = "1.10.2"
+jna = "5.19.1"
+browser = "1.10.0"
+credentials = "1.6.0"
+googleid = "1.2.1"
+junit = "4.13.2"
+
+[libraries]
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin-compiler" }
+coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "browser" }
+androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
+androidx-credentials-play = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
+googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }

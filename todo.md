@@ -1232,7 +1232,15 @@ template pipeline of its own rather than a branch in the OTP flow.
 - [ ] The project-config cache PROJECT.md 4.2 assumes. Applying a template is one
       primary-key read per token today, which is honest but is not nothing on the refresh
       path. Nothing else wants a cache yet, so it waits until something does
-- [ ] Flutter, iOS, Android and React Native SDKs. Vue and SvelteKit landed in phase 1
+- [~] Flutter, iOS, Android and React Native SDKs. Vue and SvelteKit landed in phase 1. The
+      shared Rust core and the Swift and Kotlin SDKs on it are in (ADR-0022): password, OTP,
+      magic link, OAuth through the system browser, anonymous, MFA and step-up, account and
+      sessions, with the refresh rules tested by removing each one. Native Sign in with Apple
+      and Google is in too, over `POST v1/auth/id-token` with a server-issued nonce, and so is
+      Flutter (`idenzy_flutter`), React Native/Expo (`@idenzy/react-native`) and Lynx
+      (`@idenzy/lynx`), all on one bridge, the two JavaScript ones on one client
+      (`@idenzy/native-js`), and all three run on an iOS simulator and an Android emulator. Not
+      yet: passkeys, publishing, and the NativeScript and Capacitor bridges
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
 - [~] Billing on Stripe, metered against usage. The schema half is in: the wallet, the
@@ -1679,8 +1687,8 @@ working, so the split below is by which question is being asked, not by which sc
       `emitDecoratorMetadata`. Pinned to 6.0.x; revisit when the Nest toolchain moves.
 - [ ] Node version policy: pin to the active LTS line, or track Current for the performance work
       (§16.10).
-- [ ] Native SDK repositories (Swift, Kotlin, Dart) as git submodules. SPM, Maven and pub.dev expect
-      a repository root, which argues for splitting them out at Phase 2 (§16.9).
+- [x] ~~Native SDK repositories (Swift, Kotlin, Dart) as git submodules.~~ Resolved: they live here
+      (§16.8, ADR-0022). Only SwiftPM needs a repository root, so its release gets a thin mirror.
 - [ ] Table partitioning migrations are hand-authored, since `drizzle-kit` does not generate them
       (§9.4). Keep them in the numbered sequence and review them as SQL.
 - [ ] Open decisions 1 to 9 in §16, to be closed before Phase 0 ends. Number 2, the launch

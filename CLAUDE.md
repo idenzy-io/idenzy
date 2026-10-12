@@ -56,6 +56,7 @@ It is a development convenience and not the production image, which is `deploy/D
 | the toolchain, a migration, a column, an error code, a test | [docs/guide/repo.md](./docs/guide/repo.md) |
 | the API — a flow, MFA, passkeys, claims, SMS, revocation, the audit trail, webhook delivery, billing and the automatic top-up, the dashboard endpoints | [docs/guide/backend.md](./docs/guide/backend.md) |
 | `@idenzy/js`, a framework binding, an SSR helper, `@idenzy/node`, the CLI | [docs/guide/sdk.md](./docs/guide/sdk.md) |
+| `packages/sdk/native` — the Rust core, the Swift or Kotlin SDK, a mobile framework bridge | [docs/adr/0022-native-sdks-share-a-rust-core.md](./docs/adr/0022-native-sdks-share-a-rust-core.md), then [docs/guide/native.md](./docs/guide/native.md) |
 | `apps/client` generally — its stack, shared components, charts, code blocks | [docs/guide/panel.md](./docs/guide/panel.md) |
 | one screen of the panel | its `notes/` file, then [docs/guide/panel-screens.md](./docs/guide/panel-screens.md) |
 | `deploy/`, the production stack, Terraform, or anything about how it runs in production | [docs/guide/deploy.md](./docs/guide/deploy.md) |

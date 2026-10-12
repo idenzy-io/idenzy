@@ -216,7 +216,7 @@ Because we ship no components, an SDK's job is small and precisely specified: dr
 
 Every SDK follows the same lifecycle: `init(publishableKey) → signIn* → session events → getToken() → signOut()`; identical error codes; identical storage security rules (Keychain / Keystore / SecureStore / HttpOnly cookies).
 
-Because our backend is TypeScript, the **Node server SDK and the Nuxt/Next SSR helpers share the exact protocol types** exported by `@idenzy/protocol` (§8), the same compiled definitions the server uses to validate requests. Non-TS SDKs are generated from the same OpenAPI document, so the JS advantage is convenience, never a behavioural divergence.
+Because our backend is TypeScript, the **Node server SDK and the Nuxt/Next SSR helpers share the exact protocol types** exported by `@idenzy/protocol` (§8), the same compiled definitions the server uses to validate requests. Non-TS SDKs are generated from the same OpenAPI document, so the JS advantage is convenience, never a behavioural divergence. The exception is the session itself: the native SDKs (Swift, Kotlin, and every mobile framework bridged over them) share one Rust core that holds the protocol and the refresh rules, with its enums generated from `@idenzy/protocol` and checked in CI (ADR-0022).
 
 **Starter templates, not components.** Each Tier-1 SDK ships with a `examples/` directory and a `idenzy init` template containing working sign-in, sign-up, OTP and OAuth routes written in that framework's idiom. The customer copies them into their repository and owns them outright. This is documentation with a build step, not a published component. The distinction that keeps §1.1 honest is that we never ship a versioned artifact whose job is to render auth UI.
 
@@ -806,6 +806,14 @@ idenzy/
 │       │   ├── svelte/                               (public), plus /server, the SvelteKit handle
 │       │   ├── next/  nuxt/                          (public), bindings that also render on a server
 │       │   └── astro/  remix/                        (public), the SSR seed alone, no browser half
+│       ├── native/               # Rust core, the Swift and Kotlin SDKs on it, and every mobile framework over those (ADR-0022)
+│       │   ├── core/             # idenzy-native: protocol and session state machine, no I/O, exported by UniFFI
+│       │   ├── apple/            # Swift package `Idenzy`: URLSession, Keychain, ASWebAuthenticationSession
+│       │   ├── android/          # Gradle library `io.idenzy`: HttpURLConnection, Keystore, Custom Tabs
+│       │   ├── flutter/          # idenzy_flutter: a channel carrier over the platform SDKs' bridge
+│       │   ├── js/               # @idenzy/native-js (public), the JavaScript client the three below share
+│       │   ├── react-native/     # @idenzy/react-native (public), an Expo module over the same bridge
+│       │   └── lynx/             # @idenzy/lynx (public), a Lynx native module over the same bridge
 │       └── server/               # runs on a server. Verifies tokens, never holds a session.
 │           ├── node/             # @idenzy/node       (public, server SDK)
 │           └── nest/             # @idenzy/nest       (public, guards + module for customers on NestJS)

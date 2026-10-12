@@ -1243,8 +1243,9 @@ template pipeline of its own rather than a branch in the OTP flow.
       all on one bridge, the four JavaScript ones on one client (`@idenzy/native-js`), and all five
       run on an iOS simulator and an Android emulator. Native passkeys are in the SDKs, and the
       relying party finally has a management route that takes Android app origins; a ceremony
-      has not run on a device, which needs a domain serving the association files. Not yet:
-      publishing
+      has not run on a device, which needs a domain serving the association files. Publishing
+      is prepared to the point of the uploads, which need the accounts and secrets native.md's
+      "Releasing" lists; nothing native is published yet
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
 - [~] Billing on Stripe, metered against usage. The schema half is in: the wallet, the

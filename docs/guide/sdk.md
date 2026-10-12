@@ -302,7 +302,9 @@ dependency and the only honest way to promise a fast integration while shipping 
 
 Fourteen packages are published to npm under MIT: `@idenzy/protocol`, `@idenzy/core`,
 `@idenzy/js`, `@idenzy/node`, every framework binding (`vue`, `nuxt`, `react`, `next`, `angular`,
-`astro`, `remix`, `solid`, `svelte`) and `@idenzy/cli`. Each has a README and a LICENSE of its
+`astro`, `remix`, `solid`, `svelte`) and `@idenzy/cli`. The five native JavaScript packages
+(`@idenzy/native-js` and its framework carriers) share the group's version and are `private` until
+the native SDKs they load are published; docs/guide/native.md, "Releasing", has the order. Each has a README and a LICENSE of its
 own, since npm shows the package's and not the repository's. `@idenzy/sdk-conformance` and
 everything outside `packages/sdk` stay `private`.
 

@@ -440,7 +440,69 @@ to the platform as WebAuthn JSON, send back what it produces. `Idenzy.addPasskey
   asserted with an Android origin, accepted where the project lists it and refused where it
   does not (`passkey.integration.test.ts`, with the real software authenticator).
 
+## Releasing
+
+Nothing native has been published. Everything up to the upload is in place and checked; the
+uploads need accounts and secrets that only the project's owner can create, listed below.
+
+**One version, the fixed group's.** The five JavaScript packages are in the Changesets `fixed`
+group with the web SDKs, and `native:generate` writes their version into every native file that
+states one: Cargo, both Gradle publications, the three podspecs, the pubspec, the Flutter and
+Capacitor manifests' mirror pin, and every Gradle line that asks for `io.idenzy:idenzy-android`.
+`release.yml` runs it after `changeset version`, and `native:check` fails CI on a file it missed,
+because a module asking Maven for an Android SDK one version off its own installs and then fails.
+
+**The order is fixed by what loads what.** The npm packages and the pub.dev one load the native
+SDKs at their own version, so the native SDKs go first. On a run of `release.yml` that publishes,
+`plan` checks whether the GitHub release `v<version>` exists; if not, `release-native.yml` runs and
+npm waits for it, and with `PUBLISH_NATIVE` unset that run refuses rather than publish modules
+that load nothing.
+
+- **Apple**: `scripts/build-apple.sh` then `scripts/package-apple.sh` write `target/apple-release`.
+  The zips go on the release `v<version>`; the pods' `:http` source and the mirror's binary target
+  both point there. The mirror is `idenzy-io/idenzy-swift`, because SwiftPM needs `Package.swift`
+  at a repository's root; the script writes its `Package.swift` from `apple/Package.swift`, with
+  the binary by URL and checksum and without the tests. Pods go to trunk in dependency order with
+  `--synchronous`.
+- **Android**: `scripts/build-android.sh` (every ABI), then the two publications into
+  `android/build/central`, signed when `SIGNING_KEY` is set, zipped without `maven-metadata.xml`
+  and uploaded to the Central Portal's API. `gradle/publishing.gradle.kts` is the POM, the signing
+  and that directory, applied by both modules; AGP's `withJavadocJar()` makes the javadoc jar
+  Central requires.
+- **Flutter**: `release-flutter.yml`, on a pushed tag `idenzy_flutter-v<version>`, which is the
+  only trigger pub.dev's automated publishing trusts.
+- **Capacitor's and Flutter's Swift manifests** use the Swift SDK beside them when it is there,
+  which is only in this repository, and the mirror at the release's version otherwise. A manifest
+  may ask the file system that (checked: `swift package dump-package` gives the path here and the
+  mirror from a copy with nothing beside it).
+
+What has to exist before the first native release, all of it the owner's:
+
+1. **Maven Central**: a Central Portal account, the `io.idenzy` namespace verified through a DNS
+   TXT record on `idenzy.io`, and a user token (`CENTRAL_TOKEN_USERNAME`, `CENTRAL_TOKEN_PASSWORD`).
+   An RSA PGP key, its public half on `keys.openpgp.org`, as `SIGNING_KEY` (armored) and
+   `SIGNING_PASSWORD`.
+2. **CocoaPods**: `pod trunk register` for the owner's address, and the session token as
+   `COCOAPODS_TRUNK_TOKEN`. `IdenzyCore`, `Idenzy` and `IdenzyBridge` are unclaimed.
+3. **The mirror**: an empty `idenzy-io/idenzy-swift`, and a fine-grained token with contents
+   write on it as `SWIFT_MIRROR_TOKEN`.
+4. **pub.dev**: the first publish by hand (`flutter pub publish` from the plugin), then automated
+   publishing configured on the package for this repository and `idenzy_flutter-v{{version}}`.
+5. `PUBLISH_NATIVE=true`, beside the `PUBLISH` the npm release already uses.
+
+Then, to go public: remove `"private": true` from the five packages and `publish_to: none` from
+the pubspec, have NativeScript's `platforms/ios/Podfile` name `IdenzyBridge` at the version (and
+the example stop naming it by path, or CocoaPods refuses the two sources), and merge. The next
+release run publishes the native SDKs and then npm; push the Flutter tag after it.
+
+What was checked without uploading anything: the Maven bundle's layout, POM, javadoc and sources
+jars and checksums, and that JNA stays an `aar`; that signing runs when a key is present (not
+with a real key: no gpg-agent could start where this was written); all three pods linted against
+the release zip (`IdenzyCore` downloading it from a `file://` URL, the other two built from its
+contents with `pod lib lint`); the mirror's manifest; `flutter pub publish --dry-run`
+with no warnings; and every npm tarball's contents. What only a real run can check: the Central
+Portal accepting the bundle, trunk accepting the pods, and pub.dev's automated publishing.
+
 ## Not built yet
 
-App Attest and Play Integrity, and publishing: npm, Maven Central, CocoaPods trunk, pub.dev and
-the Swift Package Manager mirror.
+App Attest and Play Integrity.

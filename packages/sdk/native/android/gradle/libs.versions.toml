@@ -14,6 +14,10 @@ browser = "1.10.0"
 credentials = "1.6.0"
 googleid = "1.2.1"
 junit = "4.13.2"
+# The Lynx module compiles against it and ships without it: the app has its own Lynx.
+lynx = "4.1.0"
+# Lynx's JavaScript engine, for the Lynx example's host app only.
+primjs = "4.1.1"
 
 [libraries]
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin-compiler" }
@@ -25,6 +29,12 @@ androidx-credentials = { module = "androidx.credentials:credentials", version.re
 androidx-credentials-play = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 junit = { module = "junit:junit", version.ref = "junit" }
+lynx = { module = "org.lynxsdk.lynx:lynx", version.ref = "lynx" }
+lynx-jssdk = { module = "org.lynxsdk.lynx:lynx-jssdk", version.ref = "lynx" }
+lynx-trace = { module = "org.lynxsdk.lynx:lynx-trace", version.ref = "lynx" }
+lynx-service-log = { module = "org.lynxsdk.lynx:lynx-service-log", version.ref = "lynx" }
+primjs = { module = "org.lynxsdk.lynx:primjs", version.ref = "primjs" }
 
 [plugins]
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-application = { id = "com.android.application", version.ref = "agp" }

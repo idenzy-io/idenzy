@@ -4,6 +4,7 @@ packages:
   - packages/sdk/client/*
   - packages/sdk/server/*
   - packages/sdk/native/js
+  - packages/sdk/native/lynx
   - packages/sdk/native/react-native
   - tools/*
 

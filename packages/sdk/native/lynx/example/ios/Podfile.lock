@@ -1,0 +1,92 @@
+PODS:
+  - Idenzy (0.1.0):
+    - IdenzyCore (= 0.1.0)
+  - IdenzyBridge (0.1.0):
+    - Idenzy (= 0.1.0)
+  - IdenzyCore (0.1.0)
+  - IdenzyLynx (0.1.0):
+    - IdenzyBridge
+    - Lynx/Framework
+  - Lynx/Framework (4.1.0):
+    - Lynx/Gfx
+    - Lynx/ReleaseResource
+    - LynxBase/Framework
+    - LynxServiceAPI
+    - PrimJS/napi/env
+    - PrimJS/napi/jsc
+    - PrimJS/napi/quickjs
+    - PrimJS/quickjs (= 4.1.1)
+  - Lynx/Gfx (4.1.0):
+    - LynxBase/Framework
+  - Lynx/ReleaseResource (4.1.0)
+  - LynxBase/Framework (4.1.0):
+    - LynxServiceAPI/Core
+  - LynxServiceAPI (4.1.0):
+    - LynxServiceAPI/Core (= 4.1.0)
+    - LynxServiceAPI/Native (= 4.1.0)
+  - LynxServiceAPI/Core (4.1.0):
+    - LynxServiceAPI/Native
+  - LynxServiceAPI/Native (4.1.0)
+  - PrimJS/log (4.1.1)
+  - PrimJS/napi (4.1.1):
+    - PrimJS/napi/adapter (= 4.1.1)
+    - PrimJS/napi/core (= 4.1.1)
+    - PrimJS/napi/env (= 4.1.1)
+    - PrimJS/napi/jsc (= 4.1.1)
+    - PrimJS/napi/quickjs (= 4.1.1)
+  - PrimJS/napi/adapter (4.1.1):
+    - PrimJS/napi/core
+    - PrimJS/napi/env
+  - PrimJS/napi/core (4.1.1)
+  - PrimJS/napi/env (4.1.1):
+    - PrimJS/napi/core
+  - PrimJS/napi/jsc (4.1.1):
+    - PrimJS/log
+    - PrimJS/napi/core
+    - PrimJS/quickjs
+  - PrimJS/napi/quickjs (4.1.1):
+    - PrimJS/napi/core
+    - PrimJS/quickjs
+  - PrimJS/quickjs (4.1.1):
+    - PrimJS/log
+
+DEPENDENCIES:
+  - Idenzy (from `../../../apple`)
+  - IdenzyBridge (from `../../../apple`)
+  - IdenzyCore (from `../../../apple`)
+  - IdenzyLynx (from `../../../lynx/ios`)
+  - Lynx/Framework (= 4.1.0)
+  - PrimJS/napi (= 4.1.1)
+  - PrimJS/quickjs (= 4.1.1)
+
+SPEC REPOS:
+  https://github.com/lynx-family/Specs.git:
+    - Lynx
+    - LynxBase
+    - LynxServiceAPI
+  trunk:
+    - PrimJS
+
+EXTERNAL SOURCES:
+  Idenzy:
+    :path: "../../../apple"
+  IdenzyBridge:
+    :path: "../../../apple"
+  IdenzyCore:
+    :path: "../../../apple"
+  IdenzyLynx:
+    :path: "../../../lynx/ios"
+
+SPEC CHECKSUMS:
+  Idenzy: 807f5802fb803812db931ed989a282fb87bafc11
+  IdenzyBridge: 57a67eb866f266769e35e870b9fd1819c323bf16
+  IdenzyCore: a188914d8407c4bc084a416b25f42c0282d4c6bb
+  IdenzyLynx: ab3146a7011d867d15bab13be29fb54baba63ecf
+  Lynx: b9a0812cb5b0f1ff6efba8cc1d1d5c094a23f632
+  LynxBase: 4d2fdb403f161e8fce8af3db8bddee50c8f1fe3e
+  LynxServiceAPI: 79446ba6dcea4353b8e2e5b77ec9f34603c0a054
+  PrimJS: 2bb7f0e0c314cc81f6dc53aa814082b66f149e7c
+
+PODFILE CHECKSUM: 97b32ab30879170de2d13d1c4ddec77baad32cd1
+
+COCOAPODS: 1.16.2

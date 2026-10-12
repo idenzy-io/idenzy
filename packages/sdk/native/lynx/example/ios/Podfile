@@ -1,0 +1,36 @@
+# Lynx's pods as its integration guide lists them, and Idenzy's four by path until they are on
+# CocoaPods trunk. Run with `bundle exec pod install`; see the Gemfile beside this.
+LYNX_SPECS = 'https://github.com/lynx-family/Specs.git'
+
+source LYNX_SPECS
+source 'https://cdn.cocoapods.org/'
+
+platform :ios, '16.0'
+
+# Relative, so Podfile.lock records the same paths on every machine.
+native = '../../..'
+
+target 'IdenzyLynxExample' do
+  pod 'Lynx', '4.1.0', :source => LYNX_SPECS, :subspecs => ['Framework']
+  pod 'PrimJS', '4.1.1', :subspecs => ['quickjs', 'napi']
+
+  pod 'IdenzyCore', :path => "#{native}/apple"
+  pod 'Idenzy', :path => "#{native}/apple"
+  pod 'IdenzyBridge', :path => "#{native}/apple"
+  pod 'IdenzyLynx', :path => "#{native}/lynx/ios"
+end
+
+# From Lynx's own guide: Xcode 26 turns warnings in the Lynx pod into errors otherwise.
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      disable = ['-Wno-error', '-Wno-c99-designator', '-Wno-deprecated-declarations', '-Wno-deprecated-implementations']
+      ['OTHER_CPLUSPLUSFLAGS', 'OTHER_CFLAGS'].each do |key|
+        flags = config.build_settings[key] || ['$(inherited)']
+        flags = [flags] unless flags.is_a?(Array)
+        config.build_settings[key] = flags + disable
+      end
+    end
+  end
+end

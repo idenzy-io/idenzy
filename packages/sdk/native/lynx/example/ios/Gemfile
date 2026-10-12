@@ -1,0 +1,7 @@
+source 'https://rubygems.org'
+
+# CocoaPods for `pod install`, pinned here rather than taken from the machine. ActiveSupport 7.2,
+# which CocoaPods loads, still passes `quirks_mode` to JSON.generate, and json 3 removed it: a
+# globally installed json 3 turns every `pod install` into an ArgumentError.
+gem 'cocoapods', '1.16.2'
+gem 'json', '< 3'

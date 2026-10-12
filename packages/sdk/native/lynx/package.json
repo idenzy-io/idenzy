@@ -1,0 +1,51 @@
+{
+  "name": "@idenzy/lynx",
+  "version": "0.1.0",
+  "description": "Idenzy for Lynx: the native module that carries @idenzy/native-js to the native iOS and Android SDKs.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "lynx",
+    "reactlynx"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/native/lynx"
+  },
+  "type": "module",
+  "main": "./dist/idenzy-lynx.js",
+  "types": "./dist/idenzy-lynx.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/idenzy-lynx.d.ts",
+      "default": "./dist/idenzy-lynx.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "ios/*.h",
+    "ios/*.m",
+    "ios/*.podspec"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@idenzy/native-js": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

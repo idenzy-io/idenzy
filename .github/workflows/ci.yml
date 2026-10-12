@@ -66,10 +66,11 @@ jobs:
       - name: Starter templates are current
         run: pnpm examples:check
 
-      # The native core's enums and wire constants are generated from @idenzy/protocol. A protocol
-      # change that did not regenerate them reaches every mobile SDK as a silent divergence
-      # (ADR-0022).
-      - name: Native protocol enums are current
+      # The native core's enums and wire constants are generated from @idenzy/protocol, and the
+      # SDK's version is written into every native file that states it. A protocol change that
+      # did not regenerate them reaches every mobile SDK as a silent divergence (ADR-0022), and a
+      # version bump that reached npm and not Maven ships a module asking for an SDK it is not.
+      - name: Native protocol enums and versions are current
         run: pnpm native:check
 
   native-core:

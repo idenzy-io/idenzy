@@ -11,6 +11,7 @@ import { Channel } from "@idenzy/protocol/enums/delivery";
 import { ErrorCode } from "@idenzy/protocol/errors/codes";
 import { IdenzyHeader, SessionTransport } from "@idenzy/protocol/http/headers";
 import { ApiKeyPrefix } from "@idenzy/protocol/schemas/common";
+import { versionTargets } from "./version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..");
@@ -186,20 +187,27 @@ function lowerCamel(key: string): string {
   return key.charAt(0).toLowerCase() + key.slice(1);
 }
 
-/** Every file generated from the protocol, and what writes it. */
-const TARGETS: readonly { readonly path: string; readonly render: () => string }[] = [
-  { path: join(native, "core", "src", "protocol", "generated.rs"), render: renderRust },
-  {
-    path: join(native, "flutter", "idenzy_flutter", "lib", "src", "generated", "protocol.dart"),
-    render: renderDart,
-  },
-];
+/**
+ * Every file this writes: the two generated from the protocol, and every file that states the
+ * SDK's version, rewritten in place (version.ts).
+ */
+const TARGETS: readonly { readonly path: string; readonly render: (existing: string) => string }[] =
+  [
+    { path: join(native, "core", "src", "protocol", "generated.rs"), render: renderRust },
+    {
+      path: join(native, "flutter", "idenzy_flutter", "lib", "src", "generated", "protocol.dart"),
+      render: renderDart,
+    },
+    ...versionTargets(native),
+  ];
 
 /**
- * Regenerates the native core's and the Flutter plugin's copies of the protocol enums.
+ * Regenerates the native core's and the Flutter plugin's copies of the protocol enums, and puts
+ * the SDK's version into every native file that states it.
  *
- * With --check it verifies the committed file instead of writing it, which is how CI fails a
- * protocol change that would otherwise reach every mobile SDK as a silent divergence.
+ * With --check it verifies the committed files instead of writing them, which is how CI fails a
+ * protocol change that would otherwise reach every mobile SDK as a silent divergence, and a
+ * version bump that reached npm and not Maven.
  */
 async function main(): Promise<void> {
   const checkOnly = process.argv.includes("--check");
@@ -213,13 +221,14 @@ async function main(): Promise<void> {
   }
   const stale: string[] = [];
   for (const { path, render } of TARGETS) {
-    const generated = render();
+    const existing = await readFile(path, "utf8").catch(() => "");
+    const generated = render(existing);
     const shown = relative(root, path);
     if (checkOnly) {
-      const existing = await readFile(path, "utf8").catch(() => "");
       if (existing !== generated) stale.push(shown);
       continue;
     }
+    if (existing === generated) continue;
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, generated, "utf8");
     process.stdout.write(`wrote ${shown}\n`);
@@ -230,7 +239,7 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  if (checkOnly) process.stdout.write("native protocol enums are current\n");
+  if (checkOnly) process.stdout.write("native protocol enums and versions are current\n");
 }
 
 await main();

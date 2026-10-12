@@ -20,6 +20,7 @@ import {
 export class UnconfiguredSmsProvider extends SmsProvider {
   override readonly id = "unconfigured";
 
+  // biome-ignore lint/complexity/noUselessConstructor: it widens the abstract base's protected constructor to public, which is what lets the module build one.
   constructor(fraudGuard: FraudGuard, spendCap: SpendCap) {
     super(fraudGuard, spendCap);
   }

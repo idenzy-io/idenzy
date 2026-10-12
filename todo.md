@@ -890,7 +890,8 @@ client have no server halves to talk to yet.
       store that sent a partial one would silently reset the fields it left out.
       What each of those screens still cannot do is named in its store rather than implied:
       the passkey relying party is a row in `webauthn_relying_parties` with a unique index
-      behind it and has no endpoint, step-up's max age is still deployment-wide, a recovery
+      behind it and has its own route now (`passkeys/relying-party`, which refuses to move the
+      domain under passkeys that exist), step-up's max age is still deployment-wide, a recovery
       set belongs to a user and `mfa_recovery_codes` has no route, and nothing records when
       a verifier last polled the revocation snapshot — so that timestamp is null rather than
       invented.
@@ -1240,7 +1241,10 @@ template pipeline of its own rather than a branch in the OTP flow.
       Flutter (`idenzy_flutter`), React Native/Expo (`@idenzy/react-native`), Lynx
       (`@idenzy/lynx`), NativeScript (`@idenzy/nativescript`) and Capacitor (`@idenzy/capacitor`),
       all on one bridge, the four JavaScript ones on one client (`@idenzy/native-js`), and all five
-      run on an iOS simulator and an Android emulator. Not yet: native passkeys and publishing
+      run on an iOS simulator and an Android emulator. Native passkeys are in the SDKs, and the
+      relying party finally has a management route that takes Android app origins; a ceremony
+      has not run on a device, which needs a domain serving the association files. Not yet:
+      publishing
 - [ ] Custom email domains with guided DKIM setup
 - [ ] Migration importers: Firebase, Supabase, Auth0, Clerk, Cognito
 - [~] Billing on Stripe, metered against usage. The schema half is in: the wallet, the

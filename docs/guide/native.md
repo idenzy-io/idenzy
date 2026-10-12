@@ -413,8 +413,34 @@ package that names the same dependency, and build afterwards:
 swift package resolve --disable-keychain    # ~/Library/Caches/org.swift.swiftpm/artifacts
 ```
 
+## Native passkeys
+
+The ceremony is the platform's, the challenge and the verification are the API's, and the core's
+`PasskeyFlow` is the part between them that is the same everywhere: fetch the options, hand them
+to the platform as WebAuthn JSON, send back what it produces. `Idenzy.addPasskey` and
+`signInWithPasskey` in Swift, `idenzy.passkeys.add` and `signIn` in Kotlin, and `passkey.add`,
+`passkey.signIn`, `passkey.list` and `passkey.remove` on the bridge, for every framework.
+
+- **Android takes the JSON as it is; iOS takes bytes.** Credential Manager accepts
+  `PublicKeyCredentialCreationOptionsJSON` and returns `RegistrationResponseJSON`, so the Kotlin
+  half only carries strings. AuthenticationServices wants the challenge, the user id and the
+  relying party as `Data` and returns raw fields, so `PasskeyJSON` translates both ways, as pure
+  functions with tests of their own.
+- **The relying party's domain has to vouch for the app, and the project has to list it.** iOS:
+  `webcredentials` in the domain's `apple-app-site-association` and the Associated Domains
+  entitlement in the app. Android: `delegate_permission/common.get_login_creds` in the domain's
+  `assetlinks.json`, and the app's `android:apk-key-hash:` origin on the project's relying party
+  (backend.md). Without them the sheet refuses before it shows, or the API refuses the origin.
+- **A cancelled sheet is `cancelled`, like every other sheet.** Any other platform refusal (no
+  passkey for the domain, an app the domain does not list) crosses as `internal_error` with the
+  platform's own type and message, which is the only explanation there is.
+- **Not run on a device.** A real ceremony needs a domain serving the association files and,
+  on Android, a signed-in Google account. What is tested: the core against a fake transport, the
+  iOS JSON translation, the bridge's values, and on the server a credential enrolled and
+  asserted with an Android origin, accepted where the project lists it and refused where it
+  does not (`passkey.integration.test.ts`, with the real software authenticator).
+
 ## Not built yet
 
-Passkeys (needs `apple-app-site-association` and `assetlinks.json` served by the auth domain),
 App Attest and Play Integrity, and publishing: npm, Maven Central, CocoaPods trunk, pub.dev and
 the Swift Package Manager mirror.

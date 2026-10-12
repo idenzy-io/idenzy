@@ -1,6 +1,7 @@
 {
   "name": "@idenzy/capacitor",
   "version": "0.1.0",
+  "private": true,
   "description": "Idenzy for Capacitor: carries @idenzy/native-js to the native iOS and Android SDKs, so the session lives outside the web view.",
   "keywords": [
     "idenzy",

@@ -36,6 +36,14 @@ idenzy.status.listen((status) { /* IdenzyLoading, IdenzySignedOut, IdenzySignedI
   browser. On Android, set `manifestPlaceholders["idenzyRedirectScheme"]` to the redirect URI's
   scheme.
 
+## Passkeys
+
+`idenzy.passkeys.add(name: …)` and `idenzy.passkeys.signIn()` run the platform's own ceremony:
+AuthenticationServices on iOS, Credential Manager on Android. Your domain has to vouch for the app
+first: `webcredentials` in its `apple-app-site-association` with the Associated Domains entitlement
+on the iOS app, and the app's package and signing certificate in its `assetlinks.json`, with the
+app's origin (its certificate fingerprint) added to the project's passkey settings.
+
 ## Requirements
 
 iOS 15 with Swift Package Manager enabled for Flutter, and Android API 26.

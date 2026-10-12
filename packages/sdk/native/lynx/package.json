@@ -1,6 +1,7 @@
 {
   "name": "@idenzy/lynx",
   "version": "0.1.0",
+  "private": true,
   "description": "Idenzy for Lynx: the native module that carries @idenzy/native-js to the native iOS and Android SDKs.",
   "keywords": [
     "idenzy",

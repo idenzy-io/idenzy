@@ -21,7 +21,12 @@
       "@idenzy/remix",
       "@idenzy/solid",
       "@idenzy/svelte",
-      "@idenzy/cli"
+      "@idenzy/cli",
+      "@idenzy/native-js",
+      "@idenzy/react-native",
+      "@idenzy/lynx",
+      "@idenzy/nativescript",
+      "@idenzy/capacitor"
     ]
   ],
   "ignore": [],

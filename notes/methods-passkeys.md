@@ -35,7 +35,7 @@ Use one column; long URLs wrap or scroll within a copy field while the full valu
 
 ### Buttons, dialogs and states
 
-Domain-change dialog order: existing RP ID → new RP ID → compatible origins retained/removed → replacement origin if required → affected accounts → acknowledgement. Cancel left, Save new domain right. Origin dialog uses Application URL, example and RP-ID validation, with Add URL at bottom right.
+Domain-change dialog order: existing RP ID → new RP ID → compatible origins retained/removed → replacement origin if required → affected accounts → acknowledgement. Cancel left, Save new domain right. Origin dialog takes an application URL, with example and RP-ID validation, or an Android app's SHA-256 signing certificate fingerprint, shown as the `android:apk-key-hash:` origin it is stored as; an iOS app needs no entry. Add at bottom right.
 
 ## Findings and fixes
 
@@ -49,7 +49,7 @@ Acme shows passkey sign-in On while the relying party is not configured and cere
 
 ### P1 — Changing the domain can strand users
 
-The existing change dialog lists dropped origins and affected credentials, which is valuable. Add the number of accounts without another sign-in method and a migration/re-enrolment plan before activation. Describe invalidated credentials as an operational consequence, not merely a protocol fact.
+The existing change dialog lists dropped origins and affected credentials, which is valuable. The count is the API's (`passkeys` on the relying-party answer), and the acknowledgement sends it back as `strandPasskeys`: the server moves the domain only when it matches what the project holds, and keeps the stranded credentials so moving back revives them. Add the number of accounts without another sign-in method and a migration/re-enrolment plan before activation. Describe invalidated credentials as an operational consequence, not merely a protocol fact.
 
 ### P2 — The right-hand authenticator statistics do not help setup
 

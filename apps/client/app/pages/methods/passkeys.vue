@@ -84,13 +84,16 @@ watch(
   { immediate: true },
 );
 
-/** One write for the whole party, sent only if the party it makes stands. */
-async function commitParty(change: Partial<RelyingParty>, key: string) {
+/**
+ * One write for the whole party, sent only if the party it makes stands. `strandPasskeys` is
+ * the count a domain change was acknowledged against, which the API checks.
+ */
+async function commitParty(change: Partial<RelyingParty>, key: string, strandPasskeys?: number) {
   const current = saved.value.relyingParty;
   if (current === null) return;
   const next = { ...current, ...change };
   if (validateRelyingParty(next).length > 0) return;
-  await whileBusy(key, () => store.setRelyingParty(projects.current.id, next));
+  await whileBusy(key, () => store.setRelyingParty(projects.current.id, next, strandPasskeys));
 }
 
 /* Setting it up, for a project with none. One record, written whole. */
@@ -127,7 +130,7 @@ function openRpIdDialog() {
 
 function confirmRpId(rpId: string, next: string[]) {
   party.value = { ...party.value, rpId, origins: next };
-  void commitParty({ rpId, origins: next }, "rpId");
+  void commitParty({ rpId, origins: next }, "rpId", store.enrolledOn(projects.current.id));
 }
 
 /*
@@ -644,7 +647,7 @@ const GUIDES_URL = "https://idenzy.io/docs/passkeys";
     />
     <PasskeyRpIdDialog
       v-model="rpIdDialog"
-      :enrolled="stats.enrolled"
+      :enrolled="store.enrolledOn(projects.current.id)"
       :from="dialogFrom.rpId"
       :origins="dialogFrom.origins"
       @confirm="confirmRpId"

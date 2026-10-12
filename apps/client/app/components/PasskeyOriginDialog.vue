@@ -2,9 +2,16 @@
 /**
  * Adds one origin to the relying party. An origin is scheme, host and port, matched
  * exactly, and WebAuthn allows it only on the RP ID's own domain; both are checked here
- * as the text is typed, so what is written is always one the ceremony will accept.
+ * as the text is typed, so what is written is always one the ceremony will accept. An
+ * Android app is the other kind: its signing certificate, pasted as the fingerprint
+ * `keytool` prints and stored as the origin Credential Manager sends.
  */
-import { normaliseOrigin, ORIGIN_ISSUE_LABELS, validateOrigin } from "~/utils/passkeys";
+import {
+  androidOrigin,
+  normaliseOrigin,
+  ORIGIN_ISSUE_LABELS,
+  validateOrigin,
+} from "~/utils/passkeys";
 
 const props = defineProps<{
   rpId: string;
@@ -37,6 +44,9 @@ const issue = computed(() => {
 
 const ready = computed(() => origin.value.trim() !== "" && issue.value === "");
 
+/** What a pasted fingerprint is stored as, shown before it is. */
+const app = computed(() => androidOrigin(origin.value));
+
 function confirm() {
   if (!ready.value) return;
   emit("confirm", normaliseOrigin(origin.value));
@@ -51,15 +61,17 @@ function confirm() {
     <v-card border flat>
       <form class="flex flex-col gap-5 p-5" @submit.prevent="confirm">
         <header class="flex flex-col gap-1">
-          <h2 class="m-0 text-sm font-medium text-ink">Add an application URL</h2>
+          <h2 class="m-0 text-sm font-medium text-ink">Add an application URL or Android app</h2>
           <p class="m-0 text-xs leading-5 text-ink/60">
             A page allowed to run a ceremony. Scheme, host and port, matched exactly, on
-            <span class="font-mono text-ink/80">{{ rpId }}</span> or a subdomain of it.
+            <span class="font-mono text-ink/80">{{ rpId }}</span> or a subdomain of it. For an
+            Android app, paste its SHA-256 signing certificate fingerprint; an iOS app needs no
+            entry.
           </p>
         </header>
 
         <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink" for="origin-next">Application URL</label>
+          <label class="text-xs font-medium text-ink" for="origin-next">Application URL or fingerprint</label>
           <v-text-field
             id="origin-next"
             ref="field"
@@ -73,7 +85,12 @@ function confirm() {
             variant="filled"
           />
           <p class="m-0 text-[11px]" :class="issue ? 'text-error' : 'text-ink/50'">
-            {{ issue || "https everywhere but localhost, and no path: the ceremony sends the origin, not the page." }}
+            {{
+              issue ||
+              (app
+                ? `Stored as ${app}.`
+                : "https everywhere but localhost, and no path: the ceremony sends the origin, not the page.")
+            }}
           </p>
         </div>
 
@@ -82,7 +99,7 @@ function confirm() {
             Cancel
           </v-btn>
           <v-btn :disabled="!ready" class="text-xs font-medium" color="primary" size="small" type="submit" variant="flat">
-            Add URL
+            Add
           </v-btn>
         </footer>
       </form>

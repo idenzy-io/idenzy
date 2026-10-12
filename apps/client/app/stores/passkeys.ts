@@ -3,13 +3,12 @@
  * screen shows beside them.
  *
  * The relying party is a row of `webauthn_relying_parties`, one per project, read and
- * written through the management API; the switch lives in the project's settings. This
- * store is both as the panel sees them, with a placeholder until the client exists. A
- * change is written the moment it is made and the screen shows its own busy state, as
- * the passwords screen does.
+ * written through the management API's `passkeys/relying-party`; the switch lives in the
+ * project's settings. A change is written the moment it is made and the screen shows its
+ * own busy state, as the passwords screen does. The figures are still placeholders.
  */
 
-import { InternalError } from "@idenzy/core/errors";
+import type { RelyingPartyAnswer } from "@idenzy/protocol/schemas/management";
 import type { PasskeySettings, RelyingParty } from "~/utils/passkeys";
 
 export interface PasskeyStats {
@@ -41,18 +40,50 @@ const _SAVE_LATENCY = 600;
 
 export const usePasskeysStore = defineStore("passkeys", () => {
   const section = useSettingsSection("passkeys", () => ({ enabled: true }));
+  const projects = useProjectStore();
+  const parties = ref<Record<string, RelyingPartyAnswer>>({});
+  const partyRefusal = ref<string | null>(null);
+  /** Non-reactive: mutating a ref inside a computed re-invalidates the computed. */
+  const requested = new Set<string>();
+
+  function partyPath(projectId: string): string | null {
+    const org = projects.orgOf(projectId);
+    return org === null ? null : `/v1/orgs/${org.id}/projects/${projectId}/passkeys/relying-party`;
+  }
+
+  async function loadParty(projectId: string): Promise<void> {
+    const url = partyPath(projectId);
+    if (url === null) return;
+    const { data, error } = await useManagementApi()(url).get().json<RelyingPartyAnswer>();
+    if (error.value !== null) {
+      partyRefusal.value = managementMessage(error.value);
+      return;
+    }
+    if (data.value !== null) parties.value = { ...parties.value, [projectId]: data.value };
+  }
 
   /**
-   * The switch from settings, and the relying party from nowhere yet.
+   * The switch from settings, and the relying party from its own route.
    *
    * `relyingParty` is a row in `webauthn_relying_parties` with a unique index behind it —
    * one project may have exactly one, because a second would split a customer's passkeys
    * into two sets that cannot substitute for each other — so it is not a section of the
-   * settings document and cannot be. Null until that table has an endpoint, which is the
-   * honest answer: the screen already says nothing passkey works without one.
+   * settings document and cannot be. Null until it is loaded, and for a project with none.
    */
   function settingsFor(projectId: string): PasskeySettings {
-    return { ...section.valueFor(projectId), relyingParty: null };
+    if (!requested.has(projectId)) {
+      requested.add(projectId);
+      void loadParty(projectId);
+    }
+    return {
+      ...section.valueFor(projectId),
+      relyingParty: parties.value[projectId]?.relyingParty ?? null,
+    };
+  }
+
+  /** The passkeys the project holds, which a change of domain strands: the API's count. */
+  function enrolledOn(projectId: string): number {
+    return parties.value[projectId]?.passkeys ?? 0;
   }
 
   async function patch(projectId: string, change: Partial<PasskeySettings>): Promise<void> {
@@ -60,13 +91,27 @@ export const usePasskeysStore = defineStore("passkeys", () => {
     await section.save(projectId, { enabled: change.enabled });
   }
 
-  /** No endpoint: `webauthn_relying_parties` has no management route (todo.md 1.6). */
-  function setRelyingParty(_projectId: string, _party: RelyingParty): Promise<void> {
-    return Promise.reject(
-      new InternalError({
-        detail: { reason: "the relying party has no management endpoint yet" },
-      }),
-    );
+  /**
+   * Writes the whole party. A new domain while passkeys exist on the old one stops every one of
+   * them working, so the API moves only when `strandPasskeys` names how many and matches what
+   * it holds; the domain dialog's acknowledgement is what supplies it. A mismatch comes back as
+   * a refusal carrying the real count, shown as it is sent.
+   */
+  async function setRelyingParty(
+    projectId: string,
+    party: RelyingParty,
+    strandPasskeys?: number,
+  ): Promise<void> {
+    const url = partyPath(projectId);
+    if (url === null) return;
+    partyRefusal.value = null;
+    const body = strandPasskeys === undefined ? party : { ...party, strandPasskeys };
+    const { data, error } = await useManagementApi()(url).put(body).json<RelyingPartyAnswer>();
+    if (error.value !== null) {
+      partyRefusal.value = managementMessage(error.value);
+      throw error.value;
+    }
+    if (data.value !== null) parties.value = { ...parties.value, [projectId]: data.value };
   }
 
   /** Counts of ceremonies live in the analytics store (ADR-0013), not in Postgres. */
@@ -77,11 +122,12 @@ export const usePasskeysStore = defineStore("passkeys", () => {
   return {
     settings: section.byProject,
     loading: section.loading,
-    refusal: section.refusal,
+    refusal: computed(() => partyRefusal.value ?? section.refusal.value),
     load: section.load,
     settingsFor,
     patch,
     setRelyingParty,
+    enrolledOn,
     lastSavedAt: section.lastSavedAt,
     stats,
   };

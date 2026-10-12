@@ -11,6 +11,7 @@
  * ID's own registrable domain, and a wildcard would be a hole in that rule.
  */
 
+import { androidPasskeyOrigin, isAndroidPasskeyOrigin } from "@idenzy/protocol/schemas/management";
 import { plural, type SetupBlocker, type SetupCheck } from "./setup-check";
 
 export interface RelyingParty {
@@ -18,7 +19,7 @@ export interface RelyingParty {
   rpId: string;
   /** Shown by the authenticator when it asks. The customer's product name, not ours. */
   rpName: string;
-  /** Scheme, host and port, exact. */
+  /** Scheme, host and port, exact, or an Android app's `android:apk-key-hash:`. */
   origins: string[];
 }
 
@@ -88,7 +89,8 @@ export function isRpId(value: string): boolean {
 export type OriginIssue = "origin_invalid" | "origin_insecure" | "origin_outside_rp";
 
 export const ORIGIN_ISSUE_LABELS: Record<OriginIssue, string> = {
-  origin_invalid: "A URL is a scheme, a host and an optional port: https://app.example.com.",
+  origin_invalid:
+    "A URL is a scheme, a host and an optional port: https://app.example.com. An Android app is its SHA-256 signing certificate fingerprint.",
   origin_insecure: "WebAuthn needs https, except on localhost.",
   origin_outside_rp: "The host must be the passkey domain or a subdomain of it.",
 };
@@ -112,7 +114,19 @@ export function parseOrigin(value: string): URL | null {
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+/**
+ * An Android app's origin, from either form somebody may paste: the origin itself, or the
+ * signing certificate fingerprint `keytool` and the Play Console print. Null for anything else.
+ * Not checked against the RP ID, which an app is not on: the domain's `assetlinks.json` is what
+ * ties the two together.
+ */
+export function androidOrigin(value: string): string | null {
+  const text = value.trim();
+  return isAndroidPasskeyOrigin(text) ? text : androidPasskeyOrigin(text);
+}
+
 export function validateOrigin(value: string, rpId: string): OriginIssue | null {
+  if (androidOrigin(value) !== null) return null;
   const url = parseOrigin(value);
   if (url === null) return "origin_invalid";
   if (url.protocol !== "https:" && !(url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname))) {
@@ -124,8 +138,10 @@ export function validateOrigin(value: string, rpId: string): OriginIssue | null 
   return null;
 }
 
-/** The origin as it is stored: lower case, no trailing slash. */
+/** The origin as it is stored: lower case, no trailing slash, or an Android app's origin. */
 export function normaliseOrigin(value: string): string {
+  const app = androidOrigin(value);
+  if (app !== null) return app;
   const url = parseOrigin(value);
   return url === null ? value.trim() : `${url.protocol}//${url.host}`.toLowerCase();
 }
@@ -309,7 +325,8 @@ function urlCheck(party: RelyingParty | null): SetupCheck {
  * missing from the second fails in the browser with nothing in our logs (ADR-0006).
  */
 function corsCheck(party: RelyingParty | null, allowedOrigins: readonly string[]): SetupCheck {
-  const origins = party?.origins ?? [];
+  // An app calls the API from native code, which CORS does not govern.
+  const origins = (party?.origins ?? []).filter((origin) => androidOrigin(origin) === null);
   const allowed = new Set(allowedOrigins.map(normaliseOrigin));
   const uncovered = origins.filter((origin) => !allowed.has(normaliseOrigin(origin)));
 

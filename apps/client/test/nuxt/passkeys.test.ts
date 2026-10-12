@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  androidOrigin,
   authenticatorOf,
   backupLine,
   creationOptions,
@@ -57,6 +58,36 @@ describe("validateOrigin", () => {
 
   it("names a malformed origin first", () => {
     expect(validateOrigin("app.example.com", "example.com")).toBe("origin_invalid");
+  });
+});
+
+describe("an Android app's origin", () => {
+  const FINGERPRINT = Array.from({ length: 32 }, (_, byte) =>
+    byte.toString(16).padStart(2, "0").toUpperCase(),
+  ).join(":");
+  const ORIGIN = "android:apk-key-hash:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+
+  it("is stored from the fingerprint keytool prints, or as itself", () => {
+    expect(androidOrigin(FINGERPRINT)).toBe(ORIGIN);
+    expect(normaliseOrigin(FINGERPRINT)).toBe(ORIGIN);
+    expect(normaliseOrigin(ORIGIN)).toBe(ORIGIN);
+  });
+
+  it("passes whatever the passkey domain, which an app is not on", () => {
+    expect(validateOrigin(FINGERPRINT, "example.com")).toBeNull();
+    expect(validateRelyingParty({ rpId: "example.com", rpName: "E", origins: [ORIGIN] })).toEqual(
+      [],
+    );
+  });
+
+  it("is left out of the CORS check, which native code does not meet", () => {
+    const checks = evaluatePasskeySetup({
+      enabled: true,
+      party: { rpId: "example.com", rpName: "E", origins: ["https://example.com", ORIGIN] },
+      allowedOrigins: ["https://example.com"],
+      ceremonies: 1,
+    });
+    expect(checks.find((check) => check.id === "cors")?.state).toBe("pass");
   });
 });
 

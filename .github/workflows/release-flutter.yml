@@ -1,0 +1,35 @@
+name: Release Flutter plugin
+
+# Publishes idenzy_flutter to pub.dev (docs/guide/native.md, "Releasing"). pub.dev's automated
+# publishing takes a token only from a push of a tag it was told to expect, so this runs on that
+# tag, pushed by hand once release-native.yml has put the native SDKs it loads on Maven Central
+# and the Swift package mirror. pub.dev has to be configured for it first: on the package's admin
+# page, automated publishing from idenzy-io/idenzy with the tag pattern idenzy_flutter-v{{version}}.
+
+on:
+  push:
+    tags: ["idenzy_flutter-v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: pub.dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/sdk/native/flutter/idenzy_flutter
+    steps:
+      - uses: actions/checkout@v4
+      # Requests the OIDC token pub.dev exchanges for a publishing credential.
+      - uses: dart-lang/setup-dart@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter pub publish --force

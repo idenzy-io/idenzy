@@ -9,6 +9,10 @@ name: Release
 # Off until the repository variable PUBLISH is "true", so a fork, or this repository before
 # its npm token exists, spends no minutes failing here. NPM_PROVENANCE is the second switch:
 # npm only attests packages built from a public repository, so it turns on when this one is.
+#
+# The native packages on npm load the native SDKs at their own version, so on a run that
+# publishes, release-native.yml puts those on Maven Central and CocoaPods first, and npm waits
+# for it (docs/guide/native.md, "Releasing").
 
 on:
   push:
@@ -30,9 +34,49 @@ env:
   DO_NOT_TRACK: 1
 
 jobs:
+  # Whether this run publishes native packages whose native SDKs are not released yet. Only
+  # then does the native release run, and npm waits for it.
+  plan:
+    name: plan
+    if: vars.PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.plan.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_NATIVE: ${{ vars.PUBLISH_NATIVE }}
+        run: |
+          pending=$(find .changeset -name '*.md' ! -name README.md | wc -l)
+          manifest=packages/sdk/native/js/package.json
+          version=$(node -p "require('./$manifest').version")
+          private=$(node -p "Boolean(require('./$manifest').private)")
+          native=false
+          if [ "$pending" -eq 0 ] && [ "$private" = "false" ] && ! gh release view "v$version" >/dev/null 2>&1; then
+            if [ "$PUBLISH_NATIVE" != "true" ]; then
+              echo "::error::The native packages would publish $version to npm before the native SDKs they load. Set PUBLISH_NATIVE."
+              exit 1
+            fi
+            native=true
+          fi
+          echo "native=$native" >> "$GITHUB_OUTPUT"
+
+  native:
+    name: native SDKs
+    needs: plan
+    if: needs.plan.outputs.native == 'true'
+    uses: ./.github/workflows/release-native.yml
+    secrets: inherit
+
   release:
     name: version or publish
-    if: vars.PUBLISH == 'true'
+    needs: [plan, native]
+    # After the native release when there was one, and never after one that failed.
+    if: >-
+      always() && needs.plan.result == 'success'
+      && (needs.native.result == 'success' || needs.native.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,7 +102,12 @@ jobs:
 
       - uses: changesets/action@v1
         with:
-          version: pnpm changeset version
+          # The native tree states the same version in Gradle, the podspecs, the pubspec and
+          # Cargo; the generator writes it there from the bumped packages (docs/guide/native.md).
+          version: >-
+            sh -c "pnpm changeset version
+            && pnpm turbo run build --filter=@idenzy/native-codegen
+            && pnpm native:generate"
           publish: pnpm release
           title: "chore(sdk): version packages"
           commit: "chore(sdk): version packages"

@@ -1,0 +1,126 @@
+name: Release native SDKs
+
+# Publishes the native SDKs for the version Changesets gave @idenzy/native-js (docs/guide/native.md,
+# "Releasing"): the Swift SDK's binary and sources on the GitHub release v<version>, its pods on
+# CocoaPods trunk and its Swift package on the mirror repository, and the Android SDK and the Lynx
+# module on Maven Central. The npm packages and the pub.dev one load these, so release.yml runs this
+# first and publishes npm after it; a run by hand is for a retry.
+#
+# Off until the repository variable PUBLISH_NATIVE is "true". It needs these secrets:
+#   CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD   a Central Portal user token for io.idenzy
+#   SIGNING_KEY, SIGNING_PASSWORD                     an armored PGP secret key, public on a keyserver
+#   COCOAPODS_TRUNK_TOKEN                             a trunk session for the pods' owner
+#   SWIFT_MIRROR_TOKEN                                contents:write on idenzy-io/idenzy-swift
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-native
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: version
+    if: vars.PUBLISH_NATIVE == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: echo "version=$(node -p "require('./packages/sdk/native/js/package.json').version")" >> "$GITHUB_OUTPUT"
+
+  apple:
+    name: Swift SDK (release, pods, mirror)
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        working-directory: packages/sdk/native
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/build-apple.sh
+      - run: scripts/package-apple.sh
+
+      # The release carries the binaries both the mirror and the pods download, so it exists first.
+      - name: GitHub release v${{ env.VERSION }}
+        run: |
+          gh release view "v$VERSION" >/dev/null 2>&1 \
+            || gh release create "v$VERSION" --title "Native SDKs $VERSION" --notes "Native SDKs $VERSION."
+          gh release upload "v$VERSION" target/apple-release/*.zip --clobber
+
+      - name: Swift package mirror
+        env:
+          SWIFT_MIRROR_TOKEN: ${{ secrets.SWIFT_MIRROR_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${SWIFT_MIRROR_TOKEN}@github.com/idenzy-io/idenzy-swift.git" mirror
+          find mirror -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R target/apple-release/swift-package/. mirror/
+          cd mirror
+          git config user.name "idenzy-release"
+          git config user.email "release@idenzy.io"
+          git add -A
+          git commit -m "Release $VERSION" || echo "nothing changed"
+          git tag "$VERSION"
+          git push origin HEAD "$VERSION"
+
+      # In dependency order. --synchronous reads trunk's specs repository rather than its CDN, so a
+      # pod pushed a moment ago is found by the one that depends on it.
+      - name: CocoaPods trunk
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          for pod in IdenzyCore Idenzy IdenzyBridge; do
+            pod trunk push "apple/$pod.podspec" --allow-warnings --synchronous
+          done
+
+  android:
+    name: Android SDK and Lynx module (Maven Central)
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: packages/sdk/native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # Every ABI an app ships, linked for 16 KB pages; the runner's NDK is ANDROID_NDK_HOME.
+      - run: scripts/build-android.sh
+      - name: Sign into the bundle directory
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        working-directory: packages/sdk/native/android
+        run: >-
+          ./gradlew --no-configuration-cache
+          :idenzy:publishAllPublicationsToCentralRepository
+          :idenzy-lynx:publishAllPublicationsToCentralRepository
+      # The Central Portal takes one zip of the repository layout and publishes it once it
+      # validates. maven-metadata.xml is the repository's to write, not the bundle's.
+      - name: Upload to the Central Portal
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        working-directory: packages/sdk/native/android/build/central
+        run: |
+          zip -qr ../central-bundle.zip . -x '*maven-metadata.xml*'
+          token="$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 -w0)"
+          curl --fail-with-body -X POST \
+            "https://central.sonatype.com/api/v1/publisher/upload?name=idenzy-$VERSION&publishingType=AUTOMATIC" \
+            -H "Authorization: Bearer $token" \
+            -F "bundle=@../central-bundle.zip"

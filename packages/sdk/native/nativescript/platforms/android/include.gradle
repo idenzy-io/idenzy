@@ -1,0 +1,4 @@
+// The Android SDK and its JSON bridge, which this plugin's JavaScript calls directly.
+dependencies {
+    implementation 'io.idenzy:idenzy-android:0.1.0'
+}

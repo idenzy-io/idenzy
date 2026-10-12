@@ -1,0 +1,28 @@
+// io.idenzy:idenzy-android, which the plugin's include.gradle names, from
+// `./gradlew :idenzy:publishToMavenLocal` until it is on Maven Central.
+repositories {
+  mavenLocal()
+}
+
+android {
+  compileSdkVersion 36
+  buildToolsVersion "36"
+
+  defaultConfig {
+    // The Android SDK's floor: java.time without desugaring.
+    minSdkVersion 26
+    targetSdkVersion 36
+
+    versionCode 1
+    versionName "1.0.0"
+
+    // The scheme the browser returns to after OAuth; the SDK cannot guess it.
+    manifestPlaceholders = [idenzyRedirectScheme: "io.idenzy.nsexample"]
+
+    generatedDensities = []
+  }
+
+  aaptOptions {
+    additionalParameters "--no-version-vectors"
+  }
+}

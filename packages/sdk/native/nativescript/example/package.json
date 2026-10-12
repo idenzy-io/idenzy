@@ -1,0 +1,23 @@
+{
+  "name": "idenzy-nativescript-example",
+  "main": "app/app.ts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "ios": "ns build ios",
+    "android": "ns build android"
+  },
+  "dependencies": {
+    "@idenzy/native-js": "file:../../js",
+    "@idenzy/nativescript": "file:..",
+    "@nativescript/core": "9.1.2"
+  },
+  "devDependencies": {
+    "@nativescript/android": "9.1.1",
+    "@nativescript/ios": "9.1.0",
+    "@nativescript/types": "9.1.2",
+    "@nativescript/webpack": "5.0.38",
+    "nativescript": "9.1.1",
+    "typescript": "6.0.3"
+  }
+}

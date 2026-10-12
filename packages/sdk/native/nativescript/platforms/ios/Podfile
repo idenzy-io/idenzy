@@ -1,0 +1,4 @@
+# The Swift SDK's bridge, whose IDZBridge this plugin's JavaScript calls directly. Until IdenzyCore,
+# Idenzy and IdenzyBridge are on CocoaPods trunk an app declares them itself, by path, in
+# App_Resources/iOS/Podfile; declared here as well, CocoaPods would refuse the two sources. On
+# publishing this becomes `pod 'IdenzyBridge', '0.1.0'`.

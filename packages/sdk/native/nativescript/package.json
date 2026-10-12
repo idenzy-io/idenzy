@@ -1,0 +1,57 @@
+{
+  "name": "@idenzy/nativescript",
+  "version": "0.1.0",
+  "description": "Idenzy for NativeScript: carries @idenzy/native-js to the native iOS and Android SDKs.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "nativescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/native/nativescript"
+  },
+  "type": "module",
+  "main": "./dist/idenzy-nativescript.js",
+  "types": "./dist/idenzy-nativescript.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/idenzy-nativescript.d.ts",
+      "default": "./dist/idenzy-nativescript.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "nativescript": {
+    "platforms": {
+      "ios": "9.0.0",
+      "android": "9.0.0"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "platforms"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@nativescript/core": ">=9.0.0"
+  },
+  "dependencies": {
+    "@idenzy/native-js": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

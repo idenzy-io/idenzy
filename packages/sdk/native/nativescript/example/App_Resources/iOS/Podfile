@@ -1,0 +1,8 @@
+# The Swift SDK's three pods, by path until they are on CocoaPods trunk; see the plugin's own
+# platforms/ios/Podfile. Paths are relative to platforms/ios, where NativeScript writes the
+# Podfile this is merged into.
+platform :ios, '16.0'
+
+pod 'IdenzyCore', :path => '../../../../apple'
+pod 'Idenzy', :path => '../../../../apple'
+pod 'IdenzyBridge', :path => '../../../../apple'

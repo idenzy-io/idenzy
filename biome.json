@@ -15,6 +15,7 @@
       "!**/coverage",
       "!**/drizzle",
       "!examples",
+      "!**/*.xcassets",
       "!apps/client/*.html",
       "!docs/compliance/data-map.md",
       "!docs/compliance/ropa.md"

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">IdenzyCapacitorExample</string>
+    <string name="title_activity_main">IdenzyCapacitorExample</string>
+    <string name="package_name">io.idenzy.capexample</string>
+    <string name="custom_url_scheme">io.idenzy.capexample</string>
+</resources>

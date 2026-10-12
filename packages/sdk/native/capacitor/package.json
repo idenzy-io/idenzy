@@ -1,0 +1,64 @@
+{
+  "name": "@idenzy/capacitor",
+  "version": "0.1.0",
+  "description": "Idenzy for Capacitor: carries @idenzy/native-js to the native iOS and Android SDKs, so the session lives outside the web view.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "capacitor",
+    "capacitor-plugin"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/native/capacitor"
+  },
+  "type": "module",
+  "main": "./dist/idenzy-capacitor.js",
+  "types": "./dist/idenzy-capacitor.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/idenzy-capacitor.d.ts",
+      "default": "./dist/idenzy-capacitor.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "ios/Sources",
+    "android/build.gradle",
+    "android/src/main",
+    "Package.swift",
+    "IdenzyCapacitor.podspec"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "dependencies": {
+    "@idenzy/native-js": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,52 @@
+// Built by the Capacitor app's own Gradle, which includes this directory as a project and supplies
+// Capacitor, the Android Gradle Plugin and Kotlin. The defaults are Capacitor 8's.
+ext {
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+}
+
+buildscript {
+    ext.kotlin_version = project.hasProperty('kotlin_version') ? rootProject.ext.kotlin_version : '2.2.20'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace = 'io.idenzy.capacitor'
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        // The Android SDK's floor: java.time without desugaring.
+        minSdkVersion 26
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    // Capacitor's `activity` is an AppCompatActivity, which it does not export.
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    // The Android SDK and its JSON bridge. From mavenLocal until it is on Maven Central; the example
+    // app adds that repository.
+    implementation 'io.idenzy:idenzy-android:0.1.0'
+}

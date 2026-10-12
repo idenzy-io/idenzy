@@ -1,0 +1,25 @@
+// React Native's half on Android: an Expo module over the Android SDK's IdenzyBridge (ADR-0022).
+// Groovy because Expo autolinking includes a module's `android/build.gradle` by that name.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.idenzy.reactnative'
+version = '0.1.0'
+
+android {
+  namespace "io.idenzy.reactnative"
+  defaultConfig {
+    // The Android SDK's floor: java.time throughout, without desugaring.
+    minSdkVersion 26
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+dependencies {
+  // Until it is on Maven Central, the app names the repository it comes from: the example adds
+  // the local Maven repository that `./gradlew :idenzy:publishToMavenLocal` fills.
+  implementation 'io.idenzy:idenzy-android:0.1.0'
+}

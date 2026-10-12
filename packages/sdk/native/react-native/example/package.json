@@ -1,0 +1,25 @@
+{
+  "name": "idenzy-react-native-example",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@idenzy/react-native": "file:..",
+    "expo": "~55.0.31",
+    "expo-build-properties": "~55.0.18",
+    "expo-status-bar": "~55.0.6",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "@idenzy/native-js": "file:../../js"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "prebuild": "expo prebuild --no-install",
+    "ios": "expo run:ios",
+    "android": "expo run:android"
+  },
+  "private": true
+}

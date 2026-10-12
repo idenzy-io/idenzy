@@ -1,0 +1,61 @@
+{
+  "name": "@idenzy/react-native",
+  "version": "0.1.0",
+  "description": "Idenzy for React Native and Expo: the Expo module that carries @idenzy/native-js to the native iOS and Android SDKs.",
+  "keywords": [
+    "idenzy",
+    "auth",
+    "authentication",
+    "react-native",
+    "expo"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idenzy-io/idenzy.git",
+    "directory": "packages/sdk/native/react-native"
+  },
+  "type": "module",
+  "main": "./dist/idenzy-react-native.js",
+  "types": "./dist/idenzy-react-native.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/idenzy-react-native.d.ts",
+      "default": "./dist/idenzy-react-native.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "ios/*.swift",
+    "ios/*.podspec",
+    "android/build.gradle",
+    "android/src/main",
+    "expo-module.config.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "expo-modules-core": ">=2.0.0",
+    "react-native": ">=0.79.0"
+  },
+  "dependencies": {
+    "@idenzy/native-js": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

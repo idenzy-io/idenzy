@@ -291,7 +291,8 @@
         "packages/persistence/src/dev-project.ts",
         "packages/persistence/src/staff-cli.ts",
         "packages/persistence/drizzle.config.ts",
-        "apps/admin/nuxt.config.ts"
+        "apps/admin/nuxt.config.ts",
+        "packages/sdk/native/react-native/example/index.ts"
       ],
       "linter": {
         "rules": {
